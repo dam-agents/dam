@@ -607,7 +607,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessionMetadata,
     isRunning: (sessionId) => runtime.isSessionRunning(sessionId),
     changes: sessionChanges,
-    sessionFrames: (sessionId) => runtime.sessionFrames(sessionId),
+    sessionFrames: (sessionId, tail) => runtime.sessionFrames(sessionId, tail),
     delegations: createDelegationFramesStore(opts.agentHome),
     ...(opts.sessionRepositories && {
       sessionRepositories: opts.sessionRepositories,

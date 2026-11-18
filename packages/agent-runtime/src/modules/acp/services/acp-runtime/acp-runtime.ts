@@ -178,7 +178,10 @@ export interface AcpRuntime {
   hasSessionWork(sessionId: string): boolean;
   toolCallsOpen(sessionId: string): boolean;
   harnessBusy(sessionId: string): boolean;
-  sessionFrames(sessionId: string): { frames: string[]; truncated: boolean };
+  sessionFrames(
+    sessionId: string,
+    tail?: number,
+  ): { frames: string[]; truncated: boolean };
   resetSession(sessionId: string): void;
   markSessionCold(sessionId: string): void;
   releaseSession(sessionId: string): void;
@@ -3029,8 +3032,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       return harnessActivity.isBusy(sessionId);
     },
 
-    sessionFrames(sessionId) {
-      return transcript.lines(sessionId);
+    sessionFrames(sessionId, tail) {
+      return transcript.linesWithMedia(sessionId, tail);
     },
 
     resetSession(sessionId) {
