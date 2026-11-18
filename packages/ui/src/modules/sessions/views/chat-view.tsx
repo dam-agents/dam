@@ -79,10 +79,6 @@ import { holds } from "../../agents/lib/agent-permissions.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import {
-  assistantAudienceKnown,
-  useAssistantState,
-} from "../../assistants/api/assistant-state.js";
-import {
   AssistantGreeting,
   TrySomethingNew,
 } from "../../assistants/components/assistant-greeting.js";
@@ -375,17 +371,7 @@ export function ChatView() {
   const shared = sharedCurveBender(providers.owned);
   const routed =
     choice.kind === "picker" ? choice.routed : harnessStatus?.modelRouter;
-  /* UNIT_BOUNDARY_DESCRIPTION: the assistant record says which Agent is the assistant, and whether the account had an Agent of its own before the platform gave it one — so the notice keeps out of its chat and off an account onboarded with it, and waits for that record rather than guessing. */
-  const assistantRecord = useAssistantState();
-  const notice = curveBenderNotice({
-    sessionId,
-    shared,
-    pair,
-    pairSettled,
-    agentId: selectedAgent,
-    assistant: assistantRecord.data ?? null,
-    assistantKnown: assistantAudienceKnown(assistantRecord),
-  });
+  const notice = curveBenderNotice({ sessionId, shared, pair, pairSettled });
   const sendHarness =
     (sessionId ? currentSession?.harness : pairHarness) ?? agentView?.harness;
   const sendCatalog = useHarnessCatalogModels(

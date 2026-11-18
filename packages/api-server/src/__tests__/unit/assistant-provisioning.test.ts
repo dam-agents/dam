@@ -23,7 +23,6 @@ const readyRow = (agentId: string, used = false) => ({
   owner: OWNER,
   agentId,
   state: "ready" as const,
-  legacy: false,
   firstResult: null,
   epoch: 0,
   used,
@@ -41,10 +40,10 @@ describe("an install that pins the feature on", () => {
     const instructions = (input as unknown as { instructions: string })
       .instructions;
     expect(instructions).toContain(`I'm ${NAME}, your personal DAM agent.`);
-    // TEST_SCENARIO: the standing instructions never claim a provider the person's own Connections do not say, since the platform is not the one that knows here.
+    // TEST_SCENARIO: the standing instructions report the greeting as it now reads, naming where the provider is changed and no provider at all, since the notice above the composer is what names CurveBender.
     expect(instructions).not.toContain("You're set up with");
     expect(instructions).toContain(
-      "only when the person's own provider Connection is CurveBender's",
+      "You can switch providers anytime in Agent settings.",
     );
     expect(w.enrolled).toHaveBeenCalledTimes(1);
     expect(w.provisioned).toHaveBeenCalledTimes(1);
@@ -100,7 +99,6 @@ describe("an install that pins the feature on", () => {
       owner: OWNER,
       agentId: "agent-half",
       state: "creating",
-      legacy: false,
       firstResult: null,
       epoch: 0,
       used: false,
@@ -305,46 +303,5 @@ describe("the switch", () => {
     });
     expect(agents.ids()).toEqual([pending.agentId]);
     expect(w.rows.rows.get(OWNER)).toMatchObject({ state: "ready" });
-  });
-});
-
-describe("the account's cohort, decided once", () => {
-  // TEST_SCENARIO: an account that had an Agent of its own before the platform gave it Dambledore is legacy, and one whose first Agent is Dambledore is not.
-  it("records whether the account had an Agent before its Dambledore", async () => {
-    const mine = assistantService({ agents: agentStore(["Research helper"]) });
-    await mine.optIn();
-    expect(mine.rows.rows.get(OWNER)).toMatchObject({ legacy: true });
-
-    const fresh = assistantService();
-    await fresh.optIn();
-    expect(fresh.rows.rows.get(OWNER)).toMatchObject({ legacy: false });
-    expect(await fresh.assistants.state()).toMatchObject({ legacy: false });
-  });
-
-  // TEST_SCENARIO: it is never recomputed — deleting Dambledore and switching the feature off and on again keeps the cohort, even when the old Agent that made the account legacy was deleted in between.
-  it("keeps the cohort when a new Dambledore is made", async () => {
-    const agents = agentStore(["Research helper"]);
-    const w = assistantService({ agents });
-    await w.optIn();
-    const first = agents.named(NAME)[0]!;
-    agents.remove(first);
-    agents.remove(agents.ids().find((id) => id !== first)!);
-    await w.optIn();
-    expect(w.agents.named(NAME)).toHaveLength(1);
-    expect(w.rows.rows.get(OWNER)).toMatchObject({ legacy: true });
-  });
-
-  // TEST_SCENARIO: and it survives the onboarding reset, which reuses or makes an Agent without touching the cohort.
-  it("keeps the cohort through the reset", async () => {
-    const agents = agentStore(["Research helper"]);
-    const w = assistantService({ agents });
-    await w.optIn();
-    await w.assistants.resetOnboarding();
-    expect(w.rows.rows.get(OWNER)).toMatchObject({ legacy: true });
-
-    const first = agents.named(NAME)[0]!;
-    agents.remove(first);
-    await w.assistants.resetOnboarding();
-    expect(w.rows.rows.get(OWNER)).toMatchObject({ legacy: true });
   });
 });

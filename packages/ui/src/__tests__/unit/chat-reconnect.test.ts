@@ -568,7 +568,6 @@ function greetingCopy() {
   return {
     assistantName: "Dammy",
     opening: "Hi Jenna! I'm Dammy, your personal DAM agent.",
-    provider: "You're set up with CurveBender, IBM-hosted open-source models.",
     learn: "I learn how you work, one task at a time.",
     settingsLink: "Agent settings",
     ideas: [

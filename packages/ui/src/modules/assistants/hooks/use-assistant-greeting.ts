@@ -1,14 +1,11 @@
 import { getUser } from "../../../auth.js";
 import { getBrand } from "../../../brand.js";
-import { useAgentConnections } from "../../agents/api/queries.js";
 import { useAssistantOn, useAssistantState } from "../api/assistant-state.js";
 import {
   type GreetingCopy,
   greetingCopy,
   greetingShown,
   isAssistantChat,
-  preferredProviderTemplate,
-  providerLineFor,
 } from "../lib/greeting.js";
 
 export type AssistantGreetingState =
@@ -51,7 +48,6 @@ export function useAssistantGreeting(
 ): AssistantGreetingState {
   const assistantOn = useAssistantOn();
   const state = useAssistantState();
-  const granted = useAgentConnections(agentId);
   const listed = state.data;
   const shown = greetingShown({
     assistantOn,
@@ -68,7 +64,6 @@ export function useAssistantGreeting(
         firstName: typeof givenName === "string" ? givenName : null,
         assistantName: brand.assistantName,
         brandName: brand.name,
-        provider: providerLineFor(preferredProviderTemplate(granted.data)),
       }),
     };
   }

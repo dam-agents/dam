@@ -1,12 +1,10 @@
 import {
   ASSISTANT_LEARN_LINE,
-  ASSISTANT_PROVIDER_LINE,
   ASSISTANT_SETTINGS_LINK,
   ASSISTANT_SETTINGS_SENTENCE,
   assistantGreetingOpening,
   type AssistantIdea,
   assistantIdeas,
-  providerTypeForTemplateId,
 } from "api-server-api";
 
 import type { Message } from "../../../types.js";
@@ -16,7 +14,6 @@ import type { Message } from "../../../types.js";
 export interface GreetingCopy {
   assistantName: string;
   opening: string;
-  provider: string;
   learn: string;
   settingsPrefix: string;
   settingsLink: string;
@@ -65,60 +62,24 @@ export function isAssistantChat(input: {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the greeting's words. The opening names the person
- * and the assistant, the provider line names the one the agent runs on only when
- * it is the install's CurveBender (and otherwise says where to change it), and
- * the ideas are the assistant's five kinds of first task, each labelled so the
+ * and the assistant, the sentence after it says where the provider is changed,
+ * and the ideas are the assistant's five kinds of first task, each labelled so the
  * person sees what it would be learning.
  */
 export function greetingCopy(input: {
   firstName: string | null;
   assistantName: string;
   brandName: string;
-  provider: "curve-bender" | "other" | null;
 }): GreetingCopy {
   return {
     assistantName: input.assistantName,
     opening: assistantGreetingOpening(input),
-    /* UNIT_BOUNDARY_DESCRIPTION: no provider sentence at all until the Agent's own Connection says CurveBender, so the line about switching stands alone rather than being said twice. */
-    provider: input.provider === "curve-bender" ? ASSISTANT_PROVIDER_LINE : "",
     learn: ASSISTANT_LEARN_LINE,
     settingsPrefix: ASSISTANT_SETTINGS_SENTENCE,
     settingsLink: ASSISTANT_SETTINGS_LINK,
     ideas: assistantIdeas(input.brandName),
     placeholder: `Message ${input.assistantName}`,
   };
-}
-
-/* UNIT_BOUNDARY_DESCRIPTION: which provider line the greeting uses: the CurveBender sentence only when the Agent's preferred provider Connection is one of CurveBender's two templates, so a provider it does not run on is never named. */
-export function providerLineFor(
-  templateId: string | undefined,
-): "curve-bender" | "other" | null {
-  if (templateId === undefined) return null;
-  return templateId === "curve-bender" ||
-    templateId === "curve-bender-deployment"
-    ? "curve-bender"
-    : "other";
-}
-
-/* UNIT_BOUNDARY_DESCRIPTION: the template of the provider Connection the Agent runs on — of the Connections on provider templates only, the one the person marked preferred and otherwise the first in that order — so the greeting names the provider it actually has, never an app Connection that happens to be listed before it. */
-export function preferredProviderTemplate(
-  data:
-    | {
-        connections: readonly {
-          preferred: boolean;
-          connection?: { templateId: string };
-        }[];
-      }
-    | undefined,
-): string | undefined {
-  if (!data) return undefined;
-  const providers = data.connections.filter(
-    (c) =>
-      c.connection !== undefined &&
-      providerTypeForTemplateId(c.connection.templateId) !== null,
-  );
-  const chosen = providers.find((c) => c.preferred) ?? providers[0];
-  return chosen?.connection?.templateId;
 }
 
 /* UNIT_BOUNDARY_DESCRIPTION: the ideas "Try something new" offers in a chat: all of them but the one the chat started from, which is the idea whose text is in the chat's first message from the person, as a click on its chip puts it there. A long chat whose start is not loaded reads its first loaded message instead, which at worst hides an idea the person picked later in that chat. */
