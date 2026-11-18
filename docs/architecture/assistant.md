@@ -1,6 +1,6 @@
 # Assistant
 
-Last verified: 2026-11-17
+Last verified: 2026-11-18
 
 ## Overview
 
@@ -152,7 +152,7 @@ The check follows the assistant: when the platform makes a person's assistant ag
 Giving and taking away run one at a time per person, so two requests never make two Schedules.
 
 **The platform checks nothing itself.**
-The Schedule's task holds the whole procedure, since only this run needs it: read the advisory, list every agent's editors, channels, connections, network rules and satellites through the CLI, and change nothing.
+The Schedule's task holds the whole procedure, since only this run needs it: read the advisory, list every agent's editors, channels, connections, network rules and satellites through the CLI, ask each agent that others steer what its instructions say, and change nothing.
 The skill is not changed for it; what counts as a problem stays in the advisory, which the task points to.
 The task is written when the Schedule is made and is the owner's to edit, so a later release's wording reaches a person only when their Schedule is made again.
 The assistant describes each problem in that Session, as what in the setup goes against the advisory and what the safer setup is, and offers to fix it.
@@ -165,8 +165,11 @@ There the assistant fixes only what the owner agrees to, and reports what is lef
 The report is shown only while its Schedule stands: once the owner deletes the Schedule no run can clear it, so the alert goes with it.
 A problem the owner calls fine goes into the assistant's memory file, and later checks leave it out until that setup changes; the platform keeps no list of accepted problems.
 
-The check sees what the CLI lists.
-It does not read agents' files or sessions, so a secret left in a file is found only by the agent that works with that file.
+The check sees what the CLI lists and what an Agent says about itself.
+It asks each Agent that anyone besides the owner steers, in one prompt, what it is for and what a message may change in it; an Agent only the owner steers is not asked.
+The question wakes that Agent and runs a turn on the owner's budget, so a check costs more the more Agents the owner shares.
+The answer is the Agent's own word and not a test: the check sends nothing that tries to break an Agent's rules, so a weakness the Agent does not describe stays unseen.
+It does not read agents' files or their earlier sessions, so a secret left in a file is found only by the agent that works with that file.
 It uses the access the assistant already has: there is no narrower read-only grant, and the task is what keeps a check from changing anything.
 
 ## Questions about the platform
