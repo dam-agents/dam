@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { rewriteAuthError } from "../../domain/mappers.js";
-import { tailStart } from "../../domain/replay-tail.js";
+import { historyTailStart, tailStart } from "../../domain/replay-tail.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 import type { SessionMediaStore } from "../../infrastructure/session-media-store.js";
 import { withPlatform } from "../../domain/platform-meta.js";
@@ -66,6 +66,10 @@ export interface SessionTranscript {
   ): void;
   metadataOf(sessionId: string): CachedMetadata;
   lines(sessionId: string): { frames: string[]; truncated: boolean };
+  linesWithMedia(
+    sessionId: string,
+    tail?: number,
+  ): { frames: string[]; truncated: boolean };
   forget(sessionId: string): void;
   sessionCount(): number;
   dropChannel(channel: ClientChannel): void;
@@ -161,7 +165,7 @@ function offloadMedia(
 
 function inlineMedia(
   line: string,
-  keys: ReadonlySet<string>,
+  keys: ReadonlyMap<string, number>,
   get: (key: string) => string | null,
 ): string {
   return rewriteMedia(line, (block) => {
@@ -202,8 +206,11 @@ function withPlatformMeta(
  * image or audio block go to the Session's media store as the entry is
  * appended, and the entry keeps the store's key in their place, so the cap
  * counts text and a large paste neither fills memory nor pushes the text
- * history out; every replay and every read of the lines puts the bytes back
- * from the store, and live fan-out sends the frame as it came. A block whose
+ * history out; every replay and linesWithMedia, the read of the log as
+ * data, put the bytes back from the store, the latter only into the tail it
+ * returns, so a read of a long Session does not load all its images at once.
+ * lines keeps the keys, for a caller that reads only text and ids. Live
+ * fan-out sends the frame as it came. A block whose
  * bytes the store could not keep stays inline, and over the cap the oldest
  * entry still holding inline bytes first has each replaced by a text
  * placeholder, before any whole entry is evicted; a block the store has lost
@@ -282,8 +289,10 @@ export function createSessionTranscript(
 
   function lineOf(sessionId: string, entry: LogEntry): string {
     const media = deps.media;
-    if (entry.media.length === 0 || media === undefined) return entry.line;
-    return inlineMedia(entry.line, new Set(entry.media), (key) =>
+    const log = sessionLogs.get(sessionId);
+    if (entry.media.length === 0 || media === undefined || !log)
+      return entry.line;
+    return inlineMedia(entry.line, log.mediaRefs, (key) =>
       media.get(sessionId, key),
     );
   }
@@ -452,8 +461,21 @@ export function createSessionTranscript(
       const log = sessionLogs.get(sessionId);
       if (!log) return { frames: [], truncated: false };
       return {
-        frames: log.entries.map((entry) => lineOf(sessionId, entry)),
+        frames: log.entries.map((entry) => entry.line),
         truncated: log.truncated,
+      };
+    },
+
+    linesWithMedia(sessionId, tail) {
+      const log = sessionLogs.get(sessionId);
+      if (!log) return { frames: [], truncated: false };
+      const lines = log.entries.map((entry) => entry.line);
+      const start = tail === undefined ? 0 : historyTailStart(lines, tail);
+      return {
+        frames: log.entries
+          .slice(start)
+          .map((entry) => lineOf(sessionId, entry)),
+        truncated: log.truncated || start > 0,
       };
     },
 

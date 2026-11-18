@@ -1238,9 +1238,9 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     defaults: () => deps.sessionDefaults?.get() ?? null,
 
-    sessionFrames(sessionId) {
+    sessionFrames(sessionId, tail) {
       return (
-        leaseOfSession(sessionId)?.runtime.sessionFrames(sessionId) ?? {
+        leaseOfSession(sessionId)?.runtime.sessionFrames(sessionId, tail) ?? {
           frames: [],
           truncated: false,
         }

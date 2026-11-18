@@ -250,6 +250,26 @@ describe("acp-runtime: media in history", () => {
   });
 
   /**
+   * TEST_SCENARIO: The UI reads a loaded Session's newest tail as data while
+   * the load runs. That read must carry the image's bytes too, and the whole
+   * read must carry them for an image above the tail.
+   */
+  it("should put the bytes back into the Session read as data", () => {
+    const { store } = mediaStore();
+    const world = createWorld({ sessionMedia: store });
+    pasteBetweenPrompts(world, LARGE_IMAGE);
+
+    const whole = world.runtime.sessionFrames(SESSION);
+    expect(whole.frames.some((f) => f.includes(LARGE_IMAGE))).toBe(true);
+    expect(whole.frames.some((f) => f.includes("mediaRef"))).toBe(false);
+
+    const tail = world.runtime.sessionFrames(SESSION, 1);
+    expect(tail.truncated).toBe(true);
+    expect(tail.frames.some((f) => f.includes("after"))).toBe(true);
+    expect(tail.frames.some((f) => f.includes(LARGE_IMAGE))).toBe(false);
+  });
+
+  /**
    * TEST_SCENARIO: The machine's disk guard emptied the cache folder, so the
    * store no longer has the image's bytes. Only then does the reload show
    * the placeholder, and the text around it stays.

@@ -126,7 +126,7 @@ export function createSessionsService(deps: {
   sessionMetadata: SessionMetadataStore;
   isRunning: (sessionId: string) => boolean;
   changes: SessionChanges;
-  sessionFrames: (sessionId: string) => SessionHistory;
+  sessionFrames: (sessionId: string, tail?: number) => SessionHistory;
   delegations: DelegationFramesStore;
   historyProvider?: HistoryProvider;
   terminalSessionPins?: () => PlatformSessionOf;
@@ -236,7 +236,7 @@ export function createSessionsService(deps: {
      * session that produced nothing, has nothing to keep.
      */
     async history(sessionId, opts): Promise<SessionHistory> {
-      const live = deps.sessionFrames(sessionId);
+      const live = deps.sessionFrames(sessionId, opts?.tail);
       if (live.frames.length > 0) return newestTail(live, opts?.tail);
       const stored = await deps.historyProvider?.fetch(sessionId);
       return stored
