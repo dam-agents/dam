@@ -62,6 +62,16 @@ A tab also keeps its own mark for a Session it just started, before the report l
 Nothing is asked of the server for a person the feature is off for.
 The [CurveBender notice](connection-presets.md#deployment-preset-curvebender) shows in the assistant's own chat as in any other Agent's: a chat is a chat, and the greeting no longer names the provider.
 
+## Asking from where an error shows
+
+Four surfaces where a failure meets a person offer the install's assistant as the way to understand it: the card under a reply whose turn ended in an error, a crash notice about one Agent, the overlay that says an Agent hit an error or is over budget, and a schedule's card whose last result says it failed or was missed — never one that succeeded, is on its way or is held.
+The link is named for the assistant, *Ask <assistant name>*, and choosing it opens a new chat with that assistant in the same tab, with the failure already written in the composer: the Agent, the session or the schedule, the time, and the error's first line, then one sentence asking what happened and what the person can do about it.
+Nothing is sent, so asking about a failure costs no turn and no model call until the person sends the text themselves.
+It is offered to the owner of the Agent that failed and to nobody else: an Agent Editor has an assistant of their own, not this one, and the assistant's own chat never offers to ask itself.
+The link also waits for the record: a person the feature is off for, or whose record is not settled, sees the failure alone.
+The provider-failure card is left as it is — it names the provider and the outage, which is the answer already.
+A crash notice is a toast that would go away under the pointer; the one carrying the link does not time out, so the link can be reached and used with the keyboard before the notice is closed.
+
 ## The first chat
 
 While the assistant has had no Session, its chat opens with a **greeting** rather than an empty transcript: the assistant's avatar and name, `Hi <given name>! I'm <assistant name>, your personal <brand> agent.`, and a line saying it learns how they work, one task at a time.

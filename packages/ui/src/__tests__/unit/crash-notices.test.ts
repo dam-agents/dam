@@ -164,6 +164,61 @@ describe("nextCrashNotices", () => {
     ]);
   });
 
+  // TEST_SCENARIO: a crash notice that is about one agent is the one surface where the person may ask their assistant about it, so the toast must name the agent it is about and not only describe it.
+  it("carries the agent a restart notice is about", () => {
+    const first = nextCrashNotices(new Map(), [agent()]);
+    const next = nextCrashNotices(first.marks, [
+      agent({ podRestarts: 1, podRestartReason: "OutOfMemory" }),
+    ]);
+    expect(next.toasts).toEqual([
+      {
+        kind: "warning",
+        message:
+          "Scout ran out of memory and restarted — ask an operator to raise its memory budget",
+        agentId: "a1",
+      },
+    ]);
+  });
+
+  // TEST_SCENARIO: the same holds for the notice that carries a termination cause, so the link reaches both kinds of crash toast.
+  it("carries the agent a termination notice is about", () => {
+    const next = nextCrashNotices(new Map(), [
+      agent({ state: "error", podTerminationReason: "its workspace failed" }),
+    ]);
+    expect(next.toasts).toMatchObject([{ agentId: "a1" }]);
+  });
+
+  // TEST_SCENARIO: one toast stands for several agents at once. There is no single agent to ask about, so it must carry none.
+  it("names no single agent on the combined out-of-memory notice", () => {
+    const oom = (id: string, name: string) =>
+      agent({
+        id,
+        name,
+        state: "starting",
+        podTerminationCode: "RunnerOutOfMemory",
+        podTerminationReason: "its owner's VM memory ran out",
+      });
+    const { toasts } = nextCrashNotices(new Map(), [
+      oom("a", "Ada"),
+      oom("b", "Bo"),
+    ]);
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0]?.agentId).toBeUndefined();
+  });
+
+  // TEST_SCENARIO: the runner ran out of memory for one agent only. The notice is still about that agent, so the person may ask about it.
+  it("carries the agent a one-agent out-of-memory notice is about", () => {
+    const { toasts } = nextCrashNotices(new Map(), [
+      agent({
+        state: "starting",
+        podTerminationCode: "RunnerOutOfMemory",
+        podTerminationReason: "its owner's VM memory ran out",
+      }),
+    ]);
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0]?.agentId).toBe("a1");
+  });
+
   // TEST_SCENARIO: a VM agent refused for full storage did not crash. The notice must say it can't start and carry the storage next step, without the console tail.
   it("says a storage refusal can't start rather than crashed", () => {
     expect(

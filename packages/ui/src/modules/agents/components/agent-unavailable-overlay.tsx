@@ -7,6 +7,8 @@ import { Spinner } from "@/components/ui/spinner";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
+import { AskAssistantLink } from "../../assistants/components/ask-assistant-link.js";
+import { askAboutUnavailable } from "../../assistants/lib/ask-prefill.js";
 import { useRestartAgent } from "../hooks/use-restart-agent.js";
 import { useWakeAgent } from "../hooks/use-wake-agent.js";
 import { overlayDescription } from "../lib/overlay-copy.js";
@@ -100,6 +102,16 @@ export function AgentUnavailableOverlay({
       </div>
       {description && (
         <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
+      )}
+      {description && (state === "error" || state === "over_budget") && (
+        <AskAssistantLink
+          agentId={agent.id}
+          prefill={askAboutUnavailable({
+            agentName: agent.name,
+            at: new Date().toISOString(),
+            description,
+          })}
+        />
       )}
       {state === "starting" && (
         <p role="status" className="sr-only">
