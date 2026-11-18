@@ -125,22 +125,14 @@ Host:port string for URLs (includes port if non-empty)
 {{- end }}
 {{- end }}
 
-{{- /* Path-based ingress rule block reused per host. `/api` goes to the
-       api-server, everything else to the UI. Order matters: more-specific
-       Prefix first. Pass `dict "uiSvc" $uiSvc "apiSvc" $apiSvc`. */ -}}
+{{- /* The app host's ingress rule: one path, because the api-server serves
+       the browser app as well as the API. Pass the root context. */ -}}
 {{- define "platform.ingress.appPaths" -}}
-- path: /api
-  pathType: Prefix
-  backend:
-    service:
-      name: {{ .apiSvc }}
-      port:
-        name: http
 - path: /
   pathType: Prefix
   backend:
     service:
-      name: {{ .uiSvc }}
+      name: {{ include "platform.apiserver.fullname" . }}
       port:
         name: http
 {{- end }}
@@ -573,20 +565,6 @@ API Server ServiceAccount name
 */}}
 {{- define "platform.apiserver.serviceAccountName" -}}
 {{- include "platform.apiserver.fullname" . }}
-{{- end }}
-
-{{- /* The browser tab title, written into the UI shell by nginx so a client
-       that runs no JavaScript still reads it. HTML-escaped, and with nginx's
-       `$` and `\` spelled as entities, for the single-quoted sub_filter. */ -}}
-{{- define "platform.ui.shellTitle" -}}
-{{- .Values.brand.title | default .Values.brand.name | html | replace "$" "&#36;" | replace "\\" "&#92;" }}
-{{- end }}
-
-{{/*
-UI app name (Deployment + Service)
-*/}}
-{{- define "platform.ui.fullname" -}}
-{{- printf "%s-ui" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*

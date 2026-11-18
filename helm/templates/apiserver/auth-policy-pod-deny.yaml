@@ -6,7 +6,7 @@ controller) only apply to traffic ROUTED THROUGH the waypoint Service.
 Without this rule, an in-mesh pod could dial the api-server pod IP
 directly on :15008 and reach the harness handler, bypassing the
 waypoint and the per-agent principal-to-`:id` check. Same hazard
-for ext-authz: a release-namespace pod (controller, ui, postgres)
+for ext-authz: a release-namespace pod (controller, postgres)
 sharing the namespace with the api-server is structurally in a
 position to dial the harness or ext-authz port directly unless we
 deny it.

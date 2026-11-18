@@ -59,7 +59,7 @@ set -e
 : "${GITHUB_REPOSITORY:?}" "${GITHUB_RUN_ID:?}" "${IMAGE_PREFIX:?}"
 
 resolve=.mise/tasks/image/resolve
-LOADED="controller api-server ui keycloak mock vm-runner default"
+LOADED="controller api-server keycloak mock vm-runner default"
 
 # The agent images are the ones image.toml makes, as image:ci-build's
 # package_of decides it; every other image is a platform image. Classified
@@ -112,7 +112,7 @@ if [ "${CI_IMAGES_BUILD:-}" = 1 ]; then
 fi
 
 # The jobs that build what is stale, by the names the jobs API gives them:
-# CI_IMAGES_IMAGES_JOB builds controller, api-server, ui, keycloak and the
+# CI_IMAGES_IMAGES_JOB builds controller, api-server, keycloak and the
 # vm-runner; CI_IMAGES_AGENTS_JOB the default image and the mock, which one
 # `oci` run builds together. CI_IMAGES_CHANGES_JOB, which detects the stale
 # images, is always waited on: when it fails, the build jobs that need it never

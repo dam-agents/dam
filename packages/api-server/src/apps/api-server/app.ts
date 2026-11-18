@@ -38,6 +38,7 @@ import {
 } from "./agent-proxies/upgrade.js";
 import type { ApiServerDeps, ApiVariables } from "./deps.js";
 import { mountRoutes } from "./routes/index.js";
+import { createUiRoutes } from "./routes/ui.js";
 import { createApiContextFactory } from "./trpc/context.js";
 import { createTrpcHttpRoutes } from "./trpc/http.js";
 import { createTrpcWsEndpoint } from "./trpc/ws.js";
@@ -146,6 +147,12 @@ export function startApiServerApp(deps: ApiServerDeps) {
       ensureReady,
     }),
   );
+
+  const ui = createUiRoutes({
+    root: config.uiRoot,
+    title: config.brand.title || config.brand.name,
+  });
+  if (ui) app.route("/", ui);
 
   const server = serve(
     {

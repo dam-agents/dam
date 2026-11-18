@@ -4,7 +4,7 @@
 #MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default", E2E_LANE = "1" }
 #USAGE flag "--headed" help="Run Playwright headed"
 #USAGE flag "--full" help="Smoke plus the slow on-demand specs under src/tests/full/; in CI only the nightly run takes them"
-#USAGE flag "--rebuild <components>" help="Comma-separated cluster:build components (controller, api-server, ui, keycloak, agents); asked for when omitted on a terminal"
+#USAGE flag "--rebuild <components>" help="Comma-separated cluster:build components (controller, api-server, keycloak, agents); asked for when omitted on a terminal"
 #USAGE flag "--test <filter>" help="Playwright file/title filter, e.g. prompt-delivery"
 #USAGE flag "--environment <name>" help="Run in this agent's Environment of that name: install what the checkout changed there, then run the suite over the link"
 #USAGE flag "--no-install" help="With --environment: skip the install, and run on what the Environment already has"
@@ -70,7 +70,7 @@ fi
 if [ "$CLUSTER_TARGET" = environment ]; then
   REBUILD=""
 elif [ -z "${usage_rebuild+set}" ] && [ -t 0 ]; then
-  read -r -p "Rebuild which? [controller,api-server,ui,keycloak,agents] (default: none): " REBUILD || true
+  read -r -p "Rebuild which? [controller,api-server,keycloak,agents] (default: none): " REBUILD || true
 fi
 IFS=', ' read -ra COMPONENTS <<< "$REBUILD"
 [ ${#COMPONENTS[@]} -eq 0 ] || mise run cluster:build -- "${COMPONENTS[@]}"

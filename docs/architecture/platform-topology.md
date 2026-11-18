@@ -1,10 +1,10 @@
 # Platform topology
 
-Last verified: 2026-11-16
+Last verified: 2026-11-18
 
 ## Overview
 
-Platform runs as four long-lived subsystems on Kubernetes: a Go **controller** that reconciles the Agent custom resource, a TypeScript **api-server** that brokers user requests and relays agent traffic, per-owner **VM runner** pods whose microVM machines host each agent's **agent-runtime**, paired with a per-agent **gateway** pod as its egress proxy, and a React **ui** served by the api-server.
+Platform runs as four long-lived subsystems on Kubernetes: a Go **controller** that reconciles the Agent custom resource, a TypeScript **api-server** that brokers user requests, relays agent traffic and serves the React **ui**'s static files, per-owner **VM runner** pods whose microVM machines host each agent's **agent-runtime**, and a per-agent **gateway** pod as its egress proxy.
 A machine keeps its durable state on its own disk on the owner's claim, which is what makes the hibernate/wake cycle (stop the machine and scale its gateway to zero, start both back up) safe.
 The controller and api-server never talk to each other directly — they coordinate through the K8s API, using the `spec` / `status` subresource split on each custom resource so that writes never contend.
 
@@ -13,7 +13,6 @@ The controller and api-server never talk to each other directly — they coordin
 ```mermaid
 flowchart LR
   browser[browser]
-  ui[ui]
   api-server[api-server]
   controller[controller]
   subgraph runner[vm-runner pod]
@@ -22,9 +21,7 @@ flowchart LR
   gateway[gateway pod]
   k8s-api[(K8s API)]
 
-  browser -->|HTTP + WS| ui
-  ui -->|tRPC| api-server
-  ui -->|ACP / WS| api-server
+  browser -->|HTTP + WS: tRPC, ACP| api-server
   api-server -->|ACP relay / WS| agent-runtime
   api-server -->|tRPC proxy| agent-runtime
   agent-runtime -->|hello / MCP| api-server
@@ -54,7 +51,8 @@ See [`packages/controller/`](../../packages/controller/).
 A TypeScript server that hosts the user-facing surface and the ACP relay.
 It runs two listeners:
 
-- **Public port** — user-authenticated tRPC, REST (OAuth callbacks, health, version), and the ACP relay WebSocket.
+- **Public port** — the ui's static files, user-authenticated tRPC, REST (OAuth callbacks, health, version), and the ACP relay WebSocket.
+  The ui is served from this port and the API's own origin rather than by a static host in front of it: the shell always revalidates so a deploy lands on the next load, and the content-hashed files under `/assets/` are cached forever.
   The tRPC surface is reachable over two transports on the same router: HTTP (used by the CLI) and a WebSocket endpoint that authenticates on its first frame rather than a URL token, and answers a refused connection's first request with the denial code before closing it, provided that request arrives within a one-second grace window.
   Terms acceptance is enforced per procedure inside the router — everything except the terms procedures refuses until the caller has accepted the current terms — so either transport alone suffices for the full app, first-run acceptance included; the HTTP door additionally rejects gated calls with 412 before they reach the router, which is what the CLI's terms prompt keys off.
   Terms versions ship with deploys (a new version implies a server restart) and acceptance is irrevocable, so per-process acceptance caching can only be stale in the safe direction.
@@ -182,7 +180,7 @@ See [security-and-credentials](security-and-credentials.md).
 
 ### ui
 
-A React + Vite single-page app served by the api-server.
+A React + Vite single-page app, built into the api-server's image and served by it from the API's origin.
 It uses tRPC over a single authenticated WebSocket for resource management, permission flows, and live updates — server-pushed invalidation hints replace list polling, and agent-sourced state follows the agent the same way, so the remaining polls are runtime metrics (a telemetry-store aggregation, not agent-sourced), the agent's background-work report (30 s, only while the agent is awake), skill-install state, Home's approval reads, and a compatibility poll for agents whose runtime predates live updates — those fall back to the HTTP proxy and the passive ACP list, flagged in the session panel with an update action when a newer image exists, until their image is updated — and ACP WebSockets for bidirectional agent communication.
 A tab holds several ACP channels per Agent at once: the live channel for the session on screen, short-lived ones for history replay, and — while a brand-new session's first prompt is on its way — a channel of its own, which either becomes the live one or carries that turn to completion after the user has moved on.
 Permission prompts, tool calls, and streaming output all flow over the live ACP connection.
