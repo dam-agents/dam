@@ -746,11 +746,12 @@ describe("acp-runtime: history replay", () => {
   });
 
   /**
-   * TEST_SCENARIO: A user pastes one image larger than the whole log's byte
-   * cap between short text prompts. Storing it inline would evict every
-   * earlier entry and leave a reload with a dead-end clip. The log must keep
-   * the text history whole by dropping the image bytes to a placeholder,
-   * while a viewer engaged at the time still receives the image live.
+   * TEST_SCENARIO: A runtime with no media store, where a user pastes one
+   * image larger than the whole log's byte cap between short text prompts.
+   * Storing it inline would evict every earlier entry and leave a reload
+   * with a dead-end clip. The log must keep the text history whole by
+   * dropping the image bytes to a placeholder, while a viewer engaged at
+   * the time still receives the image live.
    */
   it("should keep the text history when a pasted image exceeds the log cap", () => {
     const world = createWorld();
@@ -759,7 +760,7 @@ describe("acp-runtime: history replay", () => {
     world.harness().replyTo("session/new", { sessionId: SESSION });
     const carol = world.connect();
     carol.send(frames.loadSession(1, SESSION));
-    const image = "A".repeat(3 * 1024 * 1024);
+    const image = "A".repeat(12 * 1024 * 1024);
     const prompts: unknown[][] = [
       [{ type: "text", text: "HIST-A" }],
       [{ type: "text", text: "HIST-B" }],
@@ -797,9 +798,10 @@ describe("acp-runtime: history replay", () => {
   });
 
   /**
-   * TEST_SCENARIO: A cold fill where the harness replays an image larger
-   * than the log cap, as a Codex session echoes a pasted image back. The log
-   * must drop the bytes the same way, so the turns around it stay loadable.
+   * TEST_SCENARIO: A cold fill in a runtime with no media store, where the
+   * harness replays an image larger than the log cap, as a Codex session
+   * echoes a pasted image back. The log must drop the bytes the same way, so
+   * the turns around it stay loadable.
    */
   it("should keep the text history when a cold fill replays an oversized image", () => {
     const world = createWorld();

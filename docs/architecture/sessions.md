@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-11-14
+Last verified: 2026-11-18
 
 ## Session inside the machine
 
@@ -42,7 +42,12 @@ A change to the [model catalog](harness-config.md#the-model-catalog) recycles a 
 The harness that replaces a recycled one after an env change waits for the listing that change started, so one boot settles into one harness.
 A prompt to a session whose model names a removed provider runs on a catalog model of another granted provider, on the session's own harness; the structured *provider removed* error naming the provider is left for an agent no provider serves.
 
-Each session is an append-only in-memory log (≤2 MB soft cap; inline image and audio bytes give way to a placeholder before any entry is evicted).
+Each session is an append-only in-memory log (≤10 MiB soft cap), evicted oldest entry first.
+The cap counts text only: the bytes of an inline image or audio block, whoever sent it, go to the runtime's **media cache** on the machine's disk as the entry is appended, and the log keeps the block with a key in their place.
+Live fan-out sends the frame as it came, and every replay — a hot or cold load, its tail, a page of older history — and every read of the log as data puts the bytes back from the cache, so an image shows after a reload however large the Session is.
+The cache is a folder of the home's cache directory, one sub-folder per runtime and Session, one file per distinct block content: a file goes once no entry refers to it, a Session's folder goes when its log does, and a runtime start deletes what an earlier process left.
+It is the same for every harness, with or without a session-history provider, since a cold fill brings the bytes back from the harness's history or replay and writes them again.
+Only where the bytes are really gone does the block show as the text `[image not kept in history]` (or `audio`): the cache could not write them, and the log then gives them up before any entry is evicted, or the machine's disk guard emptied the cache folder when the disk ran low.
 Every channel keeps a per-session cursor; new events append to the log and fan out to engaged channels that have not yet seen them.
 Every entry the runtime appends live carries the wall-clock time it was written, as platform metadata on the frame; an entry filled in from a replay carries only what its source supplied, never a time the runtime invented.
 From a session-history provider that source can also supply the harness's own name for the prompt a reply answered — the prompt id by which [agent-telemetry](agent-telemetry.md#progressive-disclosure) joins a reply to its Turn once the Session is loaded.

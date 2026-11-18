@@ -85,6 +85,7 @@ import {
 import type { AgentProcess } from "../../infrastructure/agent-process.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 import type { HistoryProvider } from "../../infrastructure/history-provider.js";
+import type { SessionMediaStore } from "../../infrastructure/session-media-store.js";
 import type { SessionCutProvider } from "../../infrastructure/session-cut-provider.js";
 import type { PlatformSessionOf } from "../../infrastructure/terminal-session-pins.js";
 import {
@@ -140,7 +141,7 @@ const CALL_DRAIN_MS = 10 * 1000;
 const DEFAULT_WARM_START_TIMEOUT_MS = 15 * 1000;
 const DEFAULT_SPAWN_WORK_TIMEOUT_MS = 5 * 1000;
 
-const DEFAULT_LOG_BYTES_CAP = 2 * 1024 * 1024;
+const DEFAULT_LOG_BYTES_CAP = 10 * 1024 * 1024;
 
 const DEFAULT_REPLAY_TAIL_EVENTS = 200;
 
@@ -211,6 +212,7 @@ export interface AcpRuntimeDeps {
   onPrompt?: () => void;
   beforeFirstPrompt?: (sessionId: string) => Promise<unknown>;
   logBytesCap?: number;
+  sessionMedia?: SessionMediaStore;
   replayTailEvents?: number;
   harnessLoadTimeoutMs?: number;
   historyProvider?: HistoryProvider;
@@ -640,6 +642,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     logBytesCap,
     replayTailEvents: deps.replayTailEvents ?? DEFAULT_REPLAY_TAIL_EVENTS,
     engagedChannelsFor,
+    ...(deps.sessionMedia && { media: deps.sessionMedia }),
   });
 
   const pendingRequests = createPendingAgentRequests({
