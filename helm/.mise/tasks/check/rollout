@@ -194,6 +194,13 @@ try {
       reads: 1,
     },
     {
+      name: "a marker that names another store recreates",
+      m: { apiVersion: "v1", kind: "ConfigMap", metadata: { name: "platform-agent-store", namespace: agentNamespace }, data: { store: "crd" } },
+      live: true,
+      strategy: recreate,
+      reads: 1,
+    },
+    {
       name: "an install on the custom resources reads no marker",
       m: null,
       live: true,
@@ -224,11 +231,22 @@ try {
   marker = null;
   forbidden = true;
   const denied = await render({ live: true });
+  const refusal = "an identity that may not read the marker fails the render";
   if (denied.ok) {
-    console.error("FAIL an identity that may not read the marker rendered, but the ordering must fail closed");
+    console.error(`FAIL ${refusal}, but the ordering must fail closed`);
+    failed++;
+  } else if (!denied.output.includes("forbidden") || markerReads !== 1) {
+    console.error(`FAIL ${refusal}, but not on its own read:\n      ${denied.output.replaceAll("\n", "\n      ")}`);
     failed++;
   } else {
-    console.log("ok   an identity that may not read the marker fails the render");
+    console.log(`ok   ${refusal}`);
+  }
+  const unread = await render({ live: true, set: ["--set", "agentStore.authority=contract", "--set", "agentStore.contract.emptyArchive=true"] });
+  if (!unread.ok || markerReads !== 0) {
+    console.error(`FAIL an install that reads no custom resource renders with a forbidden marker read: reads=${markerReads} ${unread.output ?? ""}`);
+    failed++;
+  } else {
+    console.log("ok   an install that reads no custom resource renders with a forbidden marker read");
   }
 
   process.exitCode = failed === 0 ? 0 : 1;

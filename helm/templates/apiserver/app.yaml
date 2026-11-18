@@ -81,7 +81,9 @@ spec:
   # names Postgres, a replica on the custom resources can no longer serve that
   # store, so a later release surges and keeps serving. `lookup` finds no marker
   # in an offline render (`helm template`, a plan with no cluster), which asks
-  # for Recreate: the safe side.
+  # for Recreate: the safe side. `helm rollback` replays a stored manifest
+  # instead of rendering, so it carries what that render saw: never replay a
+  # switched release across a rollback of the store.
   strategy:
     type: Recreate
     rollingUpdate: null
