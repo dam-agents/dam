@@ -332,7 +332,7 @@ jobs:
           printf '::notice::%s\n' "$(printf '%s' "$out" | tr '\n' ' ')"
 
   build-images:
-    # One job per arch builds the stale ones of the five images side by side;
+    # One job per arch builds the stale ones of the four images side by side;
     # see image:ci-build. merge-images tags the rest. A PR builds its images in
     # e2e instead, so image:resolve lists none for this job: see
     # e2e:ci-images. Only a v* tag builds them for arm64 (image:resolve's
@@ -393,13 +393,13 @@ jobs:
           path: *go-paths
           key: *go-key
           restore-keys: *go-restore-keys
-      - if: ${{ contains(fromJSON(needs.changes.outputs.images), 'ui') || contains(fromJSON(needs.changes.outputs.images), 'api-server') || contains(fromJSON(needs.changes.outputs.images), 'keycloak') }}
+      - if: ${{ contains(fromJSON(needs.changes.outputs.images), 'api-server') || contains(fromJSON(needs.changes.outputs.images), 'keycloak') }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: *pnpm-store
           key: *pnpm-key
           restore-keys: *pnpm-restore-keys
-      - if: ${{ contains(fromJSON(needs.changes.outputs.images), 'ui') || contains(fromJSON(needs.changes.outputs.images), 'api-server') || contains(fromJSON(needs.changes.outputs.images), 'keycloak') }}
+      - if: ${{ contains(fromJSON(needs.changes.outputs.images), 'api-server') || contains(fromJSON(needs.changes.outputs.images), 'keycloak') }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: *pnpm-verified
@@ -471,14 +471,14 @@ jobs:
           COMPOSITE: ${{ needs.appversion.outputs.composite }}
           SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
           # Every image carries its source-sha tag: image:resolve reuses by it.
-          SOURCE_SHA_TAGGED: controller vm-runner api-server ui keycloak
+          SOURCE_SHA_TAGGED: controller vm-runner api-server keycloak
           # The chart pins the runner by digest: a rebuild of the same content
           # keeps it, so no runner rolls.
           CONTENT_REUSED: vm-runner
           # keycloak's merge takes minutes of copying inside the registry; its
           # registry requests are logged to find where the time goes.
           CI_MERGE_DEBUG: keycloak
-        run: .mise/tasks/image/ci-merge "$RUNNER_TEMP/digests" controller vm-runner api-server ui keycloak
+        run: .mise/tasks/image/ci-merge "$RUNNER_TEMP/digests" controller vm-runner api-server keycloak
 
   build-agents:
     # One job per arch builds the agents; see image:ci-build. The amd64 job

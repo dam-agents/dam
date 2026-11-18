@@ -646,6 +646,20 @@ apiserver_url() {
   || { echo "the api-server is not told its own Service address: $(apiserver_url)" >&2; exit 1; }
 [ "$(apiserver_url --set apiServer.port=4100 --set fullnameOverride=acme)" = "http://acme-apiserver.default.svc.cluster.local:4100" ] \
   || { echo "the api-server's own Service address follows neither its port nor the release name" >&2; exit 1; }
+# The ui Service survives as an alias, not a component: the public installs
+# route the app host to `<release>-ui` with `targetPort: http` from Routes kept
+# outside this chart, and those are not applied with it, so a Service under
+# that name must still resolve to the api-server pods on the same port name.
+# It offers the api-server's own port and selects the same pods, so the app
+# host of such an install follows the api-server's rollout instead of pointing
+# at a Service nobody creates.
+ui_alias=$(helm template platform . "${COMMON[@]}" --show-only templates/ui-service.yaml |
+  yq -r '.metadata.name + " " + ([.spec.ports[] | .name + ":" + (.port | tostring) + "->" + .targetPort] | join(",")) + " " +
+    (.spec.selector | to_entries | sort_by(.key) | map(.key + "=" + .value) | join(","))')
+[ "$ui_alias" = "platform-ui http:4000->http app.kubernetes.io/component=apiserver,app.kubernetes.io/instance=platform" ] \
+  || { echo "the ui Service alias does not offer the port name and pods an external Route names: $ui_alias" >&2; exit 1; }
+[ "$(helm template platform . "${COMMON[@]}" --set fullnameOverride=acme --set apiServer.port=4100 --show-only templates/ui-service.yaml | yq -r '.metadata.name + " " + (.spec.ports[0].port | tostring)')" = "acme-ui 4100" ] \
+  || { echo "the ui Service alias follows neither the release name nor the api-server's port an external Route names" >&2; exit 1; }
 # The deployment's CurveBender key reaches the api-server only when the operator
 # sets one, and then only through a secretKeyRef: unset, no env at all, so the
 # api-server offers no shared provider; an inline key lands in the credentials

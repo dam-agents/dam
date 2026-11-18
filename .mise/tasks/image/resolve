@@ -72,7 +72,7 @@ PNPM_ROOT="package.json pnpm-workspace.yaml pnpm-lock.yaml packages/dev-config"
 # The images build.yml's build-images job builds, one job per arch of
 # image_archs. A Mac's cluster:install builds these five itself and never
 # pulls them, so only a v* tag, for release consumers, builds them for arm64.
-IMAGES="controller ui api-server keycloak vm-runner"
+IMAGES="controller api-server keycloak vm-runner"
 
 # Components whose chart or kit tag is rewritten from a source sha by pin-tags:
 # the default image, keycloak, the vm-runner and every workload, since a starter kit
@@ -128,8 +128,7 @@ own_paths() {
     vm-runner) echo "packages/vm-runner .mise/tasks/image/name-layout .mise/config.toml mise.lock" ;;
     # Each TS image's own package and its workspace dependencies, transitively.
     controller) echo "packages/controller $PACK_TOOLING" ;;
-    ui) echo "packages/ui packages/agent-runtime-api packages/api-server-api $PNPM_ROOT $PACK_TOOLING" ;;
-    api-server) echo "packages/api-server packages/agent-runtime-api packages/api-server-api packages/db packages/e2e/agents/mock-api $PNPM_ROOT $PACK_TOOLING" ;;
+    api-server) echo "packages/api-server packages/ui packages/agent-runtime-api packages/api-server-api packages/db packages/e2e/agents/mock-api $PNPM_ROOT $PACK_TOOLING" ;;
     # keycloak = upstream Keycloak, pinned in the root config, + the
     # Keycloakify theme and the Environments extension, packed onto it by image:pack. The theme build also
     # depends on dev-config and (any) lockfile change — lockfile and root
@@ -146,7 +145,7 @@ base_of() {
   if is_workload "$1"; then echo "default"; return; fi
   case "$1" in
     mock) echo "default" ;;
-    controller|ui|api-server|keycloak|vm-runner|default) echo "" ;;
+    controller|api-server|keycloak|vm-runner|default) echo "" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
 }
@@ -242,11 +241,11 @@ self_check() {
   has "$(effective_paths gepa)" packages/agents/.mise/lib/agents-md.sh
   chk "$(base_of keycloak)" ""
   chk "$(base_of controller)" ""
-  chk "$(base_of ui)" ""
   chk "$(base_of api-server)" ""
   has "$(effective_paths controller)" packages/controller
-  has "$(effective_paths ui)" packages/api-server-api
-  has "$(effective_paths ui)" pnpm-lock.yaml
+  has "$(effective_paths api-server)" packages/ui
+  has "$(effective_paths api-server)" packages/api-server-api
+  has "$(effective_paths api-server)" pnpm-lock.yaml
   has "$(effective_paths api-server)" packages/db
   has "$(effective_paths api-server)" .mise/tasks/image/pack
   chk "$(base_of vm-runner)" ""
@@ -284,7 +283,7 @@ archs=["amd64","arm64"]'
   has "$out" '"keycloak":"'
   has "$out" '"vm-runner":"'
   has "$out" '"mock":"'
-  has "$out" 'images=["controller","ui","api-server","keycloak","vm-runner"]'
+  has "$out" 'images=["controller","api-server","keycloak","vm-runner"]'
   has "$out" 'mock=true'
   # PRs never build workloads — the EVENT gate short-circuits before any
   # resolve; NO_REUSE keeps the other components' resolves hermetic.

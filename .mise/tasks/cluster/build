@@ -2,7 +2,7 @@
 #MISE description="Rebuild images, load them into k3s and restart what runs them"
 #USAGE flag "--environment <name>" help="Rebuild them for this agent's Environment of that name"
 #USAGE flag "--name <name>" help="Rebuild for this install (default: this worktree's)"
-#USAGE arg "<component>..." var=#true help="controller, api-server, ui, keycloak, or agents: every agent image the cluster has deployed"
+#USAGE arg "<component>..." var=#true help="controller, api-server, keycloak, or agents: every agent image the cluster has deployed"
 set -eo pipefail
 eval "components=($usage_component)"
 
@@ -68,7 +68,6 @@ for c in "${components[@]}"; do
       continue
       ;;
     controller) pkg=controller deploy="$CLUSTER_RELEASE-controller" timeout=60s ;;
-    ui) pkg=ui deploy="$CLUSTER_RELEASE-ui" timeout=60s ;;
     # Readiness gates on the first Keycloak JWKS fetch (warm-up gives up at
     # ~240s), so a fresh pod whose mesh egress is still converging needs
     # headroom past that bound before it reports Ready.

@@ -8,9 +8,9 @@
 {{- /*
   Resolve override hosts. When `urls.{service}` is set, the bundled Ingress
   routes that hostname instead of generating convention-based rules for
-  that service. UI and API share a single host (path-based routing splits
-  `/api/*` to the api-server and everything else to the UI), so an `urls.api`
-  override is no longer needed and is treated as a UI override fallback.
+  that service. The browser app and the API share a single host, served by
+  the api-server, so an `urls.api` override is no longer needed and is
+  treated as a UI override fallback.
 */ -}}
 {{- $uiHost := "" -}}
 {{- if or .Values.urls.ui .Values.urls.api -}}
@@ -22,7 +22,6 @@
 {{- end -}}
 {{- $shareHost := include "platform.url.host" (include "platform.url.share" .) -}}
 {{- $contentHost := include "platform.url.host" (include "platform.url.content" .) -}}
-{{- $uiSvc := include "platform.ui.fullname" . -}}
 {{- $apiSvc := include "platform.apiserver.fullname" . -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -65,7 +64,7 @@ spec:
     - host: {{ $uiHost }}
       http:
         paths:
-          {{- include "platform.ingress.appPaths" (dict "uiSvc" $uiSvc "apiSvc" $apiSvc) | nindent 10 }}
+          {{- include "platform.ingress.appPaths" $ | nindent 10 }}
     {{- end }}
     {{- if and .Values.keycloak.enabled $keycloakHost }}
     - host: {{ $keycloakHost }}
@@ -98,7 +97,7 @@ spec:
     - host: {{ include "platform.url.host" (include "platform.backchannel.url" (dict "root" $)) }}
       http:
         paths:
-          {{- include "platform.ingress.appPaths" (dict "uiSvc" $uiSvc "apiSvc" $apiSvc) | nindent 10 }}
+          {{- include "platform.ingress.appPaths" $ | nindent 10 }}
     {{- if .Values.keycloak.enabled }}
     - host: {{ include "platform.url.host" (include "platform.backchannel.url" (dict "root" $ "sub" "keycloak")) }}
       http:
@@ -121,7 +120,7 @@ spec:
     - host: {{ $domain }}
       http:
         paths:
-          {{- include "platform.ingress.appPaths" (dict "uiSvc" $uiSvc "apiSvc" $apiSvc) | nindent 10 }}
+          {{- include "platform.ingress.appPaths" $ | nindent 10 }}
     {{- end }}
     {{- if and $.Values.keycloak.enabled (not $keycloakHost) }}
     - host: {{ printf "keycloak.%s" $domain }}

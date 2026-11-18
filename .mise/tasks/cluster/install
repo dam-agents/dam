@@ -107,7 +107,7 @@ no_mesh_warning
 
 # An Environment builds only what the registry lacks, when it loads them.
 if [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ "$CLUSTER_TARGET" != environment ]; then
-  mise run //packages/controller:oci ::: //packages/api-server:oci ::: //packages/ui:oci ::: //packages/keycloak-theme:oci
+  mise run //packages/controller:oci ::: //packages/api-server:oci ::: //packages/keycloak-theme:oci
 fi
 
 LIMA_TEMPLATE="$usage_lima_template"
@@ -665,7 +665,7 @@ else
     RUNNER_IMAGE_BUILT=1
   fi
 
-  COMPONENTS=(controller api-server ui keycloak vm-runner)
+  COMPONENTS=(controller api-server keycloak vm-runner)
   # An Environment pulls each image the registry has for this checkout's
   # source itself, under the local tag the chart runs, rather than this agent
   # pulling it and streaming it over the link; only an image the registry
@@ -688,7 +688,7 @@ else
         echo "$c changed: building it here"
         if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
           case "$c" in
-            controller|api-server|ui|vm-runner) task="//packages/$c:oci" ;;
+            controller|api-server|vm-runner) task="//packages/$c:oci" ;;
             keycloak) task="//packages/keycloak-theme:oci" ;;
             *) task="//packages/agents:oci" ;;
           esac
@@ -1316,7 +1316,7 @@ elif [ "$CLUSTER_TARGET" = environment ]; then
   # shellcheck disable=SC2013
   for c in $(sort -u "$ENV_CHANGED"); do
     case "$c" in
-      controller|ui|keycloak) deploy="$CLUSTER_RELEASE-$c" ;;
+      controller|keycloak) deploy="$CLUSTER_RELEASE-$c" ;;
       api-server) deploy="$CLUSTER_RELEASE-apiserver" ;;
       vm-runner)
         # The runners, the node image cache and the release stager all run

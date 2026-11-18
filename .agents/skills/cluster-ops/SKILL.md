@@ -13,7 +13,7 @@ In a Claude Code on the web session (`CLAUDE_CODE_REMOTE=true`), read [ccweb](..
 The common ones:
 
 - `cluster:install` — create the k3s VM, build images, install cert-manager + the Platform chart (upgrades in place if already installed)
-- `cluster:build -- <controller|api-server|ui|keycloak|agents>…` — rebuild those images and restart just their pods (`agents`: every deployed agent image)
+- `cluster:build -- <controller|api-server|keycloak|agents>…` — rebuild those images and restart just their pods (`agents`: every deployed agent image; a UI change rebuilds `api-server`, which serves the UI)
 - `cluster:status` — pods and cluster state
 - `cluster:install -- --no-mesh` — local-only install with no Istio dataplane, for kernels that cannot run ambient (see below)
 - `cluster:kubectl -- logs -l app.kubernetes.io/component=apiserver --all-containers` — api-server pod logs
@@ -163,7 +163,7 @@ The cluster tasks load the tools' PATH from the image's mise themselves; in a sh
 
 - `mise run e2e` — full from-scratch run: nuke the test VM, install a fresh cluster, run specs, tear down (the CI path)
 - `mise run e2e:loop` — fast rerun against a warm test cluster: bootstrap once if missing, optionally rebuild components, wipe data, run specs.
-  Options: `--headed --full --rebuild=controller,api-server,ui,keycloak,agents --test=<filter>` (`--rebuild=` rebuilds nothing without asking); in an Environment also `--no-install`
+  Options: `--headed --full --rebuild=controller,api-server,keycloak,agents --test=<filter>` (`--rebuild=` rebuilds nothing without asking); in an Environment also `--no-install`
 - `mise run e2e:reset` — data wipe only: drop+recreate the platform DB, delete agents (CMs/sts/pods/PVCs) and VM runners, clear stored Playwright auth.
   Leaves the cluster running
 

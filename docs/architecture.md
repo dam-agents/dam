@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-11-11
+Last verified: 2026-11-18
 
 ## System context
 
@@ -14,7 +14,6 @@ flowchart LR
   github[GitHub]
 
   subgraph cluster[Platform install]
-    ui[ui]
     api-server[api-server]
     controller[controller]
     keycloak[keycloak]
@@ -29,8 +28,7 @@ flowchart LR
     end
   end
 
-  user -->|HTTP + WS| ui
-  ui -->|tRPC + ACP/WS| api-server
+  user -->|HTTP + WS: tRPC, ACP| api-server
   user -->|OIDC| keycloak
 
   slack-user <-->|Slack API| api-server
