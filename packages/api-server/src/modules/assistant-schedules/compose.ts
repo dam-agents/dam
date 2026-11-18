@@ -17,6 +17,7 @@ import {
 
 export interface SecurityChecks extends SecurityChecksService {
   ensure(): Promise<void>;
+  refresh(): Promise<void>;
   current(): Promise<SecurityCheckReport | null>;
 }
 
@@ -32,6 +33,9 @@ const toReport = (
         reportedAt: alert.reportedAt,
       };
 
+/* UNIT_BOUNDARY_DESCRIPTION: the owners whose check this replica already brought up to date. The task's text changes only with a release, and a release restarts the replica, so one pass per owner in a replica's life is enough and every later request pays nothing. */
+const refreshedOwners = new Set<string>();
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the security check for one owner: the shared
  * assistant Schedule service bound to the security check's definition, with
@@ -45,7 +49,10 @@ export function composeSecurityChecksForOwner(deps: {
   enabled: () => Promise<boolean>;
   assistantAgentId: () => Promise<string | null>;
   ownsAgent: (agentId: string) => Promise<boolean>;
-  schedules: Pick<SchedulesService, "get" | "createRRule" | "delete">;
+  schedules: Pick<
+    SchedulesService,
+    "get" | "createRRule" | "updateRRule" | "delete"
+  >;
 }): SecurityChecks {
   const schedule = createAssistantSchedule({
     definition: securityCheckSchedule,
@@ -62,6 +69,11 @@ export function composeSecurityChecksForOwner(deps: {
   return {
     enable: () => schedule.enable(),
     ensure: () => schedule.ensure(),
+    refresh: async () => {
+      if (refreshedOwners.has(deps.owner)) return;
+      await schedule.refresh();
+      refreshedOwners.add(deps.owner);
+    },
     disable: () => schedule.disable(),
     report: async (input) =>
       toReport(await schedule.report(input.problems, { update: input.update })),

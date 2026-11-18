@@ -774,6 +774,17 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ? createTelemetryService({ reader: telemetryReader, listOwnedAgents })
       : createDisabledTelemetryService();
 
+    /* UNIT_BOUNDARY_DESCRIPTION: a release can change the procedure of the security check, and a Schedule made before it still holds the old task, so a person's first request to a replica puts the current text over it. It rides on the assistant's provisioning, which nothing waits for; a failure is written here because that guard reports none, and the next request tries again. */
+    const refreshSecurityCheck = async (): Promise<void> => {
+      try {
+        await securityChecks.refresh();
+      } catch (err) {
+        process.stderr.write(
+          `[security-check] ${user.sub}: could not bring the check's task up to date: ${(err as Error).message}\n`,
+        );
+      }
+    };
+
     /* UNIT_BOUNDARY_DESCRIPTION: the assistant is on for everyone who has not turned it off, so a person's first request gives them one — once, and never again after they delete theirs. It runs behind the replica's guard and is never awaited: a create takes as long as it takes, the person's page is answered without it, and the UI picks the Agent up from the agents live hint. An install pinned off pays nothing at all, and one that offers it reads the person's record first, which is one indexed read for anyone who already has it. A request from an API key or from an Agent's own credentials is not a person arriving, so it gives nothing. */
     const provisionAssistant = (): void => {
       if (config.featureModes.dambledore === "off") return;
@@ -787,6 +798,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         await ensureAssistant();
         if (config.featureModes["security-check"] === "on")
           await securityChecks.ensure();
+        await refreshSecurityCheck();
       });
     };
 

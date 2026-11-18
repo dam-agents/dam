@@ -143,7 +143,7 @@ Turning it on gives the assistant an ordinary weekly [Schedule](schedules.md) na
 The record is one row per person and kind of the Schedules the platform gave their assistant, so another default Schedule is a new kind with its own name, recurrence and task, not a new table.
 Its minute of the week is derived from the owner, so one person's check keeps its time while an install's checks do not all wake their Agents together.
 A person with no assistant gets nothing, and the switch says so and stays off.
-The Schedule is the owner's from then on: they change its time or its task, pause it, or delete it, with the controls every Schedule has.
+The Schedule is the owner's from then on: they change its time, pause it, or delete it, with the controls every Schedule has; its task stays the platform's.
 Turning the switch on again makes a Schedule only when the one the record names is gone.
 Turning it off deletes that Schedule and the record, and the alert goes with them.
 An install that pins the feature on has no switch, so it gives each person the Schedule once, after their assistant exists; one they delete stays deleted, and a flag written off takes nothing away.
@@ -154,7 +154,10 @@ Giving and taking away run one at a time per person, so two requests never make 
 **The platform checks nothing itself.**
 The Schedule's task holds the whole procedure, since only this run needs it: read the advisory, list every agent's editors, channels, connections, network rules and satellites through the CLI, ask each agent that others steer what its instructions say, and change nothing.
 The skill is not changed for it; what counts as a problem stays in the advisory, which the task points to.
-The task is written when the Schedule is made and is the owner's to edit, so a later release's wording reaches a person only when their Schedule is made again.
+The task is the platform's text and not the owner's, because a release can change the procedure and a Schedule made before it would keep the old one.
+So a person's first request to a replica puts the current text over whatever their Schedule holds, an edit of their own included, and sends its name, its time and its session mode back as they are.
+A Schedule whose task is current is not written, and a replica looks once per person, so later requests pay nothing.
+The editor of a Schedule does not lock the task, so an owner who edits it loses the edit at the next release.
 The assistant describes each problem in that Session, as what in the setup goes against the advisory and what the safer setup is, and offers to fix it.
 It then reports to the platform with `dam security-check report`, one short title per problem, over the [Connection](connection-presets.md#platform-preset-this-install-itself) that lets it act as its owner.
 The record keeps only the last report, and a report with no problem clears it.
