@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { rewriteAuthError } from "../../domain/mappers.js";
 import { tailStart } from "../../domain/replay-tail.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
+import type { SessionMediaStore } from "../../infrastructure/session-media-store.js";
 import { withPlatform } from "../../domain/platform-meta.js";
 
 interface LogEntry {
@@ -10,6 +11,7 @@ interface LogEntry {
   line: string;
   bytes: number;
   binary: boolean;
+  media: string[];
 }
 
 interface SessionLog {
@@ -18,6 +20,7 @@ interface SessionLog {
   nextSeq: number;
   totalBytes: number;
   truncated: boolean;
+  mediaRefs: Map<string, number>;
   metadata: CachedMetadata;
 }
 
@@ -73,6 +76,7 @@ export interface SessionTranscriptDeps {
   logBytesCap: number;
   replayTailEvents: number;
   engagedChannelsFor: (sessionId: string) => Iterable<ClientChannel>;
+  media?: SessionMediaStore;
 }
 
 function encodePageCursor(generation: string, seq: number): string {
@@ -92,27 +96,82 @@ function decodePageCursor(
 
 const INLINE_BINARY_RE = /"data"\s*:\s*"/;
 
-function withoutBinary(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(withoutBinary);
+type MediaBlock = Record<string, unknown> & { type: "image" | "audio" };
+
+function mapMediaBlocks(
+  value: unknown,
+  visit: (block: MediaBlock) => unknown,
+): unknown {
+  if (Array.isArray(value))
+    return value.map((inner) => mapMediaBlocks(inner, visit));
   if (typeof value !== "object" || value === null) return value;
   const block = value as Record<string, unknown>;
-  if (
-    (block.type === "image" || block.type === "audio") &&
-    typeof block.data === "string"
-  ) {
-    return { type: "text", text: `[${block.type} not kept in history]` };
-  }
+  if (block.type === "image" || block.type === "audio")
+    return visit(block as MediaBlock);
   return Object.fromEntries(
-    Object.entries(block).map(([key, inner]) => [key, withoutBinary(inner)]),
+    Object.entries(block).map(([key, inner]) => [
+      key,
+      mapMediaBlocks(inner, visit),
+    ]),
   );
 }
 
-function stripBinary(line: string): string {
+function rewriteMedia(
+  line: string,
+  visit: (block: MediaBlock) => unknown,
+): string {
+  let frame: unknown;
   try {
-    return JSON.stringify(withoutBinary(JSON.parse(line)));
+    frame = JSON.parse(line);
   } catch {
     return line;
   }
+  return JSON.stringify(mapMediaBlocks(frame, visit));
+}
+
+function placeholderOf(block: MediaBlock): unknown {
+  return { type: "text", text: `[${block.type} not kept in history]` };
+}
+
+function stripBinary(line: string): string {
+  return rewriteMedia(line, (block) =>
+    typeof block.data === "string" ? placeholderOf(block) : block,
+  );
+}
+
+function offloadMedia(
+  line: string,
+  put: (data: string) => string | null,
+): { line: string; keys: string[]; inline: boolean } {
+  const keys: string[] = [];
+  let inline = false;
+  const offloaded = rewriteMedia(line, (block) => {
+    if (typeof block.data !== "string") return block;
+    const key = put(block.data);
+    if (key === null) {
+      inline = true;
+      return block;
+    }
+    keys.push(key);
+    const { data: _data, ...rest } = block;
+    return { ...rest, mediaRef: key };
+  });
+  return { line: keys.length > 0 ? offloaded : line, keys, inline };
+}
+
+function inlineMedia(
+  line: string,
+  keys: ReadonlySet<string>,
+  get: (key: string) => string | null,
+): string {
+  return rewriteMedia(line, (block) => {
+    if (typeof block.mediaRef !== "string" || !keys.has(block.mediaRef))
+      return block;
+    const data = get(block.mediaRef);
+    if (data === null) return placeholderOf(block);
+    const { mediaRef: _mediaRef, ...rest } = block;
+    return { ...rest, data };
+  });
 }
 
 function withPlatformMeta(
@@ -139,11 +198,18 @@ function withPlatformMeta(
  * UNIT_BOUNDARY_DESCRIPTION: Keeps each session's message history and tracks how
  * far every attached channel has read it, so a channel that joins late or
  * reconnects receives only what it missed. Sequence numbers, the size cap,
- * eviction, and the clip accounting all stay inside. Over the cap, the
- * oldest entry still holding inline image or audio bytes first has each
- * replaced by a text placeholder, and whole entries are evicted only once
- * none is left, so one large paste cannot push the text history out; live
- * fan-out still carries the bytes. A fresh viewer that opts
+ * eviction, and the clip accounting all stay inside. The bytes of an inline
+ * image or audio block go to the Session's media store as the entry is
+ * appended, and the entry keeps the store's key in their place, so the cap
+ * counts text and a large paste neither fills memory nor pushes the text
+ * history out; every replay and every read of the lines puts the bytes back
+ * from the store, and live fan-out sends the frame as it came. A block whose
+ * bytes the store could not keep stays inline, and over the cap the oldest
+ * entry still holding inline bytes first has each replaced by a text
+ * placeholder, before any whole entry is evicted; a block the store has lost
+ * by the time it is replayed shows the same placeholder. A file is dropped
+ * once no entry of its Session refers to it, and a forgotten Session takes
+ * its folder with it. A fresh viewer that opts
  * into the tail gets only the newest replayTailEvents entries, moved back so
  * the cut never splits a run of one message's chunks or parts a tool call
  * from its updates, since the client would show half a sentence or drop the
@@ -176,6 +242,7 @@ export function createSessionTranscript(
         nextSeq: 1,
         totalBytes: 0,
         truncated: false,
+        mediaRefs: new Map(),
         metadata: { cached: false },
       };
       sessionLogs.set(sessionId, log);
@@ -183,16 +250,50 @@ export function createSessionTranscript(
     return log;
   }
 
-  function appendToLog(sessionId: string, line: string): number {
+  function keepMedia(
+    sessionId: string,
+    log: SessionLog,
+    line: string,
+  ): { line: string; media: string[]; binary: boolean } {
+    const media = deps.media;
+    if (!INLINE_BINARY_RE.test(line)) return { line, media: [], binary: false };
+    if (media === undefined) return { line, media: [], binary: true };
+    const kept = offloadMedia(line, (data) => media.put(sessionId, data));
+    for (const key of kept.keys)
+      log.mediaRefs.set(key, (log.mediaRefs.get(key) ?? 0) + 1);
+    return { line: kept.line, media: kept.keys, binary: kept.inline };
+  }
+
+  function releaseMedia(
+    sessionId: string,
+    log: SessionLog,
+    entry: LogEntry,
+  ): void {
+    for (const key of entry.media) {
+      const left = (log.mediaRefs.get(key) ?? 1) - 1;
+      if (left > 0) {
+        log.mediaRefs.set(key, left);
+        continue;
+      }
+      log.mediaRefs.delete(key);
+      deps.media?.drop(sessionId, key);
+    }
+  }
+
+  function lineOf(sessionId: string, entry: LogEntry): string {
+    const media = deps.media;
+    if (entry.media.length === 0 || media === undefined) return entry.line;
+    return inlineMedia(entry.line, new Set(entry.media), (key) =>
+      media.get(sessionId, key),
+    );
+  }
+
+  function appendToLog(sessionId: string, frame: string): number {
     const log = getOrCreateLog(sessionId);
+    const { line, media, binary } = keepMedia(sessionId, log, frame);
     const bytes = line.length;
     const seq = log.nextSeq++;
-    log.entries.push({
-      seq,
-      line,
-      bytes,
-      binary: INLINE_BINARY_RE.test(line),
-    });
+    log.entries.push({ seq, line, bytes, binary, media });
     log.totalBytes += bytes;
     while (log.totalBytes > deps.logBytesCap) {
       const heavy = log.entries.find((entry) => entry.binary);
@@ -206,6 +307,7 @@ export function createSessionTranscript(
       if (log.entries.length <= 1) break;
       const evicted = log.entries.shift()!;
       log.totalBytes -= evicted.bytes;
+      releaseMedia(sessionId, log, evicted);
       log.truncated = true;
     }
     return seq;
@@ -283,7 +385,7 @@ export function createSessionTranscript(
       for (const entry of pending) {
         if (!channel.isOpen()) break;
         channel.send(
-          withPlatformMeta(rewriteAuthError(entry.line), {
+          withPlatformMeta(rewriteAuthError(lineOf(sessionId, entry)), {
             replayFor: opts?.replayFor,
           }),
         );
@@ -314,7 +416,7 @@ export function createSessionTranscript(
       for (const entry of page) {
         if (!channel.isOpen()) break;
         channel.send(
-          withPlatformMeta(rewriteAuthError(entry.line), {
+          withPlatformMeta(rewriteAuthError(lineOf(sessionId, entry)), {
             replayFor: opts?.replayFor,
           }),
         );
@@ -350,7 +452,7 @@ export function createSessionTranscript(
       const log = sessionLogs.get(sessionId);
       if (!log) return { frames: [], truncated: false };
       return {
-        frames: log.entries.map((entry) => entry.line),
+        frames: log.entries.map((entry) => lineOf(sessionId, entry)),
         truncated: log.truncated,
       };
     },
@@ -360,7 +462,7 @@ export function createSessionTranscript(
     },
 
     forget(sessionId) {
-      sessionLogs.delete(sessionId);
+      if (sessionLogs.delete(sessionId)) deps.media?.forget(sessionId);
       for (const cursors of channelCursors.values()) cursors.delete(sessionId);
     },
 
@@ -374,6 +476,7 @@ export function createSessionTranscript(
 
     clear() {
       sessionLogs.clear();
+      deps.media?.clear();
       channelCursors.clear();
     },
   };

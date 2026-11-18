@@ -237,6 +237,8 @@ The home holds:
   The marker of a session the harness has not stored yet also keeps the turn's prompt, the only copy that survives the process: recovery resumes such a session first, and only a scheduled one whose load the harness answers with not found is re-run from it in a fresh session, since that harness has nothing to resume.
   The directory also holds the **run-results document**: for each `cli_run` Session and each Session a one-time run reports from, the newest finished run's outcome — prompt identity, stop reason, accumulated assistant text (size-capped per run, marked when cut) — written when the run ends so a detached headless caller can read the result after the in-memory session log is reaped.
   One record per Session, newest turn wins; it goes with its Session or, under a byte cap of its own with the same evict-oldest rule, when another write needs the room ([cli](cli.md#headless-runs) owns the concept).
+- **`.cache/platform-session-media/`** — the agent-runtime's media cache: the image and audio bytes of the Sessions its in-memory logs hold, so the logs keep text only ([sessions](sessions.md#session-inside-the-machine)).
+  It is rebuilt from the harness's history whenever a log is, so a runtime start deletes it, and the disk guard may empty it as any home cache.
 - **`.import-staging-*/`** — transient extraction directories used by the bundled file-import path before entries are merged into `<homeDir>/work`.
   Orphaned staging dirs from crashed imports are reclaimed by an agent-runtime boot sweeper; see [platform-topology](platform-topology.md).
 
