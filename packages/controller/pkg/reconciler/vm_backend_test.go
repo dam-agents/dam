@@ -655,13 +655,26 @@ func staleInformer(objType runtime.Object, objs ...runtime.Object) cache.SharedI
 	return informer
 }
 
-// TEST_SCENARIO: an Agent stored before #4129 dropped the pod-only fields still carries them until the apiserver prunes them, so the controller must read such a spec rather than refuse it: the decoder ignores what the type no longer declares.
+// TEST_SCENARIO: an Agent stored before #4129 dropped the pod-only fields still carries them until the apiserver prunes them, so the controller must read such an object rather than refuse it: the converter ignores what the type no longer declares, and the status it reads with them still lands.
 func TestAnAgentWithTheRetiredPodOnlyFieldsStillDecodes(t *testing.T) {
-	raw := `{"spec":{"image":"agent:1","backend":{"type":"vm"},"runtimeClassName":"gvisor","nodeSelector":{"gpu":"true"},"mounts":[{"path":"/data","persist":true}],"storageClass":"fast"}}`
-	var agent apiv1.Agent
-	require.NoError(t, json.Unmarshal([]byte(raw), &agent))
+	agent, err := FromCacheObject[apiv1.Agent](&unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "agent-platform.ai/v1",
+		"kind":       "Agent",
+		"metadata":   map[string]any{"name": "my-agent", "namespace": "test-agents"},
+		"spec": map[string]any{
+			"image":            "agent:1",
+			"backend":          map[string]any{"type": "vm"},
+			"runtimeClassName": "gvisor",
+			"nodeSelector":     map[string]any{"gpu": "true"},
+			"mounts":           []any{map[string]any{"path": "/data", "persist": true}},
+			"storageClass":     "fast",
+		},
+		"status": map[string]any{"runtimeMigrationAttempts": int64(3)},
+	}})
+	require.NoError(t, err)
 	assert.Equal(t, "agent:1", agent.Spec.Image)
 	assert.True(t, agent.Spec.IsVM())
+	assert.Equal(t, int32(3), agent.Status.RuntimeMigrationAttempts, "the status a release that had the copy attempts left")
 }
 
 // TEST_SCENARIO: the container backend and the runtime migration that moved Agents off it are gone, so an Agent still on it can only be refused: no machine is made for it, and it reads not-ready with the reason and the message that say to move it on the release this install runs now. An Agent that names no backend is refused the same way, since that is how a release before this one wrote a container Agent. Both can appear after the controller started — a restore, the previous api-server during a rollout — so the refusal belongs to the reconcile, and the vm Agent beside them keeps reconciling.

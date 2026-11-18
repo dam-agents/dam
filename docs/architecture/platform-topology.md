@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-11-16
+Last verified: 2026-11-18
 
 ## Overview
 

@@ -18,23 +18,11 @@ legacy="deploy/helm/platform/crds deploy/helm/platform/files/crds" # chart locat
 config=packages/controller/crdify.yaml # downgrades description-only diffs to advisory
 # Fields removed on purpose (#4129): the last pod-only ones, which no Agent in
 # any install sets, and which nothing read once every Agent ran as a machine.
-# crdify reports a removal as an error, so these paths are named here and every
-# other change keeps crdify's default enforcement. The list is temporary: the
-# baseline is the latest release tag, so once the release that drops them is
-# tagged, neither side has them and the names match nothing.
-removed_ok_fields='["spec.mounts","spec.storageClass","spec.runtimeClassName","spec.nodeSelector"]'
-# The findings that are not an allowed removal: a validation's own message, and
-# a property comparison's. A message naming a field path under an allowed field
-# is dropped; anything else, an unparsed message included, is kept.
-unexpected='def top: (sub("^\\^\\."; "")) | split(".") | .[0:2] | join(".");
-  ([ (.crdValidation // [])[] | .name as $n | .errors[]
-     | . as $e | ([ ($e | capture("v1\\.\\^\\.(?<p>.*)").p) ] | .[0]) as $p
-     | select( ($p == null) or (any($ok[]; . == ($p|top)) | not) )
-     | "\($n): \($e)" ]
-   + [ (.sameVersionValidation // [])[] | (.propertyComparisons // [])[]
-     | .property as $prop | select( (any($ok[]; . == ($prop|top))) | not )
-     | .comparisonResults[] | .name as $n | .errors[] | "\($prop) \($n): \(.)" ]
-  )[]'
+# A removal is an error to crdify, so the four are deleted from the baseline
+# before the comparison and everything else keeps crdify's default enforcement.
+# Inert once the release that drops them is tagged, since the baseline lacks
+# them too; the whole gate goes with #4129's next item.
+removed_fields='.mounts, .storageClass, .runtimeClassName, .nodeSelector'
 status=0
 # CRDs deliberately retired from the platform. A removal here must ship with
 # an explicit in-cluster cleanup (the retired definition carries
@@ -69,15 +57,10 @@ for f in "$crds"/*.yaml; do
     echo "crd-compat: $f is new since $baseline — skipped"
     continue
   fi
-  report=$(mktemp)
-  crdify -o json --config "$config" "file://$tmp/$name" "file://$f" >"$report" 2>/dev/null || true
-  if ! findings=$(jq -r --argjson ok "$removed_ok_fields" "$unexpected" "$report" 2>&1); then
-    echo "crd-compat: could not read crdify's report for $f: $findings" >&2
-    status=1
-    continue
+  if [ "$name" = agent-platform.ai_agents.yaml ]; then
+    yq -i "del(.spec.versions[].schema.openAPIV3Schema.properties.spec.properties | ($removed_fields))" "$tmp/$name"
   fi
-  if [ -n "$findings" ]; then
-    echo "$findings" >&2
+  if ! crdify --config "$config" "file://$tmp/$name" "file://$f"; then
     echo "crd-compat: $f is incompatible with $baseline (see findings above)" >&2
     status=1
   fi

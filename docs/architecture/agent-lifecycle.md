@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-11-14
+Last verified: 2026-11-18
 
 ## Overview
 

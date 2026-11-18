@@ -1,6 +1,6 @@
 # VM storage
 
-Last verified: 2026-11-11
+Last verified: 2026-11-18
 
 A machine keeps one disk on its owner's [VM runner](vm-runner.md) rather than a volume per mounted path, and an owner's disks all sit on one claim.
 This page owns what that disk holds, what survives a stop, and how the runner keeps the claim from filling.
@@ -11,9 +11,9 @@ This page owns what that disk holds, what survives a stop, and how the runner ke
 A new machine is created at the pool, since every runner release creates a disk at the size it is asked for.
 An existing machine is sent the pool only once its runner has reported the machine's disk, since an older runner would restart a running machine to grow it; until then it keeps the size the Agent's spec gives.
 The path the disk holds apart from the root is `HOME`.
-That is not a field an Agent sets: `HOME` is fixed, and it is already the only path every template and starter kit in the chart persists.
+That is not a field an Agent or a template sets: `HOME` is fixed, and it is already the only path the chart's mount defaults persist.
 The disk sits on the owner's [VM runner](vm-runner.md) volume, grows with its size at the machine's next start and never shrinks, survives hibernation, restarts and a new image, and goes with the Agent on delete.
-An Agent whose mounts ask to persist a path outside `HOME` is refused rather than reconciled, because a machine cannot keep it and silently dropping it is how an agent comes to look healthy while discarding its work.
+An install whose mount defaults persist a path outside `HOME` is refused rather than reconciled, because a machine cannot keep it and silently dropping it is how an agent comes to look healthy while discarding its work.
 
 **The whole machine persists, per root generation.** Everything outside `HOME` is the image's root: an overlay platform-init lays over the image, its upper layer on the disk, kept across stops, restarts and new images of one generation.
 A generation is a string key an image declares in its env and compares whole, never parsed or ordered: the default image's names it, such as `default-1`, and an image the platform builds on it appends its own segment, such as `default-1/gepa-1`, so a key names the image's lineage.
