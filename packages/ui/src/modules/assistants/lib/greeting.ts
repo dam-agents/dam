@@ -1,7 +1,5 @@
 import {
   ASSISTANT_LEARN_LINE,
-  ASSISTANT_SETTINGS_LINK,
-  ASSISTANT_SETTINGS_SENTENCE,
   assistantGreetingOpening,
   type AssistantIdea,
   assistantIdeas,
@@ -15,8 +13,6 @@ export interface GreetingCopy {
   assistantName: string;
   opening: string;
   learn: string;
-  settingsPrefix: string;
-  settingsLink: string;
   ideas: readonly AssistantIdea[];
   placeholder: string;
 }
@@ -62,9 +58,10 @@ export function isAssistantChat(input: {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the greeting's words. The opening names the person
- * and the assistant, the sentence after it says where the provider is changed,
- * and the ideas are the assistant's five kinds of first task, each labelled so the
- * person sees what it would be learning.
+ * and the assistant, and the ideas are the assistant's five kinds of first task,
+ * each labelled so the person sees what it would be learning. It names no model
+ * provider: on an install with the shared CurveBender the notice above the
+ * composer is what says which one the assistant runs on.
  */
 export function greetingCopy(input: {
   firstName: string | null;
@@ -75,8 +72,6 @@ export function greetingCopy(input: {
     assistantName: input.assistantName,
     opening: assistantGreetingOpening(input),
     learn: ASSISTANT_LEARN_LINE,
-    settingsPrefix: ASSISTANT_SETTINGS_SENTENCE,
-    settingsLink: ASSISTANT_SETTINGS_LINK,
     ideas: assistantIdeas(input.brandName),
     placeholder: `Message ${input.assistantName}`,
   };

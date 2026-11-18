@@ -28,8 +28,7 @@ Given that account, whose assistant has never been used
 When the owner signs in again
 Then they land in Dammy's chat rather than on Home
 And the chat opens with a message from the assistant, its avatar and name above it, reading *Hi <the owner's first name>!
-I'm Dammy, your personal DAM agent.
-You can switch providers anytime in Agent settings.*, with *Agent settings* a link, and it names no model provider
+I'm Dammy, your personal DAM agent.*, and it names no model provider and no place to change one
 And below that message stands *I learn how you work, one task at a time.
 Pick one to try, or ask me anything.*
 And under the message sit five full-round pills, each labelled in bold: *Artifact:* Make my next PowerPoint deck the way I make them, *Schedule:* Do competitive research over night, the way I do it, *Knowledge base:* Learn my project so I can ask questions, *Skill:* Learn how my team writes tickets, then take it over, and *DAM:* I have a question about DAM:

@@ -36,7 +36,7 @@ Builds published before these accounts were added have only `qa-owner`; there an
   A new chat's empty message box shows example prompts one after another, with a *Tab* hint; Tab puts the one showing in the box, and the box's placeholder (its accessible name) is still *Message…*.
   The settings dialog's banner shows the agent's avatar, which opens the avatar picker, and its name; its General section starts with the agent's rename and avatar picker.
   The agent menu's *Agent settings*, and every wrench, *Agent settings* — an agent's row in the sidebar, an agent card on Home — open the same dialog over whatever is on screen, with no chat needed behind it.
-  The agent's name above a reply, the empty chat's avatar, the assistant greeting's settings link and the model picker's *Manage providers* open the same dialog; there is no agent settings page, and the dialog has no link to one.
+  The agent's name above a reply, the empty chat's avatar, the assistant greeting's name and the model picker's *Manage providers* open the same dialog; there is no agent settings page, and the dialog has no link to one.
   An old agent link, `/sandboxes/<agent id>/<section>` as in a Slack message, opens the agent's chat with the dialog on that section.
   The dialog lists every section as a title with its summary under it; a section that needs attention has a small orange dot.
   The list scrolls up and down when it does not fit, never sideways.
@@ -66,7 +66,7 @@ Builds published before these accounts were added have only `qa-owner`; there an
   With `off`, nobody does.
   Turning its switch off deletes nothing — the agent stays in the list — and only hides what the next bullets describe.
   An assistant that has never sent anything opens its chat with a **greeting** in its own voice — the person's first name, its name and the install's brand, e.g. *Hi Jenna!
-  I'm Dammy, your personal DAM agent.*, and where to change its model provider — and under it five labelled **ideas**: *Artifact:*, *Schedule:*, *Knowledge base:*, *Skill:* and *DAM:*.
+  I'm Dammy, your personal DAM agent.* — and under it five labelled **ideas**: *Artifact:*, *Schedule:*, *Knowledge base:*, *Skill:* and *DAM:*.
   A click on an idea fills the message box and sends nothing; the empty box itself hints *Message* and the assistant's name, never an idea's text.
   The avatar the platform's own Agent unlocks plays its celebration on that first landing, beside the message box; an account whose avatars are all seen has none left to unlock, so it plays nothing.
   A person whose assistant has never been used lands in its chat instead of Home, whatever it is called; the greeting is gone once it has had a conversation, so a New chat opens on the ordinary new-chat page.

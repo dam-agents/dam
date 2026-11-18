@@ -573,8 +573,6 @@ export {
   ASSISTANT_IDEAS,
   ASSISTANT_LEARN_LINE,
   ASSISTANT_ONBOARDING_RULES,
-  ASSISTANT_SETTINGS_LINK,
-  ASSISTANT_SETTINGS_SENTENCE,
   type AssistantIdea,
   type AssistantNames,
   assistantGreetingOpening,
