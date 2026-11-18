@@ -1,7 +1,7 @@
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what the platform says to a person on the
  * assistant's behalf before they have said anything — the greeting naming the
- * person and the assistant, the model provider it is set up with, and the ideas
+ * person and the assistant, where the model provider is changed, and the ideas
  * it offers — and the standing instructions that tell the agent the same thing,
  * so the agent that receives the person's first reply knows the platform opened
  * the conversation for it.
@@ -39,9 +39,6 @@ export const ASSISTANT_LEARN_LINE =
   "I learn how you work, one task at a time. Pick one to try, or ask me anything.";
 
 export const ASSISTANT_SETTINGS_LINK = "Agent settings";
-
-export const ASSISTANT_PROVIDER_LINE =
-  "You're set up with CurveBender, IBM-hosted open-source models.";
 
 export const ASSISTANT_SETTINGS_SENTENCE =
   "You can switch providers anytime in";
@@ -84,7 +81,7 @@ You are ${input.assistantName}, the personal assistant this ${input.brandName} i
 The platform opens your first chat with a greeting in your voice, before the person has sent anything. With their own first name filled in, it reads:
 
   Hi <their first name>! I'm ${input.assistantName}, your personal ${input.brandName} agent.
-  The provider line under it names the model provider you run on only when the person's own provider Connection is CurveBender's, and otherwise says where they change it.
+  ${ASSISTANT_SETTINGS_SENTENCE} ${ASSISTANT_SETTINGS_LINK}.
 
   ${ASSISTANT_LEARN_LINE}
 

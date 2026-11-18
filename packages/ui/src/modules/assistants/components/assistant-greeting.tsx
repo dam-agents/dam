@@ -152,8 +152,8 @@ export function TrySomethingNew({
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the greeting an unused assistant opens its chat
- * with, shown where the transcript would start: its avatar and name, what it is
- * set up with, where the person changes that, and the five ideas it offers.
+ * with, shown where the transcript would start: its avatar and name, where the
+ * person changes its provider, and the five ideas it offers.
  */
 export function AssistantGreeting({
   greeting,
@@ -177,9 +177,7 @@ export function AssistantGreeting({
       </SpeakerRow>
       <div className="flex flex-col gap-4 text-[15px] leading-[1.72] text-foreground">
         <p>
-          {greeting.opening}
-          {greeting.provider ? ` ${greeting.provider}` : ""}{" "}
-          {greeting.settingsPrefix}{" "}
+          {greeting.opening} {greeting.settingsPrefix}{" "}
           <Button
             variant="link"
             size="inline"

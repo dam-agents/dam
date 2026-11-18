@@ -1279,6 +1279,7 @@ export const dambledoreProvisioned = pgTable(
     owner: text("owner").primaryKey(),
     agentId: text("agent_id").notNull(),
     state: text("state").notNull().default("creating"),
+    // UNIT_BOUNDARY_DESCRIPTION: nothing reads or writes it any more: #6461 wrote an account's cohort here for the CurveBender notice's audience, and that rule is gone. The column stays because v0.3.0 ships it and reads it, so dropping it would break a rollback to that release.
     legacy: boolean("legacy").notNull().default(false),
     usedAt: timestamp("used_at", { withTimezone: true }),
     resetAt: timestamp("reset_at", { withTimezone: true }),

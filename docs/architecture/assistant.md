@@ -59,13 +59,13 @@ That answer is the record's own mark, set by the first Session that began after 
 A Session that began before the reset does not count however late it is reported: a runtime that boots re-reports the Sessions it already had, and those are no use of a first-timer's assistant.
 Setting the mark is announced to the owner's open tabs, since a Session started in another tab, or a turn from a Slack or Telegram conversation, marks the assistant used without this tab having sent anything.
 A tab also keeps its own mark for a Session it just started, before the report lands, and that mark belongs to one onboarding: the reset's moment is part of the record, so a reset — the person's own, or another tab's — takes the mark away with it rather than leaving a tab that never greets them again.
-The UI asks the server for the record whoever the person is, not only for someone the feature is on for: which Agent is the assistant is what a chat needs to know, even after the feature is turned off, and a person without one costs an answer of nothing.
-The [CurveBender notice](connection-presets.md#deployment-preset-curvebender) never shows in the assistant's own chat, and an account that was onboarded with the assistant — one that had no Agent of its own before the platform made it this one — never sees it anywhere, since its first chat is already set up on the shared Connection.
-That cohort is **decided once and written on the record** when the platform first makes the assistant, and never recomputed: deleting the assistant, making a new one or deleting the last older Agent leaves an account in the cohort it was in, so the notice's audience cannot move under it.
+Nothing is asked of the server for a person the feature is off for.
+The [CurveBender notice](connection-presets.md#deployment-preset-curvebender) shows in the assistant's own chat as in any other Agent's: a chat is a chat, and the greeting no longer names the provider.
 
 ## The first chat
 
-While the assistant has had no Session, its chat opens with a **greeting** rather than an empty transcript: the assistant's avatar and name, `Hi <given name>! I'm <assistant name>, your personal <brand> agent.`, the model provider it is set up with — CurveBender's sentence when that is what it runs on, and otherwise where the person changes it — and a line saying it learns how they work, one task at a time.
+While the assistant has had no Session, its chat opens with a **greeting** rather than an empty transcript: the assistant's avatar and name, `Hi <given name>! I'm <assistant name>, your personal <brand> agent.`, where the person changes its model provider, and a line saying it learns how they work, one task at a time.
+The greeting names no provider: on an install with the shared CurveBender the notice above the composer is what says which one the assistant runs on.
 The code writes none of those names: the given name is the signed-in person's `given_name` claim (no claim, no name — `Hi!`), and the assistant's and the brand's names come from the brand, so an install renames itself without a UI change.
 The text lives once, in `api-server-api`, because two readers need it: the UI that renders the greeting and the agent that must know it wrote it.
 

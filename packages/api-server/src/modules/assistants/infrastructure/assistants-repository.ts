@@ -16,8 +16,6 @@ export interface AssistantRow {
   owner: string;
   agentId: string;
   state: AssistantState;
-  /* UNIT_BOUNDARY_DESCRIPTION: whether the account had an Agent of its own before the platform gave it this one, written once and never recomputed. */
-  legacy: boolean;
   used: boolean;
   resetAt: Date | null;
   firstResult: {
@@ -40,8 +38,8 @@ export interface AssistantUsage {
 
 export interface AssistantsRepository {
   find(owner: string): Promise<AssistantRow | null>;
-  /** UNIT_BOUNDARY_DESCRIPTION: settles which of several concurrent requests makes the Agent, by the primary key: exactly one insert wins, and the rest find the owner taken. It is the one write that records the account's cohort, since it happens when the platform first makes the assistant and never again. */
-  claim(owner: string, agentId: string, legacy: boolean): Promise<boolean>;
+  /** UNIT_BOUNDARY_DESCRIPTION: settles which of several concurrent requests makes the Agent, by the primary key: exactly one insert wins, and the rest find the owner taken. */
+  claim(owner: string, agentId: string): Promise<boolean>;
   /** UNIT_BOUNDARY_DESCRIPTION: records that the Agent the row names is there, so a create in flight is no longer mistaken for one. */
   markReady(owner: string, agentId: string): Promise<void>;
   /** UNIT_BOUNDARY_DESCRIPTION: points the row at a replacement Agent and starts the person's onboarding over on it — a compare-and-set on the old id, so two callers that replace the same Agent make one replacement between them. */
@@ -73,7 +71,6 @@ const COLUMNS = {
   owner: dambledoreProvisioned.owner,
   agentId: dambledoreProvisioned.agentId,
   state: dambledoreProvisioned.state,
-  legacy: dambledoreProvisioned.legacy,
   usedAt: dambledoreProvisioned.usedAt,
   resetAt: dambledoreProvisioned.resetAt,
   firstResultKind: dambledoreProvisioned.firstResultKind,
@@ -90,7 +87,6 @@ type SelectedRow = {
   owner: string;
   agentId: string;
   state: string;
-  legacy: boolean;
   usedAt: Date | null;
   resetAt: Date | null;
   firstResultKind: string | null;
@@ -105,7 +101,6 @@ function toRow(row: SelectedRow): AssistantRow {
     owner: row.owner,
     agentId: row.agentId,
     state: row.state === "ready" ? "ready" : "creating",
-    legacy: row.legacy,
     used: row.usedAt !== null,
     resetAt: row.resetAt,
     epoch: row.epoch,
@@ -141,10 +136,10 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
       return row === undefined ? null : toRow(row);
     },
 
-    async claim(owner, agentId, legacy) {
+    async claim(owner, agentId) {
       const inserted = await db
         .insert(dambledoreProvisioned)
-        .values({ owner, agentId, state: "creating", legacy })
+        .values({ owner, agentId, state: "creating" })
         .onConflictDoNothing()
         .returning({ owner: dambledoreProvisioned.owner });
       return inserted.length > 0;

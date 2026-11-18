@@ -102,7 +102,6 @@ describe("the first result", () => {
       owner: OWNER,
       agentId: "agent-dammy",
       state: "ready",
-      legacy: false,
       used: true,
       resetAt: null,
       firstResult: null,
@@ -112,7 +111,6 @@ describe("the first result", () => {
       owner: "bob",
       agentId: "agent-bobs",
       state: "ready",
-      legacy: false,
       used: true,
       resetAt: null,
       firstResult: {
@@ -259,7 +257,6 @@ describe("the first result's side effects", () => {
       owner: OWNER,
       agentId: "agent-dammy",
       state: "ready",
-      legacy: false,
       used: true,
       resetAt: null,
       firstResult: {

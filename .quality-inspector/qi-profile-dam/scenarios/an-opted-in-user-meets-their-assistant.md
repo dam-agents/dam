@@ -29,8 +29,7 @@ When the owner signs in again
 Then they land in Dammy's chat rather than on Home
 And the chat opens with a message from the assistant, its avatar and name above it, reading *Hi <the owner's first name>!
 I'm Dammy, your personal DAM agent.
-You're set up with CurveBender, IBM-hosted open-source models.
-You can switch providers anytime in Agent settings.*, with *Agent settings* a link
+You can switch providers anytime in Agent settings.*, with *Agent settings* a link, and it names no model provider
 And below that message stands *I learn how you work, one task at a time.
 Pick one to try, or ask me anything.*
 And under the message sit five full-round pills, each labelled in bold: *Artifact:* Make my next PowerPoint deck the way I make them, *Schedule:* Do competitive research over night, the way I do it, *Knowledge base:* Learn my project so I can ask questions, *Skill:* Learn how my team writes tickets, then take it over, and *DAM:* I have a question about DAM:
@@ -137,21 +136,21 @@ And their next sign-in lands on Home rather than in that chat
 When they delete or rename their own Dammy and switch the row off and on again
 Then the platform's Dammy appears, unused, and greets them
 
-## AC-13 — the CurveBender notice keeps off the assistant's chat, and off the accounts it was made for
+## AC-13 — the CurveBender notice shows in the assistant's chat like in any other
 
-Given an install that provides the shared CurveBender, and that account, which was onboarded with the assistant
-When the owner is in Dammy's chat, on a new chat
-Then no CurveBender notice is shown above the composer
-And the greeting opens that chat, because the assistant has never been used
-And no chat of theirs on any agent shows the notice either, because their first agent was Dammy
+Given an install that provides the shared CurveBender, and an account whose first agent is the assistant
+When the owner opens a new chat on Dammy
+Then the greeting opens that chat, because the assistant has never been used
+And the CurveBender notice stands above the composer, in the *set up* variant, because the assistant starts on the shared CurveBender
+And its *Use a different provider* link opens the model picker
 When they send a message there and open a new chat on Dammy again
-Then that chat opens on the ordinary new-chat page, and still shows no CurveBender notice
+Then that chat opens on the ordinary new-chat page, and still shows the notice
 When an account that had agents before Dammy opens a new chat on one of them
-Then the CurveBender notice is shown there as it always was, on that agent's new chat
-When that account opens a new chat on its own Dammy
-Then no CurveBender notice is shown there at all; only the greeting, while it is unused
-When it deletes and recreates Dammy, or resets its onboarding
-Then its new chats on other agents still show the notice, because the account was judged once and that does not change
+Then the notice is shown there too, and on that account's Dammy's new chat as well
+When either account resets its onboarding, or Dammy is deleted and made again
+Then the notice is unchanged in every new chat, since it no longer looks at the account at all
+When the owner clicks the notice's ✕ and reloads
+Then it stays hidden in every new chat of that browser, on Dammy and on every other agent alike — every step above assumes a notice nobody dismissed
 
 ## AC-14 — the assistant marks the person's first result, and onboarding is done
 
