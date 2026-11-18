@@ -144,12 +144,13 @@ describe("turning the security check on", () => {
     });
   });
 
-  // TEST_SCENARIO: the Schedule's task is the assistant's whole instruction for the run, so it must name the advisory to judge by, the command that reports, and that nothing changes before the owner agrees.
+  // TEST_SCENARIO: the Schedule's task is the assistant's whole instruction for the run, so it must name the advisory to judge by, the command that asks an agent others steer about its instructions, the command that reports, and that nothing changes before the owner agrees.
   it("gives the run its procedure in the schedule's task", async () => {
     const w = world();
     await w.checks.enable();
     const task = w.createRRule.mock.calls[0]?.[0].task ?? "";
     expect(task).toContain("references/security-advisory.md");
+    expect(task).toContain("dam run <agent> -p");
     expect(task).toContain("dam security-check report");
     expect(task).toContain("change nothing until your owner agrees");
   });
