@@ -131,16 +131,6 @@ func requireConnectionAddressValue(spec *apiv1.AgentSpec) string {
 	}
 	return "false"
 }
-func resolveSpecMounts(agentSpec *apiv1.AgentSpec, defaults config.HarnessTemplateDefaults) []apiv1.Mount {
-	if len(agentSpec.Mounts) > 0 {
-		return agentSpec.Mounts
-	}
-	var out []apiv1.Mount
-	for _, m := range defaults.Mounts {
-		out = append(out, apiv1.Mount{Path: m.Path, Persist: m.Persist, Size: m.Size})
-	}
-	return out
-}
 func BuildAgentService(name string, cfg *config.Config, ownerRef metav1.OwnerReference) *corev1.Service {
 	selector := map[string]string{LabelPair: name, LabelRole: RoleAgent}
 	return &corev1.Service{

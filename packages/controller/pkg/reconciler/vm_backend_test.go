@@ -655,25 +655,13 @@ func staleInformer(objType runtime.Object, objs ...runtime.Object) cache.SharedI
 	return informer
 }
 
-// TEST_SCENARIO: every Agent that existed before this release still carries what the CRD keeps but no code reads — a runtime class, a node selector, the copy attempts. Such an Agent must reconcile into exactly the machine a clean one of the same spec gets, and the controller must not rewrite the stale fields, since only the CRD's retirement removes them. The fields are no reason to refuse the Agent: an Agent that names the vm backend with them is still reconciled.
-func TestAStaleAgentReconcilesLikeACleanOne(t *testing.T) {
-	ctx := context.Background()
-	stale := vmAgentCR()
-	stale.Spec.RuntimeClassName = "gvisor"
-	stale.Spec.NodeSelector = map[string]string{"gpu": "true"}
-	stale.Status.RuntimeMigrationAttempts = 3
-	staleReconciler, staleNode, _ := setupVMReconciler(t, stale)
-	require.NoError(t, staleReconciler.Reconcile(ctx, stale))
-
-	clean := vmAgentCR()
-	cleanReconciler, cleanNode, _ := setupVMReconciler(t, clean)
-	require.NoError(t, cleanReconciler.Reconcile(ctx, clean))
-
-	assert.Equal(t, cleanNode.spec("my-agent"), staleNode.spec("my-agent"))
-	stored, err := staleReconciler.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-	require.NoError(t, err)
-	runtimeClassName, _, _ := unstructured.NestedString(stored.Object, "spec", "runtimeClassName")
-	assert.Equal(t, "gvisor", runtimeClassName, "the stale field stays as the CRD left it")
+// TEST_SCENARIO: an Agent stored before #4129 dropped the pod-only fields still carries them until the apiserver prunes them, so the controller must read such a spec rather than refuse it: the decoder ignores what the type no longer declares.
+func TestAnAgentWithTheRetiredPodOnlyFieldsStillDecodes(t *testing.T) {
+	raw := `{"spec":{"image":"agent:1","backend":{"type":"vm"},"runtimeClassName":"gvisor","nodeSelector":{"gpu":"true"},"mounts":[{"path":"/data","persist":true}],"storageClass":"fast"}}`
+	var agent apiv1.Agent
+	require.NoError(t, json.Unmarshal([]byte(raw), &agent))
+	assert.Equal(t, "agent:1", agent.Spec.Image)
+	assert.True(t, agent.Spec.IsVM())
 }
 
 // TEST_SCENARIO: the container backend and the runtime migration that moved Agents off it are gone, so an Agent still on it can only be refused: no machine is made for it, and it reads not-ready with the reason and the message that say to move it on the release this install runs now. An Agent that names no backend is refused the same way, since that is how a release before this one wrote a container Agent. Both can appear after the controller started — a restore, the previous api-server during a rollout — so the refusal belongs to the reconcile, and the vm Agent beside them keeps reconciling.

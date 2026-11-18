@@ -58,7 +58,11 @@ const (
 	// Agent gen 22: webSearchControl added to AgentSpec — the agent's gateway
 	// reads model-provider request bodies so a web search can be held for
 	// approval (#4311); an older CRD would prune it.
-	AgentSchemaGeneration = 22
+	// Agent gen 23: mounts, storageClass, runtimeClassName and nodeSelector
+	// removed from AgentSpec — the last pod-only fields, read by nothing once
+	// every Agent ran as a machine, and set by no Agent in any install (#4129).
+	// backend stays: every Agent names it, and the Environment rule reads it.
+	AgentSchemaGeneration = 23
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
 	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.

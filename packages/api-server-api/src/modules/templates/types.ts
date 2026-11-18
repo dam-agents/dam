@@ -3,12 +3,6 @@ import type { ProviderPresetType } from "../connections/providers.js";
 import type { EnvVar } from "../shared.js";
 import type { harnessFamilySchema, templateHarnessSchema } from "./schemas.js";
 
-export interface Mount {
-  path: string;
-  persist: boolean;
-  size?: string;
-}
-
 export interface Resources {
   requests?: Record<string, string>;
   limits?: Record<string, string>;
@@ -42,14 +36,12 @@ export interface TemplateSpec {
   releaseNotesUrl?: string;
   setupNote?: { title: string; body: string };
   experimental?: boolean;
-  mounts?: Mount[];
   init?: string;
   env?: EnvVar[];
   resources?: Resources;
   imagePullPolicy?: string;
   imagePullSecretRef?: string;
   storageSize?: string;
-  storageClass?: string;
   skillSources?: SkillSourceSeed[];
 }
 

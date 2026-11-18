@@ -9,12 +9,6 @@ export const templateGetInputSchema = z.object({
   id: z.string().min(1),
 });
 
-export const mountSchema = z.object({
-  path: z.string(),
-  persist: z.boolean(),
-  size: z.string().optional(),
-});
-
 export const resourcesSchema = z.object({
   requests: z.record(z.string(), z.string()).optional(),
   limits: z.record(z.string(), z.string()).optional(),
@@ -69,14 +63,12 @@ export const templateSpecSchema = z
     releaseNotesUrl: z.string().optional(),
     setupNote: z.object({ title: z.string(), body: z.string() }).optional(),
     experimental: z.boolean().optional(),
-    mounts: z.array(mountSchema).optional(),
     init: z.string().optional(),
     env: z.array(envVarConfigMapSchema).optional(),
     resources: resourcesSchema.optional(),
     imagePullPolicy: z.string().optional(),
     imagePullSecretRef: z.string().optional(),
     storageSize: z.string().optional(),
-    storageClass: z.string().optional(),
     skillSources: z.array(skillSourceSeedSchema).optional(),
   })
   .passthrough();

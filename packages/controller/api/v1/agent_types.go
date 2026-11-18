@@ -10,10 +10,8 @@ import (
 //
 // There is no desiredState field: running-vs-hibernated is not stored intent
 // but observed status the controller derives from activity. Security context
-// is chart-only (config.AgentBase); scheduling is chart-wide except
-// RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
-// +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.runtimeClassName)",message="runtimeClassName selects a container runtime and is invalid on the vm backend"
-// +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.nodeSelector)",message="nodeSelector places a pod and is invalid on the vm backend, whose machine is placed with its owner's VM runner"
+// is chart-only (config.AgentBase), and so is scheduling: a machine is placed
+// with its owner's VM runner, on the chart's node selector.
 // +kubebuilder:validation:XValidation:rule="!has(self.environmentOf) || (has(self.backend) && self.backend.type == 'vm')",message="an Environment runs on the vm backend"
 // +kubebuilder:validation:XValidation:rule="has(self.environmentOf) == has(oldSelf.environmentOf)",message="environmentOf is set at create and never added or removed"
 // +kubebuilder:validation:XValidation:rule="has(self.linkFrom) == has(oldSelf.linkFrom)",message="linkFrom is set at create and never added or removed"
@@ -36,9 +34,6 @@ type AgentSpec struct {
 	// Init is an optional one-shot init script run before the agent starts.
 	// +optional
 	Init string `json:"init,omitempty"`
-	// Mounts declares the agent's volumes; a persisted mount becomes a PVC.
-	// +optional
-	Mounts []Mount `json:"mounts,omitempty"`
 	// Env are plain environment variables projected into the agent container.
 	// +optional
 	Env []EnvVar `json:"env,omitempty"`
@@ -53,32 +48,15 @@ type AgentSpec struct {
 	// ImagePullPolicy overrides the chart-wide default; empty = inherit.
 	// +optional
 	ImagePullPolicy string `json:"imagePullPolicy,omitempty"`
-	// StorageSize overrides the chart-wide default PVC size; empty = inherit.
+	// StorageSize overrides the chart-wide default machine disk size; empty =
+	// inherit.
 	// +optional
 	StorageSize string `json:"storageSize,omitempty"`
-	// StorageClass pins the storage class this Agent's workspace volumes
-	// provision on, and the destination its storage migration targets — an
-	// Agent pinned to the class its workspaces already sit on is exempt from
-	// a fleet-wide drain. Empty inherits the install-wide class. A pinned
-	// Agent bypasses the warm PVC pool unless the pool provisions exactly
-	// this class.
-	// +optional
-	StorageClass string `json:"storageClass,omitempty"`
-	// AgentHome is the resolved HOME inside the agent container. Any $HOME
-	// literals in Mounts are already resolved against it at write
-	// time, so the controller never sees $HOME.
+	// AgentHome is the resolved HOME inside the agent container. Nothing reads
+	// it: HOME is fixed at /home/agent, and the chart resolves $HOME in its own
+	// defaults before the controller sees them.
 	// +optional
 	AgentHome string `json:"agentHome,omitempty"`
-
-	// RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
-	// Selects among *container* runtimes only — rejected on the vm backend.
-	// +optional
-	RuntimeClassName string `json:"runtimeClassName,omitempty"`
-	// NodeSelector overrides the chart-wide node selector; empty = inherit.
-	// Container backend only — rejected on the vm backend, whose machine is
-	// placed with its owner's VM runner.
-	// +optional
-	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
 	// Backend selects the isolation substrate the agent workload runs on;
 	// nil = container. Immutable after create (enforced by the api-server,
@@ -447,20 +425,6 @@ type AgentStatus struct {
 	RuntimeMigrationAttempts int32 `json:"runtimeMigrationAttempts,omitempty"`
 }
 
-// Mount declares a volume mounted into the agent container.
-type Mount struct {
-	// Path is the absolute mount path inside the container.
-	Path string `json:"path"`
-	// Persist marks the mount as backed by a retained PVC rather than an
-	// emptyDir that dies with the pod.
-	Persist bool `json:"persist"`
-	// Size is an optional K8s resource Quantity (e.g. "2Gi") for a persisted
-	// mount's PVC. Empty falls back to StorageSize, then the chart default.
-	// Ignored when Persist is false.
-	// +optional
-	Size string `json:"size,omitempty"`
-}
-
 // EnvVar is a plain name/value environment variable.
 type EnvVar struct {
 	Name  string `json:"name"`
@@ -480,7 +444,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=22
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=23
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

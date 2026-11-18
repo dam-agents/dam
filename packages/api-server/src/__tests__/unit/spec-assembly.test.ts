@@ -54,8 +54,8 @@ describe("assembleSpecFromTemplate", () => {
     expect(spec.backend).toEqual({ type: "vm" });
   });
 
-  // TEST_SCENARIO: a machine keeps HOME and discards the rest of its root at every stop, which is exactly what the default mounts already say — so the mounts travel unchanged, and the template's size is the disk the machine gets. The controller reads them, and refuses an Agent whose mounts ask to persist anything a machine could not keep.
-  it("carries the template's mounts and sizes the machine disk from it", () => {
+  // TEST_SCENARIO: the template's size is the disk the machine gets, and the mounts are the install's alone — the chart's controller.agent.harnessTemplateDefaults.mounts are what the controller reads, so a template that still carries its own must not hand them to the Agent.
+  it("sizes the machine disk from the template and drops its mounts", () => {
     const spec = assembleSpecFromTemplate(
       "nous-1",
       {
@@ -65,15 +65,12 @@ describe("assembleSpecFromTemplate", () => {
           { path: "/home/agent", persist: true },
           { path: "/tmp", persist: false },
         ],
-      },
+      } as TemplateSpec,
       {},
       defaultLimits,
     );
     expect(spec.backend).toEqual({ type: "vm" });
-    expect(spec.mounts).toEqual([
-      { path: "/home/agent", persist: true },
-      { path: "/tmp", persist: false },
-    ]);
+    expect(spec.mounts).toBeUndefined();
     expect(spec.storageSize).toBe("20Gi");
   });
 });

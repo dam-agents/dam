@@ -237,8 +237,8 @@ istio:
 # runs as every machine's entrypoint; the rest of the guest is a root overlay
 # whose upper layer is on that disk too, kept across stops until an image of
 # another root generation boots, with /tmp, /var/tmp and /var/cache emptied on
-# every boot. An Agent whose mounts ask to persist a path outside HOME is
-# refused rather than silently losing it. The controller drives its machine API over TLS
+# every boot. The chart's `mounts` default that asks to persist a path outside
+# HOME is refused rather than silently losing it. The controller drives its machine API over TLS
 # and a bearer token: the controller mints the token, and cert-manager issues
 # the runner's certificate from the runners' own CA (`runnerCA` below), so
 # virtualization needs cert-manager; the agent Service resolves to the
@@ -1969,7 +1969,8 @@ controller:
   #                           harness template can override (template wins).
   #   3. harnessTemplates.*   — per-template values (further down).
   # Use the literal string `$HOME` in mount paths; the chart substitutes
-  # it at render time with the fixed agent home (/home/agent).
+  # it at render time with the fixed agent home (/home/agent). The defaults'
+  # mounts are the install's only ones: a template no longer declares any.
   agent:
     base:
       # Install-wide default pull secrets, listed after an Agent's own
@@ -2139,9 +2140,7 @@ controller:
 # chart pins each CI-built image to its source sha (@ci-pin), so an upgrade is
 # offered exactly when the image changed. Pinning `tag` to a fixed value in an
 # override opts that template out of upgrade detection, and non-image drift
-# (mounts/env/resources) is never detected.
-# `$HOME` in mount paths is substituted at chart render time with the fixed
-# agent home, /home/agent.
+# (env/resources) is never detected.
 # The built-in `default` entry boots quay.io/dam-agents/default, which carries
 # every harness in `harnesses` and bakes their tools. Its sessions choose the
 # harness, so the template names none.

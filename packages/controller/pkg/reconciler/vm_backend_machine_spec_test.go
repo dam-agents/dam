@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the machine spec the controller sends the runner carries everything the guest needs as a platform agent: the template image, the harness config, the pull Secrets in pod order, the egress allowlist, the persisted mounts, the trusted CAs and the disk size.
+// TEST_OVERVIEW: the machine spec the controller sends the runner carries everything the guest needs as a platform agent: the template image, the harness config, the pull Secrets in pod order, the egress allowlist, the install's persisted mounts, the trusted CAs and the disk size.
 package reconciler
 
 import (
@@ -20,7 +20,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
@@ -271,14 +271,14 @@ func TestVMBackendRefusesADiskSizeItCannotParse(t *testing.T) {
 	assert.Empty(t, node.specs, "no machine is created from a spec the controller could not size")
 }
 
-// TEST_SCENARIO: a machine has one disk, so the Agent's own storage size is the whole of it. The container backend's mounts cannot say that — each is a volume with a size of its own — so summing them bought a number no single path was held to, and rounding each up to a GiB first paid for that rounding once per mount. Here two persisted mounts of 4Gi each are one 10Gi disk.
+// TEST_SCENARIO: a machine has one disk, so the Agent's own storage size is the whole of it. A mount is a volume with a size of its own, so summing them buys a number no single path is held to, and rounding each up to a GiB first pays for that rounding once per mount. Here two persisted mounts of 4Gi each are one 10Gi disk.
 func TestVMBackendSizesOneDiskRatherThanSummingMounts(t *testing.T) {
 	agent := vmAgentCR()
-	agent.Spec.Mounts = []apiv1.Mount{
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.HarnessTemplateDefaults.Mounts = []config.Mount{
 		{Path: "/home/agent", Persist: true, Size: "4Gi"},
 		{Path: "/home/agent/work", Persist: true, Size: "4Gi"},
 	}
-	r, node, _ := setupVMReconciler(t, agent)
 	node.holdsOnAnOlderRelease("my-agent")
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 
@@ -330,73 +330,68 @@ func TestTheUsageSecretHoldsACapabilityAndNeverTheToken(t *testing.T) {
 	}
 }
 
-// TEST_SCENARIO: the default template's mounts — HOME persisted, /tmp not — are what every shipped template and starter kit declares, and they are exactly what a machine already does: HOME on the disk, everything else discarded with the root at the next stop. So the common case reconciles with nothing to decide.
+// TEST_SCENARIO: the chart's default mounts — HOME persisted, /tmp not — are what every shipped template and starter kit declares, and they are exactly what a machine already does: HOME on the disk, everything else discarded with the root at the next stop. So the common case reconciles with nothing to decide.
 func TestVMBackendAcceptsTheDefaultMounts(t *testing.T) {
 	agent := vmAgentCR()
-	agent.Spec.Mounts = []apiv1.Mount{
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.HarnessTemplateDefaults.Mounts = []config.Mount{
 		{Path: "/home/agent", Persist: true},
 		{Path: "/tmp", Persist: false},
 	}
-	r, node, _ := setupVMReconciler(t, agent)
 	node.holdsOnAnOlderRelease("my-agent")
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 
 	assert.Equal(t, 10, node.spec("my-agent").StorageGiB)
 }
 
-// TEST_SCENARIO: a machine keeps HOME and nothing else, so a mount asking to persist a path outside it cannot be honoured. Dropping it silently is the failure this backend exists to stop being possible — the agent would run, look healthy, and lose that path the first time it stopped — so the reconcile fails and says where the path would have to move.
+// TEST_SCENARIO: a machine keeps HOME and nothing else, so a default asking to persist a path outside it cannot be honoured. Dropping it silently is the failure this backend exists to stop being possible — the agent would run, look healthy, and lose that path the first time it stopped — so the reconcile fails and says where the path would have to move.
 func TestVMBackendRefusesAPersistedMountOutsideHome(t *testing.T) {
 	agent := vmAgentCR()
-	agent.Spec.Mounts = []apiv1.Mount{
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.HarnessTemplateDefaults.Mounts = []config.Mount{
 		{Path: "/home/agent", Persist: true},
 		{Path: "/data", Persist: true},
 	}
-	r, node, _ := setupVMReconciler(t, agent)
 
 	err := r.Reconcile(context.Background(), agent)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "/data")
-	assert.Empty(t, node.specs, "no machine is created that would discard a path its Agent asked to keep")
+	assert.Empty(t, node.specs, "no machine is created that would discard a path its install asked to keep")
 }
 
-// TEST_SCENARIO: a mount's own size wins over the Agent's storageSize on the container backend, so a spec that asks for 50Gi there must not quietly get the chart's default here. The machine has one disk, so the largest thing any persisted mount asks for is what it is sized to — the one field of Mount this backend could still drop without saying so.
+// TEST_SCENARIO: a mount's own size wins over the Agent's storageSize, so an install that asks for 50Gi must not quietly get the chart's default. The machine has one disk, so the largest thing any persisted mount asks for is what it is sized to.
 func TestTheMachineDiskIsNoSmallerThanAnyMountAsksFor(t *testing.T) {
-	disk := func(configure func(*apiv1.AgentSpec)) int {
+	disk := func(mounts []config.Mount, storageSize string) int {
 		agent := vmAgentCR()
-		configure(&agent.Spec)
+		agent.Spec.StorageSize = storageSize
 		r, node, _ := setupVMReconciler(t, agent)
+		r.config.HarnessTemplateDefaults.Mounts = mounts
 		node.holdsOnAnOlderRelease("my-agent")
 		require.NoError(t, r.Reconcile(context.Background(), agent))
 		return node.spec("my-agent").StorageGiB
 	}
 
-	assert.Equal(t, 50, disk(func(spec *apiv1.AgentSpec) {
-		spec.Mounts = []apiv1.Mount{{Path: "/home/agent", Persist: true, Size: "50Gi"}}
-	}), "the mount's own size raises the disk rather than being dropped")
+	assert.Equal(t, 50, disk([]config.Mount{
+		{Path: "/home/agent", Persist: true, Size: "50Gi"},
+	}, ""), "the mount's own size raises the disk rather than being dropped")
 
-	assert.Equal(t, 50, disk(func(spec *apiv1.AgentSpec) {
-		spec.StorageSize = "20Gi"
-		spec.Mounts = []apiv1.Mount{{Path: "/home/agent", Persist: true, Size: "50Gi"}}
-	}), "a mount that asks for more than storageSize wins, as it does on the container backend")
+	assert.Equal(t, 50, disk([]config.Mount{
+		{Path: "/home/agent", Persist: true, Size: "50Gi"},
+	}, "20Gi"), "a mount that asks for more than storageSize wins")
 
-	assert.Equal(t, 20, disk(func(spec *apiv1.AgentSpec) {
-		spec.StorageSize = "20Gi"
-		spec.Mounts = []apiv1.Mount{{Path: "/home/agent", Persist: true, Size: "5Gi"}}
-	}), "a mount asking for less never shrinks the disk below what the Agent itself declared")
+	assert.Equal(t, 20, disk([]config.Mount{
+		{Path: "/home/agent", Persist: true, Size: "5Gi"},
+	}, "20Gi"), "a mount asking for less never shrinks the disk below what the Agent itself declared")
 
-	assert.Equal(t, 50, disk(func(spec *apiv1.AgentSpec) {
-		spec.Mounts = []apiv1.Mount{
-			{Path: "/home/agent", Persist: true, Size: "50Gi"},
-			{Path: "/home/agent/work", Persist: true, Size: "30Gi"},
-		}
-	}), "nested mounts share the one disk, so it is the largest of them and not their sum")
+	assert.Equal(t, 50, disk([]config.Mount{
+		{Path: "/home/agent", Persist: true, Size: "50Gi"},
+		{Path: "/home/agent/work", Persist: true, Size: "30Gi"},
+	}, ""), "nested mounts share the one disk, so it is the largest of them and not their sum")
 
-	assert.Equal(t, 10, disk(func(spec *apiv1.AgentSpec) {
-		spec.Mounts = []apiv1.Mount{
-			{Path: "/home/agent", Persist: true},
-			{Path: "/tmp", Persist: false, Size: "80Gi"},
-		}
-	}), "a size on a path the machine never keeps buys nothing, since nothing is written there across a stop")
+	assert.Equal(t, 10, disk([]config.Mount{
+		{Path: "/home/agent", Persist: true},
+		{Path: "/tmp", Persist: false, Size: "80Gi"},
+	}, ""), "a size on a path the machine never keeps buys nothing, since nothing is written there across a stop")
 }
 
 // TEST_SCENARIO: a machine's ca.crt is its gateway's MITM CA followed by the install's extra CAs, each a whole PEM block even when the gateway CA lacks a trailing newline; without extras it is the gateway CA unchanged.

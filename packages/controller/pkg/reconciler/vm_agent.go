@@ -1031,11 +1031,11 @@ func (r *AgentReconciler) machineDiskGiB(ctx context.Context, runner *vmrunner.C
 	return max(int(pool.Value()>>30), 1)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine's storage is one disk holding one path, and that is the whole model. On a runner that grows a disk at the next start, the size worked out here only names the disk an older runner keeps (machineDiskGiB); the path rule holds on every runner. The size is one quantity, rounded once, and the path is not configurable: HOME is fixed, every template in the chart persists it and nothing else, and a machine's root lasts only until an image of another root generation boots. A mount that asks for anything else outside HOME is refused rather than dropped, because an agent whose work is silently discarded looks healthy until it stops. A size a persisted mount declares raises the disk rather than being dropped, since a spec that asks for 50Gi must not quietly get the chart's 10Gi. Several of them take the largest and not the sum, because they are all nested inside the one path a machine keeps and a sum would size the disk for capacity no single mount could have claimed.
+// UNIT_BOUNDARY_DESCRIPTION: a machine's storage is one disk holding one path, and that is the whole model. On a runner that grows a disk at the next start, the size worked out here only names the disk an older runner keeps (machineDiskGiB); the path rule holds on every runner. The size is one quantity, rounded once, and the path is not configurable: HOME is fixed, the chart's defaults persist it and nothing else, and a machine's root lasts only until an image of another root generation boots. A chart default that asks to persist anything else is refused rather than dropped, because an agent whose work is silently discarded looks healthy until it stops. A size a persisted default declares raises the disk rather than being dropped, since a default that asks for 50Gi must not quietly get the chart's 10Gi. Several of them take the largest and not the sum, because they are all nested inside the one path a machine keeps and a sum would size the disk for capacity no single mount could have claimed.
 func resolveVMDiskGiB(spec *apiv1.AgentSpec, defaults config.HarnessTemplateDefaults) (int, error) {
-	for _, m := range resolveSpecMounts(spec, defaults) {
+	for _, m := range defaults.Mounts {
 		if m.Persist && m.Path != agentHomeDir && !strings.HasPrefix(m.Path, agentHomeDir+"/") {
-			return 0, fmt.Errorf("the vm backend persists only %s, so this Agent's persisted mount %s would be lost at the first stop; move it under %s or run this Agent on the container backend",
+			return 0, fmt.Errorf("the vm backend persists only %s, so this install's persisted mount %s would be lost at the first stop; make it %s or a path under it",
 				agentHomeDir, m.Path, agentHomeDir)
 		}
 	}
@@ -1047,7 +1047,7 @@ func resolveVMDiskGiB(spec *apiv1.AgentSpec, defaults config.HarnessTemplateDefa
 	if err != nil {
 		return 0, fmt.Errorf("the machine's disk size %q is not a quantity: %w", size, err)
 	}
-	for _, m := range resolveSpecMounts(spec, defaults) {
+	for _, m := range defaults.Mounts {
 		if !m.Persist || m.Size == "" {
 			continue
 		}

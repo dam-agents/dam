@@ -7,14 +7,14 @@
  *
  * There is no desiredState field: running-vs-hibernated is not stored intent
  * but observed status the controller derives from activity. Security context
- * is chart-only (config.AgentBase); scheduling is chart-wide except
- * RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
+ * is chart-only (config.AgentBase), and so is scheduling: a machine is placed
+ * with its owner's VM runner, on the chart's node selector.
  */
 export interface AgentSpecCR {
   /**
-   * AgentHome is the resolved HOME inside the agent container. Any $HOME
-   * literals in Mounts are already resolved against it at write
-   * time, so the controller never sees $HOME.
+   * AgentHome is the resolved HOME inside the agent container. Nothing reads
+   * it: HOME is fixed at /home/agent, and the chart resolves $HOME in its own
+   * defaults before the controller sees them.
    */
   agentHome?: string;
   /**
@@ -137,39 +137,9 @@ export interface AgentSpecCR {
    */
   linkFrom?: string;
   /**
-   * Mounts declares the agent's volumes; a persisted mount becomes a PVC.
-   *
-   * Items: Mount declares a volume mounted into the agent container.
-   */
-  mounts?: {
-    /**
-     * Path is the absolute mount path inside the container.
-     */
-    path: string;
-    /**
-     * Persist marks the mount as backed by a retained PVC rather than an
-     * emptyDir that dies with the pod.
-     */
-    persist: boolean;
-    /**
-     * Size is an optional K8s resource Quantity (e.g. "2Gi") for a persisted
-     * mount's PVC. Empty falls back to StorageSize, then the chart default.
-     * Ignored when Persist is false.
-     */
-    size?: string;
-  }[];
-  /**
    * Name is an optional human-readable name.
    */
   name?: string;
-  /**
-   * NodeSelector overrides the chart-wide node selector; empty = inherit.
-   * Container backend only — rejected on the vm backend, whose machine is
-   * placed with its owner's VM runner.
-   */
-  nodeSelector?: {
-    [k: string]: string;
-  };
   /**
    * RequireConnectionAddress makes the agent's gateway inject a Connection's
    * credential only into a request that names that Connection, by its token
@@ -191,26 +161,13 @@ export interface AgentSpecCR {
     };
   };
   /**
-   * RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
-   * Selects among *container* runtimes only — rejected on the vm backend.
-   */
-  runtimeClassName?: string;
-  /**
    * SecretRef names a K8s Secret whose keys are envFrom-projected into the
    * agent container (operator-supplied envs).
    */
   secretRef?: string;
   /**
-   * StorageClass pins the storage class this Agent's workspace volumes
-   * provision on, and the destination its storage migration targets — an
-   * Agent pinned to the class its workspaces already sit on is exempt from
-   * a fleet-wide drain. Empty inherits the install-wide class. A pinned
-   * Agent bypasses the warm PVC pool unless the pool provisions exactly
-   * this class.
-   */
-  storageClass?: string;
-  /**
-   * StorageSize overrides the chart-wide default PVC size; empty = inherit.
+   * StorageSize overrides the chart-wide default machine disk size; empty =
+   * inherit.
    */
   storageSize?: string;
   /**

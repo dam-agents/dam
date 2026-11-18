@@ -8,11 +8,6 @@ so this CM needs no label selector and no agent-namespace placement.
 Only fields the template differs on are rendered. Anything omitted falls
 through at reconcile time to `controller.agent.harnessTemplateDefaults.*`
 (chart fallback) or `controller.agent.base.*` (chart-only policy).
-
-The literal string `$HOME` in mount paths is substituted
-HERE (chart render time) with the fixed agent home (/home/agent). The
-rendered spec ships absolute paths — the controller and agent-runtime
-never see `$HOME`.
 */}}
 apiVersion: v1
 kind: ConfigMap
@@ -31,7 +26,9 @@ data:
   {{- if $tmpl.backend }}
   {{- fail (printf "harnessTemplates.%s: backend is gone — every agent runs as a machine on its owner's VM runner, and nothing chooses a backend. Remove it from your values." $name) }}
   {{- end }}
-  {{- $home := "/home/agent" }}
+  {{- if $tmpl.mounts }}
+  {{- fail (printf "harnessTemplates.%s: mounts is gone — a machine's disk is one path, HOME, whose size is storageSize, and the chart's controller.agent.harnessTemplateDefaults.mounts are the install's only mounts. Remove it from your values." $name) }}
+  {{- end }}
   {{ $name }}.yaml: |
     version: agent-platform.ai/v1
     image: "{{ $tmpl.image.repository }}:{{ $tmpl.image.tag | default $.Chart.AppVersion }}"
@@ -89,16 +86,6 @@ data:
     {{- with $tmpl.resources }}
     resources:
       {{- toYaml . | nindent 6 }}
-    {{- end }}
-    {{- with $tmpl.mounts }}
-    mounts:
-      {{- range . }}
-      - path: {{ .path | replace "$HOME" $home | quote }}
-        persist: {{ .persist }}
-        {{- with .size }}
-        size: {{ . | quote }}
-        {{- end }}
-      {{- end }}
     {{- end }}
     {{- $env := $tmpl.env | default list }}
     {{- if and $.Values.clickstack.enabled $tmpl.telemetry }}

@@ -114,12 +114,8 @@ var testConfig = &config.Config{
 var testAgent = &apiv1.AgentSpec{
 	Backend: &apiv1.Backend{Type: "vm"},
 	Image:   "ghcr.io/myorg/agent:latest",
-	Mounts: []apiv1.Mount{
-		{Path: "/home/agent", Persist: true},
-		{Path: "/tmp", Persist: false},
-	},
-	Init: "#!/bin/bash\necho hello",
-	Env:  []apiv1.EnvVar{{Name: "ACP_PORT", Value: "8080"}},
+	Init:    "#!/bin/bash\necho hello",
+	Env:     []apiv1.EnvVar{{Name: "ACP_PORT", Value: "8080"}},
 	Resources: apiv1.ResourceSpec{
 		Requests: map[string]string{"cpu": "250m", "memory": "512Mi"},
 		Limits:   map[string]string{"cpu": "1", "memory": "2Gi"},
