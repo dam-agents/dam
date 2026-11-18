@@ -1,6 +1,6 @@
 # Connection presets
 
-Last verified: 2026-11-16
+Last verified: 2026-11-18
 
 What each shipped Connection Template gives an Agent: the template's shape, the hosts it reaches, the credential the gateway injects and the Contributions a grant materializes.
 The model they all share — a template, a grant, and which rail each Contribution kind takes — is on [connections](connections.md).
@@ -150,7 +150,7 @@ It is not behind a feature flag: where the key is set, every user has it, and a 
 Such an install shows a CurveBender notice above a new chat's composer, never in an existing chat, with a link to the documentation.
 A new chat already on the shared Connection is told it is set up and can open its picker; any other is offered **Try now**, which moves it to Pi on the shared Connection's work model and makes that the chat default.
 Each of the two closes on its own, in this browser alone.
-It keeps off the assistant's chats, and off the accounts onboarded with the assistant ([assistant](assistant.md#where-it-appears)).
+The assistant's chat shows it like any other Agent's ([assistant](assistant.md#where-it-appears)).
 The composer never waits for a provider: an agent holding none takes this Connection before the prompt goes out, and only an install without the key keeps the block, whose composer opens the picker, or the provider list where the owner holds none, when clicked.
 Until the agent's and the owner's provider lists are read, the composer waits, and says so when the read fails, so a send never plans on lists it has not read; a failed refetch over lists already read leaves it open.
 With nothing to attach, a prompt the composer lets through goes out as it is, as to an agent whose harness brings its own model; it never returns to the composer.

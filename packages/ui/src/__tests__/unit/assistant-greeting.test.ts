@@ -18,8 +18,6 @@ import {
   greetingShown,
   ideasNotStarted,
   isAssistantChat,
-  preferredProviderTemplate,
-  providerLineFor,
 } from "../../modules/assistants/lib/greeting.js";
 import { draftKey } from "../../modules/sessions/lib/draft-key.js";
 import { queryClient } from "../../query-client.js";
@@ -38,7 +36,6 @@ const copy = greetingCopy({
   firstName: "Jenna",
   assistantName: "Dammy",
   brandName: "DAM",
-  provider: "curve-bender",
 });
 
 describe("when the greeting is shown", () => {
@@ -91,7 +88,6 @@ describe("what the greeting says", () => {
           firstName,
           assistantName: "Dammy",
           brandName: "DAM",
-          provider: "curve-bender",
         }).opening,
       ).toBe("Hi! I'm Dammy, your personal DAM agent.");
   });
@@ -129,57 +125,10 @@ describe("what the greeting says", () => {
     expect(copy.placeholder).toBe("Message Dammy");
   });
 
-  // TEST_SCENARIO: the sentence beside the provider names where to change it, once, in the design's words.
+  // TEST_SCENARIO: the sentence after the opening names where to change the provider, once, in the design's words.
   it("points at Agent settings in the design's words", () => {
     expect(copy.settingsPrefix).toBe("You can switch providers anytime in");
     expect(copy.settingsLink).toBe("Agent settings");
-  });
-
-  // TEST_SCENARIO: the provider line names CurveBender only when that is the provider the Agent runs on, and otherwise points at where it changes without naming one.
-  it("names the provider it has, and no other", () => {
-    expect(copy.provider).toContain("CurveBender");
-    const other = greetingCopy({
-      firstName: "Jenna",
-      assistantName: "Dammy",
-      brandName: "DAM",
-      provider: "other",
-    });
-    expect(other.provider).toBe("");
-    expect(other.provider).not.toContain("CurveBender");
-    expect(providerLineFor("curve-bender-deployment")).toBe("curve-bender");
-    expect(providerLineFor("curve-bender")).toBe("curve-bender");
-    expect(providerLineFor("anthropic")).toBe("other");
-    expect(providerLineFor(undefined)).toBeNull();
-  });
-
-  // TEST_SCENARIO: the Agent holds an app Connection too, listed before its provider: only the provider Connections decide the line, in the order the person set — preferred first, else the first — so a GitHub grant never hides the provider, nor speaks for it.
-  it("reads the provider from provider Connections alone", () => {
-    const grant = (
-      templateId: string,
-      preferred = false,
-    ): { preferred: boolean; connection: { templateId: string } } => ({
-      preferred,
-      connection: { templateId },
-    });
-    expect(
-      preferredProviderTemplate({
-        connections: [grant("github"), grant("anthropic", true)],
-      }),
-    ).toBe("anthropic");
-    expect(
-      preferredProviderTemplate({
-        connections: [grant("github"), grant("curve-bender")],
-      }),
-    ).toBe("curve-bender");
-    expect(
-      preferredProviderTemplate({ connections: [grant("github")] }),
-    ).toBeUndefined();
-    expect(
-      preferredProviderTemplate({
-        connections: [{ preferred: true }],
-      }),
-    ).toBeUndefined();
-    expect(preferredProviderTemplate(undefined)).toBeUndefined();
   });
 });
 
@@ -189,7 +138,6 @@ describe("the record's used mark", () => {
     const key = trpc.assistants.state.queryKey();
     const row = {
       agentId: ASSISTANT,
-      legacy: true,
       used: false,
       resetAt: null,
       ready: true,
@@ -211,7 +159,6 @@ describe("the record's used mark", () => {
     const key = trpc.assistants.state.queryKey();
     const row = {
       agentId: ASSISTANT,
-      legacy: true,
       used: false,
       resetAt: null,
       ready: true,
@@ -269,6 +216,15 @@ describe("the greeting in the chat", () => {
     expect(
       host.querySelector('[data-testid="assistant-greeting-settings"]'),
     ).not.toBeNull();
+  });
+
+  // TEST_SCENARIO: the greeting says where the provider is changed and names no provider, because the CurveBender notice above the composer is what names the one the assistant runs on.
+  it("points at Agent settings and names no provider", () => {
+    expect(host.textContent).toContain(
+      "You can switch providers anytime in Agent settings.",
+    );
+    expect(host.textContent).not.toContain("CurveBender");
+    expect(host.textContent).not.toContain("You're set up with");
   });
 
   // TEST_SCENARIO: a click on a pill puts that idea's text — never its label, which only says what kind of work it is — in an empty composer of this chat, and stops there, so nothing runs before the person acts; each idea is clicked on an empty one because a chip adds to what is there.
