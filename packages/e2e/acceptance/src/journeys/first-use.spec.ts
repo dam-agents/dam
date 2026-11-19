@@ -6,7 +6,7 @@ import { test } from "../fixtures.js";
 
 const mockDefaultReply = "Hello from the mock agent.";
 
-// TEST_SCENARIO: a new owner signs in, has a model provider, makes an agent in one click from the Generalist starter kit, which gets a generated avatar, chats with it until it answers, and deletes it from its settings. The provider is connected through the API: no driver covers the connect dialog yet.
+// TEST_SCENARIO: a new owner, whose account already has a model provider, signs in, makes an agent in one click from the Generalist starter kit, which gets a generated avatar, chats with it until it answers, and deletes it from its settings. The provider is connected through the API when the account is prepared: no driver covers the connect dialog yet.
 test("first use: sign in, one-click agent, first answer, delete", async ({
   browser,
   person,
@@ -19,15 +19,6 @@ test("first use: sign in, one-click agent, first answer, delete", async ({
   try {
     await test.step("Jo signs in", async () => {
       await signInThroughTheBrowser(page, jo.account);
-    });
-
-    await test.step("Jo has a model provider connected", async () => {
-      await jo.api.connections.create.mutate({
-        templateId: "openai",
-        name: "openai",
-        authKind: "header",
-        value: "sk-acceptance-dummy-key",
-      });
     });
 
     await test.step("Jo makes an agent from the Generalist starter kit", async () => {
@@ -93,8 +84,5 @@ test("first use: sign in, one-click agent, first answer, delete", async ({
     });
   } finally {
     await context.close();
-    for (const connection of await jo.api.connections.list.query())
-      if (connection.templateId === "openai")
-        await jo.api.connections.delete.mutate({ id: connection.id });
   }
 });

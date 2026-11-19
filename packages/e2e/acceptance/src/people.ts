@@ -6,6 +6,8 @@ import { accountPassword, accountSlots, mockTemplateId } from "./config.js";
 
 export const personas = ["Ada", "Ben", "Jo"] as const;
 
+const providerTemplateId = "openai";
+
 export type Persona = (typeof personas)[number];
 
 export interface Person {
@@ -45,7 +47,7 @@ function warmMarker(persona: Persona, index: number): string {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: a persona of the examples, signed in as an account of its own worker slot. Its first use in a worker accepts the Terms, stores the assistant off as the e2e suite's shared account does (01-auth.spec.ts), and deletes every Agent but the warm ones its slot keeps across workers, so each example starts from an owner with nothing but what its Given steps make.
+ * UNIT_BOUNDARY_DESCRIPTION: a persona of the examples, signed in as an account of its own worker slot. Its first use in a worker accepts the Terms, stores the assistant off as the e2e suite's shared account does (01-auth.spec.ts), connects a model provider, which the web UI needs before it lets a person write to an Agent and which every Agent made afterwards gets as its default, and deletes every Agent but the warm ones its slot keeps across workers, so each example starts from an owner with nothing but what its Given steps make.
  */
 export async function preparePerson(
   persona: Persona,
@@ -58,6 +60,17 @@ export async function preparePerson(
   await api.terms.accept.mutate({ version: terms.version });
   await api.features.setFlag.mutate({ feature: "dambledore", enabled: false });
   await leaveNoAssistant(api);
+  if (
+    !(await api.connections.list.query()).some(
+      (c) => c.templateId === providerTemplateId,
+    )
+  )
+    await api.connections.create.mutate({
+      templateId: providerTemplateId,
+      name: providerTemplateId,
+      authKind: "header",
+      value: "sk-acceptance-dummy-key",
+    });
   const isWarm = (description: string | undefined) =>
     description?.startsWith(warmPrefix(persona)) ?? false;
   for (const agent of await api.agents.list.query())
