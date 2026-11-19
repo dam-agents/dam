@@ -543,6 +543,8 @@ jobs:
           path: &e2e-report-paths |
             packages/e2e/playwright/playwright-report/
             packages/e2e/playwright/test-results/
+            packages/e2e/acceptance/playwright-report/
+            packages/e2e/acceptance/test-results/
           retention-days: 7
           if-no-files-found: ignore
 

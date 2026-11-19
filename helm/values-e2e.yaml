@@ -61,6 +61,27 @@ keycloak:
     - username: dammy-owner
       password: dammy-e2e
       firstName: Owner
+    # The acceptance suite's personas (packages/e2e/acceptance), one set per
+    # worker slot: a worker signs in as its slot's accounts alone, so no
+    # example meets an Agent another test made.
+    - username: acceptance-ada-0
+      password: acceptance-e2e
+      firstName: Ada
+    - username: acceptance-ben-0
+      password: acceptance-e2e
+      firstName: Ben
+    - username: acceptance-jo-0
+      password: acceptance-e2e
+      firstName: Jo
+    - username: acceptance-ada-1
+      password: acceptance-e2e
+      firstName: Ada
+    - username: acceptance-ben-1
+      password: acceptance-e2e
+      firstName: Ben
+    - username: acceptance-jo-1
+      password: acceptance-e2e
+      firstName: Jo
   resources:
     limits:
       cpu: "2"

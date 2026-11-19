@@ -1,0 +1,30 @@
+[task_config]
+includes = ["{{vars.repo_root}}/.mise/ts-package.toml", ".mise/tasks"]
+
+[tasks."check:tsc"]
+extends = "ts:check:tsc"
+sources = ["{src/**/*,playwright.config}.ts", "tsconfig.json", "{{vars.repo_root}}/packages/dev-config/tsconfig.base.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
+
+[tasks."check:format"]
+extends = "ts:check:format"
+run = "pnpm exec prettier --check 'src/**/*.ts' 'playwright.config.ts'"
+sources = ["{src/**/*,playwright.config}.ts", "{{vars.repo_root}}/.prettierrc", "{{vars.repo_root}}/pnpm-lock.yaml"]
+
+[tasks."fix:format"]
+extends = "ts:fix:format"
+run = "pnpm exec prettier --write 'src/**/*.ts' 'playwright.config.ts'"
+
+[tasks."check:boundary"]
+description = "The acceptance suite depends on nothing but the public API contract and its test tools, so it cannot import the server's internals"
+run = "node .mise/lib/boundary.mjs"
+sources = ["package.json", ".mise/lib/boundary.mjs"]
+outputs = []
+deny_net = true
+deny_write = true
+cache.enabled = true
+
+[tasks."check:steps"]
+description = "Every step in the feature files has a step definition: bddgen refuses to generate the tests otherwise"
+run = "pnpm exec bddgen"
+sources = ["features/**/*.feature", "src/**/*.ts", "playwright.config.ts"]
+outputs = [".features-gen/**/*"]
