@@ -49,6 +49,12 @@ const TTL: Duration = Duration::from_secs(30);
 // UNIT_BOUNDARY_DESCRIPTION: how long the mount waits before it mounts again after its session ended, which unmounting it by hand and an error in the session loop both do. It never gives up: a mount that stays broken and a mount that stays absent read the same to the Agent, so the one thing worth doing is trying again.
 const SESSION_RETRY: Duration = Duration::from_secs(5);
 
+// UNIT_BOUNDARY_DESCRIPTION: how long the mount waits before asking a second time, when a successful answer says the Agent holds no grants while the mount is listing some. An empty list is the one answer that takes everything away, and the live run saw it arrive twice for about 30 s while the Satellite was online and granted: so it is confirmed before anything is dropped, and only an answer that is still empty a quarter of a second later withdraws the mount.
+const CONFIRM_PAUSE: Duration = Duration::from_millis(250);
+
+// UNIT_BOUNDARY_DESCRIPTION: how long the confirming request may take. It is short on purpose: a confirmation that hangs would leave the mount listing a list it no longer trusts for longer than the window it promises, and a platform that cannot answer in five seconds has already failed the poll.
+const CONFIRM_WAIT: Duration = Duration::from_secs(5);
+
 // UNIT_BOUNDARY_DESCRIPTION: what the launch record says the mount needs. The api-server and the Agent are the two the controller sets in every machine's environment; without both there is no channel to open, and the mount does not start at all, which is what a machine booted by an older controller gets. The proxy is the gateway the machine reaches everything else through, named by an IP literal: the request goes to the proxy as its absolute URI, so the target is never resolved.
 pub struct Config {
     pub api_server: String,
@@ -290,6 +296,32 @@ fn guarded<T>(what: &str, body: impl FnOnce() -> T) -> Option<T> {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: one reading of the grant list, and what the mount does with it. An empty list is confirmed with a second request before it withdraws a mount that is listing something, because it is the one answer that takes everything away and a single bad one costs the Agent its tree for half a minute; a confirming request that fails keeps the last good list and counts as a failed poll. Every other answer is taken as it comes: a non-empty list that omits a Satellite still spends its grant, which is how a revocation reaches the mount within the window the Agent is promised.
+impl State {
+    fn poll_once(&self) -> Polled {
+        let held = self.grants();
+        match self.client.grants(&self.config.agent, GRANTS_EVERY) {
+            Ok(grants) if grants.is_empty() && !held.is_empty() => {
+                std::thread::sleep(CONFIRM_PAUSE);
+                match self.client.grants(&self.config.agent, CONFIRM_WAIT) {
+                    Ok(confirmed) => {
+                        self.set_grants(confirmed);
+                        Polled::Read
+                    }
+                    Err(platform::GrantsError::NotServed) => Polled::NotServed,
+                    Err(platform::GrantsError::Failed(e)) => Polled::Failed(e),
+                }
+            }
+            Ok(grants) => {
+                self.set_grants(grants);
+                Polled::Read
+            }
+            Err(platform::GrantsError::NotServed) => Polled::NotServed,
+            Err(platform::GrantsError::Failed(e)) => Polled::Failed(e),
+        }
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the grant list's own thread: every 30 s, one GET, which is also what the platform counts the mount as present by and so what the Agent's instructions are written from. A failed read is asked for again on that same cadence, because a grant that a transient failure delayed is exactly what AC-3 promises within 30 s; only a platform that answers no grants at all — one older than the channel — is backed off from, since nothing will change there until it is upgraded. Either is said once per streak rather than every 30 s, and the thread never ends: a poller that panicked once and stopped would leave the mount listing whatever it last saw.
 fn poll_grants(state: Arc<State>) {
     let mut wait = GRANTS_EVERY;
@@ -297,16 +329,7 @@ fn poll_grants(state: Arc<State>) {
     let mut not_served = false;
     loop {
         std::thread::sleep(wait);
-        let polled = guarded("the grant list", || {
-            match state.client.grants(&state.config.agent, GRANTS_EVERY) {
-                Ok(grants) => {
-                    state.set_grants(grants);
-                    Polled::Read
-                }
-                Err(platform::GrantsError::NotServed) => Polled::NotServed,
-                Err(platform::GrantsError::Failed(e)) => Polled::Failed(e),
-            }
-        });
+        let polled = guarded("the grant list", || state.poll_once());
         match polled {
             Some(Polled::Read) => {
                 if failing {
@@ -344,6 +367,7 @@ fn poll_grants(state: Arc<State>) {
     }
 }
 
+#[derive(Debug, PartialEq)]
 enum Polled {
     Read,
     NotServed,

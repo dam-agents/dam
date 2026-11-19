@@ -147,16 +147,7 @@ fn entries(fs: &SatelliteFs, node: &Node, offset: u64) -> Result<Shown, Failure>
         }
         let path = child(node, &listed.name);
         let (number, _) = fs.intern(&node.satellite, &path, &listed.attrs);
-        // UNIT_BOUNDARY_DESCRIPTION: a FIFO, a socket or a device the machine holds is listed, not refused: one such entry must not fail its whole directory. It is shown as a regular file, so the kernel hands every open and read of it to the platform, where the worker refuses it; presenting it as a pipe would let the guest's own kernel answer reads of the machine's tree.
-        shown.push((
-            number,
-            listed
-                .attrs
-                .kind
-                .file_type()
-                .unwrap_or(FileType::RegularFile),
-            listed.name,
-        ));
+        shown.push((number, listed.attrs.kind.file_type(), listed.name));
     }
     Ok(shown)
 }
@@ -192,9 +183,9 @@ fn millis(time: TimeOrNow) -> u64 {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an entry as the kernel is given it. Its owner is the process that asked, not the machine's root, so a harness running as a user an image made owns what it reads, and `git` does not refuse the tree as another user's; the permission bits lose setuid, setgid and sticky, which the mount does not present even though it is mounted nosuid. The block size is the channel's, so a copy of a large file is read and written in the mount's own units.
-fn attr_of(number: u64, attrs: &Attrs, req: &Request) -> Result<FileAttr, Failure> {
+fn attr_of(number: u64, attrs: &Attrs, req: &Request) -> FileAttr {
     let directories = attrs.kind == wire::Kind::Dir;
-    Ok(FileAttr {
+    FileAttr {
         ino: INodeNo(number),
         size: attrs.size,
         blocks: attrs.size.div_ceil(512),
@@ -202,7 +193,7 @@ fn attr_of(number: u64, attrs: &Attrs, req: &Request) -> Result<FileAttr, Failur
         mtime: attrs.modified(),
         ctime: attrs.changed(),
         crtime: UNIX_EPOCH,
-        kind: attrs.kind.file_type()?,
+        kind: attrs.kind.file_type(),
         perm: (attrs.mode & 0o777) as u16,
         nlink: if directories { 2 } else { 1 },
         uid: req.uid(),
@@ -210,7 +201,7 @@ fn attr_of(number: u64, attrs: &Attrs, req: &Request) -> Result<FileAttr, Failur
         rdev: 0,
         blksize: wire::BLOCK_SIZE,
         flags: 0,
-    })
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an entry the mount knows of without asking the platform: the mount's root and each Satellite's own directory, whose size and times are not a machine's to report, and an entry just created, of which the platform has told the mount nothing but that it did create it. Its inode number is the mount's own until the next lookup of that path records the platform's device and inode.
@@ -270,7 +261,7 @@ impl Filesystem for SatelliteFs {
             let answer = self.relay(&node, Op::at("lookup", &path), true)?;
             let attrs = answer.attrs()?;
             let (number, generation) = self.intern(&node.satellite, &path, &attrs);
-            Ok((attr_of(number, &attrs, req)?, generation))
+            Ok((attr_of(number, &attrs, req), generation))
         });
         match found {
             Ok((attr, generation)) => {
@@ -293,7 +284,7 @@ impl Filesystem for SatelliteFs {
             let answer = self.relay(&node, Op::at("getattr", &node.path), true)?;
             let attrs = answer.attrs()?;
             let (number, _) = self.intern(&node.satellite, &node.path, &attrs);
-            attr_of(number, &attrs, req)
+            Ok(attr_of(number, &attrs, req))
         });
         match found {
             Ok(attr) => reply.attr(&super::TTL, &attr),
@@ -374,7 +365,7 @@ impl Filesystem for SatelliteFs {
                     .attrs()?,
             };
             let (number, _) = self.intern(&node.satellite, &node.path, &attrs);
-            attr_of(number, &attrs, req)
+            Ok(attr_of(number, &attrs, req))
         });
         match found {
             Ok(attr) => reply.attr(&super::TTL, &attr),
@@ -638,7 +629,7 @@ impl Filesystem for SatelliteFs {
                 generation,
             };
             let handle = self.state.inodes().open(&created);
-            Ok((attr_of(number, &attrs, req)?, generation, handle))
+            Ok((attr_of(number, &attrs, req), generation, handle))
         });
         match found {
             Ok((attr, generation, handle)) => reply.created(
@@ -673,7 +664,7 @@ impl Filesystem for SatelliteFs {
             match answer.attrs() {
                 Ok(attrs) => {
                     let (number, generation) = self.intern(&parent.satellite, &path, &attrs);
-                    Ok((attr_of(number, &attrs, req)?, generation))
+                    Ok((attr_of(number, &attrs, req), generation))
                 }
                 Err(_) => {
                     let number = self.state.inodes().place(&parent.satellite, &path);
@@ -722,6 +713,14 @@ impl Filesystem for SatelliteFs {
         );
         let found = caught("symlink", || {
             let parent = self.node(parent.0)?;
+            // UNIT_BOUNDARY_DESCRIPTION: a read-only grant refuses a link with EROFS before the target is even looked at, which is what every other change on such a Satellite answers: `ln -s` must not report a rule about the target when the reason is that nothing under this Satellite may be written at all.
+            if self
+                .state
+                .grant(&parent.satellite)
+                .is_some_and(|grant| !grant.writable)
+            {
+                return Err(Failure::ReadOnly);
+            }
             trace!(
                 "symlink parent satellite={:?} path={:?} depth={}",
                 parent.satellite,
@@ -745,7 +744,7 @@ impl Filesystem for SatelliteFs {
             match answer.attrs() {
                 Ok(attrs) => {
                     let (number, generation) = self.intern(&parent.satellite, &path, &attrs);
-                    Ok((attr_of(number, &attrs, req)?, generation))
+                    Ok((attr_of(number, &attrs, req), generation))
                 }
                 Err(_) => {
                     let number = self.state.inodes().place(&parent.satellite, &path);

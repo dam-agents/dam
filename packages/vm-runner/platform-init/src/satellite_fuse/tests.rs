@@ -120,6 +120,21 @@ fn an_answer_is_read_as_the_platform_writes_it() {
     let unknown: Answer =
         serde_json::from_str(r#"{"ok":true,"result":{"kind":"socket"}}"#).unwrap();
     assert_eq!(unknown.attrs().unwrap().kind, Kind::Other);
+    assert_eq!(
+        unknown.attrs().unwrap().kind.file_type(),
+        fuser::FileType::RegularFile,
+        "a special file is shown as a regular file, so every open of it reaches the worker"
+    );
+
+    // TEST_SCENARIO: the worker calls a symbolic link "link"; the mount must read that as a link, not as an unknown kind, or every link in the tree is shown as a regular file.
+    let link: Answer =
+        serde_json::from_str(r#"{"ok":true,"result":{"kind":"link","size":11,"mode":493}}"#)
+            .unwrap();
+    assert_eq!(link.attrs().unwrap().kind, Kind::Symlink);
+    assert_eq!(
+        link.attrs().unwrap().kind.file_type(),
+        fuser::FileType::Symlink
+    );
 }
 
 // TEST_SCENARIO: every errno the channel may answer with arrives at the Agent's command as the same error a local file would give, and a name the mount does not know is EIO rather than success: a rule the platform enforces may not be dropped on the way.
@@ -364,6 +379,83 @@ fn a_grant_list_that_takes_a_satellite_away_says_which_way() {
     assert!(unchanged.quiet.is_empty() && unchanged.gone.is_empty());
     let back = wire::withdrawn(&[grant("lab", false)], &[grant("lab", true)]);
     assert!(back.quiet.is_empty() && back.gone.is_empty());
+}
+
+// TEST_SCENARIO: a successful answer that says the Agent holds nothing is the one answer that takes the whole mount away, and the live run saw it arrive for about 30 s while the Satellite was granted and online. So it is asked twice before anything is dropped: one empty answer followed by the real list leaves the mount as it was, two empty answers take it away, and an empty answer whose confirmation could not be read keeps the last good list — a platform that cannot be reached must not cost the Agent its tree.
+#[test]
+fn an_empty_grant_list_is_confirmed_before_it_takes_the_mount_away() {
+    let state = |answers: Vec<Option<Vec<Grant>>>| {
+        let answers = Arc::new(Mutex::new(answers));
+        let served = answers.clone();
+        let platform = Platform::start(move |_, _| {
+            let next = {
+                let mut held = served.lock().unwrap();
+                if held.is_empty() {
+                    None
+                } else {
+                    held.remove(0)
+                }
+            };
+            match next {
+                Some(grants) => {
+                    let satellites: Vec<serde_json::Value> = grants
+                        .iter()
+                        .map(|held| {
+                            json!({
+                                "name": held.name,
+                                "writable": held.writable,
+                                "online": held.online,
+                            })
+                        })
+                        .collect();
+                    (200, json!({"satellites": satellites}).to_string())
+                }
+                None => (500, json!({"ok": false, "errno": "EIO"}).to_string()),
+            }
+        });
+        let client = Client::new(platform.url(), None).unwrap();
+        let state = State::new(
+            Config {
+                api_server: platform.url().to_string(),
+                agent: String::from("agent-1"),
+                proxy: None,
+            },
+            client,
+        );
+        state.set_grants(vec![grant("lab")]);
+        state
+    };
+
+    let one_empty = state(vec![Some(Vec::new()), Some(vec![grant("lab")])]);
+    assert_eq!(one_empty.poll_once(), super::Polled::Read);
+    assert_eq!(
+        one_empty.grants(),
+        vec![grant("lab")],
+        "one empty answer is not a revocation"
+    );
+
+    let two_empty = state(vec![Some(Vec::new()), Some(Vec::new())]);
+    assert_eq!(two_empty.poll_once(), super::Polled::Read);
+    assert!(
+        two_empty.grants().is_empty(),
+        "two empty answers take the mount away"
+    );
+
+    let unreadable = state(vec![Some(Vec::new()), None]);
+    assert!(matches!(unreadable.poll_once(), super::Polled::Failed(_)));
+    assert_eq!(
+        unreadable.grants(),
+        vec![grant("lab")],
+        "a confirmation that could not be read keeps the last good list"
+    );
+
+    let revoked = state(vec![Some(vec![grant("other")])]);
+    assert_eq!(revoked.poll_once(), super::Polled::Read);
+    assert_eq!(
+        revoked.grants(),
+        vec![grant("other")],
+        "a non-empty list that omits a Satellite takes it away at once"
+    );
 }
 
 // TEST_SCENARIO: the mount starts only on a machine the controller gave the channel to. Its api-server and its Agent are the two settings a boot cannot invent, and a machine whose launch record lacks either — an older controller's — boots without a mount rather than asking the api-server on a path that names no Agent. The proxy is read from the launch environment and nowhere else.
@@ -637,6 +729,13 @@ fn the_mount_serves_the_granted_satellites_over_a_real_fuse_session() {
     assert!(ok, "walking 600 entries: {walked}");
     assert_eq!(walked.trim(), "600");
 
+    let (ok, linked) = shell(format!("ln -s ../a.txt {mnt}/ro/out"));
+    assert!(!ok, "a link was created on a read-only Satellite");
+    assert!(
+        linked.contains("Read-only file system"),
+        "the refusal said {linked}"
+    );
+
     let (ok, refused) = shell(format!("echo x > {mnt}/ro/a.txt"));
     assert!(!ok, "a write to a read-only Satellite landed");
     assert!(
@@ -702,6 +801,60 @@ fn the_mount_serves_the_granted_satellites_over_a_real_fuse_session() {
     let (ok, target) = shell(format!("readlink {mnt}/lab/docs/notes/link"));
     assert!(ok, "readlink: {target}");
     assert_eq!(target.trim(), "../../a.txt");
+    let (ok, links) = shell(format!("find {mnt}/lab -type l"));
+    assert!(ok, "find -type l: {links}");
+    assert!(
+        links.lines().any(|line| line.ends_with("docs/notes/link"))
+            && links.lines().any(|line| line.ends_with("lab/outside")),
+        "a link the machine holds is not a link to find: {links}"
+    );
+    let (_, listed) = shell(format!("ls -l {mnt}/lab"));
+    assert!(
+        !listed.contains("Input/output error"),
+        "a special file failed its listing: {listed}"
+    );
+    assert!(
+        listed
+            .lines()
+            .any(|line| line.starts_with('-') && line.ends_with(" pipe")),
+        "a special file is not shown as a regular file: {listed}"
+    );
+    assert!(
+        listed
+            .lines()
+            .any(|line| line.starts_with('l') && line.ends_with(" outside")),
+        "a link is not shown as a link: {listed}"
+    );
+    let (_, types) = shell(format!(
+        "stat -c %F {mnt}/lab/pipe; stat -c %F {mnt}/lab/outside"
+    ));
+    assert_eq!(
+        types.lines().take(2).collect::<Vec<_>>(),
+        vec!["regular empty file", "symbolic link"],
+        "a special file and a link must stat: {types}"
+    );
+    let (ok, denied) = shell(format!("cat {mnt}/lab/outside"));
+    assert!(!ok, "a link out of the tree was followed: {denied}");
+    assert!(
+        denied.contains("Permission denied"),
+        "the refusal said {denied}"
+    );
+    let (ok, pipes) = shell(format!("find {mnt}/lab -type p"));
+    assert!(ok, "find -type p: {pipes}");
+    assert!(
+        pipes.trim().is_empty(),
+        "a special file is a pipe to find: {pipes}"
+    );
+    let (ok, files) = shell(format!("find {mnt}/lab -maxdepth 1 -type f"));
+    assert!(ok, "find -type f: {files}");
+    assert!(
+        files.lines().any(|line| line.ends_with("lab/pipe")) && !files.contains("outside"),
+        "a special file is not a regular file to find, or a link is: {files}"
+    );
+    // UNIT_BOUNDARY_DESCRIPTION: a special file is a regular file to the kernel, so a read of it is an operation on the channel rather than an open the guest's own kernel answers: it returns at once, with what the platform gives for it, which for a file the worker would refuse is that refusal.
+    let (ok, fifo) = shell(format!("timeout 3 cat {mnt}/lab/pipe"));
+    assert!(ok, "a read of a special file waited or failed: {fifo}");
+    assert!(fifo.is_empty(), "a special file had contents: {fifo}");
     // UNIT_BOUNDARY_DESCRIPTION: the mount's own answer is what these two links are held to: the request must reach the server and be refused with EPERM. The errno the caller sees is read from a direct symlink(2), not from a tool's message, because a kernel may map a filesystem's error and the CI kernel (7.0.0-azure) reports EACCES for a symlink the server answered with EPERM. A caller errno other than EPERM is accepted only when the server trace proves the mount refused with EPERM, and the environment that did it is printed.
     let escaping = refused_symlink(&format!("{mnt}/lab/docs/notes/out"), "../../../etc/passwd");
     assert!(
@@ -850,6 +1003,14 @@ fn the_mount_serves_the_granted_satellites_over_a_real_fuse_session() {
 
     super::unmount(&state).unwrap();
     let _ = std::fs::remove_dir(&dir);
+}
+
+fn grant(name: &str) -> Grant {
+    Grant {
+        name: name.to_string(),
+        writable: true,
+        online: true,
+    }
 }
 
 fn offline(state: &State) {
@@ -1014,6 +1175,7 @@ impl Tree {
         }
         // UNIT_BOUNDARY_DESCRIPTION: a FIFO, a socket or a device the machine holds: the platform can describe it only as "other", and one of them must not fail the listing of its directory.
         tree.add("lab", "pipe", "other", String::new(), 0o644);
+        tree.add_link("lab", "outside", "/etc/passwd");
         tree.add("lab", "many", "dir", String::new(), 0o755);
         for number in 0..600 {
             tree.add(
@@ -1043,6 +1205,20 @@ impl Tree {
                 data: data.into_bytes(),
                 target: String::new(),
                 mode,
+                ino,
+            },
+        );
+    }
+
+    fn add_link(&self, satellite: &'static str, path: &str, target: &str) {
+        let ino = self.next_ino.fetch_add(1, Ordering::SeqCst) as u64;
+        self.nodes.lock().unwrap().insert(
+            (satellite, path.to_string()),
+            InMemory {
+                kind: "link",
+                data: Vec::new(),
+                target: target.to_string(),
+                mode: 0o777,
                 ino,
             },
         );
@@ -1312,7 +1488,7 @@ impl Tree {
                 nodes.insert(
                     key.clone(),
                     InMemory {
-                        kind: "symlink",
+                        kind: "link",
                         data: Vec::new(),
                         target: target.to_string(),
                         mode: 0o777,

@@ -139,24 +139,25 @@ fn time(milliseconds: f64) -> std::time::SystemTime {
     std::time::UNIX_EPOCH + std::time::Duration::from_millis(milliseconds.max(0.0) as u64)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what a path names, as the platform names it, and the file type the kernel is shown. A kind this mount does not know is EIO rather than a regular file: the mount may not invent a shape for something it cannot describe, and a FIFO shown as a regular file would have the Agent's tools read bytes that are not there.
+// UNIT_BOUNDARY_DESCRIPTION: what a path names, as the platform names it, and the file type the kernel is shown. The platform calls a symbolic link `link`, so that is its name on the wire, and a link is presented as one: `find -type l` and `ls -l` see what the machine holds, and only the target is withheld from a link that leaves the root. A kind the mount does not know — a FIFO, a socket or a device — is presented as a regular file, which is the one shape that keeps every open and read of it on the channel: listed and stat-able, and refused by the worker with EPERM when its contents are asked for, where a pipe would let the guest's own kernel answer the open and block until a writer came. The cost is that `find -type f` counts it, since the channel has no way to say "special" and a mount may not behave differently from what it showed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     File,
     Dir,
+    #[serde(rename = "link")]
     Symlink,
     #[serde(other)]
     Other,
 }
 
 impl Kind {
-    pub fn file_type(self) -> Result<fuser::FileType, Failure> {
+    pub fn file_type(self) -> fuser::FileType {
         match self {
-            Self::File => Ok(fuser::FileType::RegularFile),
-            Self::Dir => Ok(fuser::FileType::Directory),
-            Self::Symlink => Ok(fuser::FileType::Symlink),
-            Self::Other => Err(Failure::Io),
+            Self::File => fuser::FileType::RegularFile,
+            Self::Dir => fuser::FileType::Directory,
+            Self::Symlink => fuser::FileType::Symlink,
+            Self::Other => fuser::FileType::RegularFile,
         }
     }
 }
