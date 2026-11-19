@@ -248,8 +248,35 @@ describe("the sections screen on a phone", () => {
 });
 
 describe("the chat header", () => {
-  // TEST_SCENARIO: where the chat is wide enough, the header flanks the content well, as the design review drew it: three columns around the messages' 749 px, the agent menu ending in the first and New chat starting in the third; a narrower chat keeps both inside the messages' column, at their edges.
-  it("flanks the messages' column, or sits at its edges", () => {
+  /* happy-dom lays nothing out, so each test gives the header and its two ends their widths */
+  function widths(header: number, start: number, end: number) {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        const width =
+          this.tagName === "HEADER"
+            ? header
+            : this.dataset.testid === "chat-header-start"
+              ? start
+              : this.dataset.testid === "chat-header-end"
+                ? end
+                : 0;
+        return {
+          width,
+          height: 0,
+          top: 0,
+          left: 0,
+          right: width,
+          bottom: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        } as DOMRect;
+      },
+    );
+  }
+  afterEach(() => vi.restoreAllMocks());
+
+  function renderHeader() {
     render(
       createElement(ClassicChatLayout, {
         ...(layout().props as object),
@@ -258,7 +285,13 @@ describe("the chat header", () => {
     );
     const start = byTestId("chat-header-start")!;
     const end = byTestId("chat-header-end")!;
-    const row = start.parentElement!;
+    return { start, end, row: start.parentElement! };
+  }
+
+  // TEST_SCENARIO: where the chat is wide enough, the header flanks the content well, as the design review drew it: three columns around the messages' 749 px, the agent menu ending in the first and New chat starting in the third; a narrower chat keeps both inside the messages' column, at their edges.
+  it("flanks the messages' column, or sits at its edges", () => {
+    widths(1400, 200, 100);
+    const { start, end, row } = renderHeader();
     expect(start.contains(byTestId("identity"))).toBe(true);
     expect(end.contains(byTestId("new-chat"))).toBe(true);
     expect(row.className).toContain("max-w-[813px]");
@@ -269,5 +302,15 @@ describe("the chat header", () => {
     expect(start.className).toContain("@5xl/chat:justify-self-end");
     expect(end.className).toContain("@5xl/chat:col-start-3");
     expect(end.className).toContain("@5xl/chat:justify-self-start");
+  });
+
+  // TEST_SCENARIO: a wide chat whose margin is narrower than the agent menu — a long name, the Shared badge, the running count, the sidebar expanded — keeps the header inside the messages' column, as a narrow chat does, so no part of the menu goes under the sidebar.
+  it("moves into the messages' column when the agent menu does not fit beside it", () => {
+    widths(1050, 230, 100);
+    const { start, end, row } = renderHeader();
+    expect(row.className).toContain("md:@xl/chat:px-8");
+    expect(row.className).not.toContain("@5xl/chat:grid");
+    expect(start.className).not.toContain("@5xl/chat:justify-self-end");
+    expect(end.className).not.toContain("@5xl/chat:col-start-3");
   });
 });

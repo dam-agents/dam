@@ -42,6 +42,32 @@ export function classicColumns({
   };
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: the chat header's flanking geometry, as its class names in the layout draw it: the messages' well, the gap on each side of it, and how far the agent menu's end reaches past the gap. */
+const HEADER_WELL_W = 749;
+const HEADER_GAP = 16;
+const HEADER_START_REACH = 8;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: whether the chat header can flank the messages'
+ * well, as the design draws a wide chat: the start (the agent menu, the Shared
+ * badge, the running count) must fit in the margin left of the well, and the
+ * end (New chat) in the margin right of it. Where either does not, the header
+ * sits inside the well, as in a narrow chat, so nothing spills past the chat's
+ * edge and under the sidebar.
+ */
+export function headerFlanks({
+  headerW,
+  startW,
+  endW,
+}: {
+  headerW: number;
+  startW: number;
+  endW: number;
+}): boolean {
+  const margin = (headerW - HEADER_WELL_W) / 2 - HEADER_GAP;
+  return startW <= margin + HEADER_START_REACH && endW <= margin;
+}
+
 export type ClassicAppTab = Extract<SidePanelTab, "approvals">;
 
 export function classicAppTab(
