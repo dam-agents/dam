@@ -68,13 +68,11 @@ describe("usage off the stream", () => {
     });
   });
 
-  /** TEST_SCENARIO: Messages reports input and cache counts on
-   * message_start and the output count on message_delta; the stream passes
-   * through byte for byte however it is chunked. */
-  /** TEST_SCENARIO: A Messages stream names the counts in message_start and
-   * again in message_delta, where a gateway sends null or 0 for the ones it
-   * did not change; the start's counts stand and the delta's output count
-   * wins. */
+  /** TEST_SCENARIO: A Messages stream sends its counts in message_start and
+   * again in message_delta. Each count that message_delta sends as a number
+   * replaces the start's count, also 0; a null or missing count keeps the
+   * start's value. The stream passes through byte for byte however it is
+   * chunked. */
   it("merges Messages' start and delta usage", async () => {
     const text = sse([
       {
@@ -103,7 +101,7 @@ describe("usage off the stream", () => {
     expect(usage).toEqual({
       inputTokens: 10,
       outputTokens: 42,
-      cacheReadTokens: 300,
+      cacheReadTokens: 0,
       cacheCreationTokens: 20,
     });
     expect(passed).toBe(text);

@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-11-16
+Last verified: 2026-11-19
 
 ## Overview
 
@@ -159,7 +159,7 @@ The order carries weight because an agent can hold several connections at once a
 To be usable a provider has to answer such a listing over the agent's normal egress and let a conversational model be told apart from the rest of what it fronts; nothing else about it matters, and because the request leaves the machine through the credential-injecting gateway like any other, discovery authenticates with the injected credential rather than one the agent holds.
 The source names the variables that hold the connection's credential placeholder, and the listing carries it as a harness request would: a gateway that injects only addressed requests learns the connection from it, and one that injects every request replaces it.
 Once the env rail has materialized, no connection supplying a URL means the agent has no provider to list, so the read reports no list at all and one an earlier provider established is cleared rather than left offering models the agent can no longer reach; before that first materialization a missing URL says nothing about the grant.
-A source may also name a second listing on the same endpoint, asked only when the provider refuses the first: a LiteLLM key can be barred from the model-information route yet allowed the OpenAI model list, which says nothing of what a model is for, so there only the name keeps an embedding model out.
+A source may also name a second listing on the same endpoint, asked when the first gives no model list: a LiteLLM key can be barred from the model-information route yet allowed the OpenAI model list, which says nothing of what a model is for, so there only the name keeps an embedding model out.
 A provider that refuses every listing or cannot be reached and a listing with no conversational model in it are one outcome — *unavailable* — which leaves whatever list was last established in place and never fails the read; the first read of a machine's life pays DNS and a TLS handshake before any of that, so it is retried once rather than being written off on a merely slow cold path.
 The runtime keeps the last list each provider endpoint gave a harness, in memory and on the agent's home volume, and answers the model list and the current-values read from it at once, asking the provider again behind the answer, so a slow listing through the gateway never holds the picker or the defaults label.
 When that listing changes a kept list, a watch on the runtime's harness-config surface tells each open chat and agent settings view to read the model lists and current values again; the notice carries no payload, and every subscription opens with one, so a reconnect heals by re-reading.
@@ -217,7 +217,7 @@ It adds Anthropic's OAuth beta flag to a call bound for the subscription Connect
 The body goes out with `model` rewritten to the upstream id; the response comes back with only its model field rewritten to the name the harness asked for, so transcripts record the provider.
 No retries, as a second call is a second bill, but two: a call a model refuses for its images goes again with a note for each, as do that model's later calls, since a Session's history sends an image on every turn; one Claude refuses for another model's thinking goes again without the earlier thinking, later calls too.
 An upstream error keeps its status and headers, and its message gets a lead sentence that names the provider, the model, the API and the harness, so the harness shows where the call failed; a [spend refusal](spend-limits.md#refusal) passes unchanged.
-Each call is reported once on the telemetry rail with its tokens, Connection, upstream model, dialect, harness and session, and no cost: every spend figure reads the gateway's [meter](spend-limits.md#ledger).
+Each call is reported once on the telemetry rail with its tokens, Connection, upstream model, dialect, harness and session, and no cost: every spend figure reads the gateway's [meter](spend-limits.md#ledger), and the tokens follow its [stream rule](spend-limits.md#meter).
 
 **Replay rules** apply by target, since the router cannot know which model wrote a history: for a Responses target other than OpenAI, reasoning items and `client_metadata` are dropped and a tool-less request's tool items become text; for OpenAI only reasoning items with a non-empty `content` array are dropped; chat completions and Messages replay unchanged.
 The router also fits the output budget to the catalog's limit, drops a reasoning effort that the model or its deployment refuses, and adds `include_usage` to a streamed chat completion so its final chunk carries the usage.

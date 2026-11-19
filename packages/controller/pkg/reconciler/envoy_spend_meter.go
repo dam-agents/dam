@@ -247,10 +247,12 @@ end
 local function new_meter(format)
   local meter = {fields = {}, ended = false}
   local fields = meter.fields
-  local buf, base, counted = "", 0, 0
+  local buf, base, counted, merged = "", 0, 0, 0
   local depth, quoted, escaped = 0, false, false
   local piece, last, last_depth, key, key_depth = nil, nil, 0, nil, 0
+  local member, event = nil, nil
   local field_depth = {}
+  local final_usage = {}
 
   local function settle(value)
     if key_depth <= (field_depth[key] or math.huge) then
@@ -263,7 +265,7 @@ local function new_meter(format)
     key = nil
   end
 
-  local function read_shallowest_fields(data)
+  local function read_shallowest_fields(data, at)
     local i, n = 1, #data
     while i <= n do
       if quoted and escaped then
@@ -282,10 +284,12 @@ local function new_meter(format)
           quoted, i = false, j + 1
           if key ~= nil then
             settle(piece or nil)
+          elseif member == "type" then
+            event = piece
           else
             last, last_depth = piece, depth
           end
-          piece = nil
+          piece, member = nil, nil
         end
       else
         local c = string.byte(data, i)
@@ -293,37 +297,48 @@ local function new_meter(format)
           quoted, piece = true, ""
         elseif c == 58 then
           if last and SHALLOWEST_FIELDS[last] then key, key_depth = last, last_depth end
+          member = last_depth == 1 and last or nil
           last = nil
         elseif c ~= 32 and c ~= 9 and c ~= 10 and c ~= 13 then
           if key ~= nil then settle(nil) end
+          if c == 123 and member == "usage" and event == "message_delta" then
+            final_usage[at + i] = true
+          end
           if c == 123 or c == 91 then
             depth = depth + 1
           elseif (c == 125 or c == 93) and depth > 0 then
             depth = depth - 1
+            if depth == 0 then event = nil end
           end
-          last = nil
+          last, member = nil, nil
         end
         i = i + 1
       end
     end
   end
 
-  local function raise(counts)
+  local function raise(into, counts)
     for field, number in pairs(counts) do
-      if number > (fields[field] or -1) then fields[field] = number end
+      if number > (into[field] or -1) then into[field] = number end
     end
   end
 
-  local function merge(object)
+  local function merge(object, replace)
+    local counts = {}
     local s, open = string.find(object, '"iterations"%s*:%s*%[')
     if s ~= nil then
       local close = close_of(object, open, 91, 93, #object)
       if close then
-        raise(counts_in(string.sub(object, open, close), true))
+        counts = counts_in(string.sub(object, open, close), true)
         object = string.sub(object, 1, s - 1) .. string.sub(object, close + 1)
       end
     end
-    raise(counts_in(object, false))
+    raise(counts, counts_in(object, false))
+    if replace then
+      for field, number in pairs(counts) do fields[field] = number end
+    else
+      raise(fields, counts)
+    end
     for key, value in string.gmatch(object, '"([%w_]+)"%s*:%s*"([%w_%-]+)"') do
       if TEXT_FIELDS[key] then fields[key] = value end
     end
@@ -339,7 +354,7 @@ local function new_meter(format)
   end
 
   function meter.scan(data)
-    read_shallowest_fields(data)
+    read_shallowest_fields(data, base + #buf)
     local text = buf .. data
     local keep
     local from = 1
@@ -351,7 +366,12 @@ local function new_meter(format)
         keep = s
         break
       end
-      if close then merge(string.sub(text, open, close)) end
+      local final = final_usage[base + open] == true and format ~= "json"
+      final_usage[base + open] = nil
+      if close and base + open > merged then
+        merge(string.sub(text, open, close), final)
+        merged = base + close
+      end
       from = (close or open) + 1
     end
     if format ~= "json" and not meter.ended then

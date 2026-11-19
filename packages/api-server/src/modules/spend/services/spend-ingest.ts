@@ -152,9 +152,13 @@ export function createSpendIngest(deps: {
     const applied = await deps.calls.apply(callId, row, amounts, final);
     if (!applied) return false;
     const delta = amountsDelta(amounts, applied.previous);
-    if (!isZero(delta)) {
+    if (final || !isZero(delta)) {
       try {
-        await deps.ledger.add(applied.row, delta, amounts.costMicros);
+        await deps.ledger.add(
+          applied.row,
+          delta,
+          final ? amounts.costMicros : 0,
+        );
       } catch (err) {
         await deps.calls.restore(callId, applied).catch(() => {});
         throw err;
@@ -175,9 +179,11 @@ export function createSpendIngest(deps: {
         from,
         to: row.day,
       });
+    const today = await within(row.day);
     const highest =
-      (await within(row.day)) ??
-      (await within(daysBefore(row.day, REFERENCE_DAYS - 1)));
+      today !== null && today > 0
+        ? today
+        : await within(daysBefore(row.day, REFERENCE_DAYS - 1));
     if (highest === null) {
       log().warn(
         { payer: row.payer, connectionId: row.connectionId, day: row.day },
