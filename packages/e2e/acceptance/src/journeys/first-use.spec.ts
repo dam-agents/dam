@@ -10,11 +10,10 @@ const mockDefaultReply = "Hello from the mock agent.";
 test("first use: sign in, one-click agent, first answer, delete", async ({
   browser,
   person,
-}, testInfo) => {
+}) => {
   test.setTimeout(420_000);
   const jo = await person("Jo");
   const context = await browser.newContext();
-  await context.tracing.start({ screenshots: true, snapshots: true });
   const page = await context.newPage();
   let agentName = "";
   try {
@@ -93,12 +92,6 @@ test("first use: sign in, one-click agent, first answer, delete", async ({
         .toBe(false);
     });
   } finally {
-    const path = testInfo.outputPath("journey-trace.zip");
-    await context.tracing.stop({ path });
-    await testInfo.attach("journey-trace.zip", {
-      path,
-      contentType: "application/zip",
-    });
     await context.close();
     for (const connection of await jo.api.connections.list.query())
       if (connection.templateId === "openai")

@@ -93,8 +93,10 @@ The suite's **journeys** are a few standalone stories in the browser, such as a 
 Unlike the smoke suite's chained projects, a journey depends on no other test.
 
 Each Playwright worker signs in as the accounts of its own slot, `acceptance-<persona>-<slot>`, which the e2e values provision and nothing else uses, so tests in two workers never see each other's Agents.
-A slot keeps booted mock Agents, marked by their description, that the Given steps rename and script: an Example costs seconds instead of a machine boot, and a later worker of the slot wakes and reuses them.
-A failed test carries its own log bundle in the report: the browser trace and screenshot of every persona it drove, the ACP frames and Agent listings the API driver saw, and the state of every Agent it named.
+The suite runs one worker, with one slot: every owner gets a VM runner of its own that reserves memory, so each extra slot costs the node three runners beside the smoke suite's Agents, and a second slot left a CI node without the memory to boot a machine.
+A slot keeps booted mock Agents, marked by their description, that the Given steps rename and give an answer: an Example costs seconds instead of a machine boot, and a later worker of the slot wakes and reuses them.
+A Given step sets the answer as the Agent's `MOCK_DEFAULT_REPLY` and waits until the Agent reports it, because the mock starts a new process for a new Session and each process takes its first script from that variable.
+A failed test carries its own log bundle in the report: the Playwright trace and a screenshot of every persona's page, the ACP frames and Agent listings the API driver saw, and the state of every Agent it named.
 The job summary times the suite as its own phase beside the smoke suite.
 
 ## Running it

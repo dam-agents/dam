@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 
-import { type Browser, type Page } from "@playwright/test";
+import { type Browser, expect, type Page } from "@playwright/test";
 import { test as base } from "playwright-bdd";
 
 import { signInThroughTheBrowser } from "./auth.js";
@@ -17,6 +17,8 @@ import {
 import { World } from "./world.js";
 
 export type Surface = "api" | "ui";
+
+const mockReplyEnv = "MOCK_DEFAULT_REPLY";
 
 interface Cast {
   person(persona: Persona): Promise<Person>;
@@ -48,7 +50,7 @@ async function signIn(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the fixtures every example and journey runs on. A worker owns the accounts of its parallel slot and signs each persona in once. The slot keeps booted mock Agents per persona, marked by their description, which the Given steps rename and script and later workers of the slot wake and reuse, so an example costs seconds instead of a machine boot. A test owns its World, its Driver, which the project's `surface` option picks, and one browser page per persona; when it fails, the World's evidence and the state of every Agent it named are attached to it.
+ * UNIT_BOUNDARY_DESCRIPTION: the fixtures every example and journey runs on. A worker owns the accounts of its parallel slot and signs each persona in once. The slot keeps booted mock Agents per persona, marked by their description, which the Given steps rename and script and later workers of the slot wake and reuse, so an example costs seconds instead of a machine boot. A Given step scripts an Agent's answer through its environment, `MOCK_DEFAULT_REPLY`, which every harness process the mock starts reads, and waits until the Agent reports it. A test owns its World, its Driver, which the project's `surface` option picks, and one browser page per persona, which Playwright traces; when it fails, a screenshot of each page, the World's evidence and the state of every Agent it named are attached to it.
  */
 export const test = base.extend<
   {
@@ -141,21 +143,32 @@ export const test = base.extend<
         const owner = await cast.person(persona);
         const unique = world.unique(name);
         await owner.api.agents.update.mutate({ id, name: unique });
-        if (answer !== undefined)
-          await owner.api.e2e.setScript.mutate({
-            agentId: id,
-            script: {
-              entries: [
-                {
-                  sessionUpdate: {
-                    sessionUpdate: "agent_message_chunk",
-                    content: { type: "text", text: world.unique(answer) },
-                  },
-                },
-              ],
-              stopReason: "end_turn",
-            },
+        if (answer !== undefined) {
+          const reply = world.unique(answer);
+          const env = (await owner.api.agents.get.query({ id })).env ?? [];
+          await owner.api.agents.setEnv.mutate({
+            id,
+            env: [
+              ...env.filter((v) => v.name !== mockReplyEnv),
+              { name: mockReplyEnv, value: reply },
+            ],
           });
+          await expect
+            .poll(
+              async () =>
+                (
+                  await owner.api.e2e.getEnv
+                    .query({ agentId: id, name: mockReplyEnv })
+                    .catch(() => undefined)
+                )?.value,
+              {
+                timeout: 120_000,
+                intervals: [250, 500, 1_000],
+                message: `${persona}'s agent never took its answer`,
+              },
+            )
+            .toBe(reply);
+        }
         world.agents.set(name, { owner: persona, name: unique, id });
         world.note({ step: "agent ready", persona, name: unique, id });
       },
@@ -170,27 +183,18 @@ export const test = base.extend<
       const context = await browser.newContext({
         storageState: await cast.storageState(person.persona),
       });
-      await context.tracing.start({ screenshots: true, snapshots: true });
       const page = await context.newPage();
       pages.set(person.persona, page);
       return page;
     });
     const failed = testInfo.status !== testInfo.expectedStatus;
     for (const [persona, page] of pages) {
-      const context = page.context();
-      if (failed) {
+      if (failed)
         await testInfo.attach(`${persona}-screenshot.png`, {
           body: await page.screenshot({ fullPage: true }),
           contentType: "image/png",
         });
-        const path = testInfo.outputPath(`${persona}-trace.zip`);
-        await context.tracing.stop({ path });
-        await testInfo.attach(`${persona}-trace.zip`, {
-          path,
-          contentType: "application/zip",
-        });
-      }
-      await context.close();
+      await page.context().close();
     }
   },
 

@@ -13,4 +13,4 @@ export const mockTemplateId = "mock";
 export const accountPassword =
   process.env.PLATFORM_ACCEPTANCE_PASSWORD ?? "acceptance-e2e";
 
-export const accountSlots = 2;
+export const accountSlots = 1;
