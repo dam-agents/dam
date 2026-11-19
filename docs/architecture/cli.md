@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-11-18
+Last verified: 2026-11-19
 
 ## Overview
 
@@ -141,7 +141,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
   Slack connect binds a channel and sets ambient mode and channel history on or off; a re-connect changes only the modes it names, and the channel listing shows each binding's state of both.
   `channel slack-dm status|connect|disconnect` is the DM Bridge ([channels](channels.md)): `status` is read-only, sending nothing and binding nothing, and reports whether the owner's Slack account is linked, pairable by verified email, off, or unavailable with the reason; `connect <agent> [--purpose <text>]` binds that Agent to the owner's own 1:1 DM with the bot, as the DM's default only while it has none, and posts one hello naming what the Agent sends and how to undo it; `disconnect <agent>` releases the binding, the threads its sessions owned there, and only an `email` pairing.
   An ambient or channel history connect against a server that doesn't understand it fails loud rather than silently landing without it.
-  Telegram binds in-chat (`/bind`), so it has no CLI verb.
+  Telegram binds in-chat (`/bind`), so it has no CLI verb; `channel telegram bot` reports the install's bot — its username and `https://t.me/<username>` link, the same `channels.telegramBot` read the web UI's Telegram dialog makes — so an Agent with only the CLI can hand a user the link to open; Telegram off, or a bot that has not told the server its name, is said, not an error, and `--json` gives null for both.
 - **`skill`** — git-based skill sources, install/uninstall, and publish, owned by [skills.md](skills.md).
 - **`satellite`** *(experimental)* — expose this machine's tools and manage the ones an account has, owned by [satellites.md](satellites.md).
   Within the deployment-facing groups, `mcp` and `shell` have no browser counterpart: each is the worker itself, and its log is how a user reads what the machine accepted, refused and ran.

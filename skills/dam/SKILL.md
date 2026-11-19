@@ -487,9 +487,12 @@ dam channel slack connect my-agent --channel-id C0123ABCD
 dam channel slack-dm status
 dam channel slack-dm connect my-agent --purpose "your Friday draft"
 dam channel slack-dm disconnect my-agent
+dam channel telegram bot --json
 ```
 
 A Telegram chat is bound from inside the chat with the bind command, not from the CLI.
+When the user asks to connect an agent on Telegram, run `dam channel telegram bot --json` and send them its `link`, the bot's `https://t.me/<username>` page, with the steps: for a private chat, open the link and press **Start**; for a group, add the bot to it and send `/bind` there, which only a group admin can; then follow the link the bot posts and pick the agent within about 10 minutes.
+When `enabled` is false, Telegram is off on this install; when `link` is null, the server does not know the bot's name yet: tell the user that, and point them to the agent's **Channels** settings in the web app.
 Everyone in a bound channel steers the agent with its connections: check the agent first, as the [security advisory](references/security-advisory.md#check-before-you-share) says.
 
 `dam channel slack-dm` is the DM Bridge: `status` reports whether the user's Slack account can be paired, `connect` binds the agent to the user's own direct message with the bot, and `disconnect` releases it.

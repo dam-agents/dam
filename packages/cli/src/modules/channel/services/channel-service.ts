@@ -27,6 +27,7 @@ type ChannelList = readonly ChannelConfig[];
 
 export interface ChannelService {
   available(): Promise<ChannelResult<Partial<Record<ChannelType, boolean>>>>;
+  telegramBot(): Promise<ChannelResult<{ username: string } | null>>;
   connectSlack(
     id: string,
     slackChannelId: string,
@@ -70,6 +71,9 @@ export function createChannelService(deps: {
   return {
     async available() {
       return trpcCall(() => deps.trpc.channels.available.query());
+    },
+    async telegramBot() {
+      return trpcCall(() => deps.trpc.channels.telegramBot.query());
     },
     async connectSlack(id, slackChannelId, modes) {
       try {
