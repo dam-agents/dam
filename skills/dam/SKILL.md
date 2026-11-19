@@ -1,14 +1,14 @@
 ---
 name: dam
 description: >
-  Drive the user's DAM deployment from this machine with the `dam` CLI: their agents (create, run, restart, delete), prompts and answers, files, artifact sharing, starter kits, schedules, connections, network rules, approvals, channels, skills and spend.
+  Drive the user's DAM deployment with the `dam` CLI: agents, prompts and answers, files, artifacts, starter kits, schedules, connections, network rules, approvals, channels, skills and spend.
   Use whenever the user asks to do anything on DAM or with one of their DAM agents, or mentions `dam`.
-  Covers installing the CLI, signing in, and that you never see a secret: the user types every credential on a DAM page or into a command you hand them.
-  Its security advisory says how to set agents up so credentials stay out of reach and the user knows who acts as them.
-  It asks before it deletes anything and waits for the user's answer in a later message: a request to delete is not that answer.
-  Its map of the web app says where in the app each task is done, by the page the app shows.
-  A DAM agent holding the install's own connection has the CLI and this skill already, and the personal assistant the install gave the user reads it before it starts on a task.
-  It diagnoses another of the user's agents from outside when the user asks why one failed, slowed down or costs more, and it drafts a platform problem report the user sends themselves, posting nothing.
+  Covers installing the CLI, signing in, and that you never see a secret: the user types every credential on a DAM page.
+  Its security advisory says how to set agents up so credentials stay out of reach.
+  It asks before it deletes anything and waits for the answer in a later message: the request is not that answer.
+  Its map of the web app says where each task is done.
+  A DAM agent holding the install's own connection has the CLI and this skill already; the personal assistant reads it before a task.
+  It diagnoses another of the user's agents when asked why one failed, slowed or costs more, and drafts a platform problem report the user sends, posting nothing.
 ---
 
 DAM runs the user's AI agents in isolated sandboxes on a server.
