@@ -12,6 +12,7 @@ import {
   buildSlackDmDisconnectCommand,
   buildSlackDmStatusCommand,
 } from "./commands/slack-dm.js";
+import { buildTelegramBotCommand } from "./commands/telegram-bot.js";
 import {
   createChannelService,
   type ChannelService,
@@ -83,6 +84,18 @@ export function composeChannelModule(
   slackDm.addCommand(buildSlackDmConnectCommand(agentScoped));
   slackDm.addCommand(buildSlackDmDisconnectCommand(agentScoped));
   parent.addCommand(slackDm);
+
+  const telegram = new Command("telegram").description(
+    "This host's Telegram bot (a chat binds in Telegram itself, with /bind)",
+  );
+  telegram.addCommand(
+    buildTelegramBotCommand({
+      compatService: opts.compatService,
+      configService: opts.configService,
+      createChannelService: createService,
+    }),
+  );
+  parent.addCommand(telegram);
 
   return { commands: [parent], exports: { createService } };
 }
