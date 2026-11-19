@@ -79,7 +79,7 @@ The two summaries hold the same table, so a phase of one lane compares with the 
 
 ## Acceptance suite
 
-The **acceptance suite** in [`packages/e2e/acceptance`](../../packages/e2e/acceptance/) states what the product does as Gherkin feature files, and runs them on the same install after the smoke suite, in every run the smoke suite runs.
+The **acceptance suite** in [`packages/e2e/acceptance`](../../packages/e2e/acceptance/) states what the product does as Gherkin feature files, and `mise run e2e` runs them on the same install after the smoke suite, so both CI lanes run them; `e2e:loop` runs the smoke suite alone.
 Its package depends only on the API contract package and its test tools, so a test cannot import the server's internals; `check:boundary` refuses any other dependency.
 A feature file holds **Rules**, each with concrete **Examples** in Given/When/Then form, written in the words of the [glossary](../ubiquitous-language.md) and never in the words of a screen.
 `playwright-bdd` turns the feature files into Playwright tests, and `check:steps` refuses a step that has no step definition.
@@ -94,7 +94,7 @@ Unlike the smoke suite's chained projects, a journey depends on no other test.
 
 Each Playwright worker signs in as the accounts of its own slot, `acceptance-<persona>-<slot>`, which the e2e values provision and nothing else uses, so tests in two workers never see each other's Agents.
 A slot keeps booted mock Agents, marked by their description, that the Given steps rename and script: an Example costs seconds instead of a machine boot, and a later worker of the slot wakes and reuses them.
-A failed test carries its own log bundle in the report: the browser traces and screenshots of every persona, the ACP frames and API listings it saw, and the state of every Agent it named.
+A failed test carries its own log bundle in the report: the browser trace and screenshot of every persona it drove, the ACP frames and Agent listings the API driver saw, and the state of every Agent it named.
 The job summary times the suite as its own phase beside the smoke suite.
 
 ## Running it

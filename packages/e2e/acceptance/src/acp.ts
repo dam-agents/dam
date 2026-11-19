@@ -37,6 +37,7 @@ export async function promptOnce(
     ws.send(JSON.stringify({ jsonrpc: "2.0", id: ++next, method, params }));
   try {
     return await new Promise<Turn>((resolve, reject) => {
+      let done = false;
       const timer = setTimeout(
         () =>
           reject(
@@ -47,13 +48,20 @@ export async function promptOnce(
         turnTimeoutMs,
       );
       const fail = (message: string) => {
+        done = true;
         clearTimeout(timer);
         reject(new Error(`${message}: ${JSON.stringify(frames)}`));
       };
       let reply = "";
       ws.onopen = () =>
         send("initialize", { protocolVersion: 1, clientCapabilities: {} });
-      ws.onerror = () => fail("the ACP relay closed the connection");
+      ws.onerror = () => fail("the ACP relay failed the connection");
+      ws.onclose = (event) => {
+        if (!done)
+          fail(
+            `the ACP relay closed the connection (${event.code} ${event.reason})`,
+          );
+      };
       ws.onmessage = (event) => {
         const frame = JSON.parse(String(event.data)) as Frame;
         frames.push(frame);
@@ -75,6 +83,7 @@ export async function promptOnce(
             prompt: [{ type: "text", text }],
           });
         if (frame.id === 3) {
+          done = true;
           clearTimeout(timer);
           resolve({
             reply,
