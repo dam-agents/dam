@@ -180,6 +180,39 @@ describe("a send whose chat moves to another session", () => {
     expect(engageAside).not.toHaveBeenCalled();
   });
 
+  // TEST_SCENARIO: the chat stays on s1, but its connection answers for s2. The message still goes to s1, over a connection engaged to it, with no "conversation changed" error on the message.
+  it("goes to its own session when the chat's connection answers for another", async () => {
+    const chat = fakeConnection();
+    ensureConnection = async () => ({
+      connection: chat.connection,
+      sessionId: "s2",
+      isOpen: () => true,
+    });
+    const aside = fakeConnection();
+    const engaged: string[] = [];
+    engageAside = async (sid) => {
+      engaged.push(sid);
+      return {
+        connection: aside.connection,
+        sessionId: sid,
+        isOpen: () => true,
+        close: () => {},
+      };
+    };
+
+    void send("run the migration");
+    await settle();
+
+    expect(engaged).toEqual(["s1"]);
+    expect(promptsOn(aside)).toEqual([
+      expect.objectContaining({
+        params: expect.objectContaining({ sessionId: "s1" }),
+      }),
+    ]);
+    expect(promptsOn(chat)).toEqual([]);
+    expect(h.state.messages.some((m) => m.error)).toBe(false);
+  });
+
   // TEST_SCENARIO: the chat stays on s1 and its connection cannot be made. The person is still looking at the message, so it fails there with the reason.
   it("fails where the person sees it when the chat could not carry it", async () => {
     ensureConnection = async () => null;
