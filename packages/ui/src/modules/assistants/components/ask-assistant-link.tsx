@@ -17,7 +17,11 @@ export function AskAssistantLink({ agentId, prefill, className }: Props) {
   return (
     <button
       type="button"
-      onClick={() => ask(prefill)}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        ask(prefill);
+      }}
       className={cn(
         "self-start rounded-xs text-xs text-accent underline underline-offset-2 hover:no-underline",
         FOCUS_RING,
