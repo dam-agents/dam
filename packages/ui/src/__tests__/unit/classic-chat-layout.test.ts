@@ -130,7 +130,7 @@ describe("the top bar's browser and changes toggles", () => {
 });
 
 describe("whether the chat header flanks the messages", () => {
-  /* a 1024 px chat leaves (1024 - 749) / 2 - 16 = 121.5 px left of the well, and the agent menu reaches 8 px past its gap */
+  /* TEST_SCENARIO: a 1024 px chat leaves (1024 - 749) / 2 - 16 = 121.5 px left of the well, and the agent menu reaches 8 px past its gap */
   it("TEST_SCENARIO: a wide chat whose margins hold the agent menu and New chat flanks the messages, as the design draws it", () => {
     expect(headerFlanks({ headerW: 1024, startW: 129, endW: 100 })).toBe(true);
     expect(headerFlanks({ headerW: 1400, startW: 300, endW: 100 })).toBe(true);

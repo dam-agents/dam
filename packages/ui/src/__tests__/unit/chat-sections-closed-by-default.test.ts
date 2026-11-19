@@ -248,7 +248,7 @@ describe("the sections screen on a phone", () => {
 });
 
 describe("the chat header", () => {
-  /* happy-dom lays nothing out, so each test gives the header and its two ends their widths */
+  /* TEST_SCENARIO: happy-dom lays nothing out, so each test gives the header and its two ends their widths */
   function widths(header: number, start: number, end: number) {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
       function (this: HTMLElement) {
