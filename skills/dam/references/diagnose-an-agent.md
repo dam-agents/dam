@@ -245,7 +245,8 @@ Keep it to about 1,500 characters before encoding.
 Opaque ids are of no use upstream: leave them out too.
 
 **Build the link with a command**, never by hand, and check its length before you show it.
-Percent-encoding can triple the UTF-8 bytes, and a URL of 8,192 bytes or more is refused:
+Percent-encoding can triple the UTF-8 bytes, and a URL of 8,192 bytes or more is refused.
+The length is your check, not the user's information: never tell them how many bytes it has.
 
 ```sh
 python3 - <<'PY'
@@ -268,11 +269,12 @@ What I saw
 """
 url = f"{repo}/issues/new?title={urllib.parse.quote(title)}&body={urllib.parse.quote(body)}"
 print(url)
-print(f"{len(url.encode('utf-8'))} bytes")
+print("ok" if len(url.encode("utf-8")) < 8192 else "too long: shorten the body")
 PY
 ```
 
-When the length is 8,192 bytes or more, shorten the body; never truncate the URL or its parameters.
+When the script answers `too long`, shorten the body; never truncate the URL or its parameters.
+Give the link as a Markdown text link with short words, such as `[Open a prefilled issue](…)`; never paste the raw URL into the reply.
 
 **In Slack or Telegram**, give the draft and `<repository>/issues/new` with no parameters: those apps fetch a link's preview, which would send the query string even if the user never opens it.
 You are in such a conversation when the turn's own text carries the messenger's contract: it names the messenger, the sender and the conversation.
