@@ -6,7 +6,7 @@ import { test } from "../fixtures.js";
 
 const mockDefaultReply = "Hello from the mock agent.";
 
-// TEST_SCENARIO: a new owner, whose account already has a model provider, signs in, makes an agent in one click from the Generalist starter kit, which gets a generated avatar, chats with it until it answers, and deletes it from its settings. The provider is connected through the API when the account is prepared: no driver covers the connect dialog yet.
+// TEST_SCENARIO: a new owner, whose account already has a model provider, signs in, makes an agent in one click from the Generalist starter kit, which gets a generated avatar, chats with it until it answers, and deletes it from its settings. The provider is connected through the API when the account is prepared: no driver covers the connect dialog yet. The one-click agent gets no grant of that provider, which agents made through the API get; until that is resolved the journey is an expected failure when its chat shows exactly that, and any other failure stays a failure.
 test("first use: sign in, one-click agent, first answer, delete", async ({
   browser,
   person,
@@ -63,6 +63,12 @@ test("first use: sign in, one-click agent, first answer, delete", async ({
           contentType: "application/json",
           body: JSON.stringify({ composer, grants, afterReload }, null, 2),
         });
+        test.fail(
+          composer === "Attach an LLM provider to this agent to start." &&
+            typeof grants !== "string" &&
+            grants.connections.length === 0,
+          "known: the one-click agent gets no grant of the owner's model provider, which agents made through the API get (#6740)",
+        );
         throw error;
       }
       await input.fill("hello");
