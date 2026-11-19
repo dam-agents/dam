@@ -174,7 +174,7 @@ A call without a Connection keeps its cost under an unknown Connection, so it st
 **Who pays.** A call counts for its payer and the payer's owner, on the UTC day the call started.
 So a sub-agent's calls count for its root driver.
 
-**Daily rollup.** Postgres keeps one row per day, payer, Connection, model, Session and calling agent: the cost, the token counts, the web searches, the model time, the counts of calls, estimated calls and refused calls, and the most expensive single call.
+**Daily rollup.** Postgres keeps one row per day, payer, Connection, model, Session and calling agent: the cost, the token counts, the web searches, the model time, the counts of calls, estimated calls and refused calls, and the most expensive finished call.
 The calling agent is the agent whose gateway sent the record, so a sub-agent's calls count for its root driver and still show as its own.
 A row outlives its agent, so the spend of a deleted agent still counts for its owner.
 The api-server also keeps the last name of each Agent that goes, from its Agent watch, which sees every way that an Agent is deleted.
