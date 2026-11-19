@@ -85,7 +85,6 @@ import {
 import type { AgentProcess } from "../../infrastructure/agent-process.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 import type { HistoryProvider } from "../../infrastructure/history-provider.js";
-import type { SessionMediaStore } from "../../infrastructure/session-media-store.js";
 import type { SessionCutProvider } from "../../infrastructure/session-cut-provider.js";
 import type { PlatformSessionOf } from "../../infrastructure/terminal-session-pins.js";
 import {
@@ -128,7 +127,10 @@ import {
   createSessionBootstrap,
   type SessionCapabilities,
 } from "./session-bootstrap.js";
-import { createSessionTranscript } from "./session-transcript.js";
+import {
+  createSessionTranscript,
+  type SessionFrames,
+} from "./session-transcript.js";
 import { MAX_RESUME_ATTEMPTS } from "../interrupted-turn-recovery.js";
 import { platformOf, withPlatform } from "../../domain/platform-meta.js";
 import { verdictOf, withoutAnsweredBy } from "../../domain/attribution.js";
@@ -181,8 +183,8 @@ export interface AcpRuntime {
   harnessBusy(sessionId: string): boolean;
   sessionFrames(
     sessionId: string,
-    tail?: number,
-  ): { frames: string[]; truncated: boolean };
+    opts?: { tail?: number; history?: readonly string[] },
+  ): SessionFrames;
   resetSession(sessionId: string): void;
   markSessionCold(sessionId: string): void;
   releaseSession(sessionId: string): void;
@@ -216,7 +218,6 @@ export interface AcpRuntimeDeps {
   onPrompt?: () => void;
   beforeFirstPrompt?: (sessionId: string) => Promise<unknown>;
   logBytesCap?: number;
-  sessionMedia?: SessionMediaStore;
   replayTailEvents?: number;
   harnessLoadTimeoutMs?: number;
   historyProvider?: HistoryProvider;
@@ -656,7 +657,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     logBytesCap,
     replayTailEvents: deps.replayTailEvents ?? DEFAULT_REPLAY_TAIL_EVENTS,
     engagedChannelsFor,
-    ...(deps.sessionMedia && { media: deps.sessionMedia }),
+    olderInHistory: deps.historyProvider !== undefined,
   });
 
   const pendingRequests = createPendingAgentRequests({
@@ -3074,8 +3075,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       return harnessActivity.isBusy(sessionId);
     },
 
-    sessionFrames(sessionId, tail) {
-      return transcript.linesWithMedia(sessionId, tail);
+    sessionFrames(sessionId, opts) {
+      return transcript.linesWithMedia(sessionId, opts);
     },
 
     resetSession(sessionId) {

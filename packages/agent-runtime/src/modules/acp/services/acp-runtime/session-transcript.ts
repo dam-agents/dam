@@ -1,9 +1,13 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { rewriteAuthError } from "../../domain/mappers.js";
-import { historyTailStart, tailStart } from "../../domain/replay-tail.js";
+import {
+  historyTailStart,
+  opensUserTurn,
+  tailStart,
+} from "../../domain/replay-tail.js";
+import { historyIndexOfLogMessage } from "../../domain/rewrite-cut.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
-import type { SessionMediaStore } from "../../infrastructure/session-media-store.js";
 import { withPlatform } from "../../domain/platform-meta.js";
 
 interface LogEntry {
@@ -11,7 +15,7 @@ interface LogEntry {
   line: string;
   bytes: number;
   binary: boolean;
-  media: string[];
+  dropped: boolean;
 }
 
 interface SessionLog {
@@ -20,7 +24,6 @@ interface SessionLog {
   nextSeq: number;
   totalBytes: number;
   truncated: boolean;
-  mediaRefs: Map<string, number>;
   metadata: CachedMetadata;
 }
 
@@ -37,6 +40,13 @@ export type PageReplay = { ok: true; clip: ReplayClip } | { ok: false };
 export interface ReplayOpts {
   tail?: boolean;
   replayFor?: string;
+  history?: readonly string[];
+}
+
+export interface SessionFrames {
+  frames: string[];
+  truncated: boolean;
+  needsHistory: boolean;
 }
 
 export interface SessionTranscript {
@@ -52,12 +62,18 @@ export interface SessionTranscript {
     sessionId: string,
     opts?: ReplayOpts,
   ): ReplayClip;
+  catchUpNeedsHistory(
+    channel: ClientChannel,
+    sessionId: string,
+    opts?: { tail?: boolean },
+  ): boolean;
   replayPage(
     channel: ClientChannel,
     sessionId: string,
     cursor: string,
-    opts?: { replayFor?: string },
+    opts?: { replayFor?: string; history?: readonly string[] },
   ): PageReplay;
+  pageNeedsHistory(sessionId: string, cursor: string): boolean;
   advanceToTail(channel: ClientChannel, sessionId: string): void;
   cacheMetadata(
     sessionId: string,
@@ -68,8 +84,8 @@ export interface SessionTranscript {
   lines(sessionId: string): { frames: string[]; truncated: boolean };
   linesWithMedia(
     sessionId: string,
-    tail?: number,
-  ): { frames: string[]; truncated: boolean };
+    opts?: { tail?: number; history?: readonly string[] },
+  ): SessionFrames;
   forget(sessionId: string): void;
   sessionCount(): number;
   dropChannel(channel: ClientChannel): void;
@@ -80,27 +96,63 @@ export interface SessionTranscriptDeps {
   logBytesCap: number;
   replayTailEvents: number;
   engagedChannelsFor: (sessionId: string) => Iterable<ClientChannel>;
-  media?: SessionMediaStore;
+  olderInHistory: boolean;
 }
 
-function encodePageCursor(generation: string, seq: number): string {
-  return Buffer.from(`${generation}:${seq}`, "utf8").toString("base64url");
+type PageCursor =
+  | { kind: "log"; generation: string; seq: number }
+  | { kind: "beforeLog"; generation: string; seq: number }
+  | { kind: "history"; generation: string; index: number };
+
+const BEFORE_LOG_MARK = ":before-log";
+const HISTORY_MARK = ":history";
+
+function cursorText(cursor: PageCursor): string {
+  switch (cursor.kind) {
+    case "log":
+      return `${cursor.generation}:${cursor.seq}`;
+    case "beforeLog":
+      return `${cursor.generation}${BEFORE_LOG_MARK}:${cursor.seq}`;
+    case "history":
+      return `${cursor.generation}${HISTORY_MARK}:${cursor.index}`;
+  }
 }
 
-function decodePageCursor(
-  cursor: string,
-): { generation: string; seq: number } | null {
+function encodePageCursor(cursor: PageCursor): string {
+  return Buffer.from(cursorText(cursor), "utf8").toString("base64url");
+}
+
+function decodePageCursor(cursor: string): PageCursor | null {
   const text = Buffer.from(cursor, "base64url").toString("utf8");
   const at = text.lastIndexOf(":");
   if (at <= 0) return null;
-  const seq = Number(text.slice(at + 1));
-  if (!Number.isInteger(seq) || seq <= 0) return null;
-  return { generation: text.slice(0, at), seq };
+  const n = Number(text.slice(at + 1));
+  const head = text.slice(0, at);
+  if (head.endsWith(HISTORY_MARK)) {
+    if (!Number.isInteger(n) || n <= 0) return null;
+    const generation = head.slice(0, -HISTORY_MARK.length);
+    return generation ? { kind: "history", generation, index: n } : null;
+  }
+  if (!Number.isInteger(n) || n <= 0) return null;
+  if (head.endsWith(BEFORE_LOG_MARK)) {
+    const generation = head.slice(0, -BEFORE_LOG_MARK.length);
+    return generation ? { kind: "beforeLog", generation, seq: n } : null;
+  }
+  return { kind: "log", generation: head, seq: n };
 }
 
 const INLINE_BINARY_RE = /"data"\s*:\s*"/;
 
 type MediaBlock = Record<string, unknown> & { type: "image" | "audio" };
+
+interface DroppedMedia {
+  sha256: string;
+  length: number;
+}
+
+function sha256Of(data: string): string {
+  return createHash("sha256").update(data).digest("hex");
+}
 
 function mapMediaBlocks(
   value: unknown,
@@ -120,60 +172,86 @@ function mapMediaBlocks(
   );
 }
 
+function parsed(line: string): unknown {
+  try {
+    return JSON.parse(line) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
 function rewriteMedia(
   line: string,
   visit: (block: MediaBlock) => unknown,
 ): string {
-  let frame: unknown;
-  try {
-    frame = JSON.parse(line);
-  } catch {
-    return line;
-  }
-  return JSON.stringify(mapMediaBlocks(frame, visit));
+  const frame = parsed(line);
+  return frame === undefined
+    ? line
+    : JSON.stringify(mapMediaBlocks(frame, visit));
 }
 
-function placeholderOf(block: MediaBlock): unknown {
-  return { type: "text", text: `[${block.type} not kept in history]` };
+function droppedOf(block: MediaBlock): DroppedMedia | null {
+  const dropped = block.dropped as Partial<DroppedMedia> | undefined;
+  return typeof dropped?.sha256 === "string" &&
+    typeof dropped.length === "number"
+    ? { sha256: dropped.sha256, length: dropped.length }
+    : null;
 }
 
-function stripBinary(line: string): string {
-  return rewriteMedia(line, (block) =>
-    typeof block.data === "string" ? placeholderOf(block) : block,
-  );
-}
-
-function offloadMedia(
-  line: string,
-  put: (data: string) => string | null,
-): { line: string; keys: string[]; inline: boolean } {
-  const keys: string[] = [];
-  let inline = false;
-  const offloaded = rewriteMedia(line, (block) => {
+function dropBinary(line: string): string {
+  return rewriteMedia(line, (block) => {
     if (typeof block.data !== "string") return block;
-    const key = put(block.data);
-    if (key === null) {
-      inline = true;
-      return block;
-    }
-    keys.push(key);
-    const { data: _data, ...rest } = block;
-    return { ...rest, mediaRef: key };
+    const { data, ...rest } = block;
+    return {
+      ...rest,
+      dropped: { sha256: sha256Of(data), length: data.length },
+    };
   });
-  return { line: keys.length > 0 ? offloaded : line, keys, inline };
 }
 
-function inlineMedia(
+function droppedIn(lines: readonly string[]): DroppedMedia[] {
+  const found: DroppedMedia[] = [];
+  for (const line of lines) {
+    rewriteMedia(line, (block) => {
+      const dropped = droppedOf(block);
+      if (dropped) found.push(dropped);
+      return block;
+    });
+  }
+  return found;
+}
+
+function mediaOfHistory(
+  history: readonly string[],
+  wanted: readonly DroppedMedia[],
+): Map<string, string> {
+  const media = new Map<string, string>();
+  const lengths = new Set(wanted.map((w) => w.length));
+  const hashes = new Set(wanted.map((w) => w.sha256));
+  for (const line of history) {
+    if (!INLINE_BINARY_RE.test(line)) continue;
+    mapMediaBlocks(parsed(line), (block) => {
+      const data = block.data;
+      if (typeof data !== "string" || !lengths.has(data.length)) return block;
+      const sha256 = sha256Of(data);
+      if (hashes.has(sha256)) media.set(sha256, data);
+      return block;
+    });
+  }
+  return media;
+}
+
+function restoreMedia(
   line: string,
-  keys: ReadonlyMap<string, number>,
-  get: (key: string) => string | null,
+  media: ReadonlyMap<string, string>,
 ): string {
   return rewriteMedia(line, (block) => {
-    if (typeof block.mediaRef !== "string" || !keys.has(block.mediaRef))
-      return block;
-    const data = get(block.mediaRef);
-    if (data === null) return placeholderOf(block);
-    const { mediaRef: _mediaRef, ...rest } = block;
+    const dropped = droppedOf(block);
+    if (dropped === null) return block;
+    const data = media.get(dropped.sha256);
+    if (data === undefined)
+      return { type: "text", text: `[${block.type} not kept in history]` };
+    const { dropped: _dropped, ...rest } = block;
     return { ...rest, data };
   });
 }
@@ -202,34 +280,34 @@ function withPlatformMeta(
  * UNIT_BOUNDARY_DESCRIPTION: Keeps each session's message history and tracks how
  * far every attached channel has read it, so a channel that joins late or
  * reconnects receives only what it missed. Sequence numbers, the size cap,
- * eviction, and the clip accounting all stay inside. The bytes of an inline
- * image or audio block go to the Session's media store as the entry is
- * appended, and the entry keeps the store's key in their place, so the cap
- * counts text and a large paste neither fills memory nor pushes the text
- * history out; every replay and linesWithMedia, the read of the log as
- * data, put the bytes back from the store, the latter only into the tail it
- * returns, so a read of a long Session does not load all its images at once.
- * lines keeps the keys, for a caller that reads only text and ids. Live
- * fan-out sends the frame as it came. A block whose
- * bytes the store could not keep stays inline, and over the cap the oldest
- * entry still holding inline bytes first has each replaced by a text
- * placeholder, before any whole entry is evicted; a block the store has lost
- * by the time it is replayed shows the same placeholder. A file is dropped
- * once no entry of its Session refers to it, and a forgotten Session takes
- * its folder with it. A fresh viewer that opts
+ * eviction, and the clip accounting all stay inside. Over the cap, the
+ * oldest entry still holding inline image or audio bytes first has each
+ * replaced by a reference — the SHA-256 and length of the bytes — and whole
+ * entries are evicted only once none is left, so one large paste cannot push
+ * the text history out; live fan-out still carries the bytes. What the log
+ * no longer holds is read from the harness's own history, which the caller
+ * fetches from the session-history provider when catchUpNeedsHistory,
+ * pageNeedsHistory or linesWithMedia says a read needs it, and passes in: a
+ * referenced block takes the bytes of the history block with the same hash,
+ * and a log that evicted entries hands everything before its first whole
+ * prompt over to that history, matched there by the prompt's id or text,
+ * so the oldest frames the log kept are never sent twice. With no provider,
+ * or no match, a referenced block shows as a text placeholder and the log
+ * starts at its eviction floor, as the clip reports. A fresh viewer that opts
  * into the tail gets only the newest replayTailEvents entries, moved back so
  * the cut never splits a run of one message's chunks or parts a tool call
  * from its updates, since the client would show half a sentence or drop the
  * updates; a page is cut the same way. catchUp and replayPage report what
  * was cut — and an opaque cursor naming where the cut ends, when the older
- * range is still in the log — so the caller can put that on the load
- * response. A viewer that does not opt in replays everything the
- * log holds, clipped only by eviction. replayPage serves older ranges on
- * demand without moving any cursor; the cursor embeds the log generation, so
- * a cursor minted before this log was (re)built is refused rather than
- * silently paging from a renumbered position. When a replay carries a
- * replayFor token, every replayed frame is stamped with it, letting the
- * requesting client tell its replay apart from live fan-out on the same
+ * range is still in the log or in the history — so the caller can put that
+ * on the load response. A viewer that does not opt in replays everything the
+ * log holds, after the older history when the log evicted any. replayPage
+ * serves older ranges on demand without moving any cursor; the cursor embeds
+ * the log generation, so a cursor minted before this log was (re)built is
+ * refused rather than silently paging from a renumbered position, and one
+ * naming a prompt the log has since evicted is refused too. When a replay
+ * carries a replayFor token, every replayed frame is stamped with it, letting
+ * the requesting client tell its replay apart from live fan-out on the same
  * connection. Every live entry is stamped with the wall-clock time it was
  * appended; a replayed entry keeps whatever time its source supplied and is
  * never given one here.
@@ -249,7 +327,6 @@ export function createSessionTranscript(
         nextSeq: 1,
         totalBytes: 0,
         truncated: false,
-        mediaRefs: new Map(),
         metadata: { cached: false },
       };
       sessionLogs.set(sessionId, log);
@@ -257,58 +334,24 @@ export function createSessionTranscript(
     return log;
   }
 
-  function keepMedia(
-    sessionId: string,
-    log: SessionLog,
-    line: string,
-  ): { line: string; media: string[]; binary: boolean } {
-    const media = deps.media;
-    if (!INLINE_BINARY_RE.test(line)) return { line, media: [], binary: false };
-    if (media === undefined) return { line, media: [], binary: true };
-    const kept = offloadMedia(line, (data) => media.put(sessionId, data));
-    for (const key of kept.keys)
-      log.mediaRefs.set(key, (log.mediaRefs.get(key) ?? 0) + 1);
-    return { line: kept.line, media: kept.keys, binary: kept.inline };
-  }
-
-  function releaseMedia(
-    sessionId: string,
-    log: SessionLog,
-    entry: LogEntry,
-  ): void {
-    for (const key of entry.media) {
-      const left = (log.mediaRefs.get(key) ?? 1) - 1;
-      if (left > 0) {
-        log.mediaRefs.set(key, left);
-        continue;
-      }
-      log.mediaRefs.delete(key);
-      deps.media?.drop(sessionId, key);
-    }
-  }
-
-  function lineOf(sessionId: string, entry: LogEntry): string {
-    const media = deps.media;
-    const log = sessionLogs.get(sessionId);
-    if (entry.media.length === 0 || media === undefined || !log)
-      return entry.line;
-    return inlineMedia(entry.line, log.mediaRefs, (key) =>
-      media.get(sessionId, key),
-    );
-  }
-
-  function appendToLog(sessionId: string, frame: string): number {
+  function appendToLog(sessionId: string, line: string): number {
     const log = getOrCreateLog(sessionId);
-    const { line, media, binary } = keepMedia(sessionId, log, frame);
     const bytes = line.length;
     const seq = log.nextSeq++;
-    log.entries.push({ seq, line, bytes, binary, media });
+    log.entries.push({
+      seq,
+      line,
+      bytes,
+      binary: INLINE_BINARY_RE.test(line),
+      dropped: false,
+    });
     log.totalBytes += bytes;
     while (log.totalBytes > deps.logBytesCap) {
       const heavy = log.entries.find((entry) => entry.binary);
       if (heavy) {
         heavy.binary = false;
-        heavy.line = stripBinary(heavy.line);
+        heavy.dropped = true;
+        heavy.line = dropBinary(heavy.line);
         log.totalBytes += heavy.line.length - heavy.bytes;
         heavy.bytes = heavy.line.length;
         continue;
@@ -316,10 +359,158 @@ export function createSessionTranscript(
       if (log.entries.length <= 1) break;
       const evicted = log.entries.shift()!;
       log.totalBytes -= evicted.bytes;
-      releaseMedia(sessionId, log, evicted);
       log.truncated = true;
     }
     return seq;
+  }
+
+  function promptBoundaryOf(log: SessionLog): number | null {
+    if (!deps.olderInHistory || !log.truncated) return null;
+    for (let i = 1; i < log.entries.length; i++)
+      if (opensUserTurn(log.entries, i)) return i;
+    return null;
+  }
+
+  function historyIndexOf(
+    log: SessionLog,
+    boundary: number,
+    history: readonly string[],
+  ): number | null {
+    return historyIndexOfLogMessage(
+      history,
+      log.entries.map((entry) => entry.line),
+      boundary,
+    );
+  }
+
+  function render(
+    entries: readonly LogEntry[],
+    history: readonly string[] | undefined,
+  ): string[] {
+    const lines = entries.map((entry) => entry.line);
+    if (!entries.some((entry) => entry.dropped)) return lines;
+    const media =
+      history === undefined
+        ? new Map<string, string>()
+        : mediaOfHistory(
+            history,
+            droppedIn(
+              entries.filter((entry) => entry.dropped).map((e) => e.line),
+            ),
+          );
+    return entries.map((entry) =>
+      entry.dropped ? restoreMedia(entry.line, media) : entry.line,
+    );
+  }
+
+  function sendReplay(
+    channel: ClientChannel,
+    lines: readonly string[],
+    replayFor: string | undefined,
+  ): number {
+    let sent = 0;
+    for (const line of lines) {
+      if (!channel.isOpen()) break;
+      channel.send(withPlatformMeta(rewriteAuthError(line), { replayFor }));
+      sent++;
+    }
+    return sent;
+  }
+
+  function historyPage(
+    channel: ClientChannel,
+    log: SessionLog,
+    history: readonly string[],
+    end: number,
+    replayFor: string | undefined,
+  ): PageReplay {
+    const older = history.slice(0, end).map((line) => ({ line }));
+    const start = tailStart(older, deps.replayTailEvents);
+    sendReplay(
+      channel,
+      older.slice(start).map((frame) => frame.line),
+      replayFor,
+    );
+    return {
+      ok: true,
+      clip:
+        start > 0
+          ? {
+              clipped: true,
+              older: encodePageCursor({
+                kind: "history",
+                generation: log.generation,
+                index: start,
+              }),
+            }
+          : { clipped: false },
+    };
+  }
+
+  function beforeLogClip(log: SessionLog, boundary: number): ReplayClip {
+    return {
+      clipped: true,
+      older: encodePageCursor({
+        kind: "beforeLog",
+        generation: log.generation,
+        seq: log.entries[boundary]!.seq,
+      }),
+    };
+  }
+
+  function catchUpPlan(
+    channel: ClientChannel,
+    log: SessionLog,
+    sessionId: string,
+    tail: boolean,
+  ): {
+    current: number;
+    boundary: number | null;
+    pending: LogEntry[];
+    capped: boolean;
+  } {
+    const current = cursorFor(channel, sessionId);
+    const boundary = current === 0 ? promptBoundaryOf(log) : null;
+    const shown =
+      boundary !== null && tail ? log.entries.slice(boundary) : log.entries;
+    let pending = shown.filter((entry) => entry.seq > current);
+    const start =
+      current === 0 && tail ? tailStart(pending, deps.replayTailEvents) : 0;
+    const capped = start > 0;
+    if (capped) pending = pending.slice(start);
+    return { current, boundary, pending, capped };
+  }
+
+  function pagePlan(
+    log: SessionLog,
+    cursor: PageCursor,
+  ):
+    | { kind: "log"; boundary: number | null; page: LogEntry[]; more: boolean }
+    | { kind: "beforeLog"; at: number }
+    | { kind: "history"; index: number }
+    | null {
+    if (cursor.generation !== log.generation) return null;
+    if (cursor.kind === "history") {
+      return deps.olderInHistory
+        ? { kind: "history", index: cursor.index }
+        : null;
+    }
+    if (cursor.kind === "beforeLog") {
+      const at = log.entries.findIndex((entry) => entry.seq === cursor.seq);
+      return at < 0 ? null : { kind: "beforeLog", at };
+    }
+    const boundary = promptBoundaryOf(log);
+    const floor = boundary === null ? 0 : boundary;
+    const older = log.entries
+      .slice(floor)
+      .filter((entry) => entry.seq < cursor.seq);
+    const page = older.slice(tailStart(older, deps.replayTailEvents));
+    return {
+      kind: "log",
+      boundary,
+      page,
+      more: older.length > page.length,
+    };
   }
 
   function cursorFor(channel: ClientChannel, sessionId: string): number {
@@ -379,66 +570,102 @@ export function createSessionTranscript(
       fanOut(sessionId, line, () => false);
     },
 
+    catchUpNeedsHistory(channel, sessionId, opts) {
+      const log = sessionLogs.get(sessionId);
+      if (!log || !deps.olderInHistory) return false;
+      const tail = opts?.tail ?? false;
+      const plan = catchUpPlan(channel, log, sessionId, tail);
+      return (
+        (!tail && plan.boundary !== null) ||
+        plan.pending.some((entry) => entry.dropped)
+      );
+    },
+
     catchUp(channel, sessionId, opts) {
       const log = sessionLogs.get(sessionId);
       if (!log) return { clipped: false };
-      const current = cursorFor(channel, sessionId);
-      let pending = log.entries.filter((entry) => entry.seq > current);
-      const start =
-        current === 0 && (opts?.tail ?? false)
-          ? tailStart(pending, deps.replayTailEvents)
-          : 0;
-      const capped = start > 0;
-      if (capped) pending = pending.slice(start);
-      let lastSeq = current;
-      for (const entry of pending) {
-        if (!channel.isOpen()) break;
-        channel.send(
-          withPlatformMeta(rewriteAuthError(lineOf(sessionId, entry)), {
-            replayFor: opts?.replayFor,
-          }),
-        );
-        lastSeq = entry.seq;
+      const tail = opts?.tail ?? false;
+      const history = opts?.history;
+      const plan = catchUpPlan(channel, log, sessionId, tail);
+      const { current, boundary, capped } = plan;
+      let pending = plan.pending;
+      const handOver =
+        !tail && boundary !== null && history !== undefined
+          ? historyIndexOf(log, boundary, history)
+          : null;
+      if (handOver !== null) {
+        sendReplay(channel, history!.slice(0, handOver), opts?.replayFor);
+        pending = log.entries.slice(boundary!);
       }
-      if (lastSeq !== current) setCursor(channel, sessionId, lastSeq);
+      const lines = render(pending, history);
+      const sent = sendReplay(channel, lines, opts?.replayFor);
+      const lastSent = pending[sent - 1];
+      if (lastSent !== undefined) setCursor(channel, sessionId, lastSent.seq);
       if (current !== 0) return { clipped: false };
       if (capped) {
         return {
           clipped: true,
-          older: encodePageCursor(log.generation, pending[0]!.seq),
+          older: encodePageCursor({
+            kind: "log",
+            generation: log.generation,
+            seq: pending[0]!.seq,
+          }),
         };
       }
+      if (handOver !== null) return { clipped: false };
+      if (tail && boundary !== null) return beforeLogClip(log, boundary);
       return { clipped: log.truncated };
+    },
+
+    pageNeedsHistory(sessionId, cursor) {
+      const log = sessionLogs.get(sessionId);
+      const decoded = decodePageCursor(cursor);
+      if (!log || !decoded || !deps.olderInHistory) return false;
+      const plan = pagePlan(log, decoded);
+      if (plan === null) return false;
+      return plan.kind === "log"
+        ? plan.page.some((entry) => entry.dropped)
+        : true;
     },
 
     replayPage(channel, sessionId, cursor, opts) {
       const log = sessionLogs.get(sessionId);
       const decoded = decodePageCursor(cursor);
-      if (!log || !decoded || decoded.generation !== log.generation) {
-        return { ok: false };
+      const plan = log && decoded ? pagePlan(log, decoded) : null;
+      if (!log || plan === null) return { ok: false };
+      const history = opts?.history;
+      const replayFor = opts?.replayFor;
+      if (plan.kind === "history") {
+        return history === undefined
+          ? { ok: false }
+          : historyPage(channel, log, history, plan.index, replayFor);
       }
-      const older = log.entries.filter((entry) => entry.seq < decoded.seq);
-      const page = older.slice(tailStart(older, deps.replayTailEvents));
-      const first = page[0];
-      if (first === undefined)
+      if (plan.kind === "beforeLog") {
+        const handOver =
+          history === undefined ? null : historyIndexOf(log, plan.at, history);
+        if (handOver !== null)
+          return historyPage(channel, log, history!, handOver, replayFor);
+        const floor = log.entries.slice(0, plan.at);
+        sendReplay(channel, render(floor, history), replayFor);
         return { ok: true, clip: { clipped: log.truncated } };
-      for (const entry of page) {
-        if (!channel.isOpen()) break;
-        channel.send(
-          withPlatformMeta(rewriteAuthError(lineOf(sessionId, entry)), {
-            replayFor: opts?.replayFor,
-          }),
-        );
       }
-      if (older.length > page.length) {
+      const first = plan.page[0];
+      sendReplay(channel, render(plan.page, history), replayFor);
+      if (first !== undefined && plan.more) {
         return {
           ok: true,
           clip: {
             clipped: true,
-            older: encodePageCursor(log.generation, first.seq),
+            older: encodePageCursor({
+              kind: "log",
+              generation: log.generation,
+              seq: first.seq,
+            }),
           },
         };
       }
+      if (plan.boundary !== null)
+        return { ok: true, clip: beforeLogClip(log, plan.boundary) };
       return { ok: true, clip: { clipped: log.truncated } };
     },
 
@@ -466,16 +693,45 @@ export function createSessionTranscript(
       };
     },
 
-    linesWithMedia(sessionId, tail) {
+    linesWithMedia(sessionId, opts) {
       const log = sessionLogs.get(sessionId);
-      if (!log) return { frames: [], truncated: false };
-      const lines = log.entries.map((entry) => entry.line);
-      const start = tail === undefined ? 0 : historyTailStart(lines, tail);
+      if (!log) return { frames: [], truncated: false, needsHistory: false };
+      const history = opts?.history;
+      if (opts?.tail !== undefined) {
+        const start = historyTailStart(
+          log.entries.map((entry) => entry.line),
+          opts.tail,
+        );
+        const entries = log.entries.slice(start);
+        return {
+          frames: render(entries, history),
+          truncated: log.truncated || start > 0,
+          needsHistory:
+            deps.olderInHistory && entries.some((entry) => entry.dropped),
+        };
+      }
+      const boundary = promptBoundaryOf(log);
+      const needsHistory =
+        boundary !== null ||
+        (deps.olderInHistory && log.entries.some((entry) => entry.dropped));
+      const handOver =
+        boundary !== null && history !== undefined
+          ? historyIndexOf(log, boundary, history)
+          : null;
+      if (handOver !== null) {
+        return {
+          frames: [
+            ...history!.slice(0, handOver),
+            ...render(log.entries.slice(boundary!), history),
+          ],
+          truncated: false,
+          needsHistory,
+        };
+      }
       return {
-        frames: log.entries
-          .slice(start)
-          .map((entry) => lineOf(sessionId, entry)),
-        truncated: log.truncated || start > 0,
+        frames: render(log.entries, history),
+        truncated: log.truncated,
+        needsHistory,
       };
     },
 
@@ -484,7 +740,7 @@ export function createSessionTranscript(
     },
 
     forget(sessionId) {
-      if (sessionLogs.delete(sessionId)) deps.media?.forget(sessionId);
+      sessionLogs.delete(sessionId);
       for (const cursors of channelCursors.values()) cursors.delete(sessionId);
     },
 
@@ -498,7 +754,6 @@ export function createSessionTranscript(
 
     clear() {
       sessionLogs.clear();
-      deps.media?.clear();
       channelCursors.clear();
     },
   };

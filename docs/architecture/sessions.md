@@ -42,12 +42,13 @@ A change to the [model catalog](harness-config.md#the-model-catalog) recycles a 
 The harness that replaces a recycled one after an env change waits for the listing that change started, so one boot settles into one harness.
 A prompt to a session whose model names a removed provider runs on a catalog model of another granted provider, on the session's own harness; the structured *provider removed* error naming the provider is left for an agent no provider serves.
 
-Each session is an append-only in-memory log (≤10 MiB soft cap), evicted oldest entry first.
-The cap counts text only: the bytes of an inline image or audio block, whoever sent it, go to the runtime's **media cache** on the machine's disk as the entry is appended, and the log keeps the block with a key in their place.
-Live fan-out sends the frame as it came, and every replay — a hot or cold load, its tail, a page of older history — and every read of the log as data puts the bytes back from the cache, so an image shows after a reload however large the Session is.
-The cache is a folder of the home's cache directory, one sub-folder per runtime and Session, one file per distinct block content: a file goes once no entry refers to it, a Session's folder goes when its log does, and a runtime start deletes what an earlier process left.
-It is the same for every harness, with or without a session-history provider, since a cold fill brings the bytes back from the harness's history or replay and writes them again.
-Only where the bytes are really gone does the block show as the text `[image not kept in history]` (or `audio`): the cache could not write them, and the log then gives them up before any entry is evicted, or the machine's disk guard emptied the cache folder when the disk ran low.
+Each session is an append-only in-memory log (≤10 MiB soft cap).
+Over the cap, the oldest entry still holding inline image or audio bytes first gives them up, and the log keeps the block with a reference to its content (the bytes' SHA-256 and length); whole entries are evicted only once none is left, so one large paste cannot push the text history out, and live fan-out still sends the frame as it came.
+What the log no longer holds is read from the **harness's own history** on the machine's disk, through the image's session-history provider, which holds every image: a replay that reaches a dropped block — a hot or cold load, its tail, a page of older history, the read of a Session as data — first has the provider read the history, and the block takes the bytes of the history block with the same content.
+A load just filled from the provider uses the lines it was filled from, and a replay the log can serve alone reads nothing.
+A log that evicted its oldest entries hands the older conversation over to that history at its first whole prompt, found there by the prompt's id or its text: the tail's cut, or the last page of the log, carries a cursor into the history, its pages come from the provider down to the conversation's start, and a load without the tail opt-in gets the older history before the log, so no frame is missing or sent twice.
+A harness whose image declares no session-history provider keeps the log alone: a dropped block shows as the text `[image not kept in history]` (or `audio`), and the log starts at its eviction floor, which the load reports as cut without a cursor.
+The same placeholder shows where the history does not hold the block's bytes, and the log's own floor serves where the history holds no match for its first prompt.
 Every channel keeps a per-session cursor; new events append to the log and fan out to engaged channels that have not yet seen them.
 Every entry the runtime appends live carries the wall-clock time it was written, as platform metadata on the frame; an entry filled in from a replay carries only what its source supplied, never a time the runtime invented.
 From a session-history provider that source can also supply the harness's own name for the prompt a reply answered — the prompt id by which [agent-telemetry](agent-telemetry.md#progressive-disclosure) joins a reply to its Turn once the Session is loaded.
@@ -68,7 +69,7 @@ A rewind keeps the Senders, the verdicts and the Session Starter; a fork keeps t
 A prompt the runtime sends into a Session on its own, such as the one that sends a broken [chat form](chat-forms.md#the-conversation-is-the-transport) back to the agent, carries no Sender; it is a new turn of that Session, delivered the way a one-time task's result is.
 
 A `session/load` that opts in replays **only the newest tail** of the log, bounding the open cost at any length; without the opt-in the whole log replays, per ACP.
-The response reports any cut, with a cursor when the older range is still in the log; a load presenting that cursor is paged the older range, down to the eviction floor (cut without cursor).
+The response reports any cut, with a cursor when the older range is still in the log or in the harness's history; a load presenting that cursor is paged the older range, down to the conversation's start, or to the eviction floor (cut without cursor) when there is no history to read.
 Cursors die with the log: a stale one is refused and the client reloads.
 Replay shares the connection with live fan-out, so replayed frames are tagged to their load for exact attribution.
 

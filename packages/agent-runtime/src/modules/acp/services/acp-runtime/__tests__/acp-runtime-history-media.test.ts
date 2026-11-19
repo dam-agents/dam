@@ -1,43 +1,23 @@
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createWorld, frames, type Client, type Frame } from "./acp-world.js";
 import type { HistoryProvider } from "../../../infrastructure/history-provider.js";
-import {
-  createSessionMediaRoot,
-  type SessionMediaStore,
-} from "../../../infrastructure/session-media-store.js";
 
 /**
- * TEST_OVERVIEW: images and audio a Session showed survive every replay,
- * however large they are.
+ * TEST_OVERVIEW: what the Session Transcript no longer holds is read from the
+ * harness's own history, through the session-history provider.
  *
- * The Session Transcript keeps the bytes of each inline image or audio block
- * in the runtime's media store on disk and only a key in its capped log, so
- * the log's cap counts text. A reload, a cold fill from the harness's own
- * replay or from the session-history provider, and a page of older history
- * all send the block with its bytes again. Only a block whose bytes the store
- * no longer has shows the `[image not kept in history]` placeholder, and a
- * runtime with no store keeps the old behavior of dropping the bytes over
- * the cap.
+ * Over its cap the log drops the bytes of inline images and audio, keeping a
+ * reference to them, and later evicts its oldest entries. A reload, a cold
+ * fill, a page of older history and the read of a Session as data then take
+ * the bytes from the block with the same content in the harness's history,
+ * and a log that evicted its start hands everything before its first whole
+ * prompt over to that history, without a gap or a frame sent twice. Only a
+ * block the history does not hold, or a harness with no provider, shows the
+ * `[image not kept in history]` placeholder.
  */
 
 const SESSION = "sess-media";
 const LARGE_IMAGE = "A".repeat(12 * 1024 * 1024);
-
-const dirs: string[] = [];
-
-function mediaStore(): { store: SessionMediaStore; dir: string } {
-  const dir = mkdtempSync(join(tmpdir(), "session-media-"));
-  dirs.push(dir);
-  return { store: createSessionMediaRoot({ dir, log: () => {} }).store(), dir };
-}
-
-afterEach(() => {
-  for (const dir of dirs.splice(0))
-    rmSync(dir, { recursive: true, force: true });
-});
 
 interface Shown {
   text?: string;
@@ -56,7 +36,11 @@ function shown(client: Client): Shown[] {
   });
 }
 
-function imageUpdate(data: string): Frame {
+function textsOf(client: Client): (string | undefined)[] {
+  return shown(client).map((s) => s.text ?? s.image);
+}
+
+function userChunk(content: unknown, messageId?: string): Frame {
   return {
     jsonrpc: "2.0",
     method: "session/update",
@@ -64,13 +48,18 @@ function imageUpdate(data: string): Frame {
       sessionId: SESSION,
       update: {
         sessionUpdate: "user_message_chunk",
-        content: { type: "image", data, mimeType: "image/png" },
+        content,
+        ...(messageId !== undefined && { messageId }),
       },
     },
   };
 }
 
-function loadPage(id: number, replayBefore: string): Frame {
+function imageUpdate(data: string): Frame {
+  return userChunk({ type: "image", data, mimeType: "image/png" });
+}
+
+function load(id: number, meta: Record<string, unknown> = {}): Frame {
   return {
     jsonrpc: "2.0",
     id,
@@ -79,38 +68,39 @@ function loadPage(id: number, replayBefore: string): Frame {
       sessionId: SESSION,
       cwd: ".",
       mcpServers: [],
-      _meta: { platform: { replayBefore } },
+      _meta: { platform: meta },
     },
   };
 }
 
-function loadTail(id: number): Frame {
-  return {
-    jsonrpc: "2.0",
-    id,
-    method: "session/load",
-    params: {
-      sessionId: SESSION,
-      cwd: ".",
-      mcpServers: [],
-      _meta: { platform: { tail: true } },
-    },
-  };
-}
-
-function olderOf(client: Client, id: number): string {
+function olderOf(client: Client, id: number): string | undefined {
   const reply = client.reply(id) as {
     result?: { _meta?: { platform?: { clipped?: { older?: string } } } };
   };
-  const older = reply.result?._meta?.platform?.clipped?.older;
-  expect(typeof older).toBe("string");
-  return older!;
+  return reply.result?._meta?.platform?.clipped?.older;
 }
 
-function filesUnder(dir: string): string[] {
-  return readdirSync(dir, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile())
-    .map((entry) => entry.name);
+function clippedOf(client: Client, id: number): unknown {
+  const reply = client.reply(id) as {
+    result?: { _meta?: { platform?: { clipped?: unknown } } };
+  };
+  return reply.result?._meta?.platform?.clipped;
+}
+
+function providerOf(lines: readonly Frame[]): {
+  provider: HistoryProvider;
+  calls: string[];
+} {
+  const calls: string[] = [];
+  return {
+    calls,
+    provider: {
+      fetch(sessionId) {
+        calls.push(sessionId);
+        return Promise.resolve(lines.map((frame) => JSON.stringify(frame)));
+      },
+    },
+  };
 }
 
 function pasteBetweenPrompts(
@@ -139,24 +129,55 @@ function pasteBetweenPrompts(
   });
 }
 
+const PASTE_HISTORY: Frame[] = [
+  userChunk({ type: "text", text: "before" }, "h1"),
+  userChunk({ type: "image", data: LARGE_IMAGE, mimeType: "image/png" }, "h2"),
+  userChunk({ type: "text", text: "look" }, "h2"),
+  userChunk({ type: "text", text: "after" }, "h3"),
+];
+
+function conversation(turns: number): Frame[] {
+  return Array.from({ length: turns }, (_, i) => [
+    userChunk({ type: "text", text: `q${i + 1}` }, `u${i + 1}`),
+    frames.agentMessage(SESSION, `a${i + 1}`.padEnd(120, "."), `r${i + 1}`),
+  ]).flat();
+}
+
+function warmFrom(
+  world: ReturnType<typeof createWorld>,
+  lines: readonly Frame[],
+): void {
+  const alice = world.connect();
+  alice.send(frames.newSession(1));
+  world.harness().replyTo("session/new", { sessionId: SESSION });
+  for (const line of lines) world.harness().emit(line);
+}
+
 async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-describe("acp-runtime: media in history", () => {
+const ALL_TEXTS = (turns: number) =>
+  Array.from({ length: turns }, (_, i) => [
+    `q${i + 1}`,
+    `a${i + 1}`.padEnd(120, "."),
+  ]).flat();
+
+describe("acp-runtime: media and older history from the harness history", () => {
   /**
    * TEST_SCENARIO: A user pastes an image larger than the whole log cap
-   * between two text prompts, then reloads. The reload must show the image
-   * with its bytes and every prompt around it, and report no clip, since
-   * the image's bytes never counted against the cap.
+   * between two prompts, then reloads. The log dropped the bytes, so the
+   * reload reads the harness history once and shows the image from it,
+   * with every prompt around it.
    */
-  it("should show a pasted image larger than the log cap after a reload", () => {
-    const { store } = mediaStore();
-    const world = createWorld({ sessionMedia: store });
+  it("should show a pasted image larger than the log cap after a reload", async () => {
+    const { provider, calls } = providerOf(PASTE_HISTORY);
+    const world = createWorld({ historyProvider: provider });
     pasteBetweenPrompts(world, LARGE_IMAGE);
 
     const bob = world.connect();
-    bob.send(frames.loadSession(1, SESSION));
+    bob.send(load(1));
+    await settle();
 
     expect(shown(bob)).toEqual([
       { text: "before" },
@@ -164,55 +185,62 @@ describe("acp-runtime: media in history", () => {
       { text: "look" },
       { text: "after" },
     ]);
-    const reply = bob.reply(1) as {
-      result?: { _meta?: { platform?: { clipped?: unknown } } };
-    };
-    expect(reply.result?._meta?.platform?.clipped).toBeUndefined();
+    expect(calls).toEqual([SESSION]);
+    expect(clippedOf(bob, 1)).toBeUndefined();
   });
 
   /**
-   * TEST_SCENARIO: A cold load where the harness replays an image larger
-   * than the log cap, as after an agent restart. The viewer must get the
-   * image, and a second viewer loading from the warm log must get it too,
-   * now read back from the store.
+   * TEST_SCENARIO: A reload whose replay holds no dropped image must not
+   * read the harness history at all, since everything it shows is in memory.
    */
-  it("should show an oversized image from a cold harness replay, and on the next load", () => {
-    const { store } = mediaStore();
-    const world = createWorld({ sessionMedia: store });
+  it("should not read the history for a reload the log can serve alone", async () => {
+    const { provider, calls } = providerOf(PASTE_HISTORY);
+    const world = createWorld({ historyProvider: provider });
+    pasteBetweenPrompts(world, "SMALL-IMAGE");
+
     const bob = world.connect();
-    bob.send(frames.loadSession(1, SESSION));
+    bob.send(load(1));
+    await settle();
 
-    world.harness().emit(frames.agentMessage(SESSION, "m1", "m1"));
-    world.harness().emit(imageUpdate(LARGE_IMAGE));
-    world.harness().emit(frames.agentMessage(SESSION, "m2", "m2"));
-    world
-      .harness()
-      .replyTo("session/load", { sessionId: SESSION, modes: null });
-
-    const expected = [{ text: "m1" }, { image: LARGE_IMAGE }, { text: "m2" }];
-    expect(shown(bob)).toEqual(expected);
-
-    const carol = world.connect();
-    carol.send(frames.loadSession(1, SESSION));
-    expect(shown(carol)).toEqual(expected);
+    expect(shown(bob)).toContainEqual({ image: "SMALL-IMAGE" });
+    expect(calls).toEqual([]);
   });
 
   /**
-   * TEST_SCENARIO: A cold load served by the session-history provider, which
-   * reads the harness's history from disk with the image's bytes in it. The
-   * fill must not turn the image into the placeholder.
+   * TEST_SCENARIO: The harness history does not hold the dropped image —
+   * the bytes are really gone. Only then does the reload show the
+   * placeholder, and the text around it stays.
    */
-  it("should show an oversized image from a session-history provider fill", async () => {
-    const { store } = mediaStore();
-    const historyProvider: HistoryProvider = {
-      fetch: () =>
-        Promise.resolve([
-          JSON.stringify(frames.agentMessage(SESSION, "m1", "m1")),
-          JSON.stringify(imageUpdate(LARGE_IMAGE)),
-          JSON.stringify(frames.agentMessage(SESSION, "m2", "m2")),
-        ]),
-    };
-    const world = createWorld({ sessionMedia: store, historyProvider });
+  it("should show the placeholder when the history lacks the image", async () => {
+    const { provider } = providerOf(PASTE_HISTORY.filter((_, i) => i !== 1));
+    const world = createWorld({ historyProvider: provider });
+    pasteBetweenPrompts(world, LARGE_IMAGE);
+
+    const bob = world.connect();
+    bob.send(load(1));
+    await settle();
+
+    expect(textsOf(bob)).toEqual([
+      "before",
+      "[image not kept in history]",
+      "look",
+      "after",
+    ]);
+  });
+
+  /**
+   * TEST_SCENARIO: A cold load served by the session-history provider. The
+   * fill itself drops the oversized image from the log, and the waiting
+   * viewer must still get it, from the lines of that same fill, with no
+   * second read of the history.
+   */
+  it("should show an oversized image from a provider fill without a second read", async () => {
+    const { provider, calls } = providerOf([
+      frames.agentMessage(SESSION, "m1", "m1"),
+      imageUpdate(LARGE_IMAGE),
+      frames.agentMessage(SESSION, "m2", "m2"),
+    ]);
+    const world = createWorld({ historyProvider: provider });
 
     const bob = world.connect();
     bob.send(frames.loadSession(1, SESSION));
@@ -223,115 +251,128 @@ describe("acp-runtime: media in history", () => {
       { image: LARGE_IMAGE },
       { text: "m2" },
     ]);
+    expect(calls).toEqual([SESSION]);
   });
 
   /**
-   * TEST_SCENARIO: The image sits above the replayed tail, so the viewer
-   * reaches it by paging older history. The page must carry the bytes.
+   * TEST_SCENARIO: The dropped image sits above the replayed tail, so the
+   * viewer reaches it by paging older history. The page reads the harness
+   * history and carries the bytes.
    */
-  it("should show an image on a page of older history", () => {
-    const { store } = mediaStore();
-    const world = createWorld({ sessionMedia: store, replayTailEvents: 2 });
-    const alice = world.connect();
-    alice.send(frames.newSession(1));
-    world.harness().replyTo("session/new", { sessionId: SESSION });
-    world.harness().emit(imageUpdate(LARGE_IMAGE));
-    for (const text of ["m1", "m2", "m3"]) {
-      world.harness().emit(frames.agentMessage(SESSION, text, text));
-    }
+  it("should show a dropped image on a page of older history", async () => {
+    const { provider } = providerOf(PASTE_HISTORY);
+    const world = createWorld({
+      historyProvider: provider,
+      replayTailEvents: 3,
+    });
+    pasteBetweenPrompts(world, LARGE_IMAGE);
 
     const bob = world.connect();
-    bob.send(loadTail(1));
-    expect(shown(bob)).toEqual([{ text: "m2" }, { text: "m3" }]);
+    bob.send(load(1, { tail: true }));
+    await settle();
+    expect(textsOf(bob)).toEqual(["after"]);
 
     const carol = world.connect();
-    carol.send(loadPage(1, olderOf(bob, 1)));
-    expect(shown(carol)).toEqual([{ image: LARGE_IMAGE }, { text: "m1" }]);
+    carol.send(load(1, { replayBefore: olderOf(bob, 1) }));
+    await settle();
+    expect(shown(carol)).toEqual([{ image: LARGE_IMAGE }, { text: "look" }]);
   });
 
   /**
-   * TEST_SCENARIO: The UI reads a loaded Session's newest tail as data while
-   * the load runs. That read must carry the image's bytes too, and the whole
-   * read must carry them for an image above the tail.
+   * TEST_SCENARIO: A long Session evicted the start of its log. A viewer
+   * that opts into the tail pages back past the log's start: the pages then
+   * come from the harness history, and the whole conversation shows once,
+   * in order, down to its real start.
    */
-  it("should put the bytes back into the Session read as data", () => {
-    const { store } = mediaStore();
-    const world = createWorld({ sessionMedia: store });
-    pasteBetweenPrompts(world, LARGE_IMAGE);
-
-    const whole = world.runtime.sessionFrames(SESSION);
-    expect(whole.frames.some((f) => f.includes(LARGE_IMAGE))).toBe(true);
-    expect(whole.frames.some((f) => f.includes("mediaRef"))).toBe(false);
-
-    const tail = world.runtime.sessionFrames(SESSION, 1);
-    expect(tail.truncated).toBe(true);
-    expect(tail.frames.some((f) => f.includes("after"))).toBe(true);
-    expect(tail.frames.some((f) => f.includes(LARGE_IMAGE))).toBe(false);
-  });
-
-  /**
-   * TEST_SCENARIO: The machine's disk guard emptied the cache folder, so the
-   * store no longer has the image's bytes. Only then does the reload show
-   * the placeholder, and the text around it stays.
-   */
-  it("should show the placeholder only once the store has lost the bytes", () => {
-    const { store, dir } = mediaStore();
-    const world = createWorld({ sessionMedia: store });
-    pasteBetweenPrompts(world, LARGE_IMAGE);
-    rmSync(dir, { recursive: true, force: true });
+  it("should page past the eviction floor into the harness history", async () => {
+    const history = conversation(8);
+    const { provider } = providerOf(history);
+    const world = createWorld({
+      historyProvider: provider,
+      logBytesCap: 1500,
+      replayTailEvents: 4,
+    });
+    warmFrom(world, history);
 
     const bob = world.connect();
-    bob.send(frames.loadSession(1, SESSION));
-
-    expect(shown(bob)).toEqual([
-      { text: "before" },
-      { text: "[image not kept in history]" },
-      { text: "look" },
-      { text: "after" },
-    ]);
-  });
-
-  /**
-   * TEST_SCENARIO: The text history outgrows the log cap and the entry that
-   * held the image is evicted. Nothing refers to its file any more, so the
-   * file must go, while an image a kept entry still shows stays.
-   */
-  it("should delete an image's file once its entry is evicted", () => {
-    const { store, dir } = mediaStore();
-    const world = createWorld({ sessionMedia: store, logBytesCap: 4096 });
-    const alice = world.connect();
-    alice.send(frames.newSession(1));
-    world.harness().replyTo("session/new", { sessionId: SESSION });
-    world.harness().emit(imageUpdate("OLD-IMAGE"));
-    expect(filesUnder(dir)).toHaveLength(1);
-
-    for (let i = 0; i < 40; i++) {
-      world
-        .harness()
-        .emit(frames.agentMessage(SESSION, `t${i}`.padEnd(200, "."), `m${i}`));
+    bob.send(load(1, { tail: true }));
+    await settle();
+    const pages = [textsOf(bob)];
+    let older = olderOf(bob, 1);
+    for (let id = 2; older !== undefined && id < 20; id++) {
+      const pager = world.connect();
+      pager.send(load(id, { replayBefore: older }));
+      await settle();
+      pages.unshift(textsOf(pager));
+      older = olderOf(pager, id);
+      if (older === undefined) expect(clippedOf(pager, id)).toBeUndefined();
     }
-    world.harness().emit(imageUpdate("NEW-IMAGE"));
 
-    expect(filesUnder(dir)).toHaveLength(1);
-    const bob = world.connect();
-    bob.send(frames.loadSession(1, SESSION));
-    expect(shown(bob)).toContainEqual({ image: "NEW-IMAGE" });
-    expect(shown(bob)).not.toContainEqual({ image: "OLD-IMAGE" });
+    expect(pages.flat()).toEqual(ALL_TEXTS(8));
   });
 
   /**
-   * TEST_SCENARIO: A Session the runtime tears down, as an idle one, takes
-   * its media folder with it: the next load fills the log again from its
-   * source and writes the bytes anew.
+   * TEST_SCENARIO: A client that does not opt into the tail loads a Session
+   * whose log evicted its start. It must get the whole conversation, the
+   * older part from the harness history, with no clip.
    */
-  it("should delete a Session's media when the runtime resets it", () => {
-    const { store, dir } = mediaStore();
-    const world = createWorld({ sessionMedia: store });
+  it("should replay the whole conversation to a full load of an evicted log", async () => {
+    const history = conversation(8);
+    const { provider } = providerOf(history);
+    const world = createWorld({ historyProvider: provider, logBytesCap: 1500 });
+    warmFrom(world, history);
+
+    const bob = world.connect();
+    bob.send(load(1));
+    await settle();
+
+    expect(textsOf(bob)).toEqual(ALL_TEXTS(8));
+    expect(clippedOf(bob, 1)).toBeUndefined();
+  });
+
+  /**
+   * TEST_SCENARIO: A harness with no session-history provider keeps
+   * today's behavior: a full load of an evicted log starts at the eviction
+   * floor and reports the clip without a cursor.
+   */
+  it("should start at the eviction floor when there is no provider", () => {
+    const history = conversation(8);
+    const world = createWorld({ logBytesCap: 1500 });
+    warmFrom(world, history);
+
+    const bob = world.connect();
+    bob.send(load(1));
+
+    const texts = textsOf(bob);
+    expect(texts.length).toBeLessThan(ALL_TEXTS(8).length);
+    expect(ALL_TEXTS(8).slice(-texts.length)).toEqual(texts);
+    expect(clippedOf(bob, 1)).toEqual({});
+  });
+
+  /**
+   * TEST_SCENARIO: The Session read as data, as the UI reads its tail while
+   * a load runs, says when it needs the harness history and, given it,
+   * carries the dropped image's bytes.
+   */
+  it("should fill the Session read as data from the history it is given", () => {
+    const { provider } = providerOf(PASTE_HISTORY);
+    const world = createWorld({ historyProvider: provider });
     pasteBetweenPrompts(world, LARGE_IMAGE);
-    expect(filesUnder(dir)).toHaveLength(1);
 
-    world.runtime.resetSession(SESSION);
+    const bare = world.runtime.sessionFrames(SESSION);
+    expect(bare.needsHistory).toBe(true);
+    expect(bare.frames.some((f) => f.includes(LARGE_IMAGE))).toBe(false);
+    expect(bare.frames.some((f) => f.includes("not kept in history"))).toBe(
+      true,
+    );
 
-    expect(filesUnder(dir)).toEqual([]);
+    const filled = world.runtime.sessionFrames(SESSION, {
+      history: PASTE_HISTORY.map((frame) => JSON.stringify(frame)),
+    });
+    expect(filled.frames.some((f) => f.includes(LARGE_IMAGE))).toBe(true);
+
+    const tail = world.runtime.sessionFrames(SESSION, { tail: 1 });
+    expect(tail.truncated).toBe(true);
+    expect(tail.needsHistory).toBe(false);
   });
 });

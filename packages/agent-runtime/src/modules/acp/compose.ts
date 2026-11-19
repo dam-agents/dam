@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import { parseQualifiedModel, type SessionSteering } from "api-server-api";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
 import type { ArtifactTouch } from "./infrastructure/tool-call-outcome.js";
@@ -95,7 +94,6 @@ import {
   type LeaseRouter,
 } from "./services/lease-router.js";
 import { createDelegationFramesStore } from "./infrastructure/delegation-frames-store.js";
-import { createSessionMediaRoot } from "./infrastructure/session-media-store.js";
 import {
   createSubAgentSessionStore,
   type SubAgentSessionStore,
@@ -338,10 +336,6 @@ export function composeAcp(opts: ComposeAcpOptions): {
   );
   const activeTurns = createActiveTurnStore(opts.stateBackend);
   const subAgentSessions = createSubAgentSessionStore(opts.stateBackend);
-  const sessionMedia = createSessionMediaRoot({
-    dir: join(opts.agentHome, ".cache", "platform-session-media"),
-    log: opts.log,
-  });
   const historyProviders = new Map(
     Object.entries(opts.harnesses).map(([name, h]) => [
       name,
@@ -558,7 +552,6 @@ export function composeAcp(opts: ComposeAcpOptions): {
         }),
         onSubAgentSpawn: ({ sessionId, subAgentIds }) =>
           subAgentSessions.record(sessionId, subAgentIds),
-        sessionMedia: sessionMedia.store(),
         ...(ownHistory ? { historyProvider: ownHistory } : {}),
         ...(ownCut ? { sessionCut: ownCut } : {}),
         ...(harness?.initialize && {
@@ -607,7 +600,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessionMetadata,
     isRunning: (sessionId) => runtime.isSessionRunning(sessionId),
     changes: sessionChanges,
-    sessionFrames: (sessionId, tail) => runtime.sessionFrames(sessionId, tail),
+    sessionFrames: (sessionId, opts) => runtime.sessionFrames(sessionId, opts),
     delegations: createDelegationFramesStore(opts.agentHome),
     ...(opts.sessionRepositories && {
       sessionRepositories: opts.sessionRepositories,
