@@ -8,7 +8,7 @@ import { formatTokens } from "../../metrics/lib/format.js";
 import { joinNames } from "./coverage.js";
 import type { SpendBucket } from "./day-buckets.js";
 import { bareSpend, formatSpend } from "./format.js";
-import { formatDay, formatRange } from "./range-label.js";
+import { formatDay, formatRange, formatSoFar } from "./range-label.js";
 import type { PresetPeriod } from "./spend-period.js";
 import type { DayRange } from "./utc-day.js";
 
@@ -225,7 +225,7 @@ export const PERIOD_LABELS: Readonly<Record<PresetPeriod, string>> = {
 };
 
 export function rangeLine(range: DayRange, soFar: boolean): string {
-  return soFar ? `${formatRange(range)}, so far` : formatRange(range);
+  return soFar ? formatSoFar(range) : formatRange(range);
 }
 
 export function measuringStarted(startDay: string): string {

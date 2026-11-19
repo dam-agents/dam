@@ -69,6 +69,20 @@ export function formatRange({ from, to }: DayRange): string {
   return `${start.day}–${formatDay(to)}`;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The line under a spend total for a range that is
+ * still running. It names only where the range starts: an end date would be
+ * today's UTC day, which reads as tomorrow in the evening west of UTC. The
+ * year shows only when the range began in an earlier one.
+ */
+export function formatSoFar({ from, to }: DayRange): string {
+  if (from === to) return "Today so far";
+  const start = partsOf(from);
+  const day =
+    start.year === partsOf(to).year ? formatDayMonth(from) : formatDay(from);
+  return `Since ${day}`;
+}
+
 export function measuredRange(
   range: DayRange,
   startDay: string,
