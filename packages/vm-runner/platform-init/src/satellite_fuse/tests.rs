@@ -852,24 +852,25 @@ fn the_mount_serves_the_granted_satellites_over_a_real_fuse_session() {
         files.lines().any(|line| line.ends_with("lab/pipe")) && !files.contains("outside"),
         "a special file is not a regular file to find, or a link is: {files}"
     );
-    // UNIT_BOUNDARY_DESCRIPTION: a special file is a regular file to the kernel, so its open and its read are operations on the channel rather than answers the mount gives: both must be asked of the platform, whose refusal is then what the Agent's tool sees. A local answer here is a FIFO that `cat` exits on happily with nothing.
-    let fifo = shell(format!("timeout 3 cat {mnt}/lab/pipe"));
+    // UNIT_BOUNDARY_DESCRIPTION: a special file is a regular file to the kernel, so its open and its read are operations on the channel and not answers the mount gives: a local answer is a FIFO that `cat` exits on happily with nothing. What the tool prints is the kernel's to choose — a platform's EPERM reaches it as EPERM here, as Input/output error on the CI kernel (7.0.0-azure) for a special inode, and as EACCES for a symlink on that same kernel — so the failure is asserted and the platform's trace is the proof that the refusal came from it, not from the mount.
+    let fifo = shell(format!("timeout 3 cat {mnt}/lab/fifo"));
     assert!(
         !fifo.0,
-        "a read of a special file was answered without the platform: {fifo:?}"
+        "an open of a zero-size special file was answered without the platform: {fifo:?}"
     );
+    let pipe = shell(format!("timeout 3 cat {mnt}/lab/pipe"));
     assert!(
-        fifo.1.contains("Operation not permitted"),
-        "the platform's refusal did not reach the tool: {:?}",
-        fifo.1
+        !pipe.0,
+        "a read of a special file was answered without the platform: {pipe:?}"
     );
+    eprintln!("cat of a zero-size special file: {fifo:?}, of one with a byte: {pipe:?}");
     let trace = tree.trace();
-    for op in ["open", "read"] {
+    for (op, path) in [("open", "fifo"), ("open", "pipe"), ("read", "pipe")] {
         assert!(
             trace.iter().any(|line| {
-                line.contains(&format!("op=\"{op}\"")) && line.contains("path=\"pipe\"")
+                line.contains(&format!("op=\"{op}\"")) && line.contains(&format!("path=\"{path}\""))
             }),
-            "the {op} of a special file was answered locally: {trace:#?}"
+            "the {op} of {path} was answered locally: {trace:#?}"
         );
     }
     // UNIT_BOUNDARY_DESCRIPTION: the mount's own answer is what these two links are held to: the request must reach the server and be refused with EPERM. The errno the caller sees is read from a direct symlink(2), not from a tool's message, because a kernel may map a filesystem's error and the CI kernel (7.0.0-azure) reports EACCES for a symlink the server answered with EPERM. A caller errno other than EPERM is accepted only when the server trace proves the mount refused with EPERM, and the environment that did it is printed.
@@ -1191,6 +1192,8 @@ impl Tree {
             }
         }
         // UNIT_BOUNDARY_DESCRIPTION: a FIFO, a socket or a device the machine holds: the platform can describe it only as "other", and one of them must not fail the listing of its directory.
+        // UNIT_BOUNDARY_DESCRIPTION: two special files, one of each shape the platform answers: `fifo` has nothing to hand over and is refused when it is opened, `pipe` claims a byte and is refused when that byte is read.
+        tree.add("lab", "fifo", "other", String::new(), 0o644);
         tree.add("lab", "pipe", "other", String::from("z"), 0o644);
         tree.add_link("lab", "outside", "/etc/passwd");
         tree.add("lab", "many", "dir", String::new(), 0o755);
@@ -1391,6 +1394,14 @@ impl Tree {
             "open" => {
                 if let Some(refused) = read_only("EROFS") {
                     return refused;
+                }
+                let nothing_to_read = nodes.get(&key).is_some_and(|node| {
+                    node.kind == "other"
+                        && node.data.is_empty()
+                        && !body["write"].as_bool().unwrap_or(false)
+                });
+                if nothing_to_read {
+                    return error("EPERM");
                 }
                 match attributes(&nodes, path) {
                     Some(attrs) => json!({"ok": true, "result": attrs}),
