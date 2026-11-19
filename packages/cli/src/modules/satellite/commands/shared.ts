@@ -17,6 +17,7 @@ import {
   createWorker,
   FenceUnsupportedError,
   SatelliteRemovedError,
+  type FileWorkerTransport,
   type WorkerTransport,
 } from "../services/worker.js";
 
@@ -214,7 +215,9 @@ function rejectsAsUnknownProcedure(err: unknown): boolean {
  * and never answered with an unfenced call; the plain procedures are left to
  * the identity-free legacy case.
  */
-export function transportFor(trpc: TrpcClient): WorkerTransport {
+export function transportFor(
+  trpc: TrpcClient,
+): WorkerTransport & FileWorkerTransport {
   return {
     connect: async ({ manifest, host, resume }) => {
       if (resume === undefined)
@@ -294,6 +297,9 @@ export function transportFor(trpc: TrpcClient): WorkerTransport {
         if (!rejectsAsUnknownProcedure(err)) throw err;
         throw new FenceUnsupportedError(input.satellite);
       }
+    },
+    fileResult: async (input) => {
+      await trpc.satellites.fileResult.mutate(input);
     },
   };
 }

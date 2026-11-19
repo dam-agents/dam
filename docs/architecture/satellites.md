@@ -1,6 +1,6 @@
 # Satellites
 
-Last verified: 2026-11-18
+Last verified: 2026-11-19
 
 ## Overview
 
@@ -20,7 +20,7 @@ Three verbs start a worker, and **nothing above it can tell them apart**:
   Without `--name` it is named after the server it starts — the first word past a package runner such as `npx` or `uvx`, less scope, version and path — or the host it forwards to.
 - `dam satellite shell "…"` — a **Command Surface**: permitted command shapes, one usage line each, which becomes a one-tool MCP server whose single `run` tool takes the command to run.
   Without `--name` it is named after the one command every pattern permits, or called `user@hostname` when they differ; either is folded into the name contract.
-- `dam satellite files --root <dir>` — one directory on the machine, offered as `list` and `stat` tools, a `download` tool, and with `--upload` an `upload` tool beside them (see [Files](#files-between-the-machine-and-the-agent)).
+- `dam satellite files --root <dir>` — one directory on the machine, mounted in each granted Agent's machine as `/mnt/sat/<name>`; it offers no tools, and `--write` lets Agents change the tree (see [Files as a mount](#files-as-a-mount)).
   Without `--name` it is named after the directory.
 
 Separate verbs rather than one flag because each is a different thing to set up, not another way of saying the same thing, and an explicit verb cannot be misread the way a selector flag can.
@@ -219,95 +219,11 @@ A call made while the Satellite is offline never starts at all: admission refuse
 **Credentials refresh themselves.** A worker signed in through the browser re-mints its access token before each call, and one started as a service holds a serve key in `DAM_TOKEN` instead, which needs no refresh.
 Either way, a worker that cannot authenticate retries like any other failure but says what ends it: signing in again, or a new key.
 
-## Files between the machine and the Agent
-
-A Job's result carries one string of at most 1 MiB beside a handful of images, which is the wrong channel for a file: a tool that returned contents would spend the Agent's context on bytes, and a large file would not fit at all.
-So a file travels on **its own request, in the direction the queue cannot go** — the machine makes it, over the same outbound HTTPS the worker already uses, streamed both ways and never through a Job's arguments or its result.
-
-`dam satellite files --root <dir>` exposes one directory on the machine as a **transfer surface**; a Satellite that declares itself a file tree instead offers that directory as a mount, with no tools at all ([Files as a mount](#files-as-a-mount)):
-
-- `download` copies one file, or a slice of one, **into the Agent's workspace**, and the Agent is told only the path the file landed at, its size and its sha256.
-  It reads the file with its own tools, never through the model's context.
-- `upload`, offered only when the worker was started with `--upload`, copies one file **from the Agent's workspace onto the machine**.
-  It is the same request in reverse, and it never replaces a file that is already there unless the call says to.
-- `list` reports what a directory holds, and `stat` reports one path's facts, neither moving a byte.
-  They are how an Agent finds a file it was never told the name of.
-- `download` takes an optional `offset` and `length`, so a part of a file moves without moving the file.
-  A negative `offset` counts back from the end, which is how the tail of a growing log is read.
-  The slice lands under the file's own name in the same per-Job directory, and the result adds the `offset` it came from and the file's `fileSize` so pieces can be joined in order.
-- `download` also takes a **directory**, which travels as one uncompressed tar of that directory's regular files under the directory's own name, so the Agent unpacks it with `tar -xf <path> -C <dir>`.
-  The walk is `list`'s and every file is opened the way a single-file download opens one, then read to exactly the size its descriptor reported, so a file that shrinks under the read fails the transfer instead of landing a short tar.
-  Links, special files and hard-linked files are left out and named in the result's `skipped`, which is bounded by count and by bytes so one result stays inside what a Job can carry.
-  A tree over 10,000 files, deeper than 32 levels or over the ceiling in total is refused before the first byte; the tar's own framing — a header and its padding per file, plus the terminator — counts against that ceiling too, and the bytes are counted again as they move, because the size is known only as the tar is built and the body therefore declares no length.
-- `upload` with `unpack` takes an uncompressed tar from the Agent's workspace and creates it as **one new directory** on the machine, never replacing or merging into one that is there.
-  A directory on the machine and a tar in the workspace are the two halves of the same thing, because the platform still moves exactly one workspace file per Job.
-- `stat` with `sha256` hashes the whole file **on the machine** and moves nothing, which is how an Agent checks a file that arrived in pieces.
-  It reads exactly the size one `fstat` on the verified descriptor reported, and refuses if fewer bytes come back, or if a second `fstat` afterwards shows a different size or mtime, so the size and the digest always describe the same bytes.
-  On a network mount every byte of that read crosses the link, so the tool's description says it is slow on a big file.
-
-Each tool declares which way it moves files, and **that direction is frozen on the Job when the Agent's call is admitted**, from the Snapshot that accepted it.
-`list` and `stat` declare no direction, because they move nothing and authorise no transfer at all.
-A Satellite replaces its tool list every time it connects, so the direction cannot be read again later: a manifest that points the tool the other way must not reinterpret a Job the Agent already made.
-A Job whose tool moved no file, or moves them the other way, authorises nothing.
-
-**A transfer belongs to the claim that is running the Job.** Claiming a Job issues that worker a transfer token, stored on the Job row as a hash, and a file request must present it; the token is spent by the transfer it authorises, in the same statement that checks the Job is still running.
-So a transfer happens once, for one Job, and only while that Job runs: bytes that arrive after it settled land nothing, a second transfer on the same Job is refused, and an upload's stream stops within one re-check interval of the Job ending.
-This is the one thing the serve key does *not* buy: two keys of one owner are indistinguishable to the queue, and the token is what tells the claimant from any other worker of that owner.
-
-**The platform takes the direction and both paths from the Job itself** — the direction frozen at admission and the arguments the Agent's call carried — so a machine cannot ask for a file its Agent did not ask for, and cannot choose where a received file lands.
-A download lands in a directory the platform derives from the Job and its claim, so two transfers never collide even when a Satellite is removed and its sequences start again; the file's name is the last segment of the path the Agent asked for.
-An upload reads the workspace path the Agent asked for, and no other.
-
-The directory is the whole allowlist on the machine, and every path is opened without trusting a component:
-
-- The root is resolved once at startup and re-resolved on every call, so a root replaced afterwards stops being a root.
-  `/` and the home directory are refused as roots.
-- Each directory on the way must be a real one, and the file is opened without following a link, without blocking on a FIFO, and then compared with the path it was opened by — same device and inode, a regular file, one link.
-  A `..`, an absolute path, a link at any point, a hard link out and a special file are all refused.
-- `list` walks the same way: every directory on the way is proved, a directory is entered only after it was proved again, and a link is listed as a link and never followed.
-  Its target is never printed, because a target can name a path the root does not cover, and the entries behind it are never read.
-  A hard link is listed — its metadata is all that is shown — because the one-link rule exists to keep a transfer from reading through a name someone else holds.
-- Read-only unless the user passed `--upload`.
-  A write is staged beside its destination under an exclusive name, verified before a byte is written, and published **inside the destination directory's inode**: the process steps into that directory, proves it is the one that was checked, and names both files relatively, so renaming a path on top of it cannot steer the step.
-  It never writes through a link, and it never replaces a file with more than one link.
-- Every chunk is written in full, and the finished file is read back through its own descriptor and compared with what was hashed before anything is published: a short write fails the transfer instead of leaving a truncated file.
-- A **directory upload** stages the whole tree in a directory beside its destination — a hidden name created exclusively, proved by device and inode — streams the tar straight into it, and publishes it onto the new name with one rename taken inside the parent's proved inode.
-  Nothing is merged and nothing is replaced: the destination must not exist, `overwrite` together with `unpack` is refused, and an existing name is refused before a byte is received.
-  Only regular files and directories are created, so an entry that is a link, a hard link, a device or a FIFO fails the whole upload, and so does a name that is absolute or carries `..`, an empty segment, a backslash or a NUL, a name that appears twice — a directory entry included — a directory entry that declares a size, more than 10,000 entries, more than 32 levels, or a tree over the ceiling.
-  Each file goes through the same staging and publish as a single-file upload and is read back through its descriptor before it is published; the tar itself is never stored, and its own bytes count against the ceiling, so the unpacked bytes never exceed the archive's.
-  A body of zero bytes carries no archive and is refused, while an empty but well-formed tar makes an empty directory.
-  A refusal names the entry the Agent supplied and the reason, never its contents; a name longer than a couple of hundred characters is shortened in the refusal, because an entry name can be longer than a Job result may carry and a refused call is still a stored result.
-  On any failure — a bad entry, a body that is not a tar, a stream cut short, less free space than the archive plus a gigabyte of headroom, or a cancelled Job, including one cancelled while a file is being verified — nothing is published and the staging directory is removed from inside the proved parent, which holds only files and directories this process created.
-  The ceiling it inherits: `rename` replaces an **empty** directory a same-user local process creates between the check and the rename, because POSIX exposes no no-replace rename; onto a non-empty directory, a file or a link it fails, and such a process could already write there.
-- The surface is POSIX only; on Windows the verb refuses to start rather than promise a confinement it cannot keep.
-
-The Agent's own workspace is treated as untrusted in exactly the same way, because the Agent owns everything inside it.
-The platform's writes are staged beside their destination in the workspace and published by a second request, so the publish happens only after the bytes arrived and the token was spent; both directions walk the workspace components, open without following a link, refuse a hard link and a special file, and publish and clean up inside a verified directory's inode rather than by a pathname.
-Cleanup of an abandoned stage is confined the same way, and it removes only an entry that is one of the platform's own staged files, so it cannot be steered into deleting an Agent's file through a link.
-
-**One transfer carries at most 5 GiB**, counted while the bytes move in both directions — including on the platform's own relay, which counts what it hands the machine and cuts the response off at the limit even when the workspace understates a file's size.
-A file that grows after it was measured, or a response that never ends, is cut off at the limit rather than read whole.
-Nothing passes through the api-server's memory: it relays the stream, the runtime owns the workspace end.
-The limit is measured against **what one call copies**, not against the file.
-A ranged `download` sends the slice, declares the slice's length and reports the slice's sha256, so a file of any size moves in pieces an Agent asks for; without `offset` and `length` a file over the limit is refused and the Agent is told to pass them.
-Before it stages a byte the workspace end refuses a file whose declared size plus 1 GiB of headroom does not fit in the free space of the directory the file lands in, answering HTTP 507 `no_space`.
-That check is best effort rather than a reservation: it reads the size the body declares, and nothing is measured when a body declares no length or the filesystem cannot be measured.
-In the upload direction the machine makes the same check against the directory the file lands in, so a file it cannot hold is refused before it is written.
-Every transfer leaves one audit line — the direction, the Job, the Agent, the path, the byte count and the outcome — and file contents never enter a log, an error message or a tool result.
-What lands under `.dam/satellite-files/` in the Agent's workspace stays there: Platform never removes it, so the Agent is told to delete what it no longer needs.
-
-**A listing is bounded four ways**, because a machine's directory can be a network mount where every `stat` is a remote round trip: `depth` at most 10 levels, `limit` at most 5000 entries, a 20 second wall clock per call, and an output budget under the 1 MiB one Job result may carry.
-A bound that cut the answer short adds a last line saying which bound it was, so an Agent sees a partial answer rather than a short one.
-The clock and the cancellation signal are checked after every filesystem call, not only before one, but a call already in flight is not interrupted: a listing can overrun the budget by one stalled operation on a mount that stopped answering.
-`glob` filters the entries printed while every directory the depth allows is still walked, and the paths are relative to the directory that was listed.
-A printed path is a JSON string, so a name carrying a tab, a newline or a quote cannot be mistaken for a column or a line.
-Entries come in filesystem order, not sorted.
-A listing within that budget that is still larger than one message is spilled into a workspace file by the same rule as any other result, so a big directory costs the Agent a path instead of its context.
-
 ## Files as a mount
 
-A Satellite is a **tool surface** or a **file tree**; a file tree has no tools and no Jobs, and therefore no Job row and no per-call record.
+A Satellite is a **tool surface** or a **file tree**: a file tree has no tools and no Jobs, and therefore no Job row and no per-call record.
 Its Agent sees one directory per granted Satellite under `/mnt/sat`, served by a mount inside the Agent's own machine, and every call the mount cannot answer from its cache becomes a **File Operation** on a channel of its own beside Jobs ([Satellite Mount](../ubiquitous-language.md)).
+A file tree once moved one file per Job through `list`, `stat`, `download` and `upload` tools and a transfer token; nothing offers those any more, and the mount replaces all of it.
 
 An operation is queued in the shared store under the owner, its Satellite and its Agent, and the machine's ordinary claim long-poll takes it up exactly as a Job is taken up: one operation per Agent per turn, in rotation, so one Agent's walk cannot starve another Agent's single read.
 The answer travels back to the replica holding the Agent's request open, whichever replica the machine's claim landed on; nothing about an operation is pinned to a replica, and nothing about it is written to Postgres.
@@ -327,6 +243,21 @@ Nothing on the platform says which file an Agent read, wrote or deleted, which i
 A session is told about its mounts once, when it starts: the platform names each `/mnt/sat/<name>` and whether it is writable, but only when the mount server has been seen within the last 45 seconds.
 A machine that has not booted the mount server therefore leaves an Agent with no mount words at all, rather than instructions about a directory that is not there.
 
+**The worker is `dam satellite files --root <dir>`**, one directory per Satellite, and it offers no tools at all: the mount is the whole surface, and no Job can be admitted to it.
+`--write` is the whole opt-in, and a writable worker refuses nothing: no trash, no undo, and a deletion through the mount leaves no per-file trace anywhere.
+Without it the worker answers "Read-only file system" to every change itself, besides the platform's own check, so the user's opt-in holds on their own machine even when the Satellite's row says otherwise.
+One worker serves every Agent its Satellite is granted to, and a second worker on the same directory is refused through a pid file under the user's home, which a machine that crashed leaves for the next start to replace.
+
+A worker from before the mount registers tools that carry a transfer direction, and no Satellite serves those any more: the platform refuses such a manifest at registration and tells the user to update the CLI, while a CLI that meets a platform older than the file channel stops and says the platform has to be upgraded, because waiting does not grow a manifest schema.
+
+**Every operation is confined to the root on the machine as well.** A path is relative to the root, and `.` is the root itself; an absolute path, a `..` segment, an empty name, a NUL or a backslash is refused, the root is resolved again on every operation, and every directory on the way must be a real directory, never a link.
+An open takes a regular file without following a link and without blocking on a FIFO, requires exactly one link, and compares the file with the identity the Agent saw: a path that no longer names that inode answers "Stale file handle", so a file swapped between two writes cannot redirect the second, and a file with a second hard link is listed but neither read nor written.
+Create, mkdir, unlink, rmdir and symlink act inside the parent directory the walk proved and never follow the last name; a rename proves both parents, and one that moves a directory or a link closer to the root is answered as a cross-device move, so `mv` copies it and re-creates each link, which checks every target again.
+The root can be neither renamed nor removed, and a symbolic link is created — and its target shown — only when the target is relative, is zero or more leading `..` followed by plain names, and has no more leading `..` than the link's directory lies below the root: anything else answers "Operation not permitted" when it is created and hides the target of one that exists.
+Hard links, FIFOs, sockets and devices cannot be created; `chmod` sets the read, write and execute bits and drops setuid, setgid and sticky; `chown` is refused and so are extended attributes and `fallocate`; locks stay local to the Agent's machine.
+A write writes every byte at its offset or fails, and is refused with "No space left on device" when it would leave less than a gibibyte free.
+The ceilings are the worker's: Node has no `openat`/`renameat`, so a step inside a directory makes it the process's working directory and changes to the tree run one at a time, which is why one worker per root is enforced, and a link that complies can still pass through a link the user made that leaves the root; a native `openat2`/`renameat2` is the upgrade.
+
 ## Trust boundary
 
 **The machine decides what may run on it, and nothing else does.** The api-server checks that the Satellite offers the tool and has room; it never reads an argument, because a Satellite may be any MCP server and only that server knows what its arguments mean.
@@ -336,17 +267,12 @@ It is never a shell, so nothing in an argument is expanded or interpreted.
 The command — or the MCP server — inherits the **worker's own environment**, so whatever the user exported when they started the worker is what it sees, which is worth knowing when deciding what to start it from.
 
 This is a narrower promise than matching in both places, and deliberately so: a check the platform cannot perform for every Satellite is a check it should not appear to perform for any.
-What Platform still guarantees is the record — every call, verdict and outcome is stored on the Job row whether or not the machine reports honestly about itself.
-
-A **file transfer crosses in the other direction**, so the platform is the side that writes what it is given.
-It trusts none of it: the machine names no path at all, the direction is the one frozen on the Job when the call was admitted and both paths come from the Job's own arguments, and the workspace end walks every component without following a link.
-The claim's token is spent atomically: a download lands only by spending it, so nothing lands once it is spent or once the Job ends, and an upload's stream stops within one re-check interval of the Job ending — the resolution at which the platform re-proves the Job while bytes leave, not the instant they stop.
-What the machine reads is bounded on the machine, by its root.
+What Platform still guarantees is the record — every call, verdict and outcome is stored on the Job row (a files Satellite keeps the summary instead) whether or not the machine reports honestly about itself.
 
 Anything an Agent can call is callable by a **prompt-injected** Agent.
 That is the whole exposure surface, and it is why a tool call is bounded before it is stored — arguments are capped, and the concurrency limit is enforced in the same transaction that inserts.
 Connecting an arbitrary MCP server widens that surface to whatever the server exposes, which is the user's call to make and the reason grants stay deliberate.
-Every call, verdict and outcome is recorded on the Job row itself — the tool, its arguments and the result — and because Platform stores that rather than the Satellite, the record does not depend on a machine reporting honestly about itself.
+Every tool call, its verdict and its outcome is recorded on the Job row itself — the tool, its arguments and the result — and because Platform stores that rather than the Satellite, the record does not depend on a machine reporting honestly about itself.
 The rows are the whole of it: they are purged with the retention sweep a week after the Job started, so a longer-lived trail would have to be added on purpose.
 
 A worker authenticates with an API key carrying the **serve scope**, which covers only what serving needs: registering a tool surface, claiming the work approved for it, heartbeating, reporting what came back, and declaring itself draining.

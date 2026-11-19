@@ -276,7 +276,7 @@ export function satelliteMountInstructions(
         `/mnt/sat/${mount.name} (${mount.writable ? "writable" : "read-only"})`,
     )
     .join(", ");
-  return `Your machine mounts the files of ${mounts.length === 1 ? "this satellite" : "these satellites"} as ordinary directories: ${named}. Read and walk them with your own tools. A mount error is about the machine, not your path: "Host is down" means its worker is offline or shutting down and nothing under it can be reached until it returns; "Stale file handle" means the file you opened was replaced or removed on the machine, so list the directory again and reopen it; "Operation not permitted" means the mount's rules refuse that operation — a link or a special file leaving the satellite's root, a chown, an extended attribute — and no retry changes it.`;
+  return `Your machine mounts the files of ${mounts.length === 1 ? "this satellite" : "these satellites"} as ordinary directories: ${named}. Read and walk them with your own tools. A mount error is about the machine, not your path: "Host is down" means its worker is offline or shutting down and nothing under it can be reached until it returns; "Stale file handle" means the file you opened was replaced or removed on the machine, so list the directory again and reopen it; "Operation not permitted" and "Permission denied" are one answer for the same refusal — the kernel may report either of them for what the mount refuses: a link that leaves the satellite's root, a hard link, a FIFO, a socket or a device you try to create, the contents of a file that has a second hard link, a chown, an extended attribute — and no retry changes it.`;
 }
 
 const ISO_DATE_OR_TIME =
