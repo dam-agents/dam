@@ -112,6 +112,31 @@ export function buildJobsCommand(deps: ManageDeps): Command {
   });
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a grant means depends on what the Satellite is.
+ * A tool surface reaches the Agent's harness when that harness next starts, because
+ * it lists tools once; a file tree needs nothing restarted, because the mount
+ * follows the grants while the Agent runs. The message is the only place a user
+ * learns that difference, so it names the path and the 30 seconds instead of
+ * promising a restart that will not come.
+ */
+function grantMessage(ref: string, name: string, kind: string): string {
+  return kind === "files"
+    ? `${ref} can now reach ${name}. It appears at /mnt/sat/${name} within 30 seconds, with no restart.\n`
+    : `${ref} can now reach ${name}. Its harness picks the tools up when it next starts.\n`;
+}
+
+async function kindOf(trpc: TrpcClient, name: string): Promise<string> {
+  try {
+    const satellites = await trpc.satellites.list.query();
+    return (
+      satellites.find((satellite) => satellite.name === name)?.kind ?? "tools"
+    );
+  } catch {
+    return "tools";
+  }
+}
+
 export function buildGrantCommand(
   deps: ManageDeps & { createSharingService: (host: string) => SharingService },
   revoke: boolean,
@@ -143,7 +168,7 @@ export function buildGrantCommand(
     process.stderr.write(
       revoke
         ? `${ref} can no longer reach ${name}.\n`
-        : `${ref} can now reach ${name}. Its harness picks the tools up when it next starts.\n`,
+        : grantMessage(ref, name, await kindOf(trpc, name)),
     );
     if (!revoke) {
       const chats = await deps.createSharingService(at).telegramChats(agentId);

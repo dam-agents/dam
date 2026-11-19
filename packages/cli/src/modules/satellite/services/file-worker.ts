@@ -17,7 +17,7 @@ import {
 const HEARTBEAT_MS = 20_000;
 const CLAIM_WAIT_MS = 25_000;
 const IDLE_MS = 1000;
-const SATURATED_MS = 250;
+const BUSY_MS = 100;
 const SUMMARY_MS = 60_000;
 const STOP_CLAIM_WAIT_MS = 2000;
 
@@ -116,6 +116,7 @@ export function createFileWorker(deps: {
   let draining = false;
   let stopped = false;
   let stopping: Promise<void> = Promise.resolve();
+  const slotWaiters = new Set<() => void>();
   let releaseStop: () => void = () => {};
   const stopSignal = new Promise<void>((resolve) => {
     releaseStop = resolve;
@@ -239,7 +240,27 @@ export function createFileWorker(deps: {
       })
       .finally(() => {
         inFlight.delete(item.id);
+        for (const wake of slotWaiters) wake();
+        slotWaiters.clear();
       });
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: A claim's capacity is what the operations in flight
+   * leave, so a worker whose slots are all taken cannot claim. It waits here for an
+   * operation to finish instead of polling: a walk's next request is already waiting
+   * at the platform, and re-checking every quarter second would put that delay into
+   * every operation of a saturated worker — with two slots and two Agents walking,
+   * most of them.
+   */
+  function slotFreed(): Promise<void> {
+    return new Promise((resolve) => {
+      if (inFlight.size < deps.maxConcurrent) {
+        resolve();
+        return;
+      }
+      slotWaiters.add(resolve);
+    });
   }
 
   async function backOff(reason: string, retry: Backoff): Promise<void> {
@@ -339,7 +360,7 @@ export function createFileWorker(deps: {
         while (!stopped) {
           if (draining) {
             if (inFlight.size === 0) break;
-            await sleep(SATURATED_MS);
+            await sleep(BUSY_MS);
             continue;
           }
           if (!connected) {
@@ -348,10 +369,11 @@ export function createFileWorker(deps: {
           }
           const capacity = deps.maxConcurrent - inFlight.size;
           if (capacity <= 0) {
-            await sleep(SATURATED_MS);
+            await Promise.race([slotFreed(), sleep(CLAIM_WAIT_MS)]);
             continue;
           }
           let items: WorkItem[];
+          const claimStartedAt = Date.now();
           try {
             items = await Promise.race([
               transport.claim({
@@ -387,7 +409,9 @@ export function createFileWorker(deps: {
               startOperation(item);
               started += 1;
             }
-          if (started === 0 && !stopped && !draining) await sleep(IDLE_MS);
+          const waited = Date.now() - claimStartedAt;
+          if (started === 0 && !stopped && !draining && waited < IDLE_MS)
+            await sleep(IDLE_MS - waited);
         }
       } finally {
         clearInterval(heartbeat);

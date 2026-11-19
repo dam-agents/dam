@@ -508,6 +508,120 @@ describe("the files worker", () => {
   });
 });
 
+describe("the worker's pace", () => {
+  /**
+   * TEST_SCENARIO: A claim carries only the capacity the operations in flight
+   * leave, so with every slot taken the worker must wait for one to finish. Polling
+   * for a free slot put that poll into every operation of a saturated worker — two
+   * slots and two Agents walking spent a quarter second per file that way — so the
+   * next claim starts the moment an answer leaves.
+   */
+  it("claims the next operation as soon as a slot frees", async () => {
+    let answeredAt = 0;
+    let claimedAgainAt = 0;
+    let releaseOp: (() => void) | null = null;
+    let releaseClaim: () => void = () => {};
+    let claims = 0;
+    let finish: () => void = () => {};
+    const settled = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const transport: FileWorkerTransport = {
+      connect: async () => ({ incarnation: INCARNATION }),
+      claim: async () => {
+        claims += 1;
+        if (claims === 1) return [item()];
+        claimedAgainAt = Date.now();
+        return new Promise<WorkItem[]>((resolve) => {
+          releaseClaim = () => resolve([]);
+        });
+      },
+      heartbeat: async () => {},
+      drain: async () => releaseClaim(),
+      fileResult: async () => {
+        answeredAt = Date.now();
+        finish();
+      },
+    };
+    const worker = createFileWorker({
+      name: "lab",
+      root: "/srv/lab",
+      writable: false,
+      maxConcurrent: 1,
+      host: "machine",
+      ops: {
+        run: () =>
+          new Promise<FileOpAnswer>((resolve) => {
+            releaseOp = () => resolve({ ok: true, result: {} });
+          }),
+      },
+      transport,
+      log: { line: () => {} },
+      retry: FAST,
+    });
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(releaseOp).not.toBeNull());
+    releaseOp!();
+    await settled;
+    await vi.waitFor(() => expect(claimedAgainAt).toBeGreaterThan(0), {
+      timeout: 200,
+    });
+    expect(claimedAgainAt - answeredAt).toBeLessThan(200);
+    await worker.drain();
+    await running;
+  });
+
+  /**
+   * TEST_SCENARIO: A claim is a long poll, and one that waited out most of its
+   * window already served as the worker's idle time. Adding a further pause would
+   * leave the next operation waiting at the platform for no reason.
+   */
+  it("does not pause again after a claim that already waited", async () => {
+    let returnedAt = 0;
+    let claimedAgainAt = 0;
+    let releaseClaim: () => void = () => {};
+    let claims = 0;
+    const transport: FileWorkerTransport = {
+      connect: async () => ({ incarnation: INCARNATION }),
+      claim: async () => {
+        claims += 1;
+        if (claims === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+          returnedAt = Date.now();
+          return [];
+        }
+        claimedAgainAt = Date.now();
+        return new Promise<WorkItem[]>((resolve) => {
+          releaseClaim = () => resolve([]);
+        });
+      },
+      heartbeat: async () => {},
+      drain: async () => releaseClaim(),
+      fileResult: async () => {},
+    };
+    const worker = createFileWorker({
+      name: "lab",
+      root: "/srv/lab",
+      writable: false,
+      maxConcurrent: 4,
+      host: "machine",
+      ops: { run: async () => ({ ok: true }) },
+      transport,
+      log: { line: () => {} },
+      retry: FAST,
+    });
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(claimedAgainAt).toBeGreaterThan(0), {
+      timeout: 4000,
+    });
+    expect(claimedAgainAt - returnedAt).toBeLessThan(300);
+    await worker.drain();
+    await running;
+  });
+});
+
 describe("a files worker on a platform that predates the mount", () => {
   /**
    * TEST_SCENARIO: AC-14's other half. The platform's manifest schema requires at
