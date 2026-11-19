@@ -199,6 +199,7 @@ A client fails a prompt on evidence instead:
   Unacknowledged this long means it never arrived, and the failure carries the socket's stated cause when it gave one.
   Until the acceptance arrives the person's own message says it is **sending**, or that the agent is **waking** when the send woke it, after a second so a fast send shows nothing; the reply, the working indicator and the session's row in the sidebar wait for the acceptance, so none says the agent is working on a message it does not have.
   A send whose chat moves to another session before it went out goes over a connection of its own, engaged to its session, so the move cannot strand it.
+  The chat's own connection is engaged to the session on screen alone: a resume that answers after the person moved on never engages it, and one left engaged to another session engages the shown one again at the next send, so a send or its retry never fails for the move.
 - **Waiting is unbounded.** A queued prompt is never failed for waiting, however long the turn ahead of it runs.
   The user is told it is waiting, which is true.
 
