@@ -10,12 +10,13 @@ const mockDefaultReply = "Hello from the mock agent.";
 test("first use: sign in, one-click agent, first answer, delete", async ({
   browser,
   person,
-}) => {
+}, testInfo) => {
   test.setTimeout(420_000);
   const jo = await person("Jo");
   const context = await browser.newContext();
   const page = await context.newPage();
   let agentName = "";
+  let agentId = "";
   try {
     await test.step("Jo signs in", async () => {
       await signInThroughTheBrowser(page, jo.account);
@@ -37,11 +38,33 @@ test("first use: sign in, one-click agent, first answer, delete", async ({
       expect(made, "the one-click create made no agent").toBeDefined();
       expect(made!.avatar, "the one-click agent has no avatar").toBeTruthy();
       agentName = made!.name;
+      agentId = made!.id;
     });
 
     await test.step("Jo's agent answers Jo's first message", async () => {
       const input = page.getByPlaceholder(/^(queue a )?message(…|\.\.\.)/i);
-      await expect(input).toBeVisible({ timeout: 240_000 });
+      try {
+        await expect(input).toBeVisible({ timeout: 120_000 });
+      } catch (error) {
+        const composer = await page
+          .getByTestId("chat-composer")
+          .getByRole("textbox")
+          .getAttribute("placeholder")
+          .catch(() => null);
+        const grants = await jo.api.connections.getAgentConnections
+          .query({ agentId })
+          .catch((e: unknown) => String(e));
+        await page.reload();
+        const afterReload = await input
+          .waitFor({ timeout: 30_000 })
+          .then(() => "the composer took a message after a reload")
+          .catch(() => "the composer was still blocked after a reload");
+        await testInfo.attach("composer-diagnosis.json", {
+          contentType: "application/json",
+          body: JSON.stringify({ composer, grants, afterReload }, null, 2),
+        });
+        throw error;
+      }
       await input.fill("hello");
       await expect(
         page
