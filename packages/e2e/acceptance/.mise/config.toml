@@ -15,9 +15,9 @@ extends = "ts:fix:format"
 run = "pnpm exec prettier --write 'src/**/*.ts' 'playwright.config.ts'"
 
 [tasks."check:boundary"]
-description = "The acceptance suite depends on nothing but the public API contract and its test tools, so it cannot import the server's internals"
-run = "node .mise/lib/boundary.mjs"
-sources = ["package.json", ".mise/lib/boundary.mjs"]
+description = "The acceptance suite depends on nothing but the public API contract and its test tools, and no import in it leaves the package, so it cannot import the server's internals"
+run = "node --test .mise/lib/boundary.test.mjs && node .mise/lib/boundary.mjs"
+sources = ["package.json", ".mise/lib/boundary*.mjs", "src/**/*", "playwright.config.ts"]
 outputs = []
 deny_net = true
 deny_write = true

@@ -80,7 +80,7 @@ The two summaries hold the same table, so a phase of one lane compares with the 
 ## Acceptance suite
 
 The **acceptance suite** in [`packages/e2e/acceptance`](../../packages/e2e/acceptance/) states what the product does as Gherkin feature files, and `mise run e2e` runs them on the same install after the smoke suite, so both CI lanes run them; `e2e:loop` runs the smoke suite alone.
-Its package depends only on the API contract package and its test tools, so a test cannot import the server's internals; `check:boundary` refuses any other dependency.
+Its package depends only on the API contract package and its test tools, so a test cannot import the server's internals: `check:boundary` refuses any other dependency, and any import in its sources that leaves the package or names another package, in every import form TypeScript and Node read.
 A feature file holds **Rules**, each with concrete **Examples** in Given/When/Then form, written in the words of the [glossary](../ubiquitous-language.md) and never in the words of a screen.
 `playwright-bdd` turns the feature files into Playwright tests, and `check:steps` refuses a step that has no step definition.
 
