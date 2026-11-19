@@ -7,6 +7,18 @@ import {
   tailStart,
 } from "../../domain/replay-tail.js";
 import { historyIndexOfLogMessage } from "../../domain/rewrite-cut.js";
+import {
+  decodePageCursor,
+  encodePageCursor,
+  type PageCursor,
+} from "../../domain/page-cursor.js";
+import {
+  dropInlineMedia,
+  droppedIn,
+  mayHoldInlineMedia,
+  mediaOfHistory,
+  restoreMedia,
+} from "../../domain/dropped-media.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 import { withPlatform } from "../../domain/platform-meta.js";
 
@@ -92,168 +104,15 @@ export interface SessionTranscript {
   clear(): void;
 }
 
+function sha256Of(data: string): string {
+  return createHash("sha256").update(data).digest("hex");
+}
+
 export interface SessionTranscriptDeps {
   logBytesCap: number;
   replayTailEvents: number;
   engagedChannelsFor: (sessionId: string) => Iterable<ClientChannel>;
   olderInHistory: boolean;
-}
-
-type PageCursor =
-  | { kind: "log"; generation: string; seq: number }
-  | { kind: "beforeLog"; generation: string; seq: number }
-  | { kind: "history"; generation: string; index: number };
-
-const BEFORE_LOG_MARK = ":before-log";
-const HISTORY_MARK = ":history";
-
-function cursorText(cursor: PageCursor): string {
-  switch (cursor.kind) {
-    case "log":
-      return `${cursor.generation}:${cursor.seq}`;
-    case "beforeLog":
-      return `${cursor.generation}${BEFORE_LOG_MARK}:${cursor.seq}`;
-    case "history":
-      return `${cursor.generation}${HISTORY_MARK}:${cursor.index}`;
-  }
-}
-
-function encodePageCursor(cursor: PageCursor): string {
-  return Buffer.from(cursorText(cursor), "utf8").toString("base64url");
-}
-
-function decodePageCursor(cursor: string): PageCursor | null {
-  const text = Buffer.from(cursor, "base64url").toString("utf8");
-  const at = text.lastIndexOf(":");
-  if (at <= 0) return null;
-  const n = Number(text.slice(at + 1));
-  const head = text.slice(0, at);
-  if (head.endsWith(HISTORY_MARK)) {
-    if (!Number.isInteger(n) || n <= 0) return null;
-    const generation = head.slice(0, -HISTORY_MARK.length);
-    return generation ? { kind: "history", generation, index: n } : null;
-  }
-  if (!Number.isInteger(n) || n <= 0) return null;
-  if (head.endsWith(BEFORE_LOG_MARK)) {
-    const generation = head.slice(0, -BEFORE_LOG_MARK.length);
-    return generation ? { kind: "beforeLog", generation, seq: n } : null;
-  }
-  return { kind: "log", generation: head, seq: n };
-}
-
-const INLINE_BINARY_RE = /"data"\s*:\s*"/;
-
-type MediaBlock = Record<string, unknown> & { type: "image" | "audio" };
-
-interface DroppedMedia {
-  sha256: string;
-  length: number;
-}
-
-function sha256Of(data: string): string {
-  return createHash("sha256").update(data).digest("hex");
-}
-
-function mapMediaBlocks(
-  value: unknown,
-  visit: (block: MediaBlock) => unknown,
-): unknown {
-  if (Array.isArray(value))
-    return value.map((inner) => mapMediaBlocks(inner, visit));
-  if (typeof value !== "object" || value === null) return value;
-  const block = value as Record<string, unknown>;
-  if (block.type === "image" || block.type === "audio")
-    return visit(block as MediaBlock);
-  return Object.fromEntries(
-    Object.entries(block).map(([key, inner]) => [
-      key,
-      mapMediaBlocks(inner, visit),
-    ]),
-  );
-}
-
-function parsed(line: string): unknown {
-  try {
-    return JSON.parse(line) as unknown;
-  } catch {
-    return undefined;
-  }
-}
-
-function rewriteMedia(
-  line: string,
-  visit: (block: MediaBlock) => unknown,
-): string {
-  const frame = parsed(line);
-  return frame === undefined
-    ? line
-    : JSON.stringify(mapMediaBlocks(frame, visit));
-}
-
-function droppedOf(block: MediaBlock): DroppedMedia | null {
-  const dropped = block.dropped as Partial<DroppedMedia> | undefined;
-  return typeof dropped?.sha256 === "string" &&
-    typeof dropped.length === "number"
-    ? { sha256: dropped.sha256, length: dropped.length }
-    : null;
-}
-
-function dropBinary(line: string): string {
-  return rewriteMedia(line, (block) => {
-    if (typeof block.data !== "string") return block;
-    const { data, ...rest } = block;
-    return {
-      ...rest,
-      dropped: { sha256: sha256Of(data), length: data.length },
-    };
-  });
-}
-
-function droppedIn(lines: readonly string[]): DroppedMedia[] {
-  const found: DroppedMedia[] = [];
-  for (const line of lines) {
-    rewriteMedia(line, (block) => {
-      const dropped = droppedOf(block);
-      if (dropped) found.push(dropped);
-      return block;
-    });
-  }
-  return found;
-}
-
-function mediaOfHistory(
-  history: readonly string[],
-  wanted: readonly DroppedMedia[],
-): Map<string, string> {
-  const media = new Map<string, string>();
-  const lengths = new Set(wanted.map((w) => w.length));
-  const hashes = new Set(wanted.map((w) => w.sha256));
-  for (const line of history) {
-    if (!INLINE_BINARY_RE.test(line)) continue;
-    mapMediaBlocks(parsed(line), (block) => {
-      const data = block.data;
-      if (typeof data !== "string" || !lengths.has(data.length)) return block;
-      const sha256 = sha256Of(data);
-      if (hashes.has(sha256)) media.set(sha256, data);
-      return block;
-    });
-  }
-  return media;
-}
-
-function restoreMedia(
-  line: string,
-  media: ReadonlyMap<string, string>,
-): string {
-  return rewriteMedia(line, (block) => {
-    const dropped = droppedOf(block);
-    if (dropped === null) return block;
-    const data = media.get(dropped.sha256);
-    if (data === undefined)
-      return { type: "text", text: `[${block.type} not kept in history]` };
-    const { dropped: _dropped, ...rest } = block;
-    return { ...rest, data };
-  });
 }
 
 function withPlatformMeta(
@@ -342,7 +201,7 @@ export function createSessionTranscript(
       seq,
       line,
       bytes,
-      binary: INLINE_BINARY_RE.test(line),
+      binary: mayHoldInlineMedia(line),
       dropped: false,
     });
     log.totalBytes += bytes;
@@ -351,7 +210,7 @@ export function createSessionTranscript(
       if (heavy) {
         heavy.binary = false;
         heavy.dropped = true;
-        heavy.line = dropBinary(heavy.line);
+        heavy.line = dropInlineMedia(heavy.line, sha256Of);
         log.totalBytes += heavy.line.length - heavy.bytes;
         heavy.bytes = heavy.line.length;
         continue;
@@ -397,6 +256,7 @@ export function createSessionTranscript(
             droppedIn(
               entries.filter((entry) => entry.dropped).map((e) => e.line),
             ),
+            sha256Of,
           );
     return entries.map((entry) =>
       entry.dropped ? restoreMedia(entry.line, media) : entry.line,
@@ -500,6 +360,8 @@ export function createSessionTranscript(
       return at < 0 ? null : { kind: "beforeLog", at };
     }
     const boundary = promptBoundaryOf(log);
+    if (boundary !== null && cursor.seq < log.entries[boundary]!.seq)
+      return null;
     const floor = boundary === null ? 0 : boundary;
     const older = log.entries
       .slice(floor)
