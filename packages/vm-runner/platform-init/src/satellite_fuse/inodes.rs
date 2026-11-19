@@ -5,7 +5,7 @@ use super::wire::Failure;
 
 pub const ROOT: u64 = 1;
 
-// UNIT_BOUNDARY_DESCRIPTION: one entry as the two sides name it. `satellite` is empty for the mount's own root and `path` is empty for a Satellite's root, so the mount root is one entry and each granted Satellite is the entry below it.
+// UNIT_BOUNDARY_DESCRIPTION: one entry as the two sides name it. `satellite` is empty for the mount's own root and `path` is empty for a Satellite's root, so the mount root is one entry and each granted Satellite is the entry below it. `special` is the platform's word that this is a FIFO, a socket or a device rather than a file: the kernel is shown a regular file, because that is the one shape whose every open and read stays on the channel, and the mount has to remember the platform said otherwise to keep it there — a regular file of size zero would answer its own EOF.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Node {
     pub satellite: String,
@@ -13,6 +13,7 @@ pub struct Node {
     pub dev: u64,
     pub ino: u64,
     pub generation: u64,
+    pub special: bool,
 }
 
 pub struct Table {
@@ -38,6 +39,7 @@ impl Table {
             dev: 0,
             ino: 0,
             generation: 0,
+            special: false,
         };
         table.by_number.insert(ROOT, root.clone());
         table.by_path.insert((String::new(), String::new()), ROOT);
@@ -62,6 +64,7 @@ impl Table {
             dev: 0,
             ino: 0,
             generation: 0,
+            special: false,
         };
         self.by_number.insert(number, node);
         self.by_path.insert(key, number);
@@ -69,11 +72,19 @@ impl Table {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the number of a path the platform has just described, and the generation to report with it. A path that now names another device and inode keeps its number but moves to a new generation, which is the kernel's signal that what it cached about the entry is no longer what is there.
-    pub fn intern(&mut self, satellite: &str, path: &str, dev: u64, ino: u64) -> (u64, u64) {
+    pub fn intern(
+        &mut self,
+        satellite: &str,
+        path: &str,
+        dev: u64,
+        ino: u64,
+        special: bool,
+    ) -> (u64, u64) {
         let number = self.place(satellite, path);
         let Some(node) = self.by_number.get_mut(&number) else {
             return (number, 0);
         };
+        node.special = special;
         if node.dev != dev || node.ino != ino {
             if node.dev != 0 || node.ino != 0 {
                 node.generation += 1;

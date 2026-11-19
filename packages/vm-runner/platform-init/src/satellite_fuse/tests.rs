@@ -182,18 +182,18 @@ fn the_inode_table_keeps_one_number_for_one_path() {
     let mut table = Table::new();
     assert_eq!(inodes::ROOT, 1);
     assert_eq!(table.get(1).unwrap().path, "");
-    let (first, generation) = table.intern("lab", "a.txt", 7, 42);
+    let (first, generation) = table.intern("lab", "a.txt", 7, 42, false);
     assert_ne!(first, 1);
     assert_eq!(generation, 0);
-    assert_eq!(table.intern("lab", "a.txt", 7, 42), (first, 0));
-    let (other, _) = table.intern("lab", "b.txt", 7, 43);
+    assert_eq!(table.intern("lab", "a.txt", 7, 42, false), (first, 0));
+    let (other, _) = table.intern("lab", "b.txt", 7, 43, false);
     assert_ne!(other, first);
-    let (elsewhere, _) = table.intern("ro", "a.txt", 8, 42);
+    let (elsewhere, _) = table.intern("ro", "a.txt", 8, 42, false);
     assert_ne!(
         elsewhere, first,
         "one path in each Satellite is its own file"
     );
-    let (again, moved) = table.intern("lab", "a.txt", 7, 44);
+    let (again, moved) = table.intern("lab", "a.txt", 7, 44, false);
     assert_eq!(again, first, "the path keeps its number");
     assert_eq!(moved, 1, "and the kernel hears that it is another file now");
     assert_eq!(table.get(first).unwrap().ino, 44);
@@ -209,10 +209,10 @@ fn the_inode_table_keeps_one_number_for_one_path() {
 #[test]
 fn forgetting_a_satellite_drops_its_numbers_and_never_reuses_them() {
     let mut table = Table::new();
-    let (a, _) = table.intern("lab", "a.txt", 7, 42);
-    let (b, _) = table.intern("lab", "docs/b.txt", 7, 43);
-    let (satellite, _) = table.intern("lab", "", 0, 0);
-    let (other, _) = table.intern("ro", "a.txt", 8, 42);
+    let (a, _) = table.intern("lab", "a.txt", 7, 42, false);
+    let (b, _) = table.intern("lab", "docs/b.txt", 7, 43, false);
+    let (satellite, _) = table.intern("lab", "", 0, 0, false);
+    let (other, _) = table.intern("ro", "a.txt", 8, 42, false);
     let handle = table.open(&table.get(a).unwrap());
     let mut forgotten = table.forget("lab");
     forgotten.sort_unstable();
@@ -228,7 +228,7 @@ fn forgetting_a_satellite_drops_its_numbers_and_never_reuses_them() {
         "a handle keeps a node of its own"
     );
     assert_eq!(table.get(other).unwrap().ino, 42);
-    let (fresh, _) = table.intern("lab", "a.txt", 7, 42);
+    let (fresh, _) = table.intern("lab", "a.txt", 7, 42, false);
     assert!(
         fresh > other && fresh != a,
         "a number the kernel may still hold is not reused"
@@ -263,6 +263,7 @@ fn a_rename_between_two_satellites_is_a_cross_device_move() {
         dev: 0,
         ino: 0,
         generation: 0,
+        special: false,
     };
     assert_eq!(
         inodes::rename_stays_put(&node("lab", ""), &node("lab", "docs")),
@@ -278,10 +279,10 @@ fn a_rename_between_two_satellites_is_a_cross_device_move() {
 #[test]
 fn a_renamed_tree_takes_its_numbers_and_handles_with_it() {
     let mut table = Table::new();
-    let (docs, _) = table.intern("lab", "docs", 7, 42);
-    let (notes, _) = table.intern("lab", "docs/notes.md", 7, 43);
-    let (lookalike, _) = table.intern("lab", "docsx", 7, 44);
-    let (file, _) = table.intern("lab", "t", 7, 45);
+    let (docs, _) = table.intern("lab", "docs", 7, 42, false);
+    let (notes, _) = table.intern("lab", "docs/notes.md", 7, 43, false);
+    let (lookalike, _) = table.intern("lab", "docsx", 7, 44, false);
+    let (file, _) = table.intern("lab", "t", 7, 45, false);
     let handle = table.open(&table.get(notes).unwrap());
 
     table.detach("lab", "moved");
@@ -313,7 +314,7 @@ fn a_renamed_tree_takes_its_numbers_and_handles_with_it() {
 
     table.detach("lab", "moved");
     assert!(table.get(file).is_none(), "a removed path keeps no number");
-    let (fresh, _) = table.intern("lab", "moved", 7, 99);
+    let (fresh, _) = table.intern("lab", "moved", 7, 99, false);
     assert!(fresh > file, "a new file at that path is a new number");
 }
 
@@ -830,7 +831,7 @@ fn the_mount_serves_the_granted_satellites_over_a_real_fuse_session() {
     ));
     assert_eq!(
         types.lines().take(2).collect::<Vec<_>>(),
-        vec!["regular empty file", "symbolic link"],
+        vec!["regular file", "symbolic link"],
         "a special file and a link must stat: {types}"
     );
     let (ok, denied) = shell(format!("cat {mnt}/lab/outside"));
@@ -851,10 +852,26 @@ fn the_mount_serves_the_granted_satellites_over_a_real_fuse_session() {
         files.lines().any(|line| line.ends_with("lab/pipe")) && !files.contains("outside"),
         "a special file is not a regular file to find, or a link is: {files}"
     );
-    // UNIT_BOUNDARY_DESCRIPTION: a special file is a regular file to the kernel, so a read of it is an operation on the channel rather than an open the guest's own kernel answers: it returns at once, with what the platform gives for it, which for a file the worker would refuse is that refusal.
-    let (ok, fifo) = shell(format!("timeout 3 cat {mnt}/lab/pipe"));
-    assert!(ok, "a read of a special file waited or failed: {fifo}");
-    assert!(fifo.is_empty(), "a special file had contents: {fifo}");
+    // UNIT_BOUNDARY_DESCRIPTION: a special file is a regular file to the kernel, so its open and its read are operations on the channel rather than answers the mount gives: both must be asked of the platform, whose refusal is then what the Agent's tool sees. A local answer here is a FIFO that `cat` exits on happily with nothing.
+    let fifo = shell(format!("timeout 3 cat {mnt}/lab/pipe"));
+    assert!(
+        !fifo.0,
+        "a read of a special file was answered without the platform: {fifo:?}"
+    );
+    assert!(
+        fifo.1.contains("Operation not permitted"),
+        "the platform's refusal did not reach the tool: {:?}",
+        fifo.1
+    );
+    let trace = tree.trace();
+    for op in ["open", "read"] {
+        assert!(
+            trace.iter().any(|line| {
+                line.contains(&format!("op=\"{op}\"")) && line.contains("path=\"pipe\"")
+            }),
+            "the {op} of a special file was answered locally: {trace:#?}"
+        );
+    }
     // UNIT_BOUNDARY_DESCRIPTION: the mount's own answer is what these two links are held to: the request must reach the server and be refused with EPERM. The errno the caller sees is read from a direct symlink(2), not from a tool's message, because a kernel may map a filesystem's error and the CI kernel (7.0.0-azure) reports EACCES for a symlink the server answered with EPERM. A caller errno other than EPERM is accepted only when the server trace proves the mount refused with EPERM, and the environment that did it is printed.
     let escaping = refused_symlink(&format!("{mnt}/lab/docs/notes/out"), "../../../etc/passwd");
     assert!(
@@ -1174,7 +1191,7 @@ impl Tree {
             }
         }
         // UNIT_BOUNDARY_DESCRIPTION: a FIFO, a socket or a device the machine holds: the platform can describe it only as "other", and one of them must not fail the listing of its directory.
-        tree.add("lab", "pipe", "other", String::new(), 0o644);
+        tree.add("lab", "pipe", "other", String::from("z"), 0o644);
         tree.add_link("lab", "outside", "/etc/passwd");
         tree.add("lab", "many", "dir", String::new(), 0o755);
         for number in 0..600 {
@@ -1355,6 +1372,9 @@ impl Tree {
             }
             "read" => {
                 self.reads.fetch_add(1, Ordering::SeqCst);
+                if nodes.get(&key).is_some_and(|node| node.kind == "other") {
+                    return error("EPERM");
+                }
                 let Some(node) = nodes.get(&key) else {
                     return error("ENOENT");
                 };

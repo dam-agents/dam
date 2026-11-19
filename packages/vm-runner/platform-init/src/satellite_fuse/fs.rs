@@ -84,9 +84,13 @@ impl SatelliteFs {
     }
 
     fn intern(&self, satellite: &str, path: &str, attrs: &Attrs) -> (u64, u64) {
-        self.state
-            .inodes()
-            .intern(satellite, path, attrs.dev, attrs.ino)
+        self.state.inodes().intern(
+            satellite,
+            path,
+            attrs.dev,
+            attrs.ino,
+            attrs.kind == wire::Kind::Other,
+        )
     }
 
     fn remove(&self, parent: INodeNo, name: &OsStr, op: &'static str, reply: ReplyEmpty) {
@@ -325,6 +329,7 @@ impl Filesystem for SatelliteFs {
                 Node {
                     dev: attrs.dev,
                     ino: attrs.ino,
+                    special: attrs.kind == wire::Kind::Other,
                     ..node
                 }
             } else {
@@ -396,10 +401,23 @@ impl Filesystem for SatelliteFs {
                 return Err(Failure::IsDir);
             }
             if flags.acc_mode() == OpenAccMode::O_RDONLY {
-                return Ok((
-                    self.state.inodes().open(&node),
-                    FopenFlags::FOPEN_KEEP_CACHE,
-                ));
+                // UNIT_BOUNDARY_DESCRIPTION: a read open of a regular file is answered here, which is what keeps a walk of the tree off the channel; one of a special file is relayed instead, because the platform is the side that refuses its contents, and a local answer would report a FIFO as a readable, empty file that `cat` exits on happily.
+                if !node.special {
+                    return Ok((
+                        self.state.inodes().open(&node),
+                        FopenFlags::FOPEN_KEEP_CACHE,
+                    ));
+                }
+                self.relay(
+                    &node,
+                    Op::at("open", &node.path)
+                        .with("write", json!(false))
+                        .with("dev", json!(node.dev))
+                        .with("ino", json!(node.ino)),
+                    true,
+                )?
+                .check()?;
+                return Ok((self.state.inodes().open(&node), FopenFlags::empty()));
             }
             self.relay(
                 &node,
@@ -432,8 +450,14 @@ impl Filesystem for SatelliteFs {
         let found = caught("read", || {
             let node = self.node_of(ino.0, fh.0)?;
             let mut bytes = Vec::new();
-            while bytes.len() < size as usize {
-                let want = (size as usize - bytes.len()).min(wire::READ_MAX as usize);
+            loop {
+                let asked = size as usize - bytes.len();
+                // UNIT_BOUNDARY_DESCRIPTION: a regular file's read that the kernel asks nothing of is its end, answered here; a special file is asked for once even then, because the mount may not decide that a FIFO has no contents to refuse — the platform is the side that says EPERM, and it can only say it to a request.
+                let probe = node.special && bytes.is_empty();
+                if asked == 0 && !probe {
+                    break;
+                }
+                let want = asked.clamp(1, wire::READ_MAX as usize);
                 let answer = self.relay(
                     &node,
                     Op::at("read", &node.path)
@@ -627,6 +651,7 @@ impl Filesystem for SatelliteFs {
                 dev: attrs.dev,
                 ino: attrs.ino,
                 generation,
+                special: attrs.kind == wire::Kind::Other,
             };
             let handle = self.state.inodes().open(&created);
             Ok((attr_of(number, &attrs, req), generation, handle))
