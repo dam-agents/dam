@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   canStartArtifactSession,
+  canUseArtifactAgentApi,
   canUseArtifactBridge,
 } from "../../modules/artifacts/lib/artifact-bridge.js";
 import { readArtifactPrompt } from "../../modules/artifacts/lib/artifact-prompt.js";
@@ -65,6 +66,34 @@ describe("artifact callback eligibility", () => {
     expect(canUseArtifactBridge(artifact, "agent", 1)).toBe(false);
     expect(canUseArtifactBridge(artifact, null, 2)).toBe(false);
     expect(canUseArtifactBridge(null, "agent", 2)).toBe(false);
+  });
+});
+
+describe("calling the publishing agent's API", () => {
+  it("allows the latest private or restricted interactive HTML with no chat open", () => {
+    expect(canUseArtifactAgentApi(artifact, 2)).toBe(true);
+    expect(
+      canUseArtifactAgentApi({ ...artifact, visibility: "restricted" }, 2),
+    ).toBe(true);
+  });
+
+  it("still keeps send-prompt-to-chat off with no chat open", () => {
+    expect(canUseArtifactAgentApi(artifact, 2)).toBe(true);
+    expect(canUseArtifactBridge(artifact, null, 2)).toBe(false);
+  });
+
+  it.each<Partial<LibraryArtifact>>([
+    { interactive: false },
+    { kind: "jsx" },
+    { visibility: "public" },
+    { agentId: null },
+  ])("refuses an ineligible artifact: %j", (patch) => {
+    expect(canUseArtifactAgentApi({ ...artifact, ...patch }, 2)).toBe(false);
+  });
+
+  it("refuses historical versions and a missing artifact", () => {
+    expect(canUseArtifactAgentApi(artifact, 1)).toBe(false);
+    expect(canUseArtifactAgentApi(null, 2)).toBe(false);
   });
 });
 
