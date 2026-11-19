@@ -1,4 +1,4 @@
-import { rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, rmSync, symlinkSync } from "node:fs";
 import {
   chmod,
   lstat,
@@ -62,6 +62,15 @@ function request(
 function failed(answer: FileOpAnswer): string {
   if (answer.ok) throw new Error("expected a refusal, got one");
   return answer.errno;
+}
+
+async function attrs(
+  ops: FileOps,
+  path: string,
+): Promise<{ dev: number; ino: number; mode: number }> {
+  const answer = await run(ops, { op: "getattr", path });
+  if (!answer.ok) throw new Error(`expected attributes, got ${answer.errno}`);
+  return answer.result as { dev: number; ino: number; mode: number };
 }
 
 async function run(
@@ -136,6 +145,39 @@ describe("an entry swapped between the walk and the step", () => {
     expect((await lstat(join(root, "docs", "notes"))).isSymbolicLink()).toBe(
       true,
     );
+  });
+
+  /**
+   * TEST_SCENARIO: An attribute change proves the inode the Agent saw, for a
+   * directory as much as for a file. Here the directory is replaced between the
+   * Agent reading it and the chmod, and the changed directory has an identity of its
+   * own: the operation is refused rather than changing a directory no Agent saw.
+   */
+  it("refuses a directory chmod when the path is no longer the directory the Agent saw", async () => {
+    mkdirSync(join(root, "d"), { mode: 0o755 });
+    const seen = await attrs(ops, "d");
+
+    hooks.onRealpath = (path) => {
+      if (path !== root) return;
+      hooks.onRealpath = null;
+      rmSync(join(root, "d"), { recursive: true, force: true });
+      mkdirSync(join(root, "d"), { mode: 0o700 });
+    };
+
+    expect(
+      failed(
+        await run(ops, {
+          op: "setattr",
+          path: "d",
+          args: { mode: 0o777, dev: seen.dev, ino: seen.ino },
+        }),
+      ),
+    ).toBe("ESTALE");
+    hooks.onRealpath = null;
+
+    const now = await attrs(ops, "d");
+    expect(now.ino).not.toBe(seen.ino);
+    expect(now.mode).toBe(0o700);
   });
 
   /**

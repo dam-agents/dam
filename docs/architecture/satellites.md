@@ -11,7 +11,7 @@ The machine polls; nothing is pushed to it.
 The worker runs beside the tools, claims work over ordinary outbound HTTPS, calls them and reports back.
 The Agent sees each granted Satellite's tools on the platform MCP server it already has, scoped by Satellite name.
 
-Three verbs start a worker, and **nothing above it can tell them apart**:
+Three verbs start a worker, and the platform reads only the shape it declares — a tool surface or a file tree — never which verb started it:
 
 - `dam satellite mcp --name build-farm -- npx -y @acme/build-mcp` — any MCP server, whose tools are offered as they come, bar a name the contract refuses.
   The worker either starts it over stdio or, with `--url localhost:8080`, reaches one already listening and forwards each call to it: Streamable HTTP first, then SSE, with any `--header` the server wants.
@@ -305,9 +305,10 @@ The Connections page and the catalog poll while open, so a machine that has just
 For deployment operations, the CLI is at parity plus `dam satellite mcp`, `dam satellite shell` and `dam satellite files`, whose **log is the interface**.
 The parsed Command Patterns print at startup.
 Right after connecting, the worker prints where in the UI to add the machine to an Agent, since until someone does, no Agent can reach it.
-Every request is one line naming the Agent that sent it and what it asked for.
+Every tool call is one line naming the Agent that sent it and what it asked for.
 The api-server resolves the Agent's name when the worker claims the call, and falls back to its id.
 Every outcome is one line too, and each way a call ends reads differently: `DONE` with its exit code, `FAILED` for a command that ran and failed or a tool that returned an error, `BLOCKED` for a call the machine refused without running, which names the pattern it came closest to, and `CANCELLED` and `INTERRUPTED`.
+A files worker prints none of those: a File Operation is not a call and names no path, so that worker prints the same per-minute summary the platform keeps — operations, files opened, bytes, and entries created, renamed and deleted ([Files as a mount](#files-as-a-mount)).
 A parse error names the line it is on, since the text the user just typed is the whole allowlist.
 Shutdown stops claiming on the first interrupt — a claim already open hands nothing back that is then started — and lets what is running report.
 After a bounded grace it stops waiting on the platform, so a supervisor's stop timeout gets an exit rather than a kill, and it closes the MCP server it started before it exits, waiting for the child to stop within its own deadline.
@@ -318,8 +319,9 @@ Keeping one worker running unattended is [running a satellite as a service](../n
 
 `dam satellite` marks itself **experimental** in its description and help text, which is how a pre-release surface is disclosed where there is no feature flag to read.
 
-A running harness lists tools once at spawn, so a new grant or a newly added tool is invisible until it restarts — the same lag every MCP entry has.
-Enforcement never lags: admission reads the live Snapshot, so a removed tool is refused at once, and the machine matches against the surface it was started with.
+A running harness lists tools once at spawn, so a new grant or a newly added tool of a **tool surface** is invisible until it restarts — the same lag every MCP entry has.
+A **file tree** is not a tool list: its mount follows the grants while the Agent runs, so a grant appears at `/mnt/sat/<name>` within 30 seconds and a revocation is refused at once and gone within 30 seconds, with nothing restarted ([Files as a mount](#files-as-a-mount)).
+Enforcement never lags for either: admission reads the live Snapshot, so a removed tool is refused at once, and the machine matches against the surface it was started with.
 
 Each Satellite's tools are registered **scoped by its name** — `gpu_box__run`, `gpu_box__wait`, `gpu_box__get`, `gpu_box__cancel`.
 Any character of the name other than a letter or digit becomes `_`, so `jan@lab.local` registers `jan_lab_local__run`.

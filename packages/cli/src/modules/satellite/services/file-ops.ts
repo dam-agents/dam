@@ -292,24 +292,19 @@ export function createFileOps(deps: {
     if (!opened.ok) return opened;
     const { handle } = opened;
     const info = await handle.stat().catch(() => null);
-    const refused =
-      info === null
-        ? "EIO"
-        : info.dev !== entry.dev || info.ino !== entry.ino
-          ? "ESTALE"
-          : directory
-            ? info.isDirectory()
-              ? null
-              : "ESTALE"
-            : !info.isFile() || info.nlink !== 1
-              ? "EPERM"
-              : (await realpath(path).catch(() => null)) !== path
-                ? "ESTALE"
-                : expected.dev !== undefined && expected.dev !== info.dev
-                  ? "ESTALE"
-                  : expected.ino !== undefined && expected.ino !== info.ino
-                    ? "ESTALE"
-                    : null;
+    let refused: SatelliteFileErrno | null = null;
+    if (info === null) refused = "EIO";
+    else if (info.dev !== entry.dev || info.ino !== entry.ino)
+      refused = "ESTALE";
+    else if (directory && !info.isDirectory()) refused = "ESTALE";
+    else if (!directory && (!info.isFile() || info.nlink !== 1))
+      refused = "EPERM";
+    else if (!directory && (await realpath(path).catch(() => null)) !== path)
+      refused = "ESTALE";
+    else if (expected.dev !== undefined && expected.dev !== info.dev)
+      refused = "ESTALE";
+    else if (expected.ino !== undefined && expected.ino !== info.ino)
+      refused = "ESTALE";
     if (refused !== null) {
       await handle.close().catch(() => {});
       return { ok: false, errno: refused };
