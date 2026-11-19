@@ -120,6 +120,37 @@ export function rewriteCutOf(
   return cutAbove(frames, target.first);
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Where the user message that opens frame
+ * `logIndex` of the runtime's log sits in the harness's own history, as a
+ * line index of `historyLines`, so a log that lost its oldest frames can
+ * hand the older part over to that history without a gap or an overlap. The
+ * message is matched as a rewind matches it: by the harness's own id, or, for
+ * a message sent live, by its text and how many later messages share it.
+ * Null when the frame opens no user message or the history holds no match.
+ */
+export function historyIndexOfLogMessage(
+  historyLines: readonly string[],
+  logLines: readonly string[],
+  logIndex: number,
+): number | null {
+  const logFrame = updateFrameOf(logLines[logIndex] ?? "");
+  const id = logFrame?.update.messageId;
+  if (logFrame?.update.sessionUpdate !== "user_message_chunk") return null;
+  if (typeof id !== "string") return null;
+  const logMessages = userMessagesOf(updateFramesOf(logLines.slice(logIndex)));
+  const historyFrames = historyLines.flatMap((line, at) => {
+    const frame = updateFrameOf(line);
+    return frame === null ? [] : [{ ...frame, at }];
+  });
+  const target = historyMessageFor(
+    userMessagesOf(historyFrames),
+    logMessages,
+    id,
+  );
+  return target === null ? null : (historyFrames[target.first]?.at ?? null);
+}
+
 const AGENT_OUTPUT = new Set([
   "agent_message_chunk",
   "agent_thought_chunk",

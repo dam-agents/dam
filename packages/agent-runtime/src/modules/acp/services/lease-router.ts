@@ -1235,11 +1235,12 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     defaults: () => deps.sessionDefaults?.get() ?? null,
 
-    sessionFrames(sessionId, tail) {
+    sessionFrames(sessionId, opts) {
       return (
-        leaseOfSession(sessionId)?.runtime.sessionFrames(sessionId, tail) ?? {
+        leaseOfSession(sessionId)?.runtime.sessionFrames(sessionId, opts) ?? {
           frames: [],
           truncated: false,
+          needsHistory: false,
         }
       );
     },
