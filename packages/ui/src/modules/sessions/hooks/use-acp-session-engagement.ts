@@ -10,8 +10,6 @@ export function useAcpSessionEngagement(selectedAgent: string | null): {
   clear: () => void;
 } {
   const engagedSessionIdRef = useRef<string | null>(null);
-  // Bumped by every clear(): a session/resume that started before a reset
-  // answers for a connection the chat no longer uses, and never binds.
   const clearedRef = useRef(0);
 
   const engage = useCallback(
@@ -19,8 +17,6 @@ export function useAcpSessionEngagement(selectedAgent: string | null): {
       if (!selectedAgent) return null;
       const sid = useStore.getState().sessionId;
       const boundSessionId = engagedSessionIdRef.current;
-      // A binding to another session than the one on screen is stale: the
-      // connection is engaged to the shown session again instead.
       if (boundSessionId && (sid === null || boundSessionId === sid))
         return boundSessionId;
       if (!sid) return null;
