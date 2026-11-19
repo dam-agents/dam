@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-11-16
+Last verified: 2026-11-19
 
 ## Overview
 
@@ -217,7 +217,7 @@ It adds Anthropic's OAuth beta flag to a call bound for the subscription Connect
 The body goes out with `model` rewritten to the upstream id; the response comes back with only its model field rewritten to the name the harness asked for, so transcripts record the provider.
 No retries, as a second call is a second bill, but two: a call a model refuses for its images goes again with a note for each, as do that model's later calls, since a Session's history sends an image on every turn; one Claude refuses for another model's thinking goes again without the earlier thinking, later calls too.
 An upstream error keeps its status and headers, and its message gets a lead sentence that names the provider, the model, the API and the harness, so the harness shows where the call failed; a [spend refusal](spend-limits.md#refusal) passes unchanged.
-Each call is reported once on the telemetry rail with its tokens, Connection, upstream model, dialect, harness and session, and no cost: every spend figure reads the gateway's [meter](spend-limits.md#ledger).
+Each call is reported once on the telemetry rail with its tokens, Connection, upstream model, dialect, harness and session, and no cost: every spend figure reads the gateway's [meter](spend-limits.md#ledger), and the tokens follow its [stream rule](spend-limits.md#meter).
 
 **Replay rules** apply by target, since the router cannot know which model wrote a history: for a Responses target other than OpenAI, reasoning items and `client_metadata` are dropped and a tool-less request's tool items become text; for OpenAI only reasoning items with a non-empty `content` array are dropped; chat completions and Messages replay unchanged.
 The router also fits the output budget to the catalog's limit, drops a reasoning effort that the model or its deployment refuses, and adds `include_usage` to a streamed chat completion so its final chunk carries the usage.

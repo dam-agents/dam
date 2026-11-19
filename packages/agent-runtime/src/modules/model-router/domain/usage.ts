@@ -23,9 +23,12 @@ const count = (v: unknown): number | undefined =>
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a Messages stream reports its counts in
- * message_start and again, cumulative, in message_delta, where a provider
- * may send null or 0 for a count it has not changed; a field counts only
- * when it is a number, and the larger of the two reports stands.
+ * message_start and again, cumulative, in message_delta. Some upstreams put
+ * the whole prompt as uncached input in message_start and give the real
+ * split only in message_delta, so each count that message_delta sends as a
+ * number replaces the start's count, also with a lower value. A field counts
+ * only when it is a number, so a count that message_delta leaves out or
+ * sends as null keeps the start's value.
  */
 function messagesUsage(raw: Json): Partial<ModelUsage> {
   const fields: [keyof ModelUsage, string][] = [
@@ -147,7 +150,10 @@ export function createUsageScanner(dialect: ModelDialect): UsageScanner {
               ? obj(event.usage)
               : null;
         if (!raw) return;
-        partial = mergeUsage(partial, messagesUsage(raw));
+        partial =
+          event.type === "message_delta"
+            ? { ...partial, ...messagesUsage(raw) }
+            : mergeUsage(partial, messagesUsage(raw));
         found = true;
         if (event.type === "message_delta") finished = true;
         return;
