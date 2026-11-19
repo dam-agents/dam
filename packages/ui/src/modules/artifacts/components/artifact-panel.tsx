@@ -118,7 +118,7 @@ export function ArtifactPanel({
   const startSession = useStartArtifactSession(artifact);
   const confirmDelete = useConfirmDeleteArtifact();
 
-  const bridgeOpen = canUseArtifactBridge(artifact, agentId, shownVersion);
+  const chatPromptOpen = canUseArtifactBridge(artifact, agentId, shownVersion);
   const agentApiOpen = canUseArtifactAgentApi(artifact, shownVersion);
   const sessionPrompt = useArtifactSessionPrompt(
     canStartArtifactSession(artifact, shownVersion) ? artifact?.id : undefined,
@@ -131,7 +131,7 @@ export function ArtifactPanel({
         title={artifact.title}
         className="h-full w-full bg-white"
         deferMs={0}
-        onSendPrompt={bridgeOpen ? onSendPrompt : undefined}
+        onSendPrompt={chatPromptOpen ? onSendPrompt : undefined}
         onNewSessionPrompt={sessionPrompt}
         agentApiArtifactId={agentApiOpen ? artifact.id : undefined}
       />

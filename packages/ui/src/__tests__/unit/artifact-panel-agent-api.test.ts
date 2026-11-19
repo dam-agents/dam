@@ -139,6 +139,13 @@ describe("the artifact's Agent API outside its agent's chat", () => {
     expect(fake.frame?.onSendPrompt).toBe(sendPrompt);
   });
 
+  // TEST_SCENARIO: docked beside another agent's chat, the page still calls its own agent, and sends no prompt into that chat.
+  it("relays the requests but no chat prompt beside another agent's chat", () => {
+    render({ agentId: "agent-2" });
+    expect(fake.frame?.agentApiArtifactId).toBe("art-1");
+    expect(fake.frame?.onSendPrompt).toBeUndefined();
+  });
+
   // TEST_SCENARIO: a public artifact never calls its agent, on any mount.
   it("relays nothing for a public artifact", () => {
     fake.artifact = artifact({
