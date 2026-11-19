@@ -5,6 +5,7 @@ import {
   classicColumns,
   classicDockToggle,
   classicPanel,
+  headerFlanks,
 } from "../../modules/sessions/lib/classic-chat-layout.js";
 import { hiddenSidePanelTabs } from "../../modules/sessions/lib/side-panel.js";
 
@@ -125,5 +126,22 @@ describe("the top bar's browser and changes toggles", () => {
     expect(
       classicDockToggle({ ...base, docked: false, panel: "dock" }),
     ).toEqual({ pressed: false, click: "open" });
+  });
+});
+
+describe("whether the chat header flanks the messages", () => {
+  /* TEST_SCENARIO: a 1024 px chat leaves (1024 - 749) / 2 - 16 = 121.5 px left of the well, and the agent menu reaches 8 px past its gap */
+  it("TEST_SCENARIO: a wide chat whose margins hold the agent menu and New chat flanks the messages, as the design draws it", () => {
+    expect(headerFlanks({ headerW: 1024, startW: 129, endW: 100 })).toBe(true);
+    expect(headerFlanks({ headerW: 1400, startW: 300, endW: 100 })).toBe(true);
+  });
+
+  it("TEST_SCENARIO: an agent menu wider than the margin, with the sidebar expanded, moves into the messages' column instead of spilling under the sidebar", () => {
+    expect(headerFlanks({ headerW: 1024, startW: 230, endW: 100 })).toBe(false);
+    expect(headerFlanks({ headerW: 1100, startW: 170, endW: 100 })).toBe(false);
+  });
+
+  it("TEST_SCENARIO: a New chat wider than the right margin moves in too, so nothing leaves the chat on that side either", () => {
+    expect(headerFlanks({ headerW: 1024, startW: 100, endW: 130 })).toBe(false);
   });
 });

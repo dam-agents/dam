@@ -3,6 +3,7 @@ import {
   type CSSProperties,
   type ReactNode,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -29,6 +30,7 @@ import {
 } from "../hooks/use-sidebar-panels.js";
 import {
   classicColumns,
+  headerFlanks,
   PANEL_MIN_W,
   sectionsColumn,
 } from "../lib/classic-chat-layout.js";
@@ -40,6 +42,44 @@ import { SidePanelEdgeTab } from "./side-panel-edge-tab.js";
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
 /* UNIT_BOUNDARY_DESCRIPTION: the sections column's width, fixed, as the design draws it. */
 const SECTIONS_W = 320;
+
+/* UNIT_BOUNDARY_DESCRIPTION: an element's width with nothing in it cut short: a name truncated with an ellipsis counts at its full length, so the header measures the same in either layout and does not flip between them. */
+function naturalWidth(el: HTMLElement): number {
+  let width = el.getBoundingClientRect().width;
+  for (const child of el.querySelectorAll<HTMLElement>("*")) {
+    const cut = child.scrollWidth - child.clientWidth;
+    if (cut > 0 && getComputedStyle(child).overflowX !== "visible")
+      width += cut;
+  }
+  return width;
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: whether the chat header's start and end fit beside the messages' well, measured again whenever the header or either of them changes size. */
+function useHeaderFlanks() {
+  const headerRef = useRef<HTMLElement>(null);
+  const startRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+  const [flanks, setFlanks] = useState(true);
+  useLayoutEffect(() => {
+    const header = headerRef.current;
+    const start = startRef.current;
+    const end = endRef.current;
+    if (!header || !start || !end) return;
+    const measure = () =>
+      setFlanks(
+        headerFlanks({
+          headerW: header.getBoundingClientRect().width,
+          startW: naturalWidth(start),
+          endW: naturalWidth(end),
+        }),
+      );
+    measure();
+    const ro = new ResizeObserver(measure);
+    for (const el of [header, start, end]) ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return { flanks, headerRef, startRef, endRef };
+}
 
 function PanelDivider({
   stack,
@@ -155,6 +195,7 @@ export function ClassicChatLayout({
     panelMaximized: maximized,
   });
   const anythingOpen = column.open || panel !== null;
+  const header = useHeaderFlanks();
 
   return (
     <>
@@ -239,12 +280,27 @@ export function ClassicChatLayout({
             panelFills && "md:!hidden",
           )}
         >
-          {/* UNIT_BOUNDARY_DESCRIPTION: the header flanks the content well, as the design review drew it: where the chat is wide enough, the agent menu's chevron ends 16 px outside the messages' left edge (the menu's hover padding reaches past it) and New chat starts 16 px outside their right edge (the well is the 813 px column less its 32 px padding, 749 px). A narrower chat has no room beside the well, so both sit inside it, at the messages' edges. */}
-          <header className="relative z-content flex h-14 shrink-0 items-center max-md:h-[52px] max-md:border-b max-md:border-border max-md:px-3">
-            <ChatColumn className="flex items-center gap-2 max-md:px-0 md:px-2 md:@xs/chat:px-4 md:@xl/chat:px-8 @5xl/chat:grid @5xl/chat:max-w-none @5xl/chat:grid-cols-[1fr_minmax(0,749px)_1fr] @5xl/chat:gap-x-4 @5xl/chat:!px-0">
+          {/* UNIT_BOUNDARY_DESCRIPTION: the header flanks the content well, as the design review drew it: where the chat is wide enough, the agent menu's chevron ends 16 px outside the messages' left edge (the menu's hover padding reaches past it) and New chat starts 16 px outside their right edge (the well is the 813 px column less its 32 px padding, 749 px). A narrower chat has no room beside the well, nor has a wide one whose margin is narrower than the agent menu (a long name, the Shared badge, the running count), so there both sit inside it, at the messages' edges. */}
+          <header
+            ref={header.headerRef}
+            data-flanks={header.flanks}
+            className="relative z-content flex h-14 shrink-0 items-center max-md:h-[52px] max-md:border-b max-md:border-border max-md:px-3"
+          >
+            <ChatColumn
+              className={cn(
+                "flex items-center gap-2 max-md:px-0 md:px-2 md:@xs/chat:px-4 md:@xl/chat:px-8",
+                header.flanks &&
+                  "@5xl/chat:grid @5xl/chat:max-w-none @5xl/chat:grid-cols-[1fr_minmax(0,749px)_1fr] @5xl/chat:gap-x-4 @5xl/chat:!px-0",
+              )}
+            >
               <div
+                ref={header.startRef}
                 data-testid="chat-header-start"
-                className="flex min-w-0 items-center gap-2 @5xl/chat:col-start-1 @5xl/chat:-mr-2 @5xl/chat:justify-self-end"
+                className={cn(
+                  "flex min-w-0 items-center gap-2",
+                  header.flanks &&
+                    "@5xl/chat:col-start-1 @5xl/chat:-mr-2 @5xl/chat:justify-self-end",
+                )}
               >
                 <MobileMenuButton />
                 {identity}
@@ -253,8 +309,13 @@ export function ClassicChatLayout({
                 </div>
               </div>
               <div
+                ref={header.endRef}
                 data-testid="chat-header-end"
-                className="ml-auto flex shrink-0 items-center gap-2 @5xl/chat:col-start-3 @5xl/chat:ml-0 @5xl/chat:justify-self-start"
+                className={cn(
+                  "ml-auto flex shrink-0 items-center gap-2",
+                  header.flanks &&
+                    "@5xl/chat:col-start-3 @5xl/chat:ml-0 @5xl/chat:justify-self-start",
+                )}
               >
                 {newChat}
                 {!desktop && activity}
