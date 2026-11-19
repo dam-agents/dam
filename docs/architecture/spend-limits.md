@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-11-16
+Last verified: 2026-11-19
 
 ## Overview
 
@@ -54,8 +54,13 @@ Other paid paths, such as batch jobs and the later read of a background Response
 It chooses the format by the reply's content type, because a streamed request can get a JSON reply: an event stream, a JSON body, or the Bedrock binary event stream with its encoded payloads.
 It reads counts only inside usage objects in the structure of the reply.
 It takes the reply's model and service tier only from the highest level of the reply where they occur, because a reply can repeat request fields at a lower level, such as Responses metadata, and the agent sets those.
-Text from the model sits inside JSON strings, where quotes are escaped, so model text cannot form a usage object.
-For each count the highest value wins, so a repeated or forged object can only raise a count, never lower it.
+In a stream, text and tool input from the model sit inside JSON strings, where quotes are escaped, so the model cannot form an event or a usage object there.
+In a JSON reply, tool input is JSON structure that the model writes, so the model can form a usage object there.
+For each count the highest value wins, so a repeated or forged object can only raise a count.
+The one exception is a Messages stream, which is an Anthropic event stream or a Bedrock invoke stream: each count that the top-level `usage` of its `message_delta` event sends as a number replaces the count so far, also with a lower value.
+The reason: some upstreams put the whole prompt as uncached input in `message_start`, and give the real split only in `message_delta`.
+A count that `message_delta` leaves out or sends as `null` keeps its value, and a stream that stops before `message_delta` keeps the counts of `message_start`.
+The meter knows the event of a `usage` only when the event's `type` comes first, as Anthropic, LiteLLM and Bedrock send it; otherwise the highest value wins.
 A reply that reports the passes of one call apart, such as a compaction pass and an answer pass, counts the sum of the passes, because the provider bills each pass.
 It keeps the raw counts with the dialect and leaves their meaning to pricing: input, output, cache reads, cache writes and their five-minute and one-hour parts, cached tokens, web searches, Bob credits, the service tier, the speed, the inference geography and the reply's model.
 The cache writes include the writes that a Chat Completions reply reports in its prompt details.
