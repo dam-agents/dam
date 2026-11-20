@@ -278,6 +278,33 @@ export function useApprovalActions(
     },
   ];
 
+  const mcpToolCallActions: ApprovalAction[] = [
+    {
+      id: "allow-once",
+      label: "Allow once",
+      icon: Checkmark,
+      danger: false,
+      disabled: inflight || !live,
+      tooltip: live
+        ? "Run this call only. The next call asks again."
+        : "The hold ended and the call was refused, so there is nothing to allow",
+      resolvedLabel: "Allowed",
+      run: () => direct(() => each(approveOnce.mutateAsync)),
+    },
+    {
+      id: "dismiss",
+      label: "Deny",
+      icon: Close,
+      danger: true,
+      disabled: inflight || !live,
+      tooltip: live
+        ? "Refuse this call only. The agent gets an error, and the next call asks again."
+        : "The hold ended and the call was refused, so there is nothing to deny",
+      resolvedLabel: "Denied",
+      run: () => direct(() => each(dismiss.mutateAsync)),
+    },
+  ];
+
   const childRequest =
     row.payload.kind === "egress_proposal" && row.payload.forAgentId
       ? row.payload
@@ -359,11 +386,7 @@ export function useApprovalActions(
       childRequest ? childRequestActions : proposalActions,
     )
     .with("web_search", () => webSearchActions)
-    .with("mcp_tool_call", () =>
-      egressActions.filter(
-        (action) => action.id === "allow-once" || action.id === "dismiss",
-      ),
-    )
+    .with("mcp_tool_call", () => mcpToolCallActions)
     .with("ext_authz", "acp_native", () => egressActions)
     .exhaustive()
     .filter((action) => offeredByAgent(row, action.id));
@@ -383,7 +406,9 @@ export function useApprovalActions(
         ? "The original request already failed. Always allow writes a rule that future retries match."
         : row.status === "expired" && row.type === "web_search"
           ? "The search already failed. Always allow lets the agent's later searches through."
-          : null,
+          : row.status === "expired" && row.type === "mcp_tool_call"
+            ? "The hold ended and the call was refused. The agent's next call asks again."
+            : null,
     openSettings: () => openAgentSettings(row.agentId, "network"),
   };
 }

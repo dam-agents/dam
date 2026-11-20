@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { ApprovalActionsMenu } from "../../approvals/components/approval-actions-menu.js";
 import { ChildRuleRows } from "../../approvals/components/child-rule-rows.js";
+import { ToolCallView } from "../../approvals/components/tool-call-view.js";
 import { useApprovalActions } from "../../approvals/hooks/use-approval-actions.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import {
@@ -106,6 +107,12 @@ export function FeedApprovalCard({
               {ids.length} requests
             </span>
           )}
+        </div>
+      )}
+
+      {approval.payload.kind === "mcp_tool_call" && (
+        <div className="mt-2">
+          <ToolCallView payload={approval.payload} status={approval.status} />
         </div>
       )}
 

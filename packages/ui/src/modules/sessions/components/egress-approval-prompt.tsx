@@ -8,6 +8,7 @@ import { OwnerConnectionsNote } from "../../agents/components/owner-connections-
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { ApprovalActionsMenu } from "../../approvals/components/approval-actions-menu.js";
 import { ChildRuleRows } from "../../approvals/components/child-rule-rows.js";
+import { ToolCallView } from "../../approvals/components/tool-call-view.js";
 import { useApprovalActions } from "../../approvals/hooks/use-approval-actions.js";
 import { useDenyApprovals } from "../../approvals/hooks/use-deny-approvals.js";
 import {
@@ -65,6 +66,11 @@ function EgressApprovalCard({
           {group.length > 1 && (
             <span className="font-sans"> · {group.length} requests</span>
           )}
+        </div>
+      )}
+      {approval.payload.kind === "mcp_tool_call" && (
+        <div className="pl-4">
+          <ToolCallView payload={approval.payload} status={approval.status} />
         </div>
       )}
       {reason !== null && (

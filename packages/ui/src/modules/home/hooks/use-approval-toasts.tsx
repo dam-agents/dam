@@ -34,7 +34,10 @@ function fireApprovalToast(
         </div>
         <p className="min-w-0 flex-1 text-sm leading-snug">
           <span className="font-semibold text-foreground">{agentName}</span>
-          <span className="text-foreground"> {headline.toLowerCase()}</span>
+          <span className="text-foreground">
+            {" "}
+            {headline.charAt(0).toLowerCase() + headline.slice(1)}
+          </span>
         </p>
       </button>
     ),

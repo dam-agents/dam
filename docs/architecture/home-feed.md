@@ -20,6 +20,8 @@ The rules an Agent asks for on one of its sub-agents or Environments share one c
 A one-off sub-agent whose start is held for such a rule shows as "Waiting for you", not as working.
 So is a held web search ([web-search-control](web-search-control.md#the-hold)): its card shows the query, or that the model chooses it, offers to allow or deny it once or always, and shows in the Agent's chat beside its held network requests.
 So is a held call of an MCP Connection's tool ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)), which takes approve once and deny once only.
+Its card names the tool and the Connection and shows the call's arguments as JSON, or what the Connection's Template renders for that tool ([connections](connections.md#connection)), and shows in the Agent's chat beside its held network requests.
+Arguments larger than the approval keeps show cut, with a line that gives their full size; once the approval settles they are gone, and the card says so.
 A tool approval — the harness asking to run a tool — is written by two paths into one row.
 Its card offers only the choices the harness offered for that request: a verdict reaches the harness as the option of its kind, and one with no such option would cancel the tool call, so a request with no "always" option, such as Bob's writes to its own settings, offers no "Always allow" or "Always deny".
 The chat relay mirrors the prompt while a client engages the session, and the agent-runtime reports it over the runtime channel when no client does, so a request in a session nobody has open is on Home as soon as the agent asks.

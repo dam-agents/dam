@@ -76,6 +76,7 @@ export function approvalHeadline(approval: ApprovalView): string {
 export function approvalPromptTitle(approval: ApprovalView): string {
   return match(approval.payload.kind)
     .with("web_search", () => "Allow this web search?")
+    .with("mcp_tool_call", () => "Allow this tool call?")
     .with("egress_proposal", () => "Allow this network rule?")
     .otherwise(() => "Allow network access?");
 }
@@ -125,8 +126,14 @@ export function approvalDetail(
   if (payload.kind === "spend_limit")
     return spendLimitDetail(payload, connectionName);
   if (payload.kind === "acp_native") return payload.toolName;
-  if (payload.kind === "mcp_tool_call")
-    return `${payload.tool} on ${payload.connectionName}`;
+  if (payload.kind === "mcp_tool_call") {
+    const call = `${payload.tool} on ${payload.connectionName}`;
+    if (payload.viaEnvironment)
+      return `${call}, from its Environment ${payload.viaEnvironment}`;
+    return payload.forAgentId
+      ? `${call}, from its sub-agent ${approval.agentId}`
+      : call;
+  }
   if (payload.kind === "web_search") {
     const query = payload.query ?? "The model chooses the query";
     if (payload.viaEnvironment)
@@ -156,6 +163,9 @@ export function approvalDetail(
     : request;
 }
 
+export const MCP_TOOL_CALL_ONCE_NOTE =
+  "Your answer counts for this call only. The agent's next call asks again.";
+
 export const WEB_SEARCH_FOLLOW_UP_NOTE = `If you allow it, the search can also run up to ${String(WEB_SEARCH_FOLLOW_UP_QUERIES)} more queries that the model writes after it reads the first results.`;
 
 // UNIT_BOUNDARY_DESCRIPTION: what a card says when it stands for several rules one agent asked for on the same sub-agent or Environment, as one launch often does: one sentence for all of them, above the rules listed one per line, so the owner can answer the launch once or rule by rule. Null for a single request, which keeps its own line and sentence.
@@ -178,6 +188,7 @@ export function approvalReason(approval: ApprovalView): string | null {
   return match(approval.payload)
     .with({ kind: "egress_proposal" }, (payload) => payload.reason)
     .with({ kind: "web_search" }, () => WEB_SEARCH_FOLLOW_UP_NOTE)
+    .with({ kind: "mcp_tool_call" }, () => MCP_TOOL_CALL_ONCE_NOTE)
     .otherwise(() => null);
 }
 
@@ -197,6 +208,11 @@ export function approvalHideHint(approval: ApprovalView): string {
       "web_search",
       () =>
         "Hides this from Home. The search stays held until you answer it in the agent's chat or the hold ends.",
+    )
+    .with(
+      "mcp_tool_call",
+      () =>
+        "Hides this from Home. The tool call stays held until you answer it in the agent's chat or the hold ends.",
     )
     .otherwise(
       () =>
