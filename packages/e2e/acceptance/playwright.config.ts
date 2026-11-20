@@ -20,7 +20,7 @@ const chrome = {
 };
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the acceptance suite's Playwright projects. Every example of the feature files runs through the API (`examples-api`); an example tagged `@ui` also runs through the web UI (`examples-ui`), as a test of its own; the journeys run in the browser. Workers match the account slots the install provisions, so each worker signs in as accounts nothing else uses. Traces and screenshots of failed tests, and each example's evidence, are the log bundle a failure leaves in the report.
+ * UNIT_BOUNDARY_DESCRIPTION: the acceptance suite's Playwright projects. One project per surface: every example runs through the API (`api`), and a scenario tagged `@ui` or `@cli` also runs through the web UI (`ui`) or the CLI (`cli`), as a test of its own; a journey, tagged `@journey`, runs only on the surfaces its tags name. Workers match the account slots the install provisions, so each worker signs in as accounts nothing else uses. Traces and screenshots of failed tests, and each example's evidence, are the log bundle a failure leaves in the report.
  */
 export default defineConfig<{ surface: Surface }>({
   workers: accountSlots,
@@ -48,19 +48,22 @@ export default defineConfig<{ surface: Surface }>({
   },
   projects: [
     {
-      name: "examples-api",
+      name: "api",
       testDir: examples,
+      grep: /^(?![\s\S]*@journey)|@api/,
       use: { surface: "api" },
     },
     {
-      name: "examples-ui",
+      name: "ui",
       testDir: examples,
       grep: /@ui/,
       use: { surface: "ui" },
     },
     {
-      name: "journeys",
-      testDir: "src/journeys",
+      name: "cli",
+      testDir: examples,
+      grep: /@cli/,
+      use: { surface: "cli" },
     },
   ],
 });

@@ -1,16 +1,33 @@
 import type { Person } from "../people.js";
 
+export type Surface = "api" | "ui" | "cli";
+
+export interface SessionDriver {
+  signIn(person: Person): Promise<void>;
+}
+
+export interface AgentsDriver {
+  lookAt(person: Person): Promise<void>;
+  expectListed(person: Person, name: string, listed: boolean): Promise<void>;
+  makeFromGeneralist(person: Person, alias: string): Promise<void>;
+  remove(person: Person, name: string): Promise<void>;
+}
+
+export interface ChatDriver {
+  send(person: Person, name: string, text: string): Promise<void>;
+  expectAnswer(
+    person: Person,
+    name: string,
+    text: string | undefined,
+  ): Promise<void>;
+}
+
 /**
- * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the examples' When and Then steps, independent of the surface they use. Each implementation drives one public surface of the install, the API or the web UI, and the same feature file runs through each of them as its own Playwright project.
+ * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability, independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
  */
 export interface Driver {
-  readonly surface: "api" | "ui";
-  sendMessage(person: Person, agentName: string, text: string): Promise<void>;
-  expectAnswer(person: Person, agentName: string, text: string): Promise<void>;
-  lookAtAgents(person: Person): Promise<void>;
-  expectAgentListed(
-    person: Person,
-    agentName: string,
-    listed: boolean,
-  ): Promise<void>;
+  readonly surface: Surface;
+  readonly session: SessionDriver;
+  readonly agents: AgentsDriver;
+  readonly chat: ChatDriver;
 }

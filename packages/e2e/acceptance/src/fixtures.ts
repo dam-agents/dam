@@ -4,9 +4,10 @@ import { type Browser, expect, type Page } from "@playwright/test";
 import { test as base } from "playwright-bdd";
 
 import { signInThroughTheBrowser } from "./auth.js";
-import { ApiDriver } from "./drivers/api-driver.js";
-import type { Driver } from "./drivers/driver.js";
-import { UiDriver } from "./drivers/ui-driver.js";
+import { apiDriver } from "./drivers/api/index.js";
+import type { Driver, Surface } from "./drivers/driver.js";
+import { uiDriver } from "./drivers/ui/index.js";
+import type { Pages } from "./drivers/ui/pages.js";
 import {
   type Persona,
   type Person,
@@ -16,7 +17,7 @@ import {
 } from "./people.js";
 import { World } from "./world.js";
 
-export type Surface = "api" | "ui";
+export type { Surface } from "./drivers/driver.js";
 
 const mockReplyEnv = "MOCK_DEFAULT_REPLY";
 
@@ -50,14 +51,15 @@ async function signIn(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the fixtures every example and journey runs on. A worker owns the accounts of its parallel slot and signs each persona in once. The slot keeps booted mock Agents per persona, marked by their description, which the Given steps rename and script and later workers of the slot wake and reuse, so an example costs seconds instead of a machine boot. A Given step scripts an Agent's answer through its environment, `MOCK_DEFAULT_REPLY`, which every harness process the mock starts reads, and waits until the Agent reports it. A test owns its World, its Driver, which the project's `surface` option picks, and one browser page per persona, which Playwright traces; when it fails, a screenshot of each page, the World's evidence and the state of every Agent it named are attached to it.
+ * UNIT_BOUNDARY_DESCRIPTION: the fixtures every example and journey runs on. A worker owns the accounts of its parallel slot and signs each persona in once. The slot keeps booted mock Agents per persona, marked by their description, which the Given steps rename and script and later workers of the slot wake and reuse, so an example costs seconds instead of a machine boot. A Given step scripts an Agent's answer through its environment, `MOCK_DEFAULT_REPLY`, which every harness process the mock starts reads, and waits until the Agent reports it. A test owns its World, its Driver, which the project's `surface` option picks, and one browser page per persona, which Playwright traces and a sign-in step replaces with a fresh one; a scenario tagged `@wip` is expected to fail until the behaviour it states exists; when it fails, a screenshot of each page, the World's evidence and the state of every Agent it named are attached to it.
  */
 export const test = base.extend<
   {
     surface: Surface;
     world: World;
     setup: Setup;
-    pageOf: (person: Person) => Promise<Page>;
+    pages: Pages;
+    wip: void;
     driver: Driver;
     person: (persona: Persona) => Promise<Person>;
   },
@@ -175,20 +177,22 @@ export const test = base.extend<
     });
   },
 
-  pageOf: async ({ browser, cast }, use, testInfo) => {
-    const pages = new Map<Persona, Page>();
-    await use(async (person) => {
-      const open = pages.get(person.persona);
-      if (open) return open;
-      const context = await browser.newContext({
-        storageState: await cast.storageState(person.persona),
-      });
-      const page = await context.newPage();
-      pages.set(person.persona, page);
+  pages: async ({ browser, cast }, use, testInfo) => {
+    const open = new Map<Persona, Page>();
+    const pageIn = async (person: Person, storageState?: string) => {
+      const page = await (await browser.newContext({ storageState })).newPage();
+      await open.get(person.persona)?.context().close();
+      open.set(person.persona, page);
       return page;
+    };
+    await use({
+      of: async (person) =>
+        open.get(person.persona) ??
+        pageIn(person, await cast.storageState(person.persona)),
+      fresh: (person) => pageIn(person),
     });
     const failed = testInfo.status !== testInfo.expectedStatus;
-    for (const [persona, page] of pages) {
+    for (const [persona, page] of open) {
       if (failed)
         await testInfo.attach(`${persona}-screenshot.png`, {
           body: await page.screenshot({ fullPage: true }),
@@ -198,6 +202,22 @@ export const test = base.extend<
     }
   },
 
-  driver: async ({ surface, world, pageOf }, use) =>
-    use(surface === "ui" ? new UiDriver(world, pageOf) : new ApiDriver(world)),
+  wip: [
+    async ({}, use, testInfo) => {
+      testInfo.fail(
+        testInfo.tags.includes("@wip"),
+        "@wip: expected to fail until the behaviour it states exists",
+      );
+      await use();
+    },
+    { auto: true },
+  ],
+
+  driver: async ({ surface, world, pages }, use) => {
+    if (surface === "cli")
+      throw new Error(
+        "no CLI driver yet: tag no scenario @cli before it exists",
+      );
+    await use(surface === "ui" ? uiDriver(world, pages) : apiDriver(world));
+  },
 });

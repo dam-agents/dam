@@ -25,6 +25,10 @@ export class World {
     return record;
   }
 
+  nameOf(name: string): string {
+    return this.agents.get(name)?.name ?? name;
+  }
+
   note(entry: Record<string, unknown>): void {
     this.evidence.push({ at: new Date().toISOString(), ...entry });
   }
