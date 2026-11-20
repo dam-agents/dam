@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-11-19
+Last verified: 2026-11-20
 
 ## Overview
 
@@ -204,6 +204,7 @@ A connection's credential, new or rotated, the agent never sees: it runs `connec
 Since the agent cannot check that secret itself, the outcome carries the server's [credential check](connections.md#connection) where the template has one, and `dam connection test` runs it again on the stored credential, so the agent can tell a broken token from a working one.
 The CLI warns when a checked token expires within a day, and `dam connection list` shows each checked credential's expiry.
 A GitHub App connection's check names the bot it acts as and the repositories it reaches, and `dam connection scope` reports the check of the new scope.
+A Slack Account connection is read only unless it has full access ([connections](connections.md#connection)): `connect slack` makes it read only unless `--full-access` is passed, `list` marks it `read only` or `FULL ACCESS`, and `scope` switches it with `--full-access` or `--read-only`.
 A GitHub sign-in or App installation is a parent no agent holds ([github-connections](github-connections.md)), and the CLI follows the UI there: `connect` ends in a connection made from it only with a scope or an explicit full access, and otherwise keeps the parent alone and shows what it reaches; `connect --from` adds another connection beside those it has; `list` shows each parent with its connections underneath and marks full access; and removing a parent first names its connections and the agents that lose them.
 A name a parent shares with its first connection means the connection, so the agent's usual references keep naming what it holds.
 An agent that holds several GitHub accounts on one host, or several Object Storage connections, acts as its [default account](connections.md#addressing-a-connection) among them, as the web app's Connections panel shows: `dam connection list <agent>` marks it in a DEFAULT column and in `--json`, and `dam connection default` makes another granted account the default.

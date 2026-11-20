@@ -18,6 +18,7 @@ import {
   defaultMarks,
   type DefaultMark,
 } from "../domain/default-account.js";
+import { accessScopeOf, formatAccess } from "../domain/access-choice.js";
 import { childrenOf, parentLabel } from "../domain/github-parent.js";
 import { formatScope, scopeKindOf, scopeOf } from "../domain/github-scope.js";
 import type { ConnectionService } from "../services/connection-service.js";
@@ -60,6 +61,8 @@ function statusCell({ status, check, retiredHost }: ConnectionView): string {
 }
 
 function scopeCell(c: ConnectionView, children: number): string {
+  if (c.accessChoice)
+    return formatAccess(c.accessChoice, c.fullAccess === true);
   if (!c.isParent) return formatScope(scopeOf(c), scopeKindOf(c));
   return children > 0
     ? `${parentLabel(c)} (never granted itself)`
@@ -111,7 +114,7 @@ function withScope(
   marks?: ReadonlyMap<string, DefaultMark>,
 ) {
   return views.map((c) => {
-    const scope = scopeOf(c);
+    const scope = accessScopeOf(c) ?? scopeOf(c);
     const mark = marks?.get(c.id);
     return {
       ...c,
@@ -156,6 +159,7 @@ export function buildListCommand(deps: {
       "--json",
       "emit raw JSON instead of the default table; a GitHub connection carries scope { restricted, fullAccess?, account?, repositories?, repositoryIds?, permissions? }, " +
         "with fullAccess: true when it reaches everything its sign-in or installation reaches; " +
+        "a connection that is read only unless it has full access, such as a Slack Account, carries scope { restricted, readOnly? | fullAccess? }; " +
         "a GitHub sign-in or installation carries isParent: true, and each connection made from it parentId; " +
         "a connection on a GitHub Enterprise host the server retired carries retiredHost; " +
         "a checked credential carries its last check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, installedOn?, repositories?, repositoriesTruncated?, reason?, at }; " +
@@ -167,6 +171,9 @@ export function buildListCommand(deps: {
         "granted to an agent. The connections made from it are listed under it, each\n" +
         "with its own SCOPE. FULL ACCESS marks one that reaches everything its sign-in\n" +
         "or installation reaches; limit it with `dam connection scope`.\n" +
+        "\nA Slack Account connection is `read only` unless it has FULL ACCESS: an agent\n" +
+        "then searches and reads Slack as you and posts nothing. Change it with\n" +
+        "`dam connection scope <connection> --full-access` or `--read-only`.\n" +
         "\nEXPIRES is when the credential expires, as its last check found it.\n" +
         "\nPROVIDER names a model provider's alias, the harnesses that run on it, and\n" +
         "`preferred` on the one a plain `dam agent create` (no --provider, --template\n" +

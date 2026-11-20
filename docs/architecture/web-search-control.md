@@ -1,6 +1,6 @@
 # Web search control
 
-Last verified: 2026-11-15
+Last verified: 2026-11-20
 
 ## Overview
 
@@ -19,7 +19,7 @@ The setting's text says which harnesses it covers.
 
 With the setting on, every model-provider chain of the agent's gateway ([credential-gateway](credential-gateway.md#envoy-credential-injection)) sends each request's whole body with its ext_authz check, up to 32 MiB, the Messages API's own request limit.
 The gateway refuses a longer body with a 413 instead of sending part of it: a check that read part of a body could be padded past, with the search tool after the part it read.
-Other chains read no body.
+Other chains read no body for this control.
 The gate reads every request such a chain sends, also one whose path the spend meter does not count, since the meter's mark of the chain, not of the path, says it is a model call.
 
 The gateway and the approval check both read the setting from the Agent's spec, so they agree in every agent store.

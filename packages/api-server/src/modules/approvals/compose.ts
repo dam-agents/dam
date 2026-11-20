@@ -46,6 +46,10 @@ import {
   type WaitingRuleSpeaksFor,
 } from "./services/ext-authz-gate.js";
 import {
+  createReadOnlyGate,
+  type ReadOnlyConnections,
+} from "./services/read-only-gate.js";
+import {
   createSpendLimitQuestions,
   type SpendLimitQuestions,
 } from "./services/spend-limit-questions.js";
@@ -106,6 +110,7 @@ interface ComposeApprovalsSystemDeps {
   identityResolver: AgentIdentityResolver;
   ruleMatcher: EgressRuleMatcher;
   providerScopes: ProviderScopes;
+  readOnlyConnections: ReadOnlyConnections;
   attendance: EgressAttendance;
   spend: SpendCheck;
   webSearch: {
@@ -144,6 +149,7 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
       holdSeconds: deps.holdSeconds,
       ...deps.webSearch,
     }),
+    readOnly: createReadOnlyGate({ connections: deps.readOnlyConnections }),
     holdSeconds: deps.holdSeconds,
     platformAllowedAuthorities: deps.platformAllowedAuthorities,
     waitingRuleSpeaksFor: deps.waitingRuleSpeaksFor,

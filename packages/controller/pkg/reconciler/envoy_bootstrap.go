@@ -522,14 +522,19 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 	if len(c.ConnectionIDs()) > 0 {
 		filters = append(filters, connectionAddressHTTPFilter(p, c))
 	}
+	extAuthz := extAuthzHTTPFilter(p)
+	if c.Metered() && c.WebSearchControl {
+		extAuthz = withWholeRequestBody(extAuthz, modelCallBodyLimitBytes)
+	} else if c.CheckBody {
+		extAuthz = withWholeRequestBody(extAuthz, connectionBodyLimitBytes)
+	}
+	if c.CheckBody {
+		extAuthz = withServerName(extAuthz)
+	}
 	if c.Metered() {
-		extAuthz := withSpendMetadata(extAuthzHTTPFilter(p))
-		if c.WebSearchControl {
-			extAuthz = withWholeRequestBody(extAuthz)
-		}
-		filters = append(filters, spendMeterHTTPFilter(p, c), extAuthz)
+		filters = append(filters, spendMeterHTTPFilter(p, c), withSpendMetadata(extAuthz))
 	} else {
-		filters = append(filters, extAuthzHTTPFilter(p))
+		filters = append(filters, extAuthz)
 	}
 	for _, cred := range c.Credentials {
 		sdsFile, sdsDir := p.credentialFile(cred.VolumeName, cred.SDSFileKey)
@@ -1262,15 +1267,24 @@ func extAuthzHTTPFilter(p bootstrapParams) ev {
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the most of a model call's body the gateway reads for web search control: the Messages API's own request limit. The check needs the whole body, because a body read in part could carry its web search tool past the part that was read, so a larger body is answered 413 at the gateway and never reaches the provider.
-const webSearchBodyLimitBytes = 32 << 20
+// UNIT_BOUNDARY_DESCRIPTION: the largest body of a model call the gateway sends to the ext_authz check for web search control: the Messages API's own request limit, under the 33 MiB the api-server accepts in one gRPC message. The check needs the whole body, because a body read in part could carry its web search tool past the part that was read, so a larger body is answered 413 at the gateway and never reaches the provider.
+const modelCallBodyLimitBytes = 32 << 20
 
-func withWholeRequestBody(extAuthz ev) ev {
+// UNIT_BOUNDARY_DESCRIPTION: the largest request body the gateway sends to the ext_authz check for a Connection that asks for its body to be checked. Such a body is one tool call of an MCP client, a few kilobytes, and the check reads every byte of it, so the limit is far under a model call's. A larger body is answered 413 at the gateway and never reaches the upstream, because a body read in part could hide a tool call past the part that was read.
+const connectionBodyLimitBytes = 4 << 20
+
+func withWholeRequestBody(extAuthz ev, limitBytes int) ev {
 	extAuthz["typed_config"].(ev)["with_request_body"] = ev{
-		"max_request_bytes":     webSearchBodyLimitBytes,
+		"max_request_bytes":     limitBytes,
 		"allow_partial_message": false,
 		"pack_as_bytes":         true,
 	}
+	return extAuthz
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: makes a chain's check carry the server name of the TLS session the request came on. The chain and its credential are chosen by that name, while the Host header is whatever the agent wrote, so a check that limits what a Connection may do must read the name the agent cannot forge.
+func withServerName(extAuthz ev) ev {
+	extAuthz["typed_config"].(ev)["include_tls_session"] = true
 	return extAuthz
 }
 

@@ -94,7 +94,7 @@ describe("ibm-litellm connection template", () => {
   // TEST_SCENARIO: the rewrite reaches Envoy only through the Secret annotation, which is the contract the controller reads.
   it("publishes the inference prefix rewrite on the Secret annotation", async () => {
     const { contributions } = await buildIbmLitellm();
-    const annotations = connectionSecretAnnotations(contributions);
+    const annotations = connectionSecretAnnotations(contributions, []);
 
     expect(
       JSON.parse(annotations["agent-platform.ai/injection-hosts"]),
@@ -125,7 +125,7 @@ describe("curve-bender connection template", () => {
     }
     expect(
       JSON.parse(
-        connectionSecretAnnotations(contributions)[
+        connectionSecretAnnotations(contributions, [])[
           "agent-platform.ai/injection-hosts"
         ],
       ),

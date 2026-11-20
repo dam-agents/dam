@@ -11,7 +11,10 @@ import {
   type SpendIngest,
 } from "../../modules/spend/index.js";
 import { securityLog } from "../../core/security-log.js";
-import { stripConnectionEgressPrefix } from "api-server-api";
+import {
+  CONNECTION_EGRESS_ADDRESS_HEADER,
+  stripConnectionEgressPrefix,
+} from "api-server-api";
 import {
   AuthorizationService,
   type AuthorizationServer,
@@ -23,7 +26,7 @@ import { createSpendRecordStreams } from "./spend-records.js";
 const GRPC_STATUS_OK = 0;
 const GRPC_STATUS_PERMISSION_DENIED = 7;
 
-// UNIT_BOUNDARY_DESCRIPTION: the largest Check the server takes: a gateway with web search control sends a model call's whole body, up to the Messages API's 32 MiB, and the request's attributes ride beside it.
+// UNIT_BOUNDARY_DESCRIPTION: the largest Check the server takes: a gateway sends a model call's whole body when web search control is on, up to 32 MiB, the Messages API's own limit, and a request's whole body to a host whose Connection can be read only, up to 4 MiB; the request's attributes ride beside it.
 const MAX_CHECK_BYTES = 33 << 20;
 const PARTIAL_BODY_HEADER = "x-envoy-auth-partial-body";
 
@@ -119,6 +122,9 @@ export async function startExtAuthzGrpcApp(
             ? { sessionId: spend?.sessionId ?? null }
             : undefined,
           body: httpReq ? modelCallBodyOf(httpReq) : undefined,
+          connectionId:
+            httpReq?.headers[CONNECTION_EGRESS_ADDRESS_HEADER] ?? null,
+          tlsHost: sni ? stripPort(sni) : null,
           spendCall: spend && {
             callId: spend.callId,
             payer: spend.payer,

@@ -116,16 +116,18 @@ type envoyHostChain struct {
 	RequireAddress bool
 	// UNIT_BOUNDARY_DESCRIPTION: set on every chain of an agent whose owner turned on web search control. A metered chain then sends each request's whole body to the ext_authz check, which holds a model call that declares a web search tool.
 	WebSearchControl bool
-	ChainID          string
-	Host             string
-	Credentials      []envoyCredential
-	Signers          []envoySigner
-	UpstreamCluster  string
-	HTTP2            bool
-	UpstreamPort     int
-	Upgrades         bool
-	UpstreamCAFile   string
-	PathRewrites     []envoyPathRewrite
+	// UNIT_BOUNDARY_DESCRIPTION: set on a chain when a Connection on its host asks for its requests to be checked with their body. The chain then sends each request's whole body to the ext_authz check, whatever the agent's own choices are.
+	CheckBody       bool
+	ChainID         string
+	Host            string
+	Credentials     []envoyCredential
+	Signers         []envoySigner
+	UpstreamCluster string
+	HTTP2           bool
+	UpstreamPort    int
+	Upgrades        bool
+	UpstreamCAFile  string
+	PathRewrites    []envoyPathRewrite
 	// UNIT_BOUNDARY_DESCRIPTION: set on the chain that carries the install's own key: its upstream is the api-server's public Service inside the cluster, pinned by name and port, so the Agent's Host and SNI can never send that key anywhere else.
 	InCluster bool
 	// UNIT_BOUNDARY_DESCRIPTION: set on the one chain for the environments domain: it carries the Agent's key to the api-server's Environment gate, inside the cluster, instead of to the host the agent named.
@@ -490,6 +492,7 @@ type connectionHostInjection struct {
 	CAKey          string             `json:"caKey,omitempty"`
 	SDSKey         string             `json:"sdsKey,omitempty"`
 	Signing        *connectionSigning `json:"signing,omitempty"`
+	CheckBody      bool               `json:"checkBody,omitempty"`
 }
 
 type connectionSigning struct {
@@ -554,6 +557,18 @@ type chainOpts struct {
 	upgrades     bool
 	caFile       string
 	pathRewrites []envoyPathRewrite
+	checkBody    bool
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the hosts of one Secret whose requests are checked with their body. One entry that asks for it is enough for its host, so an entry that is later skipped as a duplicate or rendered without its credential still turns the check on.
+func checkBodyHosts(entries []connectionHostInjection) map[string]bool {
+	hosts := map[string]bool{}
+	for _, e := range entries {
+		if e.CheckBody {
+			hosts[e.Host] = true
+		}
+	}
+	return hosts
 }
 
 func expandConnectionSecret(s corev1.Secret) []hostCredential {
@@ -563,6 +578,7 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 	}
 	seen := map[struct{ host, header, scope string }]struct{}{}
 	seenSigner := map[struct{ host, key string }]struct{}{}
+	checkBody := checkBodyHosts(entries)
 	out := make([]hostCredential, 0, len(entries))
 	for _, e := range entries {
 		if e.Host == "" {
@@ -574,6 +590,7 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 			upgrades:     e.Upgrades,
 			caFile:       upstreamCAFile(s, e),
 			pathRewrites: validPathRewrites(s, e),
+			checkBody:    checkBody[e.Host],
 		}
 		if e.Signing != nil {
 			key := struct{ host, key string }{e.Host, e.Signing.CredentialsKey}
@@ -746,6 +763,9 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 		if opts.upgrades {
 			b.opts.upgrades = true
 		}
+		if opts.checkBody {
+			b.opts.checkBody = true
+		}
 		if opts.port != 0 {
 			if b.opts.port == 0 {
 				b.opts.port = opts.port
@@ -884,6 +904,7 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 			Credentials:     credentials,
 			Signers:         signers,
 			HTTP2:           b.opts.http2,
+			CheckBody:       b.opts.checkBody,
 			UpstreamPort:    port,
 			Upgrades:        upgrades,
 			UpstreamCAFile:  caFile,
@@ -1081,11 +1102,19 @@ func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 			s.Annotations[envoyQueryParamAnn],
 			s.Annotations[envoyInjectionHostsAnn],
 			strings.Join(gatewayDataKeys(s), ","),
-		))
+		)+checkBodyRevMark(s))
 	}
 	sort.Strings(parts[1:])
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
 	return hex.EncodeToString(sum[:8])
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what a Secret that asks for the body check adds to the gateway's revision. The annotation is already in the revision, so a flag that appears or goes away rolls the gateway. But a controller from before the flag hashed the same annotation and rendered no body check, and the first controller that knows the flag would keep that revision and that gateway. This mark makes it roll that gateway once. A Secret without the flag adds nothing, so an upgrade rolls no other gateway.
+func checkBodyRevMark(s corev1.Secret) string {
+	if len(checkBodyHosts(parseConnectionHosts(s))) == 0 {
+		return ""
+	}
+	return "|check-body"
 }
 
 func envoyGatewayRev(cfg *config.Config, secrets []corev1.Secret, l7Hosts []string, choices gatewayChoices) string {

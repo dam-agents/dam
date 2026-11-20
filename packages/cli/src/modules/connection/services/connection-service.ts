@@ -68,6 +68,10 @@ export interface ConnectionService {
     permissions?: string;
     fullAccess?: boolean;
   }): Promise<ConnResult<void>>;
+  setFullAccess(input: {
+    id: string;
+    fullAccess: boolean;
+  }): Promise<ConnResult<void>>;
   createFromParent(input: {
     parentId: string;
     name: string;
@@ -200,6 +204,11 @@ export function createConnectionService(deps: {
     async updateGitHubUserTokenScope(input) {
       return trpcCall(async () => {
         await deps.trpc.connections.updateGitHubUserTokenScope.mutate(input);
+      });
+    },
+    async setFullAccess(input) {
+      return trpcCall(async () => {
+        await deps.trpc.connections.setFullAccess.mutate(input);
       });
     },
     async updateGitHubAppScope(input) {

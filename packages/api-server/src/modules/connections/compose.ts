@@ -33,7 +33,14 @@ import { createProviderKeyProbe } from "./infrastructure/provider-key-probe.js";
 import { createAcceptingProviderKeyProbe } from "./infrastructure/accepting-provider-key-probe.js";
 import type { ProviderKeyProbe } from "./domain/provider-key-probe.js";
 import { createCredentialProbe } from "./infrastructure/credential-probe.js";
-import { createConnectionTemplateRegistry } from "./domain/connection-template.js";
+import {
+  createConnectionTemplateRegistry,
+  type ConnectionTemplateRegistry,
+} from "./domain/connection-template.js";
+import {
+  readOnlyAccessFor,
+  type ReadOnlyAccess,
+} from "./domain/read-only-access.js";
 import { buildCatalog, type OperatorCredentials } from "./domain/catalog.js";
 import {
   createConnectionsService,
@@ -274,6 +281,31 @@ export function createProviderEgressScopes(db: Db): {
       const granted = await repo.listConnectionsForAgent(agentId);
       return providerEgressScopes(granted).some((scope) =>
         scopeCovers(scope, request),
+      );
+    },
+  };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: answers the egress gate which read-only Connection limits a request of an Agent to a host. It reads the Agent's grants on every call to a host that a Template declares read tools for, so the owner's choice holds from the next request, and reads nothing for any other host.
+export function createReadOnlyConnections(
+  db: Db,
+  templates: Pick<ConnectionTemplateRegistry, "get" | "list">,
+): {
+  limiting(
+    agentId: string,
+    request: { host: string; connectionId: string | null },
+  ): Promise<ReadOnlyAccess | null>;
+} {
+  const repo = createConnectionsRepository(db);
+  const limitsHost = (host: string) =>
+    templates.list().some((t) => t.toolAccess?.host === host);
+  return {
+    async limiting(agentId, request) {
+      if (!limitsHost(request.host)) return null;
+      return readOnlyAccessFor(
+        await repo.listConnectionsForAgent(agentId),
+        (templateId) => templates.get(templateId)?.toolAccess,
+        request,
       );
     },
   };
