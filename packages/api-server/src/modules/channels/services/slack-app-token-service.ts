@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import type { SecretStore } from "../../secret-store/index.js";
 import type { XactLock } from "../../../core/xact-lock.js";
-import type { SlackTokenRotation } from "../infrastructure/slack-token-rotation.js";
+import type {
+  SlackRotatingToken,
+  SlackTokenRotation,
+} from "../infrastructure/slack-token-rotation.js";
 import { securityLog } from "../../../core/security-log.js";
 import { formatError } from "../../../core/format-error.js";
 
@@ -73,11 +76,13 @@ function logAppToken(
  * value stops being useful within hours.
  *
  * Exchange and renewal run under one lock, with the Secret re-read inside it,
- * so two replicas never spend the same refresh token. A failed exchange, or
- * one whose pair could not be saved, keeps serving the Helm token, which
- * Slack retires only at the first renewal, and tries again ten minutes later.
- * A renewed pair that could not be saved is still served, so the socket stays
- * up until the token expires and the error is in the log. A failed renewal
+ * so two replicas never spend the same refresh token. A failed exchange keeps
+ * serving the Helm token and tries again ten minutes later. A pair Slack
+ * minted but the Secret could not take is the only copy of its single-use
+ * refresh token, so it is kept in memory and served, and the next call saves
+ * it under the lock before it asks Slack for anything. It is saved only over
+ * the pair it replaced: when the Secret has moved on, another replica saved a
+ * newer pair, and the kept one is dropped. A failed renewal
  * keeps serving the token while it is still valid. Once it has expired, Slack
  * refusing the refresh token as dead marks the Secret refused, and nothing is
  * served until a person sets a new app-level token in Helm values: a Helm
@@ -91,6 +96,8 @@ export function createSlackAppTokenService(
   const now = () => deps.rotation.now();
   const helmFingerprint = fingerprint(deps.helmToken);
   let exchangeRetryAt = 0;
+  let unsaved: { pair: StoredAppToken; replaces: string | null } | null =
+    null;
 
   if (deps.helmToken.startsWith(ROTATING_TOKEN_PREFIX)) {
     logAppToken("warn", "slack.app_token.rotating_in_helm", {
@@ -140,6 +147,47 @@ export function createSlackAppTokenService(
     return stored.token;
   }
 
+  async function save(pair: StoredAppToken): Promise<boolean> {
+    try {
+      await deps.secrets.put(
+        {
+          storeId: deps.secrets.storeId,
+          path: SLACK_APP_TOKEN_SECRET_PATH,
+          field: TOKEN_FIELD,
+        },
+        {
+          [TOKEN_FIELD]: pair.token,
+          [REFRESH_TOKEN_FIELD]: pair.refreshToken,
+          [EXPIRES_AT_FIELD]: String(pair.expiresAt),
+          [IMPORTED_FROM_FIELD]: pair.importedFrom,
+        },
+        SECRET_META,
+      );
+      return true;
+    } catch (err) {
+      logAppToken("error", "slack.app_token.unsaved", {
+        result: "failure",
+        reason: formatError(err),
+      });
+      return false;
+    }
+  }
+
+  async function keep(
+    result: SlackRotatingToken,
+    replaces: string | null,
+  ): Promise<string> {
+    const pair: StoredAppToken = {
+      token: result.accessToken,
+      refreshToken: result.refreshToken,
+      expiresAt: result.expiresAt,
+      importedFrom: helmFingerprint,
+      refused: false,
+    };
+    unsaved = (await save(pair)) ? null : { pair, replaces };
+    return pair.token;
+  }
+
   async function exchange(): Promise<string> {
     if (!exchangeDue()) return deps.helmToken;
     const result = await deps.rotation.exchange(deps.helmToken);
@@ -151,56 +199,14 @@ export function createSlackAppTokenService(
       });
       return deps.helmToken;
     }
-    try {
-      await deps.secrets.put(
-        {
-          storeId: deps.secrets.storeId,
-          path: SLACK_APP_TOKEN_SECRET_PATH,
-          field: TOKEN_FIELD,
-        },
-        {
-          [TOKEN_FIELD]: result.accessToken,
-          [REFRESH_TOKEN_FIELD]: result.refreshToken,
-          [EXPIRES_AT_FIELD]: String(result.expiresAt),
-          [IMPORTED_FROM_FIELD]: helmFingerprint,
-        },
-        SECRET_META,
-      );
-    } catch (err) {
-      exchangeRetryAt = now() + EXCHANGE_RETRY_MS;
-      logAppToken("error", "slack.app_token.exchange.unsaved", {
-        result: "failure",
-        reason: formatError(err),
-      });
-      return deps.helmToken;
-    }
     logAppToken("info", "slack.app_token.exchanged", { result: "success" });
-    return result.accessToken;
+    return keep(result, null);
   }
 
   async function refresh(stored: StoredAppToken): Promise<string | null> {
     const expired = stored.expiresAt <= now();
     const result = await deps.rotation.refresh(stored.refreshToken);
-    const ref = {
-      storeId: deps.secrets.storeId,
-      path: SLACK_APP_TOKEN_SECRET_PATH,
-      field: TOKEN_FIELD,
-    };
-    if (result.ok) {
-      try {
-        await deps.secrets.putFields(ref, {
-          [TOKEN_FIELD]: result.accessToken,
-          [REFRESH_TOKEN_FIELD]: result.refreshToken,
-          [EXPIRES_AT_FIELD]: String(result.expiresAt),
-        });
-      } catch (err) {
-        logAppToken("error", "slack.app_token.refresh.unsaved", {
-          result: "failure",
-          reason: formatError(err),
-        });
-      }
-      return result.accessToken;
-    }
+    if (result.ok) return keep(result, stored.refreshToken);
     const refused = expired && result.credentialDead;
     logAppToken(
       "error",
@@ -213,13 +219,33 @@ export function createSlackAppTokenService(
       },
       { expired },
     );
-    if (refused) await deps.secrets.putFields(ref, { [REFUSED_FIELD]: "true" });
+    if (refused) {
+      await deps.secrets.putFields(
+        {
+          storeId: deps.secrets.storeId,
+          path: SLACK_APP_TOKEN_SECRET_PATH,
+          field: TOKEN_FIELD,
+        },
+        { [REFUSED_FIELD]: "true" },
+      );
+    }
     return served(stored);
   }
 
   async function renewUnderLock(): Promise<string | null> {
     return deps.lock(LOCK_KEY, async () => {
-      const stored = current(await readStored());
+      let stored = current(await readStored());
+      if (unsaved) {
+        const { pair, replaces } = unsaved;
+        if (replaces !== (stored?.refreshToken ?? null)) {
+          unsaved = null;
+        } else if (await save(pair)) {
+          unsaved = null;
+          stored = pair;
+        } else {
+          return served(pair);
+        }
+      }
       if (!renewalDue(stored)) return served(stored);
       return stored === null ? exchange() : refresh(stored);
     });
@@ -227,7 +253,9 @@ export function createSlackAppTokenService(
 
   async function resolveAppToken(): Promise<string | null> {
     const stored = current(await readStored());
-    return renewalDue(stored) ? renewUnderLock() : served(stored);
+    return unsaved !== null || renewalDue(stored)
+      ? renewUnderLock()
+      : served(stored);
   }
 
   return {

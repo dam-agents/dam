@@ -51,11 +51,13 @@ function setup(opts?: {
   const secrets: Record<string, Record<string, string>> = {};
   if (opts?.stored) secrets[SLACK_APP_TOKEN_SECRET_PATH] = { ...opts.stored };
   const calls = { exchange: [] as string[], refresh: [] as string[] };
+  const storage = { down: false };
   const store = {
     storeId: "k8s",
     get: async ({ path }: { path: string }) =>
       secrets[path] ? { ...secrets[path] } : null,
     put: async ({ path }: { path: string }, fields: Record<string, string>) => {
+      if (storage.down) throw new Error("secrets is forbidden");
       secrets[path] = { ...fields };
     },
     putFields: async (
@@ -91,6 +93,7 @@ function setup(opts?: {
     rebuild: (helmToken: string) =>
       createSlackAppTokenService({ ...deps, helmToken }),
     secret: () => secrets[SLACK_APP_TOKEN_SECRET_PATH],
+    storage,
     calls,
     advance: (ms: number) => {
       clock += ms;
@@ -177,32 +180,76 @@ describe("Slack app-level token", () => {
 
   /**
    * TEST_SCENARIO: Slack exchanged the token, but the Secret could not be
-   * written. The Helm token still works until the first renewal, so it keeps
-   * the socket up instead of the socket going down for a storage error.
+   * written. Slack exchanges a token only once, so the pair is the only one
+   * there will be: it is served, and the next call saves it instead of
+   * exchanging again.
    */
-  it("serves the Helm token when the exchanged pair cannot be saved", async () => {
+  it("keeps an exchanged pair the Secret refused and saves it later", async () => {
     const env = setup();
-    const failing = createSlackAppTokenService({
-      helmToken: HELM,
-      secrets: {
-        storeId: "k8s",
-        get: async () => null,
-        put: async () => {
-          throw new Error("secrets is forbidden");
-        },
-      } as unknown as SecretStore,
-      lock: mutex(),
-      rotation: {
-        exchange: async () => grant("xoxe.xapp-1", "xoxe-1-r1", 12 * HOUR),
-        refresh: async () => {
-          throw new Error("no refresh expected");
-        },
-        now: env.now,
-      },
-      exchangeLongLivedToken: true,
-    });
+    env.storage.down = true;
 
-    expect(await failing.resolveAppToken()).toBe(HELM);
+    expect(await env.svc.resolveAppToken()).toBe("xoxe.xapp-1");
+    expect(env.secret()).toBeUndefined();
+    expect(await env.svc.resolveAppToken()).toBe("xoxe.xapp-1");
+
+    env.storage.down = false;
+    expect(await env.svc.resolveAppToken()).toBe("xoxe.xapp-1");
+    expect(env.calls.exchange).toEqual([HELM]);
+    expect(env.secret()).toMatchObject({
+      appToken: "xoxe.xapp-1",
+      refreshToken: "xoxe-1-r1",
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: Slack renewed the token, but the Secret could not be
+   * written. The old refresh token is spent, so it is never offered again:
+   * the new token is served, the renewal is not repeated, and the new pair
+   * is saved once the Secret takes writes again. Its refresh token then
+   * makes the next renewal.
+   */
+  it("keeps a renewed pair the Secret refused and renews with it once saved", async () => {
+    const env = await exchanged();
+    env.advance(2 * HOUR);
+    env.storage.down = true;
+
+    expect(await env.svc.resolveAppToken()).toBe("xoxe.xapp-2");
+    expect(await env.svc.resolveAppToken()).toBe("xoxe.xapp-2");
+    expect(env.calls.refresh).toEqual(["xoxe-1-r1"]);
+    expect(env.secret()?.["refreshToken"]).toBe("xoxe-1-r1");
+
+    env.storage.down = false;
+    await env.svc.renew();
+    expect(env.secret()).toMatchObject({
+      appToken: "xoxe.xapp-2",
+      refreshToken: "xoxe-1-r2",
+    });
+    expect(env.calls.refresh).toEqual(["xoxe-1-r1"]);
+
+    env.advance(2 * HOUR);
+    await env.svc.renew();
+    expect(env.calls.refresh).toEqual(["xoxe-1-r1", "xoxe-1-r2"]);
+  });
+
+  /**
+   * TEST_SCENARIO: While one replica holds a renewed pair it could not save,
+   * another replica renews and saves a newer pair. The kept pair is older, so
+   * it is dropped rather than written over the newer one, and the Secret's
+   * pair is served.
+   */
+  it("drops a kept pair once another replica saved a newer one", async () => {
+    const env = await exchanged();
+    env.advance(2 * HOUR);
+    env.storage.down = true;
+    expect(await env.svc.resolveAppToken()).toBe("xoxe.xapp-2");
+
+    env.storage.down = false;
+    env.secret()!["appToken"] = "xoxe.xapp-other";
+    env.secret()!["refreshToken"] = "xoxe-1-other";
+    env.secret()!["expiresAt"] = String(env.now() + 12 * HOUR);
+
+    expect(await env.svc.resolveAppToken()).toBe("xoxe.xapp-other");
+    expect(env.secret()?.["refreshToken"]).toBe("xoxe-1-other");
   });
 
   /**
@@ -325,7 +372,7 @@ describe("Slack app-level token", () => {
       secrets: {
         storeId: "k8s",
         get: async () => ({ ...env.secret() }),
-        putFields: async (_ref: unknown, fields: Record<string, string>) => {
+        put: async (_ref: unknown, fields: Record<string, string>) => {
           Object.assign(env.secret()!, fields);
         },
       } as unknown as SecretStore,

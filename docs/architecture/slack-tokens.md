@@ -37,6 +37,8 @@ Slack retires the Helm token after the first renewal, so a copy of the Helm valu
 The Socket Mode connection asks for the token again on every connect, so a reconnect always uses the token renewed last, whichever replica renewed it.
 
 A failed exchange keeps the socket on the Helm token and tries again ten minutes later; a failed renewal keeps the current token while it is valid.
+A pair Slack minted that the Secret would not take holds the only copy of its single-use refresh token, so the replica keeps it in memory, serves it, and saves it under the lock before it asks Slack for anything else.
+It saves it only over the pair it replaced: a Secret that moved on means another replica saved a newer pair, and the kept one is dropped.
 Once the token has expired and Slack refuses its refresh token as dead, the Secret is marked refused, nothing is served and the socket stays down, with an error in the api-server log on each try.
 The way back is an operator act: generate a new App-Level Token in the Slack app and set it in Helm values.
 A Helm value whose fingerprint differs from the stored one is imported again, replacing the refused pair.
