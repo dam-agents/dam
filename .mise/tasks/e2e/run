@@ -176,22 +176,28 @@ mise run e2e:install
 # outside the cluster.
 rm -f packages/e2e/integration/.auth/*.json
 
-e2e_mark "suite started"
+# E2E_SUITES names the suites this run takes, both by default: CI runs each in a
+# job of its own, on a node of its own, since every owner's VM runner reserves
+# memory and the two suites' owners together outgrew one CI node
+# (docs/architecture/e2e.md). The acceptance suite signs in as accounts of its
+# own and shares no state with the integration suite. Either failing fails the run.
+suites=" ${E2E_SUITES:-integration acceptance} "
 suite_started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 suite_rc=0
-PLATFORM_BASE_URL="http://localhost:6555" \
-PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:6555" \
-  mise run //packages/e2e/integration:run ${PLAYWRIGHT_ARGS[@]+-- "${PLAYWRIGHT_ARGS[@]}"} || suite_rc=$?
-e2e_mark "suite finished"
-
-# The acceptance suite's examples and journeys run on the same install after the
-# smoke suite, whatever it returned: they sign in as accounts of their own and
-# share no state with it (docs/architecture/e2e.md). Either failing fails the run.
-e2e_mark "acceptance started"
-acceptance_rc=0
-PLATFORM_BASE_URL="http://localhost:6555" \
-PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:6555" \
-  mise run //packages/e2e/acceptance:run || acceptance_rc=$?
-e2e_mark "acceptance finished"
-[ "$suite_rc" -ne 0 ] || suite_rc=$acceptance_rc
+if [[ "$suites" == *" integration "* ]]; then
+  e2e_mark "suite started"
+  PLATFORM_BASE_URL="http://localhost:6555" \
+  PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:6555" \
+    mise run //packages/e2e/integration:run ${PLAYWRIGHT_ARGS[@]+-- "${PLAYWRIGHT_ARGS[@]}"} || suite_rc=$?
+  e2e_mark "suite finished"
+fi
+if [[ "$suites" == *" acceptance "* ]]; then
+  e2e_mark "acceptance started"
+  acceptance_rc=0
+  PLATFORM_BASE_URL="http://localhost:6555" \
+  PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:6555" \
+    mise run //packages/e2e/acceptance:run || acceptance_rc=$?
+  e2e_mark "acceptance finished"
+  [ "$suite_rc" -ne 0 ] || suite_rc=$acceptance_rc
+fi
 exit "$suite_rc"
