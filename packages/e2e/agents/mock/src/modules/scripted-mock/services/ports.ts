@@ -29,3 +29,15 @@ export interface ProcessRunner {
     timeoutMs: number;
   }): Promise<{ code: number; output: string }>;
 }
+
+export interface PlatformToolCaller {
+  (
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<{ text: string; result: unknown }>;
+}
+
+export interface ToolCall {
+  name: string;
+  arguments: Record<string, unknown>;
+}

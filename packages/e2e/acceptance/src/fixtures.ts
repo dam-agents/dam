@@ -20,6 +20,7 @@ import { World } from "./world.js";
 export type { Surface } from "./drivers/driver.js";
 
 const mockReplyEnv = "MOCK_DEFAULT_REPLY";
+const mockToolEnv = "MOCK_TOOL_CALL";
 
 interface Cast {
   person(persona: Persona): Promise<Person>;
@@ -31,7 +32,7 @@ interface Setup {
   runningAgent(
     persona: Persona,
     name: string,
-    answer: string | undefined,
+    behaviour?: { answer?: string; publishes?: string },
   ): Promise<void>;
 }
 
@@ -51,7 +52,7 @@ async function signIn(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the fixtures every example and journey runs on. A worker owns the accounts of its parallel slot and signs each persona in once. The slot keeps booted mock Agents per persona, marked by their description, which the Given steps rename and script and later workers of the slot wake and reuse, so an example costs seconds instead of a machine boot. A Given step scripts an Agent's answer through its environment, `MOCK_DEFAULT_REPLY`, which every harness process the mock starts reads, and waits until the Agent reports it. A test owns its World, its Driver, which the project's `surface` option picks, and one browser page per persona, which Playwright traces and a sign-in step replaces with a fresh one; a scenario tagged `@wip` is expected to fail until the behaviour it states exists; when it fails, a screenshot of each page, the World's evidence and the state of every Agent it named are attached to it.
+ * UNIT_BOUNDARY_DESCRIPTION: the fixtures every example and journey runs on. A worker owns the accounts of its parallel slot and signs each persona in once. The slot keeps booted mock Agents per persona, marked by their description, which the Given steps rename and script and later workers of the slot wake and reuse, so an example costs seconds instead of a machine boot. A Given step scripts an Agent through its environment, which every harness process the mock starts reads: its answer, `MOCK_DEFAULT_REPLY`, and a platform tool it calls on every turn, `MOCK_TOOL_CALL`; it sets the answer when the example names one, sets or clears the tool call on every warm Agent it takes, and waits until the Agent reports them. A test owns its World, its Driver, which the project's `surface` option picks, and one browser page per persona, which Playwright traces and a sign-in step replaces with a fresh one; a scenario tagged `@wip` is expected to fail until the behaviour it states exists; when it fails, a screenshot of each page, the World's evidence and the state of every Agent it named are attached to it.
  */
 export const test = base.extend<
   {
@@ -138,39 +139,58 @@ export const test = base.extend<
   setup: async ({ cast, world }, use) => {
     const allocated = new Map<Persona, number>();
     await use({
-      runningAgent: async (persona, name, answer) => {
+      runningAgent: async (persona, name, { answer, publishes } = {}) => {
         const index = allocated.get(persona) ?? 0;
         allocated.set(persona, index + 1);
         const id = await cast.warmAgent(persona, index);
         const owner = await cast.person(persona);
         const unique = world.unique(name);
         await owner.api.agents.update.mutate({ id, name: unique });
-        if (answer !== undefined) {
-          const reply = world.unique(answer);
-          const env = (await owner.api.agents.get.query({ id })).env ?? [];
-          await owner.api.agents.setEnv.mutate({
-            id,
-            env: [
-              ...env.filter((v) => v.name !== mockReplyEnv),
-              { name: mockReplyEnv, value: reply },
-            ],
-          });
+        const wanted = new Map<string, string | null>([
+          ...(answer === undefined
+            ? []
+            : [[mockReplyEnv, world.unique(answer)] as [string, string]]),
+          [
+            mockToolEnv,
+            publishes === undefined
+              ? null
+              : JSON.stringify({
+                  name: "create_artifact",
+                  arguments: {
+                    title: world.unique(publishes),
+                    content: `<h1>${world.unique(publishes)}</h1>`,
+                    file_name: "artifact.html",
+                    icon: "📄",
+                  },
+                }),
+          ],
+        ]);
+        const env = (await owner.api.agents.get.query({ id })).env ?? [];
+        await owner.api.agents.setEnv.mutate({
+          id,
+          env: [
+            ...env.filter((v) => !wanted.has(v.name)),
+            ...[...wanted]
+              .filter(([, value]) => value !== null)
+              .map(([envName, value]) => ({ name: envName, value: value! })),
+          ],
+        });
+        for (const [envName, value] of wanted)
           await expect
             .poll(
               async () =>
                 (
                   await owner.api.e2e.getEnv
-                    .query({ agentId: id, name: mockReplyEnv })
+                    .query({ agentId: id, name: envName })
                     .catch(() => undefined)
-                )?.value,
+                )?.value ?? null,
               {
                 timeout: 120_000,
                 intervals: [250, 500, 1_000],
-                message: `${persona}'s agent never took its answer`,
+                message: `${persona}'s agent never took ${envName}`,
               },
             )
-            .toBe(reply);
-        }
+            .toBe(value);
         world.agents.set(name, { owner: persona, name: unique, id });
         world.note({ step: "agent ready", persona, name: unique, id });
       },
