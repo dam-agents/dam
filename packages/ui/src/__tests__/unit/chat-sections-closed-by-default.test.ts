@@ -252,13 +252,15 @@ describe("the chat header", () => {
   function widths(header: number, start: number, end: number) {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
       function (this: HTMLElement) {
+        /* TEST_SCENARIO: a running count inside an end widens it by its own width, as a laid-out one would */
+        const running = this.querySelector('[data-testid="running"]') ? 110 : 0;
         const width =
           this.tagName === "HEADER"
             ? header
             : this.dataset.testid === "chat-header-start"
-              ? start
+              ? start + running
               : this.dataset.testid === "chat-header-end"
-                ? end
+                ? end + running
                 : 0;
         return {
           width,
@@ -276,10 +278,13 @@ describe("the chat header", () => {
   }
   afterEach(() => vi.restoreAllMocks());
 
-  function renderHeader() {
+  function renderHeader(running = false) {
     render(
       createElement(ClassicChatLayout, {
         ...(layout().props as object),
+        status: running
+          ? createElement("button", { "data-testid": "running" }, "1 running")
+          : null,
         newChat: createElement("button", { "data-testid": "new-chat" }),
       } as never),
     );
@@ -312,5 +317,20 @@ describe("the chat header", () => {
     expect(row.className).not.toContain("@5xl/chat:grid");
     expect(start.className).not.toContain("@5xl/chat:justify-self-end");
     expect(end.className).not.toContain("@5xl/chat:col-start-3");
+  });
+
+  // TEST_SCENARIO: the running count comes and goes as the Agent's processes start and end, and its badges as turns end; neither moves the header: flanking, the status opens the messages' column beside the agent menu, so the menu fits its margin, and keeps its place, while the Agent runs as while it idles.
+  it("keeps its layout while the Agent runs and while it idles", () => {
+    widths(1050, 120, 100);
+    const running = renderHeader(true);
+    expect(running.start.contains(byTestId("running"))).toBe(false);
+    expect(running.end.contains(byTestId("running"))).toBe(false);
+    expect(running.row.className).toContain("@5xl/chat:grid");
+    expect(running.start.className).toContain("@5xl/chat:justify-self-end");
+    expect(running.end.className).toContain("@5xl/chat:col-start-3");
+    const status = byTestId("chat-header-status")!;
+    expect(status.contains(byTestId("running"))).toBe(true);
+    expect(status.className).toContain("@5xl/chat:col-start-2");
+    expect(status.className).toContain("@5xl/chat:justify-self-start");
   });
 });
