@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-11-14
+Last verified: 2026-11-20
 
 ## Overview
 
@@ -212,6 +212,7 @@ It skips any Agent already at rest — observed down *and* hibernation published
 It also skips any machine a [runner roll](vm-runner-upgrades.md#rolls) is waiting on: the roll's `runner-awaiting` list names the machines that were ready before it, and a hibernated machine would never come back ready.
 That check and the stop are taken together under the owner's lock, the one a roll start takes, so a roll that begins while the machine is being probed still sees it left up.
 A sweepable Agent parked for room is never hibernated either: it is an [Invocation](invocations.md) target that has not started, so both the idle checker and its reconcile treat it as one that should run until a stop or its Invocation's deadline, and the Agent Sweep cannot delete it before then.
+The wait is read from Ready and from the machine's own condition, since a boot the runner admitted and the node has not yet granted memory for keeps running and reads Ready as plain `PodsNotReady`; a target booted with its run not yet started is held by the [Invocation Pin](invocations.md#the-invocation-pin) instead.
 For the rest it hibernates only when *both* checks below agree it is quiet:
 
 1. **Activity annotations** — the same `shouldRun` gate the reconciler uses to bring it up, so bringing it up and taking it down can never disagree.
@@ -241,7 +242,7 @@ The names below are the annotation forms the controller reads on a custom resour
 - **api-server (`last-activity` annotation).** The one traffic-driven signal, and the clock the idle timeout measures against.
   Bumped, debounced, by any relay or proxied call as bytes flow, by an explicit wake, and by the scheduler on a fire.
   One path also *lowers* it: a fire whose Precheck declines puts the pre-fire value back ([schedules](schedules.md#precheck)), so a frequent check cannot hold an Agent awake on the strength of occurrences that did no work.
-- **api-server (`invocations-active` annotation).** The [Invocation Pin](invocations.md#the-invocation-pin): the Agent drives a running Invocation.
+- **api-server (`invocations-active` annotation).** The [Invocation Pin](invocations.md#the-invocation-pin): the Agent drives a running Invocation, or its own run as a target waits to start.
 
 None of this depends on *who* opened the session: the UI, a connected channel, and the CLI all dial the same relays, so a session's signals follow its **kind** — chat, terminal, SSH, browser — not its caller.
 A CLI terminal is covered by both checks like a UI terminal; a CLI SSH session is seen only by the annotations, never the probe — like any other SSH.

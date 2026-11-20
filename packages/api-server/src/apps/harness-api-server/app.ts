@@ -211,6 +211,9 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       pinDriver: async (driverAgentId) => {
         await agentsRepo.setInvocationPin(driverAgentId);
       },
+      pinTarget: async (targetAgentId) => {
+        await agentsRepo.setInvocationPin(targetAgentId);
+      },
       parkTarget: async (agentId) => {
         await agentsRepo.patchAnnotations(agentId, { [ANN_SWEEPABLE]: null });
         await agentsServiceFor(owner).update({
