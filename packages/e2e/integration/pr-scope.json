@@ -1,10 +1,5 @@
 {
   "specs": {
-    "18-satellites": [
-      "packages/api-server/src/modules/satellites",
-      "packages/api-server-api/src/modules/satellites",
-      "packages/ui/src/modules/satellites"
-    ],
     "19-agent-machine": [
       "packages/agents/base",
       "packages/vm-runner",

@@ -153,6 +153,32 @@ export interface AssistantDriver {
   expectComposerHolds(person: Person, text: string): Promise<void>;
 }
 
+/** UNIT_BOUNDARY_DESCRIPTION: what an owner sees of a satellite: the machine it runs on, the tools it offers, and whether it takes work. */
+export interface SatelliteView {
+  host: string;
+  tools: string[];
+  state: "online" | "shutting down";
+}
+
+export interface SatellitesDriver {
+  lookAt(person: Person): Promise<void>;
+  expectListed(
+    person: Person,
+    name: string,
+    view: SatelliteView | undefined,
+  ): Promise<void>;
+  expectNone(person: Person): Promise<void>;
+  grant(person: Person, satellite: string, agentName: string): Promise<void>;
+  revoke(person: Person, satellite: string, agentName: string): Promise<void>;
+  expectHeld(
+    person: Person,
+    satellite: string,
+    agentName: string,
+    held: boolean,
+  ): Promise<void>;
+  remove(person: Person, satellite: string): Promise<void>;
+}
+
 export interface SessionsDriver {
   expectListed(
     person: Person,
@@ -187,7 +213,7 @@ export interface ArtifactsDriver {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability (session, agents, chat, sessions, live views, environment, egress, assistant, artifacts, connections), independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
+ * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability (session, agents, chat, sessions, live views, environment, egress, assistant, satellites, artifacts, connections), independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
  */
 export interface Driver {
   readonly surface: Surface;
@@ -200,5 +226,6 @@ export interface Driver {
   readonly environment: EnvironmentDriver;
   readonly egress: EgressDriver;
   readonly assistant: AssistantDriver;
+  readonly satellites: SatellitesDriver;
   readonly live: LiveDriver;
 }
