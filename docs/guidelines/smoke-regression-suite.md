@@ -10,7 +10,8 @@ It is not the per-PR e2e smoke tests in [`packages/e2e/`](../../packages/e2e/): 
 One journey per file in the QA profile's [`scenarios/`](../../.quality-inspector/qi-profile-dam/scenarios/) directory.
 The profile's [README](../../.quality-inspector/qi-profile-dam/README.md) lists the journeys.
 
-A file is a `# <title>` line, then `## AC-<k> — <name>` blocks numbered from 1, in the format of [acceptance-criteria.md](acceptance-criteria.md).
+A file is a `# <title>` line, then `## AC-<k> — <name>` blocks numbered from 1, each a Given, a When and a Then a user can check from outside, in the words a user reads.
+These Markdown journeys are a bridge: the acceptance suite's journeys in `packages/e2e/acceptance/features/journeys/` replace them, and a Markdown journey retires in the pull request that adds a Gherkin journey covering it on real models ([acceptance-criteria.md](acceptance-criteria.md#journeys)).
 Add `requires: <role>` under the title when the journey needs a second account (`member`, `inspector`, `outsider`); the owner is always signed in.
 
 - **Merging a file adds the journey.** The next night the QA agent writes its test from the text alone, runs it on `main`, and replays it every night after that.
