@@ -93,6 +93,40 @@ describe("start_thread", () => {
     expect(h.audits).toEqual(["start:success"]);
   });
 
+  /**
+   * TEST_SCENARIO: A thread whose first post Slack refused records Slack's own
+   * error code beside the failure (#6780), so the cause of a post that did
+   * not reach its channel can be read afterwards; a plain error records none.
+   */
+  it("records Slack's error code when Slack refused the thread's first post", async () => {
+    const details: unknown[] = [];
+    const results = [
+      {
+        error: "An API error occurred: not_in_channel",
+        refused: "not_in_channel",
+      },
+      { error: "socket hang up" },
+    ];
+    const h = await harness({
+      startThread: async () => results.shift()!,
+      audit: (_action, _outcome, detail) => details.push(detail),
+    });
+
+    for (let i = 0; i < 2; i++) {
+      const res = await h.call("start_thread", {
+        channel: "slack",
+        chatId: "C-BOUND",
+        text: "Which region?",
+      });
+      expect(res.isError).toBe(true);
+    }
+
+    expect(details).toEqual([
+      { hasCard: false, slackError: "not_in_channel" },
+      { hasCard: false },
+    ]);
+  });
+
   it("opens the thread with the card the platform built", async () => {
     const blocks = [
       { type: "header", text: { type: "plain_text", text: "Regions" } },

@@ -141,6 +141,22 @@ describe("a send Slack refused, across replicas", () => {
       refused: "missing_scope",
     });
 
+    // TEST_SCENARIO: a thread whose first post Slack refused keeps the refusal too (#6780).
+    vi.mocked(leaderWorker.startThread).mockResolvedValueOnce({
+      error: "An API error occurred: not_in_channel",
+      refused: "not_in_channel",
+    });
+    expect(
+      await follower.startThread("agent-1", ChannelType.Slack, {
+        sessionId: "s-1",
+        conversationId: "C-BOUND",
+        text: "Which region?",
+      }),
+    ).toEqual({
+      error: "An API error occurred: not_in_channel",
+      refused: "not_in_channel",
+    });
+
     // TEST_SCENARIO: a leader that never answers — the caller's own failure is not a refusal.
     const orphan = createChannelManager({
       slackWorker: fakeSlackWorker(),
