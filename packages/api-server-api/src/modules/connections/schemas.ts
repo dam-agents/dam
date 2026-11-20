@@ -139,6 +139,7 @@ export const CONNECTION_ENV_NAME_HINT =
 const commonFields = {
   templateId: z.string().min(1),
   name: connectionNameSchema,
+  toolMode: toolMode.optional(),
 };
 
 const oauthCreateInput = z.object({
@@ -149,7 +150,6 @@ const oauthCreateInput = z.object({
   clientId: z.string().min(1).optional(),
   clientSecret: z.string().min(1).optional(),
   appSlug: z.string().min(1).optional(),
-  fullAccess: z.boolean().optional(),
 });
 
 const headerCreateInput = z.object({
@@ -247,11 +247,6 @@ export const connectionUpdateGitHubUserTokenScopeInputSchema = z.object({
   repositoryIds: z.string().optional(),
   permissions: z.string().optional(),
   fullAccess: z.boolean().optional(),
-});
-
-export const connectionSetFullAccessInputSchema = z.object({
-  id: z.string().min(1),
-  fullAccess: z.boolean(),
 });
 
 export const connectionSetToolModeInputSchema = z.object({

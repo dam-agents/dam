@@ -447,9 +447,12 @@ Without a scope, `dam connection connect github` keeps the sign-in alone and sho
 Pass it only when the user asks for that, and tell them what it reaches.
 `dam connection list` marks such a connection `FULL ACCESS`, and in `--json` its `scope` is `{ "restricted": false, "fullAccess": true }`.
 
-A Slack Account connection (`dam connection connect slack`) is read only unless it has full access: the agent searches and reads Slack as the user, and the platform refuses every tool that posts or changes something, whatever the harness.
-`dam connection scope <connection> --full-access` lets the agent post and change things as the user, and `--read-only` takes that away; `dam connection scope <connection>` shows which it is.
-Pass `--full-access` only when the user asks for it, and tell them that anyone who can talk to the agent can then post as them.
+An MCP connection has a tool mode, which the platform enforces for every harness: `allow-all` lets every tool call through, `read-only` lets through only the tools that read and refuses the rest, and `needs-approval` holds every tool call until someone approves it.
+A Slack Account connection (`dam connection connect slack`) is `read-only` unless the user chooses otherwise; other MCP connections start as `allow-all`.
+`dam connection connect <template-or-url> --mode <mode>` sets the mode at connect, `dam connection scope <connection> --mode <mode>` changes it, and `dam connection scope <connection>` shows it.
+`dam connection tools <connection>` lists the server's tools, grouped into read and write tools, and `--refresh` reads the list again.
+Pass `--mode allow-all` only when the user asks for it, and tell them that anyone who can talk to the agent can then post and change things as them.
+`needs-approval` is an experimental feature; the server refuses it while the feature is off for the user.
 
 `dam connection scope <connection>` with no flags changes nothing: it shows the current scope and, under `available`, the accounts, repositories and permissions you can choose from.
 A flag you leave out keeps that part of the scope.

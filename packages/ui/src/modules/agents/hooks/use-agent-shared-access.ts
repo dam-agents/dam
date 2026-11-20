@@ -1,32 +1,32 @@
+import type { ToolMode } from "api-server-api";
 import { useMemo } from "react";
 
 import type { AgentView } from "../../../types.js";
 import { useAppConnections } from "../../connections/api/queries.js";
-import {
-  type ConnectionAccess,
-  connectionAccess,
-} from "../../connections/lib/access-choice.js";
+import { useToolApprovalOffered } from "../../connections/hooks/use-tool-approval-offered.js";
+import { shownToolMode } from "../../connections/lib/tool-mode.js";
 import { excludeProviderConnections } from "../../sandboxes/lib/provider-connections.js";
 import { useSatellites } from "../../satellites/api/queries.js";
 
-export interface SharedAccessChoice {
+export interface SharedToolMode {
   name: string;
-  access: ConnectionAccess;
+  mode: ToolMode;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Agent's connections that are read only or have full access, such as a Slack Account, with the mode of each, so a sharing warning can say what the people it is shared with can do through them. Null while the connections load.
-export function useAgentAccessChoices(
+// UNIT_BOUNDARY_DESCRIPTION: the Agent's connections whose rows name a tool mode, such as a Slack Account, with the mode of each, so a sharing warning can say what the people it is shared with can do through them. Null while the connections load.
+export function useAgentToolModes(
   agent: AgentView | null,
-): readonly SharedAccessChoice[] | null {
+): readonly SharedToolMode[] | null {
   const connections = useAppConnections({ enabled: agent !== null }).data;
+  const toolApproval = useToolApprovalOffered();
   return useMemo(() => {
     if (!agent || !connections) return null;
     const granted = new Set(agent.grantedConnectionIds);
     return connections.flatMap((c) => {
-      const access = granted.has(c.id) ? connectionAccess(c) : null;
-      return access ? [{ name: c.name, access }] : [];
+      const mode = granted.has(c.id) ? shownToolMode(c, toolApproval) : null;
+      return mode ? [{ name: c.name, mode }] : [];
     });
-  }, [agent, connections]);
+  }, [agent, connections, toolApproval]);
 }
 
 export function useAgentSharedAccess(

@@ -1,4 +1,4 @@
-import type { ConnectionTemplateView } from "api-server-api";
+import { type ConnectionTemplateView, toolModeSchema } from "api-server-api";
 import { z } from "zod";
 
 import { freeName, type NewNameRule } from "./connection-hierarchy.js";
@@ -23,6 +23,7 @@ export function buildTemplateFormSchema(
       name: z.string(),
       overrideDefaults: z.boolean(),
       access: z.enum(["narrowed", "full", "later"]),
+      toolMode: toolModeSchema.optional(),
       fields: z.record(z.string(), z.string()),
     })
     .superRefine((v, ctx) => {

@@ -200,18 +200,22 @@ export interface ProviderKeyRecheck {
   check: ProviderKeyCheck | null;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: marks a Connection, or its Template, whose owner chooses between read only and full access. Without full access the gateway lets only the Template's read tools pass. `fullAccessLabel` is the Template's own name for full access, such as "Can post as me".
-export const connectionAccessChoice = z.object({
-  fullAccessLabel: z.string(),
-});
-export type ConnectionAccessChoice = z.infer<typeof connectionAccessChoice>;
-
-// UNIT_BOUNDARY_DESCRIPTION: the tool mode of an MCP Connection as its owner sees it, with the modes it offers: only `allow-all` where the gateway cannot read the Connection's requests.
+// UNIT_BOUNDARY_DESCRIPTION: the tool mode of an MCP Connection as its owner sees it, with the modes it offers: only `allow-all` where the gateway cannot read the Connection's requests. `defaultMode` is its Template's default, `read-only` for a Slack Account, so a client can mark a Connection that allows more than its Template does.
 export const connectionToolAccess = connectionToolAccessRecord.extend({
   modes: z.array(toolMode).readonly(),
+  defaultMode: toolMode,
   tools: z.array(connectionTool).readonly().nullable(),
 });
 export type ConnectionToolAccess = z.infer<typeof connectionToolAccess>;
+
+// UNIT_BOUNDARY_DESCRIPTION: the tool modes a Template that makes an MCP Connection offers at connect, and the one a new Connection gets when the create names none. A Template whose MCP server has no auth offers `allow-all` alone.
+export const connectionTemplateToolAccess = z.object({
+  defaultMode: toolMode,
+  modes: z.array(toolMode).readonly(),
+});
+export type ConnectionTemplateToolAccess = z.infer<
+  typeof connectionTemplateToolAccess
+>;
 
 export const connectionProviderView = z.object({
   alias: z.string(),
@@ -250,7 +254,6 @@ export const connectionView = z.object({
   parentId: z.string().optional(),
   isParent: z.literal(true).optional(),
   fullAccess: z.literal(true).optional(),
-  accessChoice: connectionAccessChoice.optional(),
   toolAccess: connectionToolAccess.optional(),
   provider: connectionProviderView
     .extend({ preferred: z.boolean() })
@@ -295,7 +298,7 @@ export const connectionTemplateView = z.object({
   authKind: authKind,
   inputs: z.array(templateInput),
   extras: z.record(z.string(), z.unknown()).optional(),
-  accessChoice: connectionAccessChoice.optional(),
+  toolAccess: connectionTemplateToolAccess.optional(),
   provider: connectionProviderView.optional(),
 });
 export type ConnectionTemplateView = z.infer<typeof connectionTemplateView>;
@@ -452,9 +455,6 @@ export interface ConnectionsService {
     permissions?: string;
     fullAccess?: boolean;
   }): Promise<void>;
-
-  /** UNIT_BOUNDARY_DESCRIPTION: sets a Connection that offers the choice to read only or to full access. The gateway reads the choice on every tool call, so it holds from the next call with no restart. */
-  setFullAccess(input: { id: string; fullAccess: boolean }): Promise<void>;
 
   /** UNIT_BOUNDARY_DESCRIPTION: sets the tool mode of an MCP Connection, one of the modes it offers. The gateway reads the mode on every tool call, so it holds from the next call with no restart. */
   setToolMode(input: { id: string; mode: ToolMode }): Promise<void>;

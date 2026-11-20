@@ -1,17 +1,14 @@
 import { BoldList } from "../../../../components/inline-list.js";
 import { SharedChannelsPhrase } from "../../../connections/components/shared-channels-phrase.js";
 import type { SharedChannel } from "../../../sandboxes/lib/shared-channels.js";
-import type { SharedAccessChoice } from "../../hooks/use-agent-shared-access.js";
+import type { SharedToolMode } from "../../hooks/use-agent-shared-access.js";
 
-function AccessChoiceText({
-  choices,
-}: {
-  choices: readonly SharedAccessChoice[];
-}) {
-  const named = (access: SharedAccessChoice["access"]) =>
-    choices.filter((c) => c.access === access).map((c) => c.name);
+function ToolModeText({ modes }: { modes: readonly SharedToolMode[] }) {
+  const named = (mode: SharedToolMode["mode"]) =>
+    modes.filter((c) => c.mode === mode).map((c) => c.name);
   const readOnly = named("read-only");
-  const full = named("full");
+  const approval = named("needs-approval");
+  const full = named("allow-all");
   return (
     <>
       {readOnly.length > 0 && (
@@ -21,6 +18,13 @@ function AccessChoiceText({
           {readOnly.length === 1 ? "is" : "are"} read only: through{" "}
           {readOnly.length === 1 ? "it" : "them"} they can read what you can
           read, and change nothing.
+        </>
+      )}
+      {approval.length > 0 && (
+        <>
+          {" "}
+          Through <BoldList items={approval} limit={4} /> every tool call waits
+          until someone approves it.
         </>
       )}
       {full.length > 0 && (
@@ -37,13 +41,13 @@ function AccessChoiceText({
 export function BindSharingText({
   agentName,
   connectionNames,
-  accessChoices = [],
+  toolModes = [],
   audience,
   whisper,
 }: {
   agentName: string;
   connectionNames: readonly string[] | null;
-  accessChoices?: readonly SharedAccessChoice[];
+  toolModes?: readonly SharedToolMode[];
   audience: SharedChannel;
   whisper: boolean;
 }) {
@@ -74,7 +78,7 @@ export function BindSharingText({
         : <BoldList items={connectionNames} limit={4} />. Anyone in {phrase} can
         ask it to use {connectionNames.length === 1 ? "it" : "them"}, with your
         access.
-        <AccessChoiceText choices={accessChoices} />
+        <ToolModeText modes={toolModes} />
       </>
     );
   return whisper ? (

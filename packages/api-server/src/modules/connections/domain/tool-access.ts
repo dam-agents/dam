@@ -1,4 +1,9 @@
-import type { Connection, ConnectionTool, ToolMode } from "api-server-api";
+import type {
+  Connection,
+  ConnectionTemplateToolAccess,
+  ConnectionTool,
+  ToolMode,
+} from "api-server-api";
 import type { ConnectionTemplate } from "./connection-template.js";
 
 export type ToolAccessTemplate = Pick<
@@ -49,7 +54,9 @@ export function toolModeOf(
   );
 }
 
-export function isMcpConnection(connection: Connection): boolean {
+export function isMcpConnection(
+  connection: Pick<Connection, "contributions">,
+): boolean {
   return connection.contributions.some((c) => c.kind === "mcp-entry");
 }
 
@@ -85,9 +92,26 @@ export function mcpServerOf(
 }
 
 /* UNIT_BOUNDARY_DESCRIPTION: the tool modes an MCP Connection offers its owner, and none for any other Connection. All three where the gateway reads the Connection's requests, which is every MCP Connection with a Secret; allow all alone on one with no auth. */
-export function toolModesOf(connection: Connection): readonly ToolMode[] {
+export function toolModesOf(
+  connection: Pick<Connection, "auth" | "contributions">,
+): readonly ToolMode[] {
   if (!isMcpConnection(connection)) return [];
   return mcpServerOf(connection) ? ALL_TOOL_MODES : ["allow-all"];
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the tool modes a Template offers at connect, for a Template that makes an MCP Connection, and none for any other. A custom MCP server's address comes with the create, so its Template is known as MCP by its category. One with no auth offers allow all alone; the modes the Connection really offers are decided again from the Connection the create builds. */
+export function templateToolAccessOf(
+  template: Pick<
+    ConnectionTemplate,
+    "category" | "contributions" | "authKind" | "defaultToolMode"
+  >,
+): ConnectionTemplateToolAccess | undefined {
+  const makesMcp = template.category === "mcp" || isMcpConnection(template);
+  if (!makesMcp) return undefined;
+  return {
+    defaultMode: template.defaultToolMode ?? "allow-all",
+    modes: template.authKind === "none" ? ["allow-all"] : ALL_TOOL_MODES,
+  };
 }
 
 /* UNIT_BOUNDARY_DESCRIPTION: the tools as a Connection stores them. Where the Template declares its own read list, as the Slack Account does, that list decides which tools read, whatever hints the server sets. */

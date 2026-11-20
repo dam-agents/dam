@@ -2,6 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
   connectionHeaderNameSchema,
   type ConnectionTemplateView,
+  toolModeSchema,
 } from "api-server-api";
 import { type ReactNode, useMemo } from "react";
 import { type Control, Controller, useForm } from "react-hook-form";
@@ -15,11 +16,14 @@ import { getBrand } from "../../../brand.js";
 import { useDocsUrl } from "../../links/api/queries.js";
 import { DisclosureBox } from "../forms/disclosure-box.js";
 import { LabeledInput } from "../forms/labeled-input.js";
+import { ToolModeField } from "../forms/tool-mode-field.js";
 import { useMcpAuthDetection } from "../hooks/use-mcp-auth-detection.js";
 import { useTemplateCreateSubmit } from "../hooks/use-template-create-submit.js";
+import { useToolApprovalOffered } from "../hooks/use-tool-approval-offered.js";
 import { buildCreatePayload } from "../lib/build-create-payload.js";
 import { validateConnectionName } from "../lib/connection-name.js";
 import { validateMcpUrl } from "../lib/mcp-url.js";
+import { pickableToolModes } from "../lib/tool-mode.js";
 import { CatalogPaneHeader } from "./catalog-pane-header.js";
 import { OAuthPopupWait } from "./oauth-popup-wait.js";
 
@@ -36,6 +40,7 @@ const mcpFormSchema = z
     clientSecret: z.string(),
     headerName: z.string(),
     headerValue: z.string(),
+    toolMode: toolModeSchema,
   })
   .superRefine((v, ctx) => {
     const nameError = validateConnectionName(v.name);
@@ -91,21 +96,25 @@ export function McpCreatePane({
   onBack,
   onCreated,
 }: Props) {
-  const { control, handleSubmit, watch, formState } = useForm<McpFormValues>({
-    resolver: zodResolver(mcpFormSchema),
-    mode: "onChange",
-    defaultValues: {
-      name: "",
-      url: "",
-      clientId: "",
-      clientSecret: "",
-      headerName: "",
-      headerValue: "",
-    },
-  });
+  const { control, handleSubmit, watch, formState, setValue } =
+    useForm<McpFormValues>({
+      resolver: zodResolver(mcpFormSchema),
+      mode: "onChange",
+      defaultValues: {
+        name: "",
+        url: "",
+        clientId: "",
+        clientSecret: "",
+        headerName: "",
+        headerValue: "",
+        toolMode: "allow-all",
+      },
+    });
   const url = watch("url");
   const clientId = watch("clientId");
   const headerValue = watch("headerValue");
+  const toolMode = watch("toolMode");
+  const toolApproval = useToolApprovalOffered();
 
   const { detected, detecting } = useMcpAuthDetection(url);
   const cli = getBrand().short;
@@ -121,6 +130,10 @@ export function McpCreatePane({
   const showDetecting = detecting && !overriding;
   const template = templateById.get(
     wantsOAuth ? MCP_OAUTH_TEMPLATE_ID : MCP_NONE_TEMPLATE_ID,
+  );
+  const toolModes = pickableToolModes(
+    wantsOAuth || filled(headerValue) ? MCP_WITH_SECRET : undefined,
+    toolApproval,
   );
 
   const {
@@ -154,6 +167,7 @@ export function McpCreatePane({
       name: values.name,
       fields,
       overrideDefaults: true,
+      ...(toolModes.length > 0 ? { toolMode: values.toolMode } : {}),
     });
     if ("error" in payload) {
       emitToast({ kind: "error", message: payload.error });
@@ -257,6 +271,17 @@ export function McpCreatePane({
               />
             </div>
           </DisclosureBox>
+          {toolModes.length > 0 && (
+            <ToolModeField
+              value={toolMode}
+              onChange={(next) =>
+                setValue("toolMode", next, { shouldDirty: true })
+              }
+              modes={toolModes}
+              offered={toolApproval}
+              testIdPrefix="connection-access"
+            />
+          )}
         </div>
       </div>
       <div className="flex justify-end gap-3 border-t border-border px-5 py-4">
@@ -328,6 +353,11 @@ function McpField({
     />
   );
 }
+
+const MCP_WITH_SECRET = {
+  modes: toolModeSchema.options,
+  defaultMode: "allow-all" as const,
+};
 
 const EMPTY_TEMPLATE: ConnectionTemplateView = {
   id: MCP_NONE_TEMPLATE_ID,

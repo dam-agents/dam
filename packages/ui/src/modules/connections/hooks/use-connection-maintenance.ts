@@ -11,7 +11,9 @@ import {
   movesBetweenHosts,
   otherHosts,
 } from "../lib/github-enterprise-hosts.js";
+import { shownToolMode } from "../lib/tool-mode.js";
 import { useReauthenticateConnection } from "./use-reauthenticate-connection.js";
+import { useToolApprovalOffered } from "./use-tool-approval-offered.js";
 
 export function useConnectionMaintenance() {
   const [updating, setUpdating] = useState<ConnectionView | null>(null);
@@ -20,6 +22,7 @@ export function useConnectionMaintenance() {
   const { reauthenticate, busyId } = useReauthenticateConnection();
   const rotateKey = useRotateDamConnection();
   const hostsEnabled = useFeatures().data?.["github-enterprise-hosts"] ?? false;
+  const toolApproval = useToolApprovalOffered();
   const offeredHosts = gheSignInOfferedHosts(
     useConnectionTemplates().data ?? [],
   );
@@ -58,6 +61,13 @@ export function useConnectionMaintenance() {
     busy: busyId === (connection.parentId ?? connection.id),
   });
 
+  const toolModeAction = (
+    connection: ConnectionView,
+  ): Pick<RowMaintenanceActions, "onEditScope"> =>
+    shownToolMode(connection, toolApproval) !== null
+      ? { onEditScope: () => openEditScope(connection) }
+      : {};
+
   const rowActions = (
     connection: ConnectionView,
   ): RowMaintenanceActions | undefined => {
@@ -81,12 +91,16 @@ export function useConnectionMaintenance() {
           ...(connection.hasClientSecret
             ? { onUpdateCredential: () => openUpdate(connection) }
             : {}),
-          ...(connection.accessChoice ||
-          (connection.githubUserToken && connection.status !== "pending")
+          ...(connection.githubUserToken && connection.status !== "pending"
             ? { onEditScope: () => openEditScope(connection) }
             : {}),
+          ...toolModeAction(connection),
         };
       case "header":
+        return {
+          onUpdateCredential: () => openUpdate(connection),
+          ...toolModeAction(connection),
+        };
       case "client-credentials":
       case "sigv4":
         return { onUpdateCredential: () => openUpdate(connection) };

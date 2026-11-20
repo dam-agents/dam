@@ -4,12 +4,14 @@ import type {
   ConnectionCredentialUpdate,
   ConnectionRequestSecretInput,
   ConnectionTemplateView,
+  ConnectionToolAccess,
   ConnectionView,
   CredentialCheck,
   GitHubAppInstallationProbe,
   GitHubUserTokenProbe,
   SecretRequestState,
   SecretRequestTicket,
+  ToolMode,
 } from "api-server-api";
 import type { Result } from "../../../result.js";
 import { trpcCall } from "../../shared/trpc/classify.js";
@@ -68,10 +70,8 @@ export interface ConnectionService {
     permissions?: string;
     fullAccess?: boolean;
   }): Promise<ConnResult<void>>;
-  setFullAccess(input: {
-    id: string;
-    fullAccess: boolean;
-  }): Promise<ConnResult<void>>;
+  setToolMode(input: { id: string; mode: ToolMode }): Promise<ConnResult<void>>;
+  refreshTools(id: string): Promise<ConnResult<ConnectionToolAccess>>;
   createFromParent(input: {
     parentId: string;
     name: string;
@@ -206,10 +206,13 @@ export function createConnectionService(deps: {
         await deps.trpc.connections.updateGitHubUserTokenScope.mutate(input);
       });
     },
-    async setFullAccess(input) {
+    async setToolMode(input) {
       return trpcCall(async () => {
-        await deps.trpc.connections.setFullAccess.mutate(input);
+        await deps.trpc.connections.setToolMode.mutate(input);
       });
+    },
+    async refreshTools(id) {
+      return trpcCall(() => deps.trpc.connections.refreshTools.mutate({ id }));
     },
     async updateGitHubAppScope(input) {
       return trpcCall(async () => {

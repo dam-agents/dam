@@ -135,7 +135,12 @@ The api-server reads the server's **tool list** itself, as an MCP client with th
 It reads the list when the credential first works, at create or at the OAuth callback, again when a new credential replaces the old one, and when the owner refreshes it, and stores each tool's name and whether it reads: the server's `readOnlyHint`.
 A list that fails keeps the tools read before and stores why, for the owner to see, and never fails the create or the update.
 A Template may declare its own read list, as the Slack Account does, and that list wins over the server's hints, in the stored list and at the gate.
-The Slack Account's default is read only, and its connect form and its "Can post as me" choice set allow all or read only.
+The Slack Account's default is read only.
+With the `mcp-tool-approval` [experimental feature](features.md) on, the owner picks the mode of every MCP Connection that offers more than allow all, at connect and later in its tool access dialog, which also shows the stored tool list, read tools first, and refreshes it.
+The row names the mode in the line under the Connection's name, marks needs approval, and marks allow all where the Template's default is read only, so posting as the owner always shows.
+With the feature off, only a Template whose default is read only shows a choice: the Slack Account keeps its two-way choice between read only and "Can post as me", which is allow all, and other MCP Connections show no mode.
+A Connection still in needs approval when the feature is turned off keeps its mark and its dialog, so the owner can switch it to another mode it offers, but not back.
+The CLI sets the mode with `--mode` and lists the tools with `dam connection tools` ([cli](cli.md)).
 In read only the gateway lets only the read tools pass, and a tool the list does not name is not a read tool: a tool the server adds later is refused until a new read of the list names it as reading.
 In needs approval the gateway holds every tool call, read tools included, as a tool-call approval (below) that shows the tool and its arguments where network approvals show; approve once sends it, and deny once or no answer within the hold window refuses it.
 Only an owner with the `mcp-tool-approval` [experimental feature](features.md) on can choose it.

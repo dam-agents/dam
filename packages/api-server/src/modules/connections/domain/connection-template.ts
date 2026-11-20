@@ -9,6 +9,7 @@ import {
 } from "api-server-api";
 import type { CredentialCheckKind } from "./credential-check.js";
 import { applyCallbackAlias } from "./oauth-callback-url.js";
+import { templateToolAccessOf } from "./tool-access.js";
 
 export type ConnectionTemplate =
   | OAuthConnectionTemplate
@@ -23,10 +24,9 @@ export interface ConnectionFamily {
   title: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a Template's own read list for its MCP server, which wins over the hints the server sets. `readTools` are the only tools a read-only Connection may call there, and `fullAccessLabel` is the Template's own name for the allow-all mode. A tool the server adds later is not in the list, so a read-only Connection cannot call it.
+// UNIT_BOUNDARY_DESCRIPTION: a Template's own read list for its MCP server, which wins over the hints the server sets. `readTools` are the only tools a read-only Connection may call there. A tool the server adds later is not in the list, so a read-only Connection cannot call it.
 export interface TemplateToolAccess {
   readTools: readonly string[];
-  fullAccessLabel: string;
 }
 
 interface TemplateCommon {
@@ -196,6 +196,7 @@ export function templateToView(
   familyPreset?: FamilyCredsPreset,
 ): ConnectionTemplateView {
   const showsCallbackUrl = t.authKind === "oauth" && !t.dynamicRegistration;
+  const toolAccess = templateToolAccessOf(t);
   const alias = t.authKind === "oauth" ? t.localhostCallbackAlias : undefined;
   const extras = {
     ...t.extras,
@@ -217,9 +218,7 @@ export function templateToView(
     authKind: t.authKind,
     inputs: inputsFor(t, familyPreset),
     ...(Object.keys(extras).length > 0 ? { extras } : {}),
-    ...(t.toolAccess
-      ? { accessChoice: { fullAccessLabel: t.toolAccess.fullAccessLabel } }
-      : {}),
+    ...(toolAccess ? { toolAccess } : {}),
   };
 }
 

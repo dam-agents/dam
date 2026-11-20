@@ -4,6 +4,7 @@ import { ExplainerPopover } from "@/components/explainer-popover";
 import { Button } from "@/components/ui/button";
 
 import { getBrand } from "../brand.js";
+import { useToolApprovalOffered } from "../modules/connections/hooks/use-tool-approval-offered.js";
 import { useSlackInstallRequestUrl } from "../modules/links/api/queries.js";
 import { SlackInstallRequest } from "../modules/slack/components/slack-install-request.js";
 
@@ -64,6 +65,7 @@ export function SlackAccountExplainer({
   onGoToChannels?: () => void;
 }) {
   const installRequestUrl = useSlackInstallRequestUrl();
+  const toolApproval = useToolApprovalOffered();
   return (
     <ExplainerPopover
       side="bottom"
@@ -74,9 +76,21 @@ export function SlackAccountExplainer({
     >
       <p>
         Lets {forAgent ? "this agent" : "an agent"} use your Slack account to
-        search and read anywhere you can. It is read only unless you let it post
-        as you: then it also posts anywhere you can, and those posts come from
-        you, not the {getBrand().name} bot.
+        search and read anywhere you can.{" "}
+        {toolApproval ? (
+          <>
+            It is read only unless you change its tool access: with allow all it
+            also posts anywhere you can, and with needs approval each tool call
+            waits for your answer. Those posts come from you, not the{" "}
+            {getBrand().name} bot.
+          </>
+        ) : (
+          <>
+            It is read only unless you let it post as you: then it also posts
+            anywhere you can, and those posts come from you, not the{" "}
+            {getBrand().name} bot.
+          </>
+        )}
       </p>
       <p>
         Want people to chat with {forAgent ? "the agent" : "an agent"} in Slack?{" "}

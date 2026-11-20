@@ -132,6 +132,11 @@ Builds published before these accounts were added have only `qa-owner`; there an
     Its form asks what agents can do with it: **Read only**, the default, or **Can post as me**.
     Every row of the connection, also under an agent's **Connections**, says which in the line under its name (*Read only: …* or *Searches, reads and posts as you*), and one that can post also carries the red mark *Can post as me*; *Change access* in the row's menu switches between them.
     With *Read only* the platform refuses every Slack tool that posts or changes something, and the agent says so in its reply.
+    With the experimental feature `mcp-tool-approval` on, that choice becomes the **tool mode** of every MCP connection with a credential (the Slack Account, a custom MCP server with OAuth or a header): **Read only**, **Needs approval** or **Allow all**, at connect and in the row's *Tool access* dialog.
+    The dialog also lists the server's tools under *Read tools* and *Write tools*, with *Refresh*.
+    The row's line names the mode (*Allow all: …*, *Read only: …*, *Needs approval: …*); *Needs approval* carries an amber mark, and *Allow all* carries the red mark only on the Slack Account, which defaults to read only.
+    A custom MCP server with no auth offers allow all alone, so it shows no picker.
+    A connection left in *Needs approval* when the feature is turned off keeps its amber mark and its dialog (*Change access*), where *Needs approval* is the current card and the owner can only switch away from it.
     A test never drives Slack's own sign-in pages, so a criterion that needs the connection signed in is `blocked — Slack sign-in`, never failed; one that checks only the form, the marks or the dialog stays testable.
   - **Testability limit — Slack account linking.**
     A user links their Slack account only inside Slack: `/dam login` (then a DAM sign-in page), or `/dam bind` typed in the channel itself.

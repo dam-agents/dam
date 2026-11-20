@@ -18,11 +18,13 @@ import {
   labelFor,
 } from "../forms/field-copy.js";
 import { LabeledInput } from "../forms/labeled-input.js";
+import { useToolApprovalOffered } from "../hooks/use-tool-approval-offered.js";
 import { mutationMessage } from "../lib/mutation-message.js";
-import { ConnectionEditAccessDialog } from "./connection-edit-access-dialog.js";
+import { shownToolMode } from "../lib/tool-mode.js";
 import { ConnectionEditGithubAppScopeDialog } from "./connection-edit-github-app-scope-dialog.js";
 import { ConnectionEditGithubUserTokenScopeDialog } from "./connection-edit-github-user-token-scope-dialog.js";
 import { ConnectionMoveHostDialog } from "./connection-move-host-dialog.js";
+import { ConnectionToolAccessDialog } from "./connection-tool-access-dialog.js";
 
 export function ConnectionMaintenanceDialog({
   maintenance,
@@ -40,6 +42,7 @@ export function ConnectionMaintenanceDialog({
     closeMoveHost?: () => void;
   };
 }) {
+  const offered = useToolApprovalOffered();
   if (maintenance.movingHost && maintenance.closeMoveHost) {
     return (
       <ConnectionMoveHostDialog
@@ -48,9 +51,13 @@ export function ConnectionMaintenanceDialog({
       />
     );
   }
-  if (maintenance.editingScope?.accessChoice && maintenance.closeEditScope) {
+  if (
+    maintenance.editingScope &&
+    shownToolMode(maintenance.editingScope, offered) !== null &&
+    maintenance.closeEditScope
+  ) {
     return (
-      <ConnectionEditAccessDialog
+      <ConnectionToolAccessDialog
         connection={maintenance.editingScope}
         onClose={maintenance.closeEditScope}
       />

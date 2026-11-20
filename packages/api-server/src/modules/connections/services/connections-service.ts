@@ -531,31 +531,15 @@ export function createConnectionsService(deps: {
       ...oauthExtras,
       ...(conn.parentId ? { parentId: conn.parentId } : {}),
       ...(conn.isParent ? { isParent: true as const } : {}),
-      ...(hasFullAccess(conn, template) ? { fullAccess: true as const } : {}),
-      ...(template?.toolAccess
-        ? {
-            accessChoice: {
-              fullAccessLabel: template.toolAccess.fullAccessLabel,
-            },
-          }
+      ...((conn.auth.kind === "oauth" || conn.auth.kind === "github-app") &&
+      conn.auth.fullAccess === true
+        ? { fullAccess: true as const }
         : {}),
       ...(toolAccess ? { toolAccess } : {}),
       ...(provider
         ? { provider: { ...provider, preferred: conn.id === preferredId } }
         : {}),
     };
-  }
-
-  /* UNIT_BOUNDARY_DESCRIPTION: whether a Connection's view says full access. On a Template that declares tool access it is the allow-all mode, so a client that knows only the read-only choice keeps showing it; elsewhere it is GitHub's unnarrowed Connection. */
-  function hasFullAccess(
-    conn: Connection,
-    template: ToolAccessTemplate | null | undefined,
-  ): boolean {
-    if (template?.toolAccess) return toolModeOf(conn, template) === "allow-all";
-    return (
-      (conn.auth.kind === "oauth" || conn.auth.kind === "github-app") &&
-      conn.auth.fullAccess === true
-    );
   }
 
   function toolAccessView(
@@ -566,6 +550,7 @@ export function createConnectionsService(deps: {
     return {
       mode: toolModeOf(conn, template),
       modes: toolModesOf(conn),
+      defaultMode: template?.defaultToolMode ?? "allow-all",
       tools: conn.toolAccess?.tools ?? null,
       listedAt: conn.toolAccess?.listedAt ?? null,
       listError: conn.toolAccess?.listError ?? null,
@@ -573,8 +558,10 @@ export function createConnectionsService(deps: {
   }
 
   /* UNIT_BOUNDARY_DESCRIPTION: writes a Connection's tool mode, one of the modes it offers; needs approval only while the owner has the `mcp-tool-approval` feature. A mode that limits tool calls writes the Secret again first, so a Secret made before its Template declared tool access asks the gateway for request bodies. */
-  async function setToolMode(conn: Connection, mode: ToolMode): Promise<void> {
-    const template = deps.templates.get(conn.templateId);
+  async function assertToolModeOffered(
+    conn: Pick<Connection, "name" | "auth" | "contributions">,
+    mode: ToolMode,
+  ): Promise<void> {
     if (!toolModesOf(conn).includes(mode)) {
       throw new TRPCError({
         code: "BAD_REQUEST",
@@ -591,6 +578,11 @@ export function createConnectionsService(deps: {
           "Approval of each tool call is an experimental feature that is off for you, so this connection cannot be set to need approval.",
       });
     }
+  }
+
+  async function setToolMode(conn: Connection, mode: ToolMode): Promise<void> {
+    const template = deps.templates.get(conn.templateId);
+    await assertToolModeOffered(conn, mode);
     const from = await deps.connectionLock(
       connectionRefreshLockKey(conn.id),
       async () => {
@@ -2686,22 +2678,17 @@ export function createConnectionsService(deps: {
         (built.auth.kind === "oauth" || built.auth.kind === "github-app")
           ? withoutScope(built.auth)
           : built.auth;
-      const fullAccess =
-        effectiveInput.authKind === "oauth" && effectiveInput.fullAccess;
-      if (fullAccess && (!template.toolAccess || auth.kind !== "oauth")) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            "This connection has no read-only mode, so full access cannot be set on it.",
-        });
+      if (input.toolMode !== undefined) {
+        await assertToolModeOffered(
+          { name: connectionName, auth, contributions },
+          input.toolMode,
+        );
       }
-      const toolAccess: ConnectionToolAccessRecord | null = contributions.some(
-        (c) => c.kind === "mcp-entry",
-      )
+      const toolAccess: ConnectionToolAccessRecord | null = isMcpConnection({
+        contributions,
+      })
         ? {
-            mode: fullAccess
-              ? "allow-all"
-              : (template.defaultToolMode ?? "allow-all"),
+            mode: input.toolMode ?? template.defaultToolMode ?? "allow-all",
             tools: null,
             listedAt: null,
             listError: null,
@@ -2896,9 +2883,9 @@ export function createConnectionsService(deps: {
         templateId: template.id,
         name: connectionName,
         inputs: {
-          ...(isParent || template.toolAccess
-            ? withoutScopeInputs(stripSecretsFromInputs(input))
-            : stripSecretsFromInputs(input)),
+          ...(isParent
+            ? withoutScopeInputs(recordedInputsOf(input))
+            : recordedInputsOf(input)),
           ...sharedKbInputs,
           ...platform?.rememberedInputs,
           ...(keyCheck ? { [KEY_CHECK_INPUT_KEY]: keyCheck } : {}),
@@ -3365,24 +3352,6 @@ export function createConnectionsService(deps: {
       );
     },
 
-    async setFullAccess(input) {
-      const conn = await deps.repo.get(input.id, deps.ownerId);
-      if (!conn) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "connection not found",
-        });
-      }
-      if (!deps.templates.get(conn.templateId)?.toolAccess) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            "This connection has no read-only mode, so its access cannot be changed.",
-        });
-      }
-      await setToolMode(conn, input.fullAccess ? "allow-all" : "read-only");
-    },
-
     async setToolMode(input) {
       const conn = await deps.repo.get(input.id, deps.ownerId);
       if (!conn) {
@@ -3734,20 +3703,21 @@ function withoutScopeInputs(
   );
 }
 
-function stripSecretsFromInputs(input: {
+function recordedInputsOf(input: {
   authKind: ConnectionCreateInput["authKind"];
   [k: string]: unknown;
 }): Record<string, unknown> {
-  const SECRET_KEYS = [
+  const UNRECORDED_KEYS = [
     "value",
     "clientSecret",
     "privateKey",
     "accessKeyId",
     "secretAccessKey",
+    "toolMode",
   ];
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(input)) {
-    if (SECRET_KEYS.includes(k)) continue;
+    if (UNRECORDED_KEYS.includes(k)) continue;
     out[k] = v;
   }
   return out;

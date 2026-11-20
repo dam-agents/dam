@@ -1,9 +1,9 @@
 import type { ConnectionView } from "api-server-api";
 
 import { getBrand } from "../../../brand.js";
-import { accessReach } from "./access-choice.js";
 import { damActsAsYou, isDamConnection } from "./dam-connection.js";
 import { connectionScopeSummary, fullAccessReach } from "./github-access.js";
+import { toolModeReach } from "./tool-mode.js";
 
 export interface ConnectionDetail {
   account?: string;
@@ -17,7 +17,7 @@ type DetailedConnection = Pick<
   | "accountLabel"
   | "isParent"
   | "fullAccess"
-  | "accessChoice"
+  | "toolAccess"
   | "githubUserToken"
   | "githubAppScope"
   | "check"
@@ -33,9 +33,10 @@ function accountLine(connection: DetailedConnection): string | undefined {
 
 export function connectionDetail(
   connection: DetailedConnection,
+  toolApproval: boolean,
 ): ConnectionDetail {
   const account = accountLine(connection);
-  const access = accessReach(connection);
+  const access = toolModeReach(connection, toolApproval);
   if (access) return { account, reach: { text: access } };
   if (connection.fullAccess)
     return { account, reach: { text: fullAccessReach(connection) } };

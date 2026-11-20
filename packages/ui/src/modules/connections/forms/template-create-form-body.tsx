@@ -10,6 +10,7 @@ import { emitToast } from "@/lib/toast";
 import { useAppConnections } from "../api/queries.js";
 import { OAuthPopupWait } from "../components/oauth-popup-wait.js";
 import { useTemplateCreateSubmit } from "../hooks/use-template-create-submit.js";
+import { useToolApprovalOffered } from "../hooks/use-tool-approval-offered.js";
 import { buildCreatePayload } from "../lib/build-create-payload.js";
 import { templateSubmitLabel } from "../lib/catalog-providers.js";
 import { newParentNameRule } from "../lib/connection-hierarchy.js";
@@ -28,7 +29,7 @@ import {
   templateFormDefaults,
   type TemplateFormValues,
 } from "../lib/template-form-schema.js";
-import { AccessChoiceField } from "./access-choice-field.js";
+import { pickableToolModes } from "../lib/tool-mode.js";
 import { DisclosureBox } from "./disclosure-box.js";
 import { GithubAppScopePicker } from "./github-app-scope-picker.js";
 import { GithubAppSetupHint } from "./github-app-setup-hint.js";
@@ -38,6 +39,7 @@ import { LabeledInput } from "./labeled-input.js";
 import { OAuthAppHint } from "./oauth-app-hint.js";
 import { OverridableSection } from "./overridable-section.js";
 import { TemplateFieldInput } from "./template-field-input.js";
+import { ToolModeField } from "./tool-mode-field.js";
 
 const NO_CONNECTIONS: ConnectionView[] = [];
 
@@ -107,7 +109,12 @@ export function TemplateCreateFormBody({
       },
     });
   const isGithubApp = template.authKind === "github-app";
-  const [access, fields] = useWatch({ control, name: ["access", "fields"] });
+  const [access, fields, toolMode] = useWatch({
+    control,
+    name: ["access", "fields", "toolMode"],
+  });
+  const toolApproval = useToolApprovalOffered();
+  const toolModes = pickableToolModes(template.toolAccess, toolApproval);
   const alone = isGithubApp && access === "later";
 
   const {
@@ -282,15 +289,12 @@ export function TemplateCreateFormBody({
         </DisclosureBox>
       )}
 
-      {template.accessChoice && (
-        <AccessChoiceField
-          value={access === "full" ? "full" : "read-only"}
-          onChange={(next) =>
-            setValue("access", next === "full" ? "full" : "narrowed", {
-              shouldDirty: true,
-            })
-          }
-          fullAccessLabel={template.accessChoice.fullAccessLabel}
+      {template.toolAccess && toolModes.length > 0 && (
+        <ToolModeField
+          value={toolMode ?? template.toolAccess.defaultMode}
+          onChange={(next) => setValue("toolMode", next, { shouldDirty: true })}
+          modes={toolModes}
+          offered={toolApproval}
           testIdPrefix="connection-access"
         />
       )}

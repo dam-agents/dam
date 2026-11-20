@@ -16,10 +16,7 @@ import {
 const HOST = "mcp.example.com";
 
 const template = {
-  toolAccess: {
-    readTools: ["notes_search", "notes_read"],
-    fullAccessLabel: "Can write as me",
-  },
+  toolAccess: { readTools: ["notes_search", "notes_read"] },
   defaultToolMode: "read-only" as const,
 };
 

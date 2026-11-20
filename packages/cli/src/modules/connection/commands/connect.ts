@@ -6,6 +6,7 @@ import type {
   ConnectionTemplateView,
   CredentialCheck,
   SecretlessConnectionCreateInput,
+  ToolMode,
 } from "api-server-api";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { BrowserOpener } from "../../auth/index.js";
@@ -27,7 +28,6 @@ import {
   type ConfigFlagError,
   resolveConfigInputFlags,
 } from "../domain/config-inputs.js";
-import { accessNote } from "../domain/access-choice.js";
 import { credentialCheckWarning } from "../domain/credential-check.js";
 import {
   connectFromHint,
@@ -43,6 +43,11 @@ import {
   scopeOfSent,
   sentReach,
 } from "../domain/github-scope.js";
+import {
+  parseToolMode,
+  TOOL_MODE_FLAG_HINT,
+  toolModeNote,
+} from "../domain/tool-mode.js";
 import type { ConnectionService } from "../services/connection-service.js";
 import {
   choosesReach,
@@ -80,6 +85,7 @@ interface ConnectOpts {
   repositoryIds?: string;
   permissions?: string;
   fullAccess?: boolean;
+  mode?: string;
   from?: string;
   headerName?: string;
   valueFormat?: string;
@@ -180,8 +186,12 @@ export function buildConnectCommand(deps: {
     .option(
       "--full-access",
       "let the connection reach everything the GitHub sign-in or installation reaches: " +
-        "every account, repository and permission (GitHub, GitHub App installation); " +
-        "for a Slack Account, let the agent also post and change things as you, where the default is read only",
+        "every account, repository and permission (GitHub, GitHub App installation)",
+    )
+    .option(
+      "--mode <mode>",
+      "the tool mode of an MCP connection, such as a Slack Account: allow-all, read-only or needs-approval " +
+        "(default: the template's, read-only for a Slack Account and allow-all elsewhere)",
     )
     .option("--header-name <name>", "input: header name")
     .option("--value-format <format>", "input: header value format")
@@ -277,7 +287,8 @@ export function buildConnectCommand(deps: {
         "      --permissions contents:read,pull_requests:write\n" +
         "  dam connection connect github --full-access --no-browser\n" +
         "  dam connection connect slack   # read only: the agent reads Slack as you\n" +
-        "  dam connection connect slack --full-access   # it can also post as you\n" +
+        "  dam connection connect slack --mode allow-all   # it can also post as you\n" +
+        "  dam connection connect slack --mode needs-approval   # each tool call waits for approval\n" +
         "  dam connection connect github-enterprise --host research.ghe.example.com\n" +
         "  dam connection connect --from github --account acme --repositories docs --name github-docs\n" +
         "  dam connection connect github-pat   # the token is entered on a DAM web page\n" +
@@ -312,6 +323,12 @@ export function buildConnectCommand(deps: {
       }
       if (opts.fullAccess && hasScopeFlags(opts)) {
         process.stderr.write(`error: ${FULL_ACCESS_CONFLICT}\n`);
+        process.exit(EXIT_INVALID_INPUT);
+      }
+      const toolMode =
+        opts.mode === undefined ? undefined : parseToolMode(opts.mode);
+      if (toolMode === null) {
+        process.stderr.write(`error: ${TOOL_MODE_FLAG_HINT}\n`);
         process.exit(EXIT_INVALID_INPUT);
       }
 
@@ -372,6 +389,16 @@ export function buildConnectCommand(deps: {
       const name = github
         ? await gitHubName(svc, host, resolved.name, opts)
         : resolved.name;
+      checkToolMode(template, toolMode);
+      if (template.toolAccess && !json) {
+        process.stderr.write(
+          toolModeNote(
+            name,
+            template.toolAccess,
+            toolMode ?? template.toolAccess.defaultMode,
+          ),
+        );
+      }
 
       const configRes = resolveConfigInputFlags(template, opts.config ?? []);
       if (!configRes.ok) {
@@ -389,7 +416,7 @@ export function buildConnectCommand(deps: {
           ...configRes.value,
           ...(secretOnPage ? pagePlaceholders(template) : {}),
         },
-        opts.fullAccess === true,
+        { fullAccess: opts.fullAccess === true, toolMode },
       );
       if ("error" in payload) {
         process.stderr.write(`error: ${payload.error}\n`);
@@ -619,25 +646,19 @@ async function resolveSlugTemplate(args: {
     process.exit(EXIT_INVALID_INPUT);
   }
 
-  if (
-    opts.fullAccess &&
-    !splitsIntoParent(template) &&
-    !template.accessChoice
-  ) {
+  if (opts.fullAccess && !splitsIntoParent(template)) {
     process.stderr.write(
-      "error: --full-access applies only to a GitHub sign-in, a GitHub App installation or a Slack Account " +
-        `(github, github-enterprise, github-app, github-enterprise-app, slack), not '${template.id}'\n`,
+      "error: --full-access applies only to a GitHub sign-in or a GitHub App installation " +
+        `(github, github-enterprise, github-app, github-enterprise-app), not '${template.id}'\n` +
+        (template.toolAccess
+          ? "hint: an MCP connection takes --mode allow-all to let every tool call pass\n"
+          : ""),
     );
     process.exit(EXIT_INVALID_INPUT);
   }
 
   const name = (opts.name ?? slugifyTemplateName(template.name)).trim();
   validateName(name);
-  if (template.accessChoice && !json) {
-    process.stderr.write(
-      accessNote(name, template.accessChoice, opts.fullAccess === true),
-    );
-  }
   const host = await chooseOfferedHost(template, opts, json);
   const collected = await collectInputs(
     template,
@@ -902,13 +923,38 @@ function withoutSecret(
   }
 }
 
+function checkToolMode(
+  template: ConnectionTemplateView,
+  toolMode: ToolMode | undefined,
+): void {
+  if (toolMode === undefined) return;
+  if (!template.toolAccess) {
+    process.stderr.write(
+      `error: --mode applies only to an MCP server or a Slack Account, not '${template.id}'\n`,
+    );
+    process.exit(EXIT_INVALID_INPUT);
+  }
+  if (!template.toolAccess.modes.includes(toolMode)) {
+    process.stderr.write(
+      `error: '${template.id}' offers only --mode ${template.toolAccess.modes.join("|")}: ` +
+        "the gateway does not read the requests of an MCP server with no auth\n",
+    );
+    process.exit(EXIT_INVALID_INPUT);
+  }
+}
+
 function buildPayload(
   template: ConnectionTemplateView,
   name: string,
   values: Record<string, string>,
-  fullAccess: boolean,
+  access: { fullAccess: boolean; toolMode: ToolMode | undefined },
 ): ConnectionCreateInput | { error: string } {
-  const common = { templateId: template.id, name };
+  const { fullAccess, toolMode } = access;
+  const common = {
+    templateId: template.id,
+    name,
+    ...(toolMode ? { toolMode } : {}),
+  };
   const v = (k: string): string | undefined => {
     const s = values[k]?.trim();
     return s && s.length > 0 ? s : undefined;
@@ -923,7 +969,6 @@ function buildPayload(
         ...(v("clientId") ? { clientId: v("clientId")! } : {}),
         ...(v("clientSecret") ? { clientSecret: v("clientSecret")! } : {}),
         ...(v("appSlug") ? { appSlug: v("appSlug")! } : {}),
-        ...(fullAccess && template.accessChoice ? { fullAccess: true } : {}),
       };
     case "client-credentials":
       return {
