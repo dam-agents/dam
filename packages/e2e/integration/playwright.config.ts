@@ -54,11 +54,6 @@ const smokeStages: NamedProject[][] = [
       use: { ...devices["Desktop Chrome"] },
     },
     {
-      name: "connection",
-      testMatch: /02-.*\.spec\.ts$/,
-      use: { ...devices["Desktop Chrome"], storageState },
-    },
-    {
       name: "trpc-ws-auth",
       testMatch: /13-.*\.spec\.ts$/,
       use: { ...devices["Desktop Chrome"] },

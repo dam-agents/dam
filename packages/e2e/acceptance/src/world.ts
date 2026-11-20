@@ -6,6 +6,30 @@ export interface ConnectionRecord {
   id: string;
 }
 
+/** UNIT_BOUNDARY_DESCRIPTION: the variable a custom-header connection of the examples sets: one per connection name, so two connections never write one variable. */
+export function envNameOf(name: string): string {
+  return `ACCEPTANCE_${name.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the inputs of a custom-header connection the examples make, through any surface. */
+export function customHeader(
+  world: World,
+  name: string,
+  host: string,
+  variable = true,
+) {
+  return {
+    templateId: "custom-header",
+    name: world.unique(name),
+    authKind: "header" as const,
+    value: world.unique("acceptance-secret"),
+    host,
+    headerName: "x-api-key",
+    valueFormat: "{value}",
+    ...(variable ? { envName: envNameOf(name) } : {}),
+  };
+}
+
 export interface AgentRecord {
   owner: Persona;
   name: string;

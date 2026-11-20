@@ -15,7 +15,7 @@ import {
   preparePerson,
   warmMockAgent,
 } from "./people.js";
-import { World } from "./world.js";
+import { customHeader, World } from "./world.js";
 
 export type { Surface } from "./drivers/driver.js";
 
@@ -32,8 +32,9 @@ interface Setup {
   connection(
     persona: Persona,
     name: string,
-    kind: { host: string } | { provider: "openai" },
+    kind: { host: string; variable?: boolean } | { provider: "openai" },
   ): Promise<void>;
+  grant(persona: Persona, connection: string, agent: string): Promise<void>;
   runningAgent(
     persona: Persona,
     name: string,
@@ -153,16 +154,9 @@ export const test = base.extend<
         const unique = world.unique(name);
         const made =
           "host" in kind
-            ? await owner.api.connections.create.mutate({
-                templateId: "custom-header",
-                name: unique,
-                authKind: "header",
-                value: "acceptance-secret",
-                host: kind.host,
-                headerName: "x-api-key",
-                valueFormat: "{value}",
-                envName: "ACCEPTANCE_KEY",
-              })
+            ? await owner.api.connections.create.mutate(
+                customHeader(world, name, kind.host, kind.variable),
+              )
             : await owner.api.connections.create.mutate({
                 templateId: kind.provider,
                 name: unique,
@@ -181,6 +175,27 @@ export const test = base.extend<
           name: unique,
           id: made.id,
         });
+      },
+      grant: async (persona, connection, agent) => {
+        const owner = await cast.person(persona);
+        const agentId = world.agent(agent).id;
+        const connectionId = world.connection(connection).id;
+        await owner.api.connections.updateAgentConnections.mutate({
+          agentId,
+          grant: [connectionId],
+          revoke: [],
+        });
+        await expect
+          .poll(
+            async () =>
+              (
+                await owner.api.connections.getAgentConnections.query({
+                  agentId,
+                })
+              ).connections.map((c) => c.connectionId),
+            { timeout: 30_000, message: `${agent} never held ${connection}` },
+          )
+          .toContain(connectionId);
       },
       runningAgent: async (persona, name, { answer, publishes } = {}) => {
         const index = allocated.get(persona) ?? 0;

@@ -1,5 +1,3 @@
-import { expect, type Page } from "@playwright/test";
-
 import type { ApiClient } from "./api-client.js";
 
 export interface CustomHeaderConnectionInput {
@@ -9,35 +7,6 @@ export interface CustomHeaderConnectionInput {
   valueFormat: string;
   value: string;
   envName: string;
-}
-
-export async function createCustomHeaderConnection(
-  page: Page,
-  input: CustomHeaderConnectionInput,
-): Promise<void> {
-  await page
-    .getByTestId("app-sidebar")
-    .getByRole("button", { name: "Settings", exact: true })
-    .click();
-  await page.getByRole("tab", { name: "Connections", exact: true }).click();
-  await page.getByTestId("open-connection-catalog").click();
-  await page.getByTestId("catalog-tab-custom-headers").click();
-  await page
-    .getByRole("dialog")
-    .getByTestId("catalog-new-custom-header")
-    .click();
-
-  await page.getByTestId("connection-field-name").fill(input.name);
-  await page.getByTestId("connection-field-host").fill(input.host);
-  await page.getByTestId("connection-field-headerName").fill(input.headerName);
-  await page
-    .getByTestId("connection-field-valueFormat")
-    .fill(input.valueFormat);
-  await page.getByTestId("connection-field-value").fill(input.value);
-  await page.getByTestId("connection-field-envName").fill(input.envName);
-
-  await page.getByTestId("connection-create-submit").click();
-  await expect(page.getByTestId("catalog-close")).toBeHidden();
 }
 
 export async function getConnectionId(

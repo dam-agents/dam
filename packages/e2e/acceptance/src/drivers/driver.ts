@@ -37,6 +37,20 @@ export interface ConnectionsDriver {
     agentName: string,
   ): Promise<void>;
   expectGrantRefused(person: Person, reason: RegExp): Promise<void>;
+  make(
+    person: Person,
+    name: string,
+    host: string,
+    forAgent?: string,
+  ): Promise<void>;
+  remove(person: Person, name: string): Promise<void>;
+  replaceSecret(person: Person, name: string): Promise<void>;
+  expectHeld(
+    person: Person,
+    connectionName: string,
+    agentName: string,
+    held: boolean,
+  ): Promise<void>;
 }
 
 export interface ChatDriver {

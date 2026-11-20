@@ -33,12 +33,24 @@ export async function waitForAgentIdRunning(
   agentId: string,
   { timeoutMs = AGENT_RUNNING_TIMEOUT_MS }: { timeoutMs?: number } = {},
 ): Promise<void> {
+  // UNIT_BOUNDARY_DESCRIPTION: the suite's shared agent goes to sleep when no spec has used it for a while, which fewer chained specs make likelier, so a spec that waits for it to run wakes it, as opening its chat does.
+  let woken = false;
   await expect
-    .poll(async () => (await api.agents.get.query({ id: agentId })).state, {
-      timeout: timeoutMs,
-      intervals: [250, 500, 1_000],
-      message: `agent ${agentId} did not reach running state`,
-    })
+    .poll(
+      async () => {
+        const { state } = await api.agents.get.query({ id: agentId });
+        if (state === "hibernated" && !woken) {
+          woken = true;
+          await api.agents.wake.mutate({ id: agentId }).catch(() => {});
+        }
+        return state;
+      },
+      {
+        timeout: timeoutMs,
+        intervals: [250, 500, 1_000],
+        message: `agent ${agentId} did not reach running state`,
+      },
+    )
     .toBe("running");
 }
 
