@@ -27,7 +27,6 @@ export interface JobRow {
   agentId: string;
   tool: string;
   args: Record<string, unknown>;
-  transferDirection: "download" | "upload" | null;
   status: JobStatus;
   isError: boolean;
   exitCode: number | null;

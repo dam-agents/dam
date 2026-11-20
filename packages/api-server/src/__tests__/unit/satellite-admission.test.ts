@@ -529,7 +529,6 @@ describe("a claimed call", () => {
     agentId: "agent-1",
     tool: "run",
     args: { cmd: ["./process.sh"] },
-    transferDirection: null,
     status: "running",
     isError: false,
     exitCode: null,
@@ -557,7 +556,7 @@ describe("a claimed call", () => {
       touch: async () => {},
       setDraining: async () => {},
       takeCancellations: async () => [],
-      claimQueued: async () => [{ job, transferToken: "f".repeat(64) }],
+      claimQueued: async () => [job],
     };
     return createSatelliteWorkerOps({
       repo: repo as never,

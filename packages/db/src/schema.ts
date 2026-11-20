@@ -1065,6 +1065,9 @@ export const satelliteJobs = pgTable(
     reason: text("reason"),
     cancelRequested: boolean("cancel_requested").notNull().default(false),
     cancelSentAt: timestamp("cancel_sent_at", { withTimezone: true }),
+    /* UNIT_BOUNDARY_DESCRIPTION: Retired with the per-Job satellite file
+     * transfer, and kept because a released api-server still selects them, so a
+     * drop would break an image rollback. Drop them in a later release. */
     transferTokenHash: text("transfer_token_hash"),
     transferDirection: text("transfer_direction"),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
