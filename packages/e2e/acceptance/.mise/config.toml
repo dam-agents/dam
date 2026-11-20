@@ -28,3 +28,12 @@ description = "Every step in the feature files has a step definition: bddgen ref
 run = "pnpm exec bddgen"
 sources = ["features/**/*.feature", "src/**/*.ts", "playwright.config.ts"]
 outputs = [".features-gen/**/*"]
+
+[tasks."check:features"]
+description = "The feature files follow the writing rules: an example sits under a Rule, shows one action, keeps Given, When, Then in order and names no part of the screen; a journey names its surfaces"
+run = "node --test .mise/lib/feature-lint.test.mjs && node .mise/lib/feature-lint.mjs"
+sources = ["features/**/*.feature", ".mise/lib/feature-lint*.mjs", "{{vars.repo_root}}/pnpm-lock.yaml"]
+outputs = []
+deny_net = true
+deny_write = true
+cache.enabled = true

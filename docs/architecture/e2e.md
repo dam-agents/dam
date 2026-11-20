@@ -88,6 +88,10 @@ The **acceptance suite** in [`packages/e2e/acceptance`](../../packages/e2e/accep
 Its package depends only on the API contract package and its test tools, so a test cannot import the server's internals: `check:boundary` refuses any other dependency, and any import in its sources that leaves the package or names another package, in every import form TypeScript and Node read.
 A feature file holds **Rules**, each with concrete **Examples** in Given/When/Then form, written in the words of the [glossary](../ubiquitous-language.md) and never in the words of a screen.
 `playwright-bdd` turns the feature files into Playwright tests, and `check:steps` refuses a step that has no step definition.
+`check:features` holds the feature files to the writing rules: an Example sits under a Rule, shows one action (one When), keeps Given, When and Then in that order, ends in a Then, takes at most 8 steps and a tag of the allowed set, and names no part of the screen (a click, a button, a dialog, a menu, …), so a redesign changes a Driver and not the spec.
+A journey takes a looser profile: When and Then may alternate after its Givens, it takes at most 25 steps, and it names its surfaces.
+Names are unique across the files, so a report line points at one scenario.
+The `developers` team owns the feature files (`.github/CODEOWNERS`), and the main branch requires a code owner's review, so a change to what an Example means merges only with a person's approval, never the review bot's alone.
 
 Each step definition is one call into a **Driver**, the same steps for every surface, and a Driver is split by capability (session, agents, chat, …) so its code grows with the product's capabilities, not with the number of Examples.
 There is one Playwright project per surface.

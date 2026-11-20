@@ -3,6 +3,8 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const allowed = new Set([
+  "@cucumber/gherkin",
+  "@cucumber/messages",
   "@playwright/test",
   "@trpc/client",
   "@trpc/server",
