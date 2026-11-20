@@ -7,7 +7,7 @@ description: >
   Its security advisory says how to set agents up so credentials stay out of reach.
   It asks before it deletes anything and waits for the answer in a later message: the request is not that answer.
   Its map of the web app says where each task is done.
-  A DAM agent holding the install's own connection has the CLI and this skill already; the personal assistant reads it before a task.
+  A DAM agent holding the install's own connection has the CLI and this skill already; the personal assistant the install gave the user reads it before it starts on a task.
   It diagnoses another of the user's agents when asked why one failed, slowed or costs more, and drafts a platform problem report the user sends, posting nothing.
 ---
 
