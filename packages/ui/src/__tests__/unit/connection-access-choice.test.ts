@@ -108,8 +108,9 @@ describe("a Slack Account connection's row", () => {
 describe("sharing an agent that holds a Slack Account with a chat", () => {
   const text = (
     accessChoices: { name: string; access: "read-only" | "full" }[],
-  ) =>
-    renderToStaticMarkup(
+  ) => {
+    const host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(
       createElement(BindSharingText, {
         agentName: "helper",
         connectionNames: accessChoices.map((c) => c.name),
@@ -121,7 +122,9 @@ describe("sharing an agent that holds a Slack Account with a chat", () => {
         } as never,
         whisper: false,
       }),
-    ).replace(/<[^>]+>/g, "");
+    );
+    return host.textContent ?? "";
+  };
 
   // TEST_SCENARIO: a read-only Slack Account still lets the people in the chat read the owner's Slack through the agent, so the warning stays and says exactly that, and that nothing can be changed.
   it("says a read-only connection lets them read and change nothing", () => {

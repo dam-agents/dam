@@ -50,6 +50,7 @@ export function ConnectionEditAccessDialog({
         title={EDIT_ACCESS_TITLE}
         subtitle={connection.name}
         onClose={onClose}
+        closeDisabled={save.isPending}
         closeTestId="edit-access-close"
       />
       <DialogBody className="flex flex-col gap-4">
