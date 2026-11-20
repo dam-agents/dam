@@ -1,5 +1,5 @@
 import { realpathSync, statSync, type Stats } from "node:fs";
-import { lstat, mkdir, realpath } from "node:fs/promises";
+import { lstat, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
@@ -8,8 +8,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
  * through one directory, without trusting a path component. The machine is the
  * user's own, but the caller is a prompt-injectable Agent, so an operation must
  * not be steerable outside the root: every directory on the way is `lstat`ed and
- * must be real, and a file is opened with `O_NOFOLLOW` and `O_NONBLOCK` (so a
- * FIFO cannot hang the worker).
+ * must be real, and the last name is never reached through a link.
  *
  * A change is taken *inside* the verified parent directory: the process moves
  * into that directory's inode, proves it is still the one that was checked, and
@@ -91,7 +90,7 @@ export interface Proved {
   ino: number;
 }
 
-export async function realDirectory(path: string): Promise<boolean> {
+async function realDirectory(path: string): Promise<boolean> {
   const entry = await lstat(path).catch(() => null);
   if (entry === null || !entry.isDirectory() || entry.isSymbolicLink())
     return false;
@@ -128,7 +127,6 @@ type Walked = { ok: true; path: string } | { ok: false; reason: Refusal };
 export async function walkInRoot(
   root: string,
   segments: readonly string[],
-  create: boolean,
 ): Promise<Walked> {
   if ((await realpath(root).catch(() => null)) !== root)
     return { ok: false, reason: "outside" };
@@ -136,11 +134,8 @@ export async function walkInRoot(
   for (const segment of segments) {
     const next = resolveInside(current, [segment]);
     if (next === null) return { ok: false, reason: "outside" };
-    if ((await lstat(next).catch(() => null)) === null) {
-      if (!create) return { ok: false, reason: "no-such-file" };
-      if ((await mkdir(next, { mode: 0o700 }).catch(() => null)) === null)
-        return { ok: false, reason: "not-writable" };
-    }
+    if ((await lstat(next).catch(() => null)) === null)
+      return { ok: false, reason: "no-such-file" };
     if (!(await realDirectory(next))) return { ok: false, reason: "outside" };
     current = next;
   }

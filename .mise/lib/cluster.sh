@@ -213,8 +213,8 @@ traefik_values_timeout() {
 # before, so an install made under the old scheme is rewritten rather than listed
 # twice — twice would claim two ports and make two Service ports of one name.
 # The entrypoint also turns off Traefik's readTimeout, which defaults to 60 s for
-# a whole request including its body: a 5 GiB transfer, and `dam import` through
-# the same entrypoint, would otherwise be cut off mid-body.
+# a whole request including its body: `dam import` through that entrypoint would
+# otherwise be cut off mid-body.
 traefik_values_set() {
   local out
   out="$(ENTRY="$(traefik_entrypoint_name "$2")" LEGACY="platform${2:+-$2}" PORT="$3" yq -r '
