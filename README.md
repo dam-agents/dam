@@ -1,7 +1,5 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme-hero-dark.svg">
-  <img alt="DAM: Run AI agents on your own Kubernetes. Each agent runs in its own VM, works with your team in Slack, connects to GitHub and your other tools, and never holds your credentials." src="docs/assets/readme-hero.svg">
-</picture>
+<img src="docs/assets/readme-hero.svg#gh-light-mode-only" alt="DAM: Run AI agents on your own Kubernetes. Each agent runs in its own VM, works with your team in Slack, connects to GitHub and your other tools, and never holds your credentials.">
+<img src="docs/assets/readme-hero-dark.svg#gh-dark-mode-only" alt="DAM: Run AI agents on your own Kubernetes. Each agent runs in its own VM, works with your team in Slack, connects to GitHub and your other tools, and never holds your credentials.">
 
 <p align="center">
   <a href="#get-started"><strong>Get started</strong></a>
