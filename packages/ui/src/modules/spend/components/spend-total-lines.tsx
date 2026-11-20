@@ -34,7 +34,7 @@ export function SpendRangeLine({
   const shown = shownRange(range, startDay, today);
   if (!shown) return <p className={LINE}>{notMeasured(startDay)}</p>;
   const text = rangeLine(shown.range, shown.soFar);
-  if (!shown.cutAtStart) return <p className={LINE}>{text}</p>;
+  if (shown.soFar || !shown.cutAtStart) return <p className={LINE}>{text}</p>;
   return (
     <p className={LINE}>
       <Tooltip content={measuringStarted(startDay)}>
