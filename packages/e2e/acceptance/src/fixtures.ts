@@ -29,6 +29,11 @@ interface Cast {
 }
 
 interface Setup {
+  connection(
+    persona: Persona,
+    name: string,
+    kind: { host: string } | { provider: "openai" },
+  ): Promise<void>;
   runningAgent(
     persona: Persona,
     name: string,
@@ -52,7 +57,7 @@ async function signIn(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the fixtures every example and journey runs on. A worker owns the accounts of its parallel slot and signs each persona in once. The slot keeps booted mock Agents per persona, marked by their description, which the Given steps rename and script and later workers of the slot wake and reuse, so an example costs seconds instead of a machine boot. A Given step scripts an Agent through its environment, which every harness process the mock starts reads: its answer, `MOCK_DEFAULT_REPLY`, and a platform tool it calls on every turn, `MOCK_TOOL_CALL`; it sets the answer when the example names one, sets or clears the tool call on every warm Agent it takes, and waits until the Agent reports them. A test owns its World, its Driver, which the project's `surface` option picks, and one browser page per persona, which Playwright traces and a sign-in step replaces with a fresh one; a scenario tagged `@wip` is expected to fail until the behaviour it states exists; when it fails, a screenshot of each page, the World's evidence and the state of every Agent it named are attached to it.
+ * UNIT_BOUNDARY_DESCRIPTION: the fixtures every example and journey runs on. A worker owns the accounts of its parallel slot and signs each persona in once. The slot keeps booted mock Agents per persona, marked by their description, which the Given steps rename and script and later workers of the slot wake and reuse, so an example costs seconds instead of a machine boot. A Given step scripts an Agent through its environment, which every harness process the mock starts reads: its answer, `MOCK_DEFAULT_REPLY`, and a platform tool it calls on every turn, `MOCK_TOOL_CALL`; it sets the answer when the example names one, sets or clears the tool call on every warm Agent it takes, and waits until the Agent reports them. What a test makes beyond the warm Agents, connections and agents alike, is deleted when it ends, so a machine it booted does not hold its runner's memory. A test owns its World, its Driver, which the project's `surface` option picks, and one browser page per persona, which Playwright traces and a sign-in step replaces with a fresh one; a scenario tagged `@wip` is expected to fail until the behaviour it states exists; when it fails, a screenshot of each page, the World's evidence and the state of every Agent it named are attached to it.
  */
 export const test = base.extend<
   {
@@ -139,6 +144,40 @@ export const test = base.extend<
   setup: async ({ cast, world }, use) => {
     const allocated = new Map<Persona, number>();
     await use({
+      connection: async (persona, name, kind) => {
+        const owner = await cast.person(persona);
+        const unique = world.unique(name);
+        const made =
+          "host" in kind
+            ? await owner.api.connections.create.mutate({
+                templateId: "custom-header",
+                name: unique,
+                authKind: "header",
+                value: "acceptance-secret",
+                host: kind.host,
+                headerName: "x-api-key",
+                valueFormat: "{value}",
+                envName: "ACCEPTANCE_KEY",
+              })
+            : await owner.api.connections.create.mutate({
+                templateId: kind.provider,
+                name: unique,
+                authKind: "header",
+                value: "sk-acceptance-second-key",
+              });
+        world.connections.set(name, {
+          owner: persona,
+          name: unique,
+          id: made.id,
+        });
+        world.made.push({ kind: "connection", owner: persona, id: made.id });
+        world.note({
+          step: "connection made",
+          persona,
+          name: unique,
+          id: made.id,
+        });
+      },
       runningAgent: async (persona, name, { answer, publishes } = {}) => {
         const index = allocated.get(persona) ?? 0;
         allocated.set(persona, index + 1);
@@ -195,6 +234,15 @@ export const test = base.extend<
         world.note({ step: "agent ready", persona, name: unique, id });
       },
     });
+    for (const item of world.made.reverse()) {
+      const owner = await cast.person(item.owner);
+      if (item.kind === "agent")
+        await owner.api.agents.delete.mutate({ id: item.id }).catch(() => {});
+      else
+        await owner.api.connections.delete
+          .mutate({ id: item.id })
+          .catch(() => {});
+    }
   },
 
   pages: async ({ browser, cast }, use, testInfo) => {

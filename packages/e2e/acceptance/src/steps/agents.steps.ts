@@ -30,6 +30,12 @@ When(
 );
 
 When(
+  "{word} makes an agent called {string}",
+  async ({ driver, person }, persona: Persona, name: string) =>
+    driver.agents.make(await person(persona), name),
+);
+
+When(
   "{word} deletes {string}",
   async ({ driver, person }, persona: Persona, name: string) =>
     driver.agents.remove(await person(persona), name),
@@ -45,4 +51,10 @@ Then(
   "{word} does not see an agent called {string}",
   async ({ driver, person }, persona: Persona, name: string) =>
     driver.agents.expectListed(await person(persona), name, false),
+);
+
+Then(
+  "{string} holds {word}'s OpenAI provider",
+  async ({ driver, person }, agent: string, persona: Persona) =>
+    driver.agents.expectProvider(await person(persona), agent, "openai"),
 );

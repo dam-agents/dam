@@ -1,4 +1,4 @@
-import { expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 import type { World } from "../../world.js";
 import type { AgentsDriver } from "../driver.js";
@@ -42,6 +42,12 @@ export function uiAgents(world: World, pages: Pages): AgentsDriver {
       ).trim();
       world.agents.set(alias, { owner: person.persona, name, id });
       world.note({ step: "agent made in one click", alias, name, id });
+    },
+    async make() {
+      test.skip(true, "the web UI makes an agent from a starter kit");
+    },
+    async expectProvider() {
+      test.skip(true, "no UI driver for an agent's providers yet");
     },
     async remove(person, name) {
       const page = await pages.of(person);

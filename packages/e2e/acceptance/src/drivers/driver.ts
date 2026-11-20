@@ -11,6 +11,23 @@ export interface AgentsDriver {
   expectListed(person: Person, name: string, listed: boolean): Promise<void>;
   makeFromGeneralist(person: Person, alias: string): Promise<void>;
   remove(person: Person, name: string): Promise<void>;
+  make(person: Person, name: string): Promise<void>;
+  expectProvider(
+    person: Person,
+    agentName: string,
+    templateId: string,
+  ): Promise<void>;
+}
+
+export interface ConnectionsDriver {
+  lookAt(person: Person): Promise<void>;
+  expectListed(person: Person, name: string, listed: boolean): Promise<void>;
+  grant(
+    person: Person,
+    connectionName: string,
+    agentName: string,
+  ): Promise<void>;
+  expectGrantRefused(person: Person, reason: RegExp): Promise<void>;
 }
 
 export interface ChatDriver {
@@ -32,7 +49,7 @@ export interface ArtifactsDriver {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability (session, agents, chat, artifacts), independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
+ * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability (session, agents, chat, artifacts, connections), independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
  */
 export interface Driver {
   readonly surface: Surface;
@@ -40,4 +57,5 @@ export interface Driver {
   readonly agents: AgentsDriver;
   readonly chat: ChatDriver;
   readonly artifacts: ArtifactsDriver;
+  readonly connections: ConnectionsDriver;
 }

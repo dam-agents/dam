@@ -1,5 +1,6 @@
 import type { World } from "../../world.js";
 import type { Driver } from "../driver.js";
+import { uiConnections } from "./connections.js";
 import { uiArtifacts } from "./artifacts.js";
 import { uiAgents } from "./agents.js";
 import { uiChat } from "./chat.js";
@@ -16,5 +17,6 @@ export function uiDriver(world: World, pages: Pages): Driver {
     agents: uiAgents(world, pages),
     chat: uiChat(world, pages),
     artifacts: uiArtifacts(pages),
+    connections: uiConnections(world, pages),
   };
 }
