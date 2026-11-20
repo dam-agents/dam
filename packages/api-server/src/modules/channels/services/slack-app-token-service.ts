@@ -96,8 +96,7 @@ export function createSlackAppTokenService(
   const now = () => deps.rotation.now();
   const helmFingerprint = fingerprint(deps.helmToken);
   let exchangeRetryAt = 0;
-  let unsaved: { pair: StoredAppToken; replaces: string | null } | null =
-    null;
+  let unsaved: { pair: StoredAppToken; replaces: string | null } | null = null;
 
   if (deps.helmToken.startsWith(ROTATING_TOKEN_PREFIX)) {
     logAppToken("warn", "slack.app_token.rotating_in_helm", {
