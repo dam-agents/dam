@@ -28,6 +28,7 @@ import {
   templateFormDefaults,
   type TemplateFormValues,
 } from "../lib/template-form-schema.js";
+import { AccessChoiceField } from "./access-choice-field.js";
 import { DisclosureBox } from "./disclosure-box.js";
 import { GithubAppScopePicker } from "./github-app-scope-picker.js";
 import { GithubAppSetupHint } from "./github-app-setup-hint.js";
@@ -279,6 +280,19 @@ export function TemplateCreateFormBody({
             ))}
           </div>
         </DisclosureBox>
+      )}
+
+      {template.accessChoice && (
+        <AccessChoiceField
+          value={access === "full" ? "full" : "read-only"}
+          onChange={(next) =>
+            setValue("access", next === "full" ? "full" : "narrowed", {
+              shouldDirty: true,
+            })
+          }
+          fullAccessLabel={template.accessChoice.fullAccessLabel}
+          testIdPrefix="connection-access"
+        />
       )}
 
       {isGithubApp && (
