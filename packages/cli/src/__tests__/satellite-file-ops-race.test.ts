@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, symlinkSync } from "node:fs";
+import { lstatSync, mkdirSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import {
   chmod,
   lstat,
@@ -160,24 +160,31 @@ describe("an entry swapped between the walk and the step", () => {
     hooks.onRealpath = (path) => {
       if (path !== root) return;
       hooks.onRealpath = null;
-      rmSync(join(root, "d"), { recursive: true, force: true });
-      mkdirSync(join(root, "d"), { mode: 0o700 });
+      // TEST_SCENARIO: create the replacement while the original lives, so ext4 cannot reuse its inode.
+      mkdirSync(join(root, "d.new"), { mode: 0o700 });
+      renameSync(join(root, "d"), join(root, "d.old"));
+      renameSync(join(root, "d.new"), join(root, "d"));
+      expect(lstatSync(join(root, "d")).ino).not.toBe(seen.ino);
     };
 
-    expect(
-      failed(
-        await run(ops, {
-          op: "setattr",
-          path: "d",
-          args: { mode: 0o777, dev: seen.dev, ino: seen.ino },
-        }),
-      ),
-    ).toBe("ESTALE");
-    hooks.onRealpath = null;
+    try {
+      expect(
+        failed(
+          await run(ops, {
+            op: "setattr",
+            path: "d",
+            args: { mode: 0o777, dev: seen.dev, ino: seen.ino },
+          }),
+        ),
+      ).toBe("ESTALE");
+    } finally {
+      hooks.onRealpath = null;
+    }
 
     const now = await attrs(ops, "d");
     expect(now.ino).not.toBe(seen.ino);
     expect(now.mode).toBe(0o700);
+    rmSync(join(root, "d.old"), { recursive: true, force: true });
   });
 
   /**
