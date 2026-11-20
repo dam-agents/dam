@@ -43,12 +43,6 @@ const FEATURE_ROWS: FeatureRow[] = [
       "See the pre-release connection catalog: Google services, Spotify, YouTube and custom client credentials.",
   },
   {
-    id: "chat-forms",
-    label: "Chat forms",
-    description:
-      "Let agents put forms, choices and cards into their chat replies, for example during onboarding or a kit update, and send your answer back with one click.",
-  },
-  {
     id: "processes",
     label: "Processes panel",
     description:

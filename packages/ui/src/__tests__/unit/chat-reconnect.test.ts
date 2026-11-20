@@ -302,9 +302,6 @@ mockModule("../../modules/agents/hooks/use-slow-start.js", {
 mockModule("../../modules/a2ui/hooks/use-a2ui-auto-replies.js", {
   useA2uiAutoReplies: vi.fn(),
 });
-mockModule("../../modules/a2ui/hooks/use-chat-forms-enabled.js", {
-  useChatFormsEnabled: () => false,
-});
 mockModule("../../modules/files/hooks/use-file-tree.js", {
   useFileTree: () => ({ openFileHandler: vi.fn() }),
 });

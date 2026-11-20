@@ -33,7 +33,6 @@ import { A2uiActionProvider } from "../../a2ui/contexts/a2ui-action-context.js";
 import { A2uiConversationProvider } from "../../a2ui/contexts/a2ui-conversation-context.js";
 import { useA2uiAutoReplies } from "../../a2ui/hooks/use-a2ui-auto-replies.js";
 import { useA2uiConversation } from "../../a2ui/hooks/use-a2ui-conversation.js";
-import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
 import { composerLocked } from "../../a2ui/lib/composer-lock.js";
 import {
   conversationEmpty,
@@ -552,15 +551,12 @@ export function ChatView() {
     ...promptGate,
     sendPrompt: sendAndFollow,
   });
-  const chatFormsEnabled = useChatFormsEnabled();
-  const { data: chatFormPreferences } = useChatFormPreferences(
-    chatFormsEnabled ? selectedAgent : null,
-    { quiet: true },
-  );
+  const { data: chatFormPreferences } = useChatFormPreferences(selectedAgent, {
+    quiet: true,
+  });
   const a2uiConversation = useA2uiConversation(
     messages,
     sessionId ?? "",
-    chatFormsEnabled,
     chatFormPreferences,
   );
   const { withRendererMetadata } = a2uiConversation;

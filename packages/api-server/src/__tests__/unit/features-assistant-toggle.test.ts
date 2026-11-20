@@ -44,7 +44,7 @@ describe("the dambledore switch", () => {
   it("asks for nothing when it is switched off, or another feature is", async () => {
     const w = setup();
     await w.caller.features.setFlag({ feature: "dambledore", enabled: false });
-    await w.caller.features.setFlag({ feature: "chat-forms", enabled: true });
+    await w.caller.features.setFlag({ feature: "processes", enabled: true });
     expect(w.setFlag).toHaveBeenCalledTimes(2);
     expect(w.optInAssistant).not.toHaveBeenCalled();
   });
