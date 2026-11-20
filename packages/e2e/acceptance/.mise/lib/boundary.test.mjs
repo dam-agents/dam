@@ -48,7 +48,7 @@ const leaving = [
   'import { a } from "api-server";',
   'import { a } from "api-server/src/x.js";',
   'import { a } from "platform-ui";',
-  'import { a } from "e2e-playwright/src/lib/agents.js";',
+  'import { a } from "e2e-integration/src/lib/agents.js";',
   'import { a } from "@dam-agents/cli";',
   'import { a } from "file:///repo/packages/api-server/src/x.js";',
 ];

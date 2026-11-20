@@ -5,7 +5,7 @@
 # (E2E_SCOPE=pr), and the owner-gateway lane. A change to the code one of them
 # alone covers still needs it: a pull request merges on its own run, so it
 # would otherwise reach main with that spec never run.
-# packages/e2e/playwright/pr-scope.json is the one place that says which
+# packages/e2e/integration/pr-scope.json is the one place that says which
 # paths each deferred spec and lane covers; the Playwright config reads the
 # same file for the list it defers. Paths are git pathspecs, `exclude` taken
 # off every entry: tests, docs and skills ship nothing those specs boot.
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../../.." && pwd)"
-scope_file="$root/packages/e2e/playwright/pr-scope.json"
+scope_file="$root/packages/e2e/integration/pr-scope.json"
 
 # Pathspecs come out of jq one per line, so no pathspec may hold a newline.
 changed() {
@@ -46,7 +46,7 @@ select_scope() {
 self_check() {
   local fail=0 name pattern
   while read -r name; do
-    [ -f "$root/packages/e2e/playwright/src/tests/smoke/$name.spec.ts" ] ||
+    [ -f "$root/packages/e2e/integration/src/tests/smoke/$name.spec.ts" ] ||
       { echo "pr-scope.json: no smoke spec $name.spec.ts" >&2; fail=1; }
   done < <(jq -r '.specs | keys[]' "$scope_file")
   while read -r pattern; do

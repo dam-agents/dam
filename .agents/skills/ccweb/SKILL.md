@@ -97,7 +97,7 @@ Build the CLI with `mise run //packages/cli:build` and pass `--server http://loc
   For 1223 that is `chromium_headless_shell-1223/chrome-headless-shell-linux64/chrome-headless-shell` linking to the 1194 `chrome-linux/headless_shell`, plus empty `INSTALLATION_COMPLETE` and `DEPENDENCIES_VALIDATED` markers.
 - **`*.localhost`:** Chromium resolves it internally, but Node's `fetch` (token minting in the specs) goes through glibc, which does not.
   Add `127.0.0.1 keycloak.localhost` to `/etc/hosts`.
-- **Environment:** set `PLATFORM_BASE_URL=http://localhost:6555` and `PLATFORM_KEYCLOAK_URL=http://keycloak.localhost:6555` for an `e2e:install` cluster, then run `mise exec -- pnpm exec playwright test --project=<name>` from `packages/e2e/playwright`.
+- **Environment:** set `PLATFORM_BASE_URL=http://localhost:6555` and `PLATFORM_KEYCLOAK_URL=http://keycloak.localhost:6555` for an `e2e:install` cluster, then run `mise exec -- pnpm exec playwright test --project=<name>` from `packages/e2e/integration`.
   The `run` task depends on `install-browsers`, which downloads.
 - **CPU:** 4 cores; one agent already brings requests to about 87%, so a spec creating a second agent waits on `FailedScheduling: Insufficient cpu`.
   Delete idle agents first.

@@ -1,9 +1,14 @@
 # End-to-end suite
 
-Last verified: 2026-11-19
+Last verified: 2026-11-20
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so a full-suite run takes it twice, once per lane.
+
+The suite has two packages.
+[`packages/e2e/acceptance`](../../packages/e2e/acceptance/) holds the product's behaviour as feature files ([Acceptance suite](#acceptance-suite)).
+[`packages/e2e/integration`](../../packages/e2e/integration/) holds the specs of infrastructure and protocol mechanics that no user sees: machine boot, storage, runner release, S3 signing, harness tools, socket auth, gateway wedge, invocations and prompt delivery.
+It also still holds the smoke specs of product behaviour that the feature files have not replaced yet; each moves out when a feature file covers its behaviour.
 
 ## Lanes
 
@@ -63,7 +68,7 @@ A spec that never fails for real earns nothing on a pull request.
 
 A deferred spec still runs on a pull request whose change touches the code it alone covers.
 A pull request merges on its own run, so a spec deferred there would otherwise first run on main, after the merge.
-[`packages/e2e/playwright/pr-scope.json`](../../packages/e2e/playwright/pr-scope.json) is the one place that says it: each deferred spec with the paths it covers, as git pathspecs, the owner-gateway lane with the paths only that lane reaches, and the paths no entry counts — tests, Markdown and the skills an image ships, which no deferred spec boots.
+[`packages/e2e/integration/pr-scope.json`](../../packages/e2e/integration/pr-scope.json) is the one place that says it: each deferred spec with the paths it covers, as git pathspecs, the owner-gateway lane with the paths only that lane reaches, and the paths no entry counts — tests, Markdown and the skills an image ships, which no deferred spec boots.
 A change to `packages/agents/base/` or `packages/vm-runner/`, for example, takes `19-agent-machine`, the spec that boots a machine and reads its openrc runlevels.
 `e2e:pr-scope` diffs the pull request against its base with those pathspecs; the workflow's `docs-only` job runs it and passes the names it prints to both lanes as `E2E_PR_SPECS`, and starts the owner-gateway lane when its paths moved.
 A pull request whose change touches none of them keeps the reduced set alone.

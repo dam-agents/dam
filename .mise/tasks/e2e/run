@@ -147,7 +147,7 @@ trap cleanup EXIT
 # tRPC envelope to read a code from, and the rest never run. Ordering it here
 # leaves the second, dependency-driven invocation a no-op that installs nothing
 # and so restarts nothing.
-mise run //packages/e2e/playwright:install-browsers
+mise run //packages/e2e/integration:install-browsers
 
 # Nuke any pre-existing cluster before provisioning: a previous run may have
 # died before its own teardown fired. A half-removed k3s fails before any test
@@ -174,14 +174,14 @@ mise run e2e:install
 # so its data is brand new, and the reset would only bounce the apiserver and
 # gate on it again. The stored login is the one piece of the reset that lives
 # outside the cluster.
-rm -f packages/e2e/playwright/.auth/*.json
+rm -f packages/e2e/integration/.auth/*.json
 
 e2e_mark "suite started"
 suite_started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 suite_rc=0
 PLATFORM_BASE_URL="http://localhost:6555" \
 PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:6555" \
-  mise run //packages/e2e/playwright:run ${PLAYWRIGHT_ARGS[@]+-- "${PLAYWRIGHT_ARGS[@]}"} || suite_rc=$?
+  mise run //packages/e2e/integration:run ${PLAYWRIGHT_ARGS[@]+-- "${PLAYWRIGHT_ARGS[@]}"} || suite_rc=$?
 e2e_mark "suite finished"
 
 # The acceptance suite's examples and journeys run on the same install after the
