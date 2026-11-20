@@ -18,35 +18,31 @@ Given(
 );
 
 When(
-  "{word} sends {string} to {string}",
-  async ({ driver, person }, persona: Persona, text: string, name: string) =>
-    driver.sendMessage(await person(persona), name, text),
+  "{word} looks at the agents",
+  async ({ driver, person }, persona: Persona) =>
+    driver.agents.lookAt(await person(persona)),
 );
 
 When(
-  "{word} looks at the agents",
-  async ({ driver, person }, persona: Persona) =>
-    driver.lookAtAgents(await person(persona)),
+  "{word} makes an agent from the Generalist starter kit, known here as {string}",
+  async ({ driver, person }, persona: Persona, alias: string) =>
+    driver.agents.makeFromGeneralist(await person(persona), alias),
 );
 
-Then(
-  "{word} sees {string} answer {string}",
-  async (
-    { driver, person, world },
-    persona: Persona,
-    name: string,
-    answer: string,
-  ) => driver.expectAnswer(await person(persona), name, world.unique(answer)),
+When(
+  "{word} deletes {string}",
+  async ({ driver, person }, persona: Persona, name: string) =>
+    driver.agents.remove(await person(persona), name),
 );
 
 Then(
   "{word} sees an agent called {string}",
   async ({ driver, person }, persona: Persona, name: string) =>
-    driver.expectAgentListed(await person(persona), name, true),
+    driver.agents.expectListed(await person(persona), name, true),
 );
 
 Then(
   "{word} does not see an agent called {string}",
   async ({ driver, person }, persona: Persona, name: string) =>
-    driver.expectAgentListed(await person(persona), name, false),
+    driver.agents.expectListed(await person(persona), name, false),
 );

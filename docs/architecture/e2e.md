@@ -89,12 +89,16 @@ Its package depends only on the API contract package and its test tools, so a te
 A feature file holds **Rules**, each with concrete **Examples** in Given/When/Then form, written in the words of the [glossary](../ubiquitous-language.md) and never in the words of a screen.
 `playwright-bdd` turns the feature files into Playwright tests, and `check:steps` refuses a step that has no step definition.
 
-Each step definition is one call into a **Driver**: the same steps run through the API and through the web UI.
-Every Example runs in the `examples-api` project, through tRPC and the same ACP relay the web UI uses for a chat; an Example tagged `@ui` also runs in the `examples-ui` project, through the browser, as a test of its own.
-Given steps always set the state up through the API, whatever the project, so only the When and Then steps differ between the two.
+Each step definition is one call into a **Driver**, the same steps for every surface, and a Driver is split by capability (session, agents, chat, …) so its code grows with the product's capabilities, not with the number of Examples.
+There is one Playwright project per surface.
+Every Example runs in the `api` project, through tRPC and the same ACP relay the web UI uses for a chat; an Example tagged `@ui` also runs in the `ui` project, through the browser, and one tagged `@cli` in the `cli` project, through the CLI, each as a test of its own.
+Given steps always set the state up through the API, whatever the project, so only the When and Then steps differ between surfaces.
 The names and texts a feature file writes get a suffix unique to the run, so an implementation that special-cases an Example's literal values fails, and no test mistakes what another made for its own.
+A scenario tagged `@wip` is expected to fail: it states behaviour the product does not have yet, and it turns the run red the day the behaviour arrives, so the tag is removed then.
 
-The suite's **journeys** are a few standalone stories in the browser, such as a new owner's first use from signing in to an answer from their first Agent.
+The suite's **journeys** are a few standalone stories, such as a new owner's first use from signing in to an answer from their first Agent.
+A journey is a Gherkin scenario in `features/journeys/`, tagged `@journey`, built only from the steps the Examples use, so a step a journey needs is a step an Example can use.
+It runs only on the surfaces its tags name, and a step that crosses surfaces names its surface.
 Unlike the smoke suite's chained projects, a journey depends on no other test.
 
 Each Playwright worker signs in as the accounts of its own slot, `acceptance-<persona>-<slot>`, which the e2e values provision and nothing else uses, so tests in two workers never see each other's Agents.
