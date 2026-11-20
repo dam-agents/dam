@@ -8,8 +8,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use fuser::{
     AccessFlags, BsdFileFlags, FileAttr, FileHandle, FileType, Filesystem, FopenFlags, INodeNo,
     InitFlags, KernelConfig, LockOwner, OpenAccMode, OpenFlags, RenameFlags, ReplyAttr,
-    ReplyCreate, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyOpen, ReplyStatfs,
-    ReplyWrite, ReplyXattr, Request, TimeOrNow, WriteFlags,
+    ReplyCreate, ReplyData, ReplyDirectory, ReplyDirectoryPlus, ReplyEmpty, ReplyEntry, ReplyOpen,
+    ReplyStatfs, ReplyWrite, ReplyXattr, Request, TimeOrNow, WriteFlags,
 };
 use serde_json::json;
 
@@ -108,32 +108,58 @@ impl SatelliteFs {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one directory's entries as one call of the kernel may be given them: what the mount answers alone (`.` and `..`, and the grants, which are the mount's own listing) and, under a Satellite, the one operation that fetches the rest of that directory. The kernel's offset is the count of entries it has taken, so `.` and `..` are the first two of them and the platform's page starts at the offset less those two.
-type Shown = Vec<(u64, FileType, String)>;
+// UNIT_BOUNDARY_DESCRIPTION: one directory's entries as one call of the kernel may be given them: what the mount answers alone (`.` and `..`, and the grants, which are the mount's own listing) and, under a Satellite, the one operation that fetches the rest of that directory. The kernel's offset is the count of entries it has taken, so `.` and `..` are the first two of them and the platform's page starts at the offset less those two. An entry the platform described carries the attributes it came with, because a listing that hands the kernel a name alone costs it a `lookup` per entry; an entry the mount answers alone has none, and its attributes are the mount's own.
+#[derive(Debug, Clone)]
+pub(super) struct Entry {
+    number: u64,
+    generation: u64,
+    kind: FileType,
+    name: String,
+    attrs: Option<Attrs>,
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: the cookie one entry carries: the number of entries already handed to the kernel before it. A cookie that stayed inside the reply — restarting at three on the second one — would ask the kernel for the same window forever, which is a walk of a directory of more than a reply's worth of entries that never ends.
 pub(super) fn cookie(offset: u64, index: usize) -> u64 {
     offset + index as u64 + 1
 }
 
-fn entries(fs: &SatelliteFs, node: &Node, offset: u64) -> Result<Shown, Failure> {
+// UNIT_BOUNDARY_DESCRIPTION: one directory's entries for this call: the mount's own `.` and `..` first, then, under a Satellite, one operation for the page the kernel asked at. Nothing is kept between calls, so every page a walk asks for is as fresh as the operation that answered it, and a Satellite that went quiet or lost its grant answers here exactly as it does for any other operation.
+fn entries(fs: &SatelliteFs, node: &Node, offset: u64) -> Result<Vec<Entry>, Failure> {
+    let from = offset.saturating_sub(2);
     let mut shown = Vec::new();
     if offset == 0 {
         let number = fs.state.inodes().place(&node.satellite, &node.path);
-        shown.push((number, FileType::Directory, String::from(".")));
+        shown.push(Entry {
+            number,
+            generation: 0,
+            kind: FileType::Directory,
+            name: String::from("."),
+            attrs: None,
+        });
     }
     if offset <= 1 {
         let parent = match node.path.rsplit_once('/') {
             Some((parent, _)) => fs.state.inodes().place(&node.satellite, parent),
             None => inodes::ROOT,
         };
-        shown.push((parent, FileType::Directory, String::from("..")));
+        shown.push(Entry {
+            number: parent,
+            generation: 0,
+            kind: FileType::Directory,
+            name: String::from(".."),
+            attrs: None,
+        });
     }
-    let from = offset.saturating_sub(2);
     if node.satellite.is_empty() {
         for grant in fs.state.grants().iter().skip(from as usize) {
             let number = fs.state.inodes().place(&grant.name, "");
-            shown.push((number, FileType::Directory, grant.name.clone()));
+            shown.push(Entry {
+                number,
+                generation: 0,
+                kind: FileType::Directory,
+                name: grant.name.clone(),
+                attrs: None,
+            });
         }
         return Ok(shown);
     }
@@ -150,8 +176,14 @@ fn entries(fs: &SatelliteFs, node: &Node, offset: u64) -> Result<Shown, Failure>
             continue;
         }
         let path = child(node, &listed.name);
-        let (number, _) = fs.intern(&node.satellite, &path, &listed.attrs);
-        shown.push((number, listed.attrs.kind.file_type(), listed.name));
+        let (number, generation) = fs.intern(&node.satellite, &path, &listed.attrs);
+        shown.push(Entry {
+            number,
+            generation,
+            kind: listed.attrs.kind.file_type(),
+            name: listed.name,
+            attrs: Some(listed.attrs),
+        });
     }
     Ok(shown)
 }
@@ -248,7 +280,11 @@ fn caught<T>(what: &str, body: impl FnOnce() -> Result<T, Failure>) -> Result<T,
 impl Filesystem for SatelliteFs {
     fn init(&mut self, _req: &Request, config: &mut KernelConfig) -> std::io::Result<()> {
         let _ = config.set_max_write(wire::WRITE_MAX);
+        // UNIT_BOUNDARY_DESCRIPTION: the listing carries attributes, always rather than automatically, so a walk of a tree is not one `lookup` per entry. A kernel that does not offer it sends plain `readdir`, which this mount still answers.
         let _ = config.add_capabilities(InitFlags::FUSE_AUTO_INVAL_DATA);
+        let _ = config.add_capabilities(InitFlags::FUSE_DO_READDIRPLUS);
+        // UNIT_BOUNDARY_DESCRIPTION: name lookups run in parallel, which the kernel allows only when the mount asks for it: without it every `stat`, `open` and read of a file takes the kernel's lock on the directory it names, so four readers of one directory wait for each other one round trip at a time.
+        let _ = config.add_capabilities(InitFlags::FUSE_PARALLEL_DIROPS);
         Ok(())
     }
 
@@ -573,8 +609,49 @@ impl Filesystem for SatelliteFs {
             Ok(planned) => planned,
             Err(failure) => return reply.error(failure.errno()),
         };
-        for (index, (number, kind, name)) in shown.into_iter().enumerate() {
-            if reply.add(INodeNo(number), cookie(offset, index), kind, &name) {
+        for (index, entry) in shown.into_iter().enumerate() {
+            if reply.add(
+                INodeNo(entry.number),
+                cookie(offset, index),
+                entry.kind,
+                &entry.name,
+            ) {
+                break;
+            }
+        }
+        reply.ok();
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a listing that carries each entry's attributes, which is the one callback a walk of a tree spends most of its operations in: the kernel takes the attributes with the name, so the `lookup` of every entry is not asked for at all, and a file found by a walk costs the read that follows and nothing before it. The attributes are exactly those a `lookup` at that moment would answer, and the kernel caches them for the same window as any other entry, so a file that changed within the window is presented exactly as a `lookup` would present it.
+    fn readdirplus(
+        &self,
+        req: &Request,
+        ino: INodeNo,
+        _fh: FileHandle,
+        offset: u64,
+        mut reply: ReplyDirectoryPlus,
+    ) {
+        let planned = caught("readdirplus", || {
+            let node = self.node(ino.0)?;
+            entries(self, &node, offset)
+        });
+        let shown = match planned {
+            Ok(planned) => planned,
+            Err(failure) => return reply.error(failure.errno()),
+        };
+        for (index, entry) in shown.into_iter().enumerate() {
+            let attr = match &entry.attrs {
+                Some(attrs) => attr_of(entry.number, attrs, req),
+                None => local_attr(entry.number, FileType::Directory, 4096, 0o755, req),
+            };
+            if reply.add(
+                INodeNo(entry.number),
+                cookie(offset, index),
+                &entry.name,
+                &super::TTL,
+                &attr,
+                fuser::Generation(entry.generation),
+            ) {
                 break;
             }
         }

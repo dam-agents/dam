@@ -371,16 +371,25 @@ export function createSatelliteFileChannel(deps: {
     if (CREATING_OPS.includes(op)) counters.push(["created", 1]);
     if (op === "rename") counters.push(["renamed", 1]);
     if (DELETING_OPS.includes(op)) counters.push(["deleted", 1]);
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: The counter's own commands are independent, so
+     * they go together: run one after another they cost this operation seven
+     * store round trips before the machine is even asked, which is the whole of
+     * what a mounted tree pays between the guest and the worker when the machine
+     * is close to the platform.
+     */
+    const writes: Promise<unknown>[] = [];
     for (const [field, by] of counters)
-      await deps.redis.hincrby(key, field, by);
-    await deps.redis.expire(key, SUMMARY_TTL_SECONDS);
+      writes.push(deps.redis.hincrby(key, field, by));
+    writes.push(deps.redis.expire(key, SUMMARY_TTL_SECONDS));
 
     const ino = args?.ino;
     if (op === "read" && typeof ino === "number") {
       const set = openKey(minute, owner, satellite, agentId);
-      await deps.redis.sadd(set, `${String(args?.dev)}:${ino}`);
-      await deps.redis.expire(set, SUMMARY_TTL_SECONDS);
+      writes.push(deps.redis.sadd(set, `${String(args?.dev)}:${ino}`));
+      writes.push(deps.redis.expire(set, SUMMARY_TTL_SECONDS));
     }
+    await Promise.all(writes);
   }
 
   async function countAnswered(
@@ -629,11 +638,18 @@ export function createSatelliteFileChannel(deps: {
           };
         }
 
-        await countRelayed(owner, satellite, agentId, op, args, data?.length);
         await deps.bus.publish(
           WAKE_CHANNEL,
           JSON.stringify({ owner, satellite }),
         );
+        void countRelayed(
+          owner,
+          satellite,
+          agentId,
+          op,
+          args,
+          data?.length,
+        ).catch((err: unknown) => failed("count", err));
         return { ok: true, id };
       };
 
@@ -745,8 +761,6 @@ export function createSatelliteFileChannel(deps: {
         if (record.deadline < now()) return;
         if (Number(await deps.redis.del(opKey(input.id))) !== 1) return;
 
-        await releaseInflight(record.owner, record.satellite, record.agentId);
-        await countAnswered(record, input);
         await deps.bus.publish(
           `satfile:res:${record.holder}`,
           JSON.stringify({
@@ -756,6 +770,22 @@ export function createSatelliteFileChannel(deps: {
             ...(input.result === undefined ? {} : { result: input.result }),
             ...(input.data === undefined ? {} : { data: input.data }),
           }),
+        );
+        /**
+         * UNIT_BOUNDARY_DESCRIPTION: The release is detached so a slow store
+         * does not hold the answer back, and it is caught because a rejection
+         * with no handler ends the process. A release that fails costs nothing
+         * permanent: the in-flight counter was given a 120 s expiry when it was
+         * last incremented, so it goes by itself rather than shrinking the
+         * Satellite's capacity for good.
+         */
+        void releaseInflight(
+          record.owner,
+          record.satellite,
+          record.agentId,
+        ).catch((err: unknown) => failed("settle", err));
+        void countAnswered(record, input).catch((err: unknown) =>
+          failed("count", err),
         );
       } catch (err) {
         failed("settle", err);
