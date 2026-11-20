@@ -80,6 +80,7 @@ function AskAboutTurn({
   return (
     <AskAssistantLink
       agentId={agentId}
+      className="self-start"
       prefill={askAboutTurn({ agentName, sessionId, at, error })}
     />
   );

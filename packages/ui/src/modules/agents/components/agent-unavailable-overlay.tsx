@@ -103,16 +103,6 @@ export function AgentUnavailableOverlay({
       {description && (
         <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
       )}
-      {description && (state === "error" || state === "over_budget") && (
-        <AskAssistantLink
-          agentId={agent.id}
-          prefill={askAboutUnavailable({
-            agentName: agent.name,
-            at: new Date().toISOString(),
-            description,
-          })}
-        />
-      )}
       {state === "starting" && (
         <p role="status" className="sr-only">
           The agent is starting up.
@@ -145,6 +135,17 @@ export function AgentUnavailableOverlay({
         <Button onClick={() => restart(agent.id)} disabled={restarting}>
           <Restart size={14} /> Restart agent
         </Button>
+      )}
+      {description && (state === "error" || state === "over_budget") && (
+        <AskAssistantLink
+          agentId={agent.id}
+          className="self-center"
+          prefill={askAboutUnavailable({
+            agentName: agent.name,
+            at: new Date().toISOString(),
+            description,
+          })}
+        />
       )}
     </OverlayFrame>
   );

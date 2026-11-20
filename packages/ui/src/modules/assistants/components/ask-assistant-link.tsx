@@ -1,4 +1,4 @@
-import { FOCUS_RING } from "@/components/ui/focus-ring";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { useAgent } from "../../agents/api/queries.js";
@@ -15,20 +15,17 @@ export function AskAssistantLink({ agentId, prefill, className }: Props) {
   const { offered, label, ask } = useAskAssistant();
   if (!offered(agent)) return null;
   return (
-    <button
-      type="button"
+    <Button
+      variant="link"
+      size="inline"
+      className={cn("text-sm", className)}
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
         ask(prefill);
       }}
-      className={cn(
-        "self-start rounded-xs text-xs text-accent underline underline-offset-2 hover:no-underline",
-        FOCUS_RING,
-        className,
-      )}
     >
       {label}
-    </button>
+    </Button>
   );
 }
