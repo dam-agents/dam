@@ -336,9 +336,7 @@ An attached browser or CLI session means someone can decide, so a channel turn r
 
 **Egress Aliasing.** An Invocation target without detached egress has no egress identity: before any decision, the gate resolves the calling agent to its driver — recursively for chained Invocations, up to the root non-target agent — and runs rule match, hold, and approval against the driver.
 **Detached egress.** A driver may instead launch a child with egress of its own, open or scoped ([invocations](invocations.md#spawning)); the gate decides under the nearest such child up the chain, the caller first; only the owner widens a child past what its driver may give it.
-Two checks read the calling agent's own grants, because the target's gateway injects the target's own credentials.
-The [read-only check](connections.md#connection) comes first, after the spend and web search checks and before any rule is read: a target's read-only Connection limits the target's calls, whatever its driver holds.
-The provider-host check comes later, when no rule allows the request: a target's model calls pass over the driver's deny rules for the hosts of the provider the target holds.
+Two checks read the caller's own grants, as the target's gateway injects its own credentials: the [read-only check](connections.md#connection) and the provider-host check, so a target's model calls pass over the driver's deny rules for its provider's hosts.
 The link is live: rules are matched per request, so tightening or loosening the driver applies to its running targets immediately.
 Approval prompts raised by an aliased target's traffic surface as the driver's, stamped with the originating target, and approving permanently updates the driver's rules.
 The aliasing is application-layer only — the target's gateway still mounts and injects credentials for the target's own connection grants, so the target gains the driver's network *reach*, and only its own grants' credentials.
