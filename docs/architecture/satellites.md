@@ -1,6 +1,6 @@
 # Satellites
 
-Last verified: 2026-11-19
+Last verified: 2026-11-20
 
 ## Overview
 
@@ -223,6 +223,8 @@ Either way, a worker that cannot authenticate retries like any other failure but
 
 A Satellite is a **tool surface** or a **file tree**: a file tree has no tools and no Jobs, and therefore no Job row and no per-call record.
 Its Agent sees one directory per granted Satellite under `/mnt/sat`, served by a mount inside the Agent's own machine, and every call the mount cannot answer from its cache becomes a **File Operation** on a channel of its own beside Jobs ([Satellite Mount](../ubiquitous-language.md)).
+A directory's operation answers each entry with the attributes a lookup would return, so the kernel takes them with the listing and does not ask again for an entry it has just been given: within the 30-second window an entry the Agent listed is `stat`ed, opened and read without another operation for its attributes, and after the window the next listing or lookup answers them afresh.
+The mount keeps no copy of those attributes or of a listing's page: what it answers is what the machine said at that moment, and the window is the kernel's alone.
 A file tree once moved one file per Job through `list`, `stat`, `download` and `upload` tools and a transfer token; nothing offers those any more, and the mount replaces all of it.
 
 An operation is queued in the shared store under the owner, its Satellite and its Agent, and the machine's ordinary claim long-poll takes it up exactly as a Job is taken up: one operation per Agent per turn, in rotation, so one Agent's walk cannot starve another Agent's single read.

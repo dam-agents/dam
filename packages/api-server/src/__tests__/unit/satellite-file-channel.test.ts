@@ -294,6 +294,61 @@ describe("relaying one operation across two replicas", () => {
   });
 
   /**
+   * TEST_SCENARIO: The accounting that follows an answer is detached from it, so
+   * a store that refuses the release must not reject with no handler — which
+   * would end the process — and the Agent's answer must still arrive. The
+   * in-flight place the release would have freed is given a 120 s expiry when it
+   * is incremented, so a failed release costs capacity for that window and not
+   * for good.
+   */
+  it("answers even when releasing the in-flight place fails", async () => {
+    const store = fakeRedis();
+    const release = store.eval.bind(store);
+    store.eval = (async (...args: unknown[]) => {
+      if (String(args[0]).includes("satfile:release"))
+        throw new Error("the release was refused");
+      return release(...(args as Parameters<typeof release>));
+    }) as typeof store.eval;
+    const bus = fakeRedisBus();
+    const a = replica(store, bus, fakeBlobs());
+    const inflight = `satfile:inflight:${OWNER}:${SATELLITE}:${AGENT}`;
+
+    const queued = await a.channel.enqueue(
+      OWNER,
+      SATELLITE,
+      INCARNATION,
+      AGENT,
+      "getattr",
+      "notes/a.txt",
+      undefined,
+      undefined,
+      Date.now() + 5_000,
+    );
+    if (!queued.ok) throw new Error("the operation was refused");
+    const waiting = a.channel.awaitResult(queued.id);
+    const [item] = (await a.workerOps.claim(OWNER, {
+      satellite: SATELLITE,
+      capacity: 1,
+      waitMs: 100,
+    })) as FileWorkItem[];
+
+    await a.workerOps.fileResult(OWNER, {
+      satellite: SATELLITE,
+      id: item!.id,
+      incarnation: INCARNATION,
+      ok: true,
+      result: { kind: "file", size: 5 },
+    });
+
+    await expect(waiting).resolves.toEqual({
+      ok: true,
+      result: { kind: "file", size: 5 },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(await store.get(inflight)).toBe("1");
+  });
+
+  /**
    * TEST_SCENARIO: A worker can answer twice — a retry after a dropped
    * connection, or a bug. The operation is taken in the same step its answer is
    * checked, so the second answer finds nothing and the waiting request is
