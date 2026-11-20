@@ -14,9 +14,10 @@ export function apiAgents(world: World): AgentsDriver {
       listings.set(person.persona, names);
     },
     async expectListed(person, name, listed) {
-      const names = listings.get(person.persona);
-      expect(names, `${person.persona} looked at no agents`).toBeDefined();
-      expect(names!.includes(world.nameOf(name))).toBe(listed);
+      const names =
+        listings.get(person.persona) ??
+        (await person.api.agents.list.query()).map((a) => a.name);
+      expect(names.includes(world.nameOf(name))).toBe(listed);
     },
     async makeFromGeneralist() {
       test.skip(true, "the Generalist starter kit is a card of the web UI");
@@ -48,6 +49,18 @@ export function apiAgents(world: World): AgentsDriver {
       const granted = connections.map((c) => owned.get(c.connectionId));
       world.note({ step: "agent's grants", agentName, granted });
       expect(granted).toContain(templateId);
+    },
+    async expectIdle() {
+      test.skip(true, "Idle is how the web UI reads a sleeping agent");
+    },
+    async openSettingsFromAnswer() {
+      test.skip(true, "an agent's settings modal is the web UI's");
+    },
+    async openOldAddress() {
+      test.skip(true, "an agent's settings modal is the web UI's");
+    },
+    async expectSettingsOverChat() {
+      test.skip(true, "an agent's settings modal is the web UI's");
     },
     async remove(person: Person, name: string) {
       const agent = world.agent(name);

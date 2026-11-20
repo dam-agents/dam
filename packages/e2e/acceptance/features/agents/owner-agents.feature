@@ -24,3 +24,36 @@ Feature: An owner's agents
       When Ben looks at the agents
       Then Ben sees an agent called "notes"
       And Ben does not see an agent called "helper"
+
+  Rule: The Generalist makes a plain agent at once
+
+    @ui
+    Example: Ada makes an agent from the Generalist
+      When Ada makes an agent from the Generalist starter kit, known here as "first"
+      Then Ada sees an agent called "first"
+
+  Rule: An owner deletes an agent
+
+    @ui
+    Example: Ada deletes scratch
+      Given Ada has an agent called "scratch"
+      When Ada deletes "scratch"
+      Then Ada does not see an agent called "scratch"
+
+  Rule: An agent that has gone to sleep wakes to answer its owner
+
+    @ui
+    Example: helper wakes to answer Jo
+      Given Jo has a running agent called "helper" that answers "Hello Jo"
+      And "helper" has gone to sleep
+      When Jo sends "hello" to "helper"
+      Then Jo sees "helper" answer "Hello Jo"
+
+  Rule: An agent that has gone to sleep reads as idle
+
+    @ui
+    Example: Jo sees helper idle while it sleeps
+      Given Jo has a running agent called "helper"
+      And "helper" has gone to sleep
+      When Jo looks at the agents
+      Then Jo sees "helper" idle

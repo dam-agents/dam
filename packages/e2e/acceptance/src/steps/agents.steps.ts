@@ -17,6 +17,34 @@ Given(
     setup.runningAgent(persona, name, { answer }),
 );
 
+Given(
+  "{word} has an agent called {string}",
+  async ({ setup }, persona: Persona, name: string) =>
+    setup.agent(persona, name),
+);
+
+Given("{string} has gone to sleep", async ({ setup }, name: string) =>
+  setup.sleep(name),
+);
+
+Given(
+  "{word} has an answer from {string} in the chat",
+  async ({ driver, person }, persona: Persona, name: string) =>
+    driver.chat.send(await person(persona), name, "hello"),
+);
+
+When(
+  "{word} opens the settings of {string} from its answer",
+  async ({ driver, person }, persona: Persona, name: string) =>
+    driver.agents.openSettingsFromAnswer(await person(persona), name),
+);
+
+When(
+  "{word} opens the old address of the {word} of {string}",
+  async ({ driver, person }, persona: Persona, section: string, name: string) =>
+    driver.agents.openOldAddress(await person(persona), name, section),
+);
+
 When(
   "{word} looks at the agents",
   async ({ driver, person }, persona: Persona) =>
@@ -57,4 +85,22 @@ Then(
   "{string} holds {word}'s OpenAI provider",
   async ({ driver, person }, agent: string, persona: Persona) =>
     driver.agents.expectProvider(await person(persona), agent, "openai"),
+);
+
+Then(
+  "{word} sees {string} idle",
+  async ({ driver, person }, persona: Persona, name: string) =>
+    driver.agents.expectIdle(await person(persona), name),
+);
+
+Then(
+  "{word} sees the settings of {string} over its chat",
+  async ({ driver, person }, persona: Persona, name: string) =>
+    driver.agents.expectSettingsOverChat(await person(persona), name),
+);
+
+Then(
+  "{word} sees the settings of {string} over its chat, at its {word}",
+  async ({ driver, person }, persona: Persona, name: string, section: string) =>
+    driver.agents.expectSettingsOverChat(await person(persona), name, section),
 );

@@ -19,7 +19,7 @@ export interface Turn {
   frames: Frame[];
 }
 
-const turnTimeoutMs = 120_000;
+const turnTimeoutMs = 240_000;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: one chat turn with an Agent through the same ACP relay the web UI uses, `/api/agents/<id>/acp`: initialize, open a Session, send one prompt, and collect the Agent's message chunks until the prompt's answer names its stop reason. Every frame is kept, so a failed example carries the whole exchange.

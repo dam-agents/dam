@@ -26,6 +26,14 @@ export interface AgentsDriver {
     agentName: string,
     templateId: string,
   ): Promise<void>;
+  expectIdle(person: Person, name: string): Promise<void>;
+  openSettingsFromAnswer(person: Person, name: string): Promise<void>;
+  openOldAddress(person: Person, name: string, section: string): Promise<void>;
+  expectSettingsOverChat(
+    person: Person,
+    name: string,
+    section?: string,
+  ): Promise<void>;
 }
 
 export interface ConnectionsDriver {
