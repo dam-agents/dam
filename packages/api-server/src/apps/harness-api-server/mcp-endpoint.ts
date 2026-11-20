@@ -160,6 +160,20 @@ function namePost(
     : sent;
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: what a failed send records in its audit line:
+ * the error the agent was given, and Slack's own error code
+ * (`not_in_channel`, `channel_not_found`, …) when Slack refused the call — the
+ * one way to tell afterwards why a post did not go out. */
+function sendFailureAudit(
+  result: { ok: true } | { error: string; refused?: string },
+): { error?: string; slackError?: string } {
+  if (!("error" in result)) return {};
+  return {
+    error: result.error,
+    ...(result.refused ? { slackError: result.refused } : {}),
+  };
+}
+
 function attachmentFailureText(
   sent: string,
   repost: string,
@@ -431,7 +445,7 @@ export function createMcpSession(
 
   server.tool(
     "describe_channel",
-    "Describe a channel on this agent. Returns { chats: [{ id, title }] } listing reachable chats — on Slack the agent's bound channel first, then every other channel both the bot and the agent's owner are members of; on Telegram the bound conversations. Use the id as chatId in post or start_thread.",
+    "Describe a channel on this agent. Returns { chats: [{ id, title }] } listing the conversations this agent is connected to, the only ones it may post into (a Slack direct message aside, see post). Use the id as chatId in post or start_thread. A post into any other conversation is refused, also when the bot or your owner is in it.",
     { channel: z.enum([ChannelType.Slack, ChannelType.Telegram]) },
     async ({ channel }) => {
       const chats = await deps.channelManager.listConversations(
@@ -567,6 +581,7 @@ export function createMcpSession(
         hasCard: card !== undefined,
         ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
         ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
+        ...sendFailureAudit(result),
       },
     });
     if ("error" in result) return errorResult(result.error);
@@ -1009,6 +1024,7 @@ export function createMcpSession(
           hasAttachment: loaded !== undefined,
           ...(loaded ? { attachment: loaded.audit } : {}),
           ...(attachmentError ? { attachmentError } : {}),
+          ...sendFailureAudit(result),
         },
       });
       if ("error" in result) return errorResult(result.error);
@@ -1060,6 +1076,7 @@ export function createMcpSession(
         detail: {
           action: "react",
           emoji: emoji.trim().replace(/^:+|:+$/g, ""),
+          ...("error" in result ? { error: result.error } : {}),
         },
       });
       if ("error" in result) return errorResult(result.error);
