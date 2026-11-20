@@ -14,6 +14,7 @@ import type { SpendCheck } from "../../spend/index.js";
 import type { SpendLimitQuestions } from "./spend-limit-questions.js";
 import { type SettledVerdict, waitForVerdict } from "./held-verdict.js";
 import type { ModelCallBody, WebSearchGate } from "./web-search-gate.js";
+import type { ReadOnlyGate } from "./read-only-gate.js";
 
 export type ExtAuthzVerdict = "allow" | "deny";
 
@@ -27,7 +28,7 @@ export type ExtAuthzDecision =
   | ExtAuthzVerdict
   | {
       readonly verdict: "refuse";
-      readonly basis: "spend" | "rule" | "web-search";
+      readonly basis: "spend" | "rule" | "web-search" | "read-only";
       readonly response: DeniedResponse;
     };
 
@@ -47,6 +48,10 @@ interface ExtAuthzGateInput {
   /* UNIT_BOUNDARY_DESCRIPTION: set when the request came over a model-provider chain, whose spend meter marks every request, billable or not, so a path spelled to look unbillable is still read for web search. `sessionId` is the Model Router's stamp when the meter kept it. */
   modelCall?: { sessionId: string | null };
   body?: ModelCallBody;
+  /* UNIT_BOUNDARY_DESCRIPTION: the Connection the gateway's address step says the request names. The gateway removes the marker the agent sent and writes its own, so the agent cannot choose it freely: it can only name a Connection in the request itself. */
+  connectionId?: string | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the server name of the request's TLS session, which a chain that checks bodies sends. It names the chain that carries the request, whatever Host header the agent wrote. */
+  tlsHost?: string | null;
 }
 
 export interface ExtAuthzGate {
@@ -115,6 +120,7 @@ interface CreateExtAuthzGateDeps {
   spend: Pick<SpendCheck, "checkCall">;
   questions: SpendLimitQuestions;
   webSearch?: WebSearchGate;
+  readOnly: ReadOnlyGate;
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
   waitingRuleSpeaksFor: WaitingRuleSpeaksFor;
@@ -132,6 +138,8 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       spendCall,
       modelCall,
       body,
+      connectionId,
+      tlsHost,
     }) {
       const host = canonicalEgressHost(requestHost);
       const identity = await deps.identityResolver.resolve(agentId);
@@ -210,6 +218,25 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
             response: searched.response,
           };
       }
+
+      const read = await deps.readOnly.check({
+        agentId,
+        identity,
+        via,
+        host,
+        tls,
+        tlsHost: tlsHost ? canonicalEgressHost(tlsHost) : null,
+        method,
+        path,
+        connectionId: connectionId ?? null,
+        body,
+      });
+      if (!read.pass)
+        return {
+          verdict: "refuse",
+          basis: "read-only",
+          response: read.response,
+        };
 
       if (deps.platformAllowedAuthorities.includes(`${host}:${port}`)) {
         securityLog("info", "egress.decision", {

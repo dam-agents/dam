@@ -1,5 +1,5 @@
 -- Compares the upgraded database with the pre-upgrade rows (rehearsal_rows) and
--- the two snapshots (rehearsal_snapshot) against what the migrations 0109-0137
+-- the two snapshots (rehearsal_snapshot) against what the migrations 0109-0160
 -- and their comments say they do. Every check names itself; any failure is
 -- collected and raised at the end, so `psql -v ON_ERROR_STOP=1` exits non-zero.
 CREATE TEMP TABLE rehearsal_failure (name text NOT NULL, expected text NOT NULL, actual text);
@@ -20,6 +20,8 @@ CREATE TEMP TABLE rehearsal_failure (name text NOT NULL, expected text NOT NULL,
 --   0118  "and its agents are delivered again": the outbox version sum +2, one
 --          per agent, for 3 deleted grants over 2 agents (one UPDATE).
 --   0137  "the saved per-user choice has no reader": -3 user_features rows.
+--   0160  "each one says so with fullAccess": +1 row, the one Slack Account
+--          connection of the seed, so fullAccess moves by 30 in all.
 --   Everything else untouched: no row counts of the other tables move.
 INSERT INTO rehearsal_failure
 SELECT e.name, e.expected::text, e.actual::text
@@ -29,7 +31,7 @@ FROM (VALUES
   ('delta.connection_grants', -3, (SELECT a.n - b.n FROM rehearsal_snapshot b JOIN rehearsal_snapshot a USING (name) WHERE b.label = 'before' AND a.label = 'after' AND a.name = 'connection_grants')),
   ('delta.connection_grants.on_incomplete_github_signins', -3, (SELECT a.n - b.n FROM rehearsal_snapshot b JOIN rehearsal_snapshot a USING (name) WHERE b.label = 'before' AND a.label = 'after' AND a.name = 'connection_grants.on_incomplete_github_signins')),
   ('delta.connections', 33, (SELECT a.n - b.n FROM rehearsal_snapshot b JOIN rehearsal_snapshot a USING (name) WHERE b.label = 'before' AND a.label = 'after' AND a.name = 'connections')),
-  ('delta.connections.full_access', 29, (SELECT a.n - b.n FROM rehearsal_snapshot b JOIN rehearsal_snapshot a USING (name) WHERE b.label = 'before' AND a.label = 'after' AND a.name = 'connections.full_access')),
+  ('delta.connections.full_access', 30, (SELECT a.n - b.n FROM rehearsal_snapshot b JOIN rehearsal_snapshot a USING (name) WHERE b.label = 'before' AND a.label = 'after' AND a.name = 'connections.full_access')),
   ('delta.connections.github_enterprise_oauth_complete', 14, (SELECT a.n - b.n FROM rehearsal_snapshot b JOIN rehearsal_snapshot a USING (name) WHERE b.label = 'before' AND a.label = 'after' AND a.name = 'connections.github_enterprise_oauth_complete')),
   ('delta.connections.github_enterprise_oauth_incomplete', 0, (SELECT a.n - b.n FROM rehearsal_snapshot b JOIN rehearsal_snapshot a USING (name) WHERE b.label = 'before' AND a.label = 'after' AND a.name = 'connections.github_enterprise_oauth_incomplete')),
   ('delta.connections.github_oauth_complete', 12, (SELECT a.n - b.n FROM rehearsal_snapshot b JOIN rehearsal_snapshot a USING (name) WHERE b.label = 'before' AND a.label = 'after' AND a.name = 'connections.github_oauth_complete')),
@@ -180,6 +182,16 @@ WHERE r.class = 'connections' AND c.parent_id IS NOT NULL
                      OR r.payload -> 'auth' ? 'repositoryIds'
                      OR r.payload -> 'auth' ? 'permissions')
       END
+GROUP BY () HAVING count(*) > 0;
+
+-- 0160 marks every Slack Account connection of the release with fullAccess, so
+-- none loses the posting it had, and touches no other template.
+INSERT INTO rehearsal_failure
+SELECT 'kept.connections.slack_full_access', 'fullAccess on every pre-upgrade Slack Account connection', string_agg(r.key, ', ')
+FROM rehearsal_rows r
+JOIN connections c ON c.id = r.key
+WHERE r.class = 'connections' AND c.template_id = 'slack'
+  AND NOT (c.auth ? 'fullAccess')
 GROUP BY () HAVING count(*) > 0;
 
 -- 0118 gives a completed sign-in or an installation a parent that carries the

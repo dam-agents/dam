@@ -1,6 +1,6 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-11-16
+Last verified: 2026-11-20
 
 Companion to [channels](channels.md), [channel-turns](channel-turns.md), [slack-threads](slack-threads.md), [slack-channel-history](slack-channel-history.md) and [slack-edits](slack-edits.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
@@ -30,6 +30,7 @@ A **binding** puts one Agent into one conversation; whoever Slack lets into that
 The platform never asks who is typing.
 
 The owner's **Slack Account Connection** is a separate thing: it gives the Agent the owner's personal Slack access as an MCP server.
+It is read only unless the owner set it to "Can post as me": the gateway then lets only Slack's read tools pass, on every harness and in every session ([connections](connections.md#connection)).
 On a bound Agent, channel members get that access too unless the harness refuses the calls (§3 safety gates).
 
 `/dam login` links a Slack user to a platform user.
@@ -56,7 +57,7 @@ Two paths, both by tool call; plain assistant text is never posted.
   `reply`, `post` and `start_thread` take an optional [Channel Card](channel-cards.md) of Slack Block Kit blocks, whose rules `describe_blocks` lists on request.
   Every post carries a footer naming the Agent and linking to the session that wrote it.
   The owner removes one with `/dam delete <message link> [reason]`: confirmation dialog, post and files go, the agent's session is told.
-- **As the owner**, through Slack's own MCP server, when the Agent holds the owner's Slack Account Connection.
+- **As the owner**, through Slack's own MCP server, when the Agent holds the owner's Slack Account Connection set to "Can post as me".
   Posts carry no footer, `/dam delete` doesn't apply, and the platform doesn't see them (§2).
 
 A message sent from the UI carries no Slack framing, so the agent answers in the UI and posts to Slack only if asked.
@@ -138,7 +139,7 @@ flowchart TD
 ### 1.6 Proactive and cross-channel posts
 
 As the bot.
-Through the owner's Slack Account Connection the Agent posts wherever the owner can (§2).
+Through the owner's Slack Account Connection set to "Can post as me" the Agent posts wherever the owner can (§2).
 
 | Situation                                        | What happens                                                                                                                                                 | Drawback                                                                                             |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
@@ -230,12 +231,12 @@ Decided by **Platform** for every rule below, and **Setup** for the operator's t
 
 Both belong to the Agent; they differ in identity and scope.
 
-|                      | Bot (any binding)                                                                                                                                                                                      | Owner's Slack Account Connection                                                  |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| Acts as              | The bot, with the Agent's footer                                                                                                                                                                       | The owner, no footer                                                              |
-| Can post             | Channels the owner is in, DMs with the owner, bound 1:1 DM people or bound-channel members, group DMs                                                                                                  | Anywhere the owner can                                                            |
-| Can read             | Only what the platform shows it: bound threads, the channel window, the thread it is answering in, threads it was shown; with channel history on, that conversation's older messages and their threads | Everything the owner can see, search included                                     |
-| The platform sees it | Yes: counts as the turn's answer, security-logged                                                                                                                                                      | No: the agent must close the turn with `no_reply_needed`, or the reminder follows |
+|                      | Bot (any binding)                                                                                                                                                                                      | Owner's Slack Account Connection                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Acts as              | The bot, with the Agent's footer                                                                                                                                                                       | The owner, no footer                                                                                                                                        |
+| Can post             | Channels the owner is in, DMs with the owner, bound 1:1 DM people or bound-channel members, group DMs                                                                                                  | Read only: nowhere, the gateway refuses every tool that posts or changes something. "Can post as me": anywhere the owner can                                |
+| Can read             | Only what the platform shows it: bound threads, the channel window, the thread it is answering in, threads it was shown; with channel history on, that conversation's older messages and their threads | Everything the owner can see, search included, in both modes; no walk through a direct message's history, whose scopes the Connection leaves out on purpose |
+| The platform sees it | Yes: counts as the turn's answer, security-logged                                                                                                                                                      | No: the agent must close the turn with `no_reply_needed`, or the reminder follows                                                                           |
 
 Outside its bound conversations, the bot never reaches a channel the owner couldn't, provided the owner's Slack identity is linked, and it messages directly only the owner, the person in a bound 1:1 DM, and members of its bound channels.
 
@@ -292,6 +293,7 @@ flowchart TD
 | A message that carries an artifact's `platform://artifacts/<id>` link gets the artifact's share URL in its place; a private artifact's link is refused, so the agent says it must be shared first                                                                                                                  | Platform                                                         | Allowed in one place only: the 1:1 DM between the Agent and its owner, where the link becomes the artifact's own address in the app ([artifact library](artifact-library.md#sharing-model)) |
 | Look up any member by id (name, title, email, timezone); `read_thread` only on the thread it is answering in and threads it was shown, 48 h from the newest turn or showing; `fetch_message_attachment` on any file shared in a bound conversation; `get_message_link` on a message in a conversation it can reach | Platform                                                         | Shown threads live in api-server memory; after a restart a thread is readable again from the next turn in it, or once it is shown again                                                     |
 | The owner's Slack Connection is usable on a channel turn                                                                                                                                                                                                                                                           | **Setup**: whether the harness asks before running tools (below) |                                                                                                                                                                                             |
+| Whether the owner's Slack Account Connection only reads, or also posts, reacts and changes things as the owner                                                                                                                                                                                                     | Platform, from the owner's choice on the Connection (**Setup**)  | Read only unless the owner chose "Can post as me". The agent still sees the write tools; a refused call returns an error that says who can allow it                                         |
 
 ### Safety gates
 
@@ -345,7 +347,9 @@ Ambient turns get none.
 
 ## 5. Reach the owner may not expect
 
-First, an Agent with both the owner's Slack Account Connection and a channel binding lets channel members act through the owner's Slack account.
+First, an Agent with both the owner's Slack Account Connection and a channel binding lets channel members read through the owner's Slack account: search, and everything the owner can see.
+With the Connection set to "Can post as me" they can also post and change things as the owner.
+The read-only limit is the platform's, so it holds on every harness and no prompt lifts it; only someone with the owner's rights changes the choice, which includes an Agent that holds the owner's DAM Connection.
 The UI and the CLI warn the owner when the two meet (see [Shared access](channels.md#shared-access--the-one-model)) but do not block it.
 Open on Codex.
 On Claude Code: open in `auto` (the classifier approves most calls), in `bypassPermissions`, or with an allow rule for the Connection's tools; `default` and `dontAsk` refuse those calls on a channel turn.
@@ -367,7 +371,7 @@ Everything else (DM people, attach files, look people up, react) is within the o
 | **Harness**                                         | Claude Code: `default` asks (refused on Slack); `dontAsk` denies what isn't pre-approved; `auto` lets a classifier decide; `bypassPermissions` or an allow rule runs everything. **Codex never asks; everything runs.** Bob with `approvals=ask` refuses even the reply tool, so it is unusable in Slack                                                                                                                                                          |
 | **Steering / image support** (harness)              | A mid-turn follow-up joins the running turn at the next steer point, and the agent-runtime decides for every harness. Claude Code takes it at most a minute after it arrives; Codex and Pi also take it within a minute, and read it once their current step ends; Bob and Copilot are cancelled at the steer point and continue with it, so it waits while a command runs. Only Stop on the working status stops at once. Pictures in the prompt vs. "text only" |
 | **Egress rules**                                    | Allow-all: nothing refused. Restricted: unmatched hosts refused on unattended turns, held for the owner when a UI/CLI session is open; an attached provider Connection's own hosts, ports and paths always pass, and `api.anthropic.com` when it sets Claude Code's env ([the rule](security-and-credentials.md#hitl-ext_authz))                                                                                                                                  |
-| **Connection grants**                               | A Slack Account Connection adds the owner's Slack MCP server with no channel awareness; only the harness's asking stands between the channel and it                                                                                                                                                                                                                                                                                                               |
+| **Connection grants**                               | A Slack Account Connection adds the owner's Slack MCP server with no channel awareness; only the harness's asking stands between the channel and what the Connection allows: reading, or with "Can post as me" also posting as the owner                                                                                                                                                                                                                          |
 | **Owner's Slack identity linked**                   | Unlinked: the Agent posts into no channel beyond its bound ones, and DMs no one but the members of its bound channels and the person in a bound 1:1 DM; group DMs still work                                                                                                                                                                                                                                                                                      |
 | **Whispers** (per Agent)                            | On: anyone in a conversation the Agent is connected to can reach it privately (§1.8). Off: new whispers to it are refused and open whisper threads end; past whispers stay private                                                                                                                                                                                                                                                                                |
 | **Ambient** (per binding)                           | §1.2                                                                                                                                                                                                                                                                                                                                                                                                                                                              |

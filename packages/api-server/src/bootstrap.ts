@@ -406,6 +406,7 @@ import {
   createGrantedConnectionTemplates,
   createPricedConnections,
   createProviderEgressScopes,
+  createReadOnlyConnections,
   listConnectionGrantAgentIds,
   listConnectionTemplateIds,
   listManagedConnectionOwners,
@@ -2306,6 +2307,10 @@ export async function bootstrap() {
     ruleMatcher: createEgressRuleMatchAdapter(db),
     waitingRuleSpeaksFor: ruleSpeaksFor,
     providerScopes: createProviderEgressScopes(db),
+    readOnlyConnections: createReadOnlyConnections(
+      db,
+      connectionsBoot.templates,
+    ),
     attendance: turnAttendance,
     spend: spend.check,
     webSearch: {

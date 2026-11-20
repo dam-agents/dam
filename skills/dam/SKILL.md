@@ -447,6 +447,10 @@ Without a scope, `dam connection connect github` keeps the sign-in alone and sho
 Pass it only when the user asks for that, and tell them what it reaches.
 `dam connection list` marks such a connection `FULL ACCESS`, and in `--json` its `scope` is `{ "restricted": false, "fullAccess": true }`.
 
+A Slack Account connection (`dam connection connect slack`) is read only unless it has full access: the agent searches and reads Slack as the user, and the platform refuses every tool that posts or changes something, whatever the harness.
+`dam connection scope <connection> --full-access` lets the agent post and change things as the user, and `--read-only` takes that away; `dam connection scope <connection>` shows which it is.
+Pass `--full-access` only when the user asks for it, and tell them that anyone who can talk to the agent can then post as them.
+
 `dam connection scope <connection>` with no flags changes nothing: it shows the current scope and, under `available`, the accounts, repositories and permissions you can choose from.
 A flag you leave out keeps that part of the scope.
 A connection made from a sign-in reaches one account, given with `--account`; when the app is installed on one account only, you can leave it out.

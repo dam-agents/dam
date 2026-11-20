@@ -15,6 +15,11 @@ import {
   resolveConnectionRef,
   unresolvedConnectionRef,
 } from "../domain/connection-ref.js";
+import {
+  accessNote,
+  accessScopeOf,
+  formatAccess,
+} from "../domain/access-choice.js";
 import { credentialCheckSummary } from "../domain/credential-check.js";
 import {
   childrenOf,
@@ -42,6 +47,7 @@ import { readBackFailure, readBackWarning } from "./connect-from.js";
 
 interface ScopeOpts extends ScopeFlags {
   fullAccess?: boolean;
+  readOnly?: boolean;
   clear?: boolean;
   server?: string;
   json?: boolean;
@@ -56,7 +62,8 @@ export function buildScopeCommand(deps: {
 }): Command {
   return new Command("scope")
     .description(
-      "Show or limit the account, repositories and permissions a GitHub connection reaches",
+      "Show or limit the account, repositories and permissions a GitHub connection reaches, " +
+        "or set a Slack Account connection to read only or full access",
     )
     .argument(
       "<id-or-name>",
@@ -84,6 +91,11 @@ export function buildScopeCommand(deps: {
       "remove every limit: the connection reaches every account, repository and permission " +
         "its GitHub sign-in or installation reaches",
     )
+    .option(
+      "--read-only",
+      "limit a Slack Account connection to reading: an agent searches and reads Slack as you, " +
+        "and every tool that posts or changes something is refused",
+    )
     .addOption(new Option("--clear").hideHelp())
     .option(
       "--server <url>",
@@ -103,6 +115,9 @@ export function buildScopeCommand(deps: {
         "      --permissions contents:read,pull_requests:write\n" +
         "  dam connection scope my-github-app --repositories api\n" +
         "  dam connection scope github --full-access\n" +
+        "  dam connection scope slack               # show whether it is read only\n" +
+        "  dam connection scope slack --full-access # let the agent post as you\n" +
+        "  dam connection scope slack --read-only   # back to reading only\n" +
         "\nA flag you leave out keeps that part of the current scope; on a connection\n" +
         "with full access, it leaves every one of that part.\n" +
         "A connection made from a GitHub sign-in reaches one account once it is limited;\n" +
@@ -113,7 +128,10 @@ export function buildScopeCommand(deps: {
         "A change that would leave a connection with no limit at all is refused.\n" +
         "A GitHub sign-in or GitHub App installation is never granted, so it has no\n" +
         "scope; limit the connections made from it, or make another with\n" +
-        "`dam connection connect --from <sign-in or installation>`.\n",
+        "`dam connection connect --from <sign-in or installation>`.\n" +
+        "\nA Slack Account connection is read only unless it has full access. The\n" +
+        "platform's gateway enforces the choice for every agent that holds the\n" +
+        "connection, from its next request, whatever the harness.\n",
     )
     .action(async (ref: string, opts: ScopeOpts) => {
       const json = opts.json ?? false;
@@ -138,11 +156,21 @@ export function buildScopeCommand(deps: {
         process.stderr.write(unresolvedConnectionRef(listed.value, ref));
         process.exit(EXIT_INVALID_INPUT);
       }
+      if (match.accessChoice) {
+        return scopeAccessChoice(svc, host, match, opts, json);
+      }
+      if (opts.readOnly) {
+        process.stderr.write(
+          `error: --read-only applies only to a connection that is read only or has full access, ` +
+            `such as a Slack Account, not '${match.name}'\n`,
+        );
+        process.exit(EXIT_INVALID_INPUT);
+      }
       const kind = match.isParent ? parentKindOf(match) : scopeKindOf(match);
       if (!kind) {
         process.stderr.write(
-          `error: '${match.name}' is not a GitHub sign-in or GitHub App connection; ` +
-            "only those can be limited to repositories and permissions\n",
+          `error: '${match.name}' is not a GitHub sign-in, a GitHub App connection or a Slack Account; ` +
+            "only those can be limited\n",
         );
         process.exit(EXIT_INVALID_INPUT);
       }
@@ -244,6 +272,45 @@ export function buildScopeCommand(deps: {
         EXIT_SUCCESS,
       );
     });
+}
+
+async function scopeAccessChoice(
+  svc: ConnectionService,
+  host: string,
+  match: ConnectionView,
+  opts: ScopeOpts,
+  json: boolean,
+): Promise<never> {
+  const choice = match.accessChoice!;
+  if (hasScopeFlags(opts) || (opts.fullAccess && opts.readOnly)) {
+    process.stderr.write(
+      `error: ${match.name} is either read only or has full access; pass --read-only or --full-access, and no other scope flag\n`,
+    );
+    process.exit(EXIT_INVALID_INPUT);
+  }
+  const changes = opts.fullAccess === true || opts.readOnly === true;
+  const fullAccess = changes
+    ? opts.fullAccess === true
+    : match.fullAccess === true;
+  if (changes) {
+    const res = await svc.setFullAccess({ id: match.id, fullAccess });
+    exitOnServiceError(res, host);
+  }
+  if (json) {
+    const scope = accessScopeOf({
+      accessChoice: choice,
+      ...(fullAccess ? { fullAccess: true as const } : {}),
+    });
+    return writeStdoutAndExit(
+      `${JSON.stringify({ ...(changes ? { ok: true } : {}), id: match.id, name: match.name, kind: "access-choice", scope })}\n`,
+      EXIT_SUCCESS,
+    );
+  }
+  process.stderr.write(accessNote(match.name, choice, fullAccess));
+  return writeStdoutAndExit(
+    `${changes ? "✓ Scoped " : ""}${match.name} (${match.id}): ${formatAccess(choice, fullAccess)}\n`,
+    EXIT_SUCCESS,
+  );
 }
 
 function probe(
