@@ -743,7 +743,9 @@ describe("slack outbound — reach is the bound conversations (#6780)", () => {
 
     for (const conversationId of ["C-GENERAL", groupDm.id]) {
       expect(await h.post("digest", { conversationId })).toMatchObject({
-        error: expect.stringContaining("not a conversation you are connected to"),
+        error: expect.stringContaining(
+          "not a conversation you are connected to",
+        ),
       });
     }
     expect(await h.post("digest", { conversationId: BOUND })).toMatchObject({
