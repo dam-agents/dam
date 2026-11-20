@@ -19,6 +19,7 @@ export interface AgentView {
   overBudgetMessage?: string;
   podTerminationReason?: string;
   podTerminationCode?: string;
+  podRestartReason?: string;
   channels: ChannelConfig[];
   starterKit?: string | null;
   defaultProvider?: AgentDefaultProvider;

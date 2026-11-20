@@ -20,6 +20,7 @@ import { exitCodeFor, printError } from "./chat.js";
 
 const SUMMARY_MAX = 160;
 const TEXT_MAX = 400;
+const ERROR_MAX = 800;
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/g;
 
@@ -56,7 +57,11 @@ export function stepLine(step: Step, now: number): string {
       : step.startedAt !== null && !isFinished(step)
         ? `${formatDuration(elapsedMs(step.startedAt, now) ?? 0)} so far`
         : "-";
-  return `${clock(step.startedAt)}  tool   ${oneLine(step.tool, 60)} [${oneLine(step.status, 30)}, ${took}] ${oneLine(step.summary, SUMMARY_MAX)}`;
+  const failed =
+    step.status === "failed" && step.output !== null
+      ? `\n  error: ${oneLine(step.output, ERROR_MAX)}`
+      : "";
+  return `${clock(step.startedAt)}  tool   ${oneLine(step.tool, 60)} [${oneLine(step.status, 30)}, ${took}] ${oneLine(step.summary, SUMMARY_MAX)}${failed}`;
 }
 
 export function turnLine(turn: TurnState, now: number): string {
@@ -66,6 +71,13 @@ export function turnLine(turn: TurnState, now: number): string {
   return `turn: running since ${turn.turnStartedAt}${ms === null ? "" : ` (${formatDuration(ms)})`}`;
 }
 
+function turnText(turn: TurnState, now: number): string {
+  const line = turnLine(turn, now);
+  return turn.lastError === null
+    ? line
+    : `${line}\nlast turn ended with: ${oneLine(turn.lastError, ERROR_MAX)}`;
+}
+
 export function showJson(watch: SessionWatch, now: number): object {
   const turn = watch.turn;
   return {
@@ -73,6 +85,7 @@ export function showJson(watch: SessionWatch, now: number): object {
     turn: {
       running: turn.running,
       turnStartedAt: turn.turnStartedAt,
+      lastError: turn.lastError,
       turnElapsedMs:
         turn.turnStartedAt === null ? null : elapsedMs(turn.turnStartedAt, now),
     },
@@ -85,7 +98,7 @@ function header(watch: SessionWatch, now: number): string {
   return [
     `session: ${s.sessionId}${s.title ? `  ${oneLine(s.title, 80)}` : ""}`,
     `type: ${safe(s.type)}   mode: ${safe(s.mode)}   created: ${safe(s.createdAt)}`,
-    turnLine(watch.turn, now),
+    turnText(watch.turn, now),
     "",
   ].join("\n");
 }
@@ -173,7 +186,7 @@ export function buildSessionShowCommand(deps: {
             write(
               opts.json
                 ? jsonLine({ event: "turn", ...event.turn })
-                : turnLine(event.turn, now()),
+                : turnText(event.turn, now()),
             );
             return;
           }

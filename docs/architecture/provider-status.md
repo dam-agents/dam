@@ -1,6 +1,6 @@
 # Provider status
 
-Last verified: 2026-11-12
+Last verified: 2026-11-18
 
 ## Overview
 
@@ -134,6 +134,12 @@ For a provider outage, its actions open Settings › Providers and each provider
 Closing it hides each shown outage, by its template and its start time, in that browser only, so a new outage, or the fault on the platform's side, shows the banner again.
 The banner hides while the app has lost its connection to the server, because the status is then unknown.
 On a narrow screen it shows only its lead and the close button.
+
+## The CLI
+
+`dam outage list` reads the status query and the caller's outage alerts, both owner-scoped, so an Agent that holds the install's DAM connection diagnoses another Agent's failure from outside.
+It names a provider's start time and its status page where it has one, the fault on the platform's side, and every alert of the caller as told or recovered, with the agents it hit.
+A recovered alert stays listed, because the diagnosing agent must see whether the outage ended.
 
 ## Outage alerts
 

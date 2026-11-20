@@ -58,7 +58,11 @@ interface Relay {
   close(): void;
 }
 
-function startRelay(opts: { running: boolean; extra?: object[] }): Relay {
+function startRelay(opts: {
+  running: boolean;
+  extra?: object[];
+  notes?: { method: string; params: object }[];
+}): Relay {
   const wss = new WebSocketServer({ port: 0 });
   let socket: WebSocket | null = null;
   const send = (ws: WebSocket, frame: object) =>
@@ -113,6 +117,20 @@ function startRelay(opts: { running: boolean; extra?: object[] }): Relay {
         ];
         for (const params of replay)
           send(ws, { method: "session/update", params });
+        for (const { method, params } of opts.notes ?? [])
+          send(ws, {
+            method,
+            params: {
+              ...params,
+              _meta: {
+                platform: {
+                  ...(params as { _meta?: { platform?: object } })._meta
+                    ?.platform,
+                  replayFor: token,
+                },
+              },
+            },
+          });
         send(ws, {
           id: frame.id,
           result: {
@@ -218,6 +236,7 @@ describe("dam session show", () => {
       running: true,
       turnStartedAt: "2026-10-29T08:00:00.000Z",
       turnElapsedMs: 70 * 60_000,
+      lastError: null,
     });
     expect(shown.session).toMatchObject({
       sessionId: SESSION,
@@ -458,6 +477,122 @@ describe("dam session show", () => {
       endedAt: new Date(NOW).toISOString(),
       durationMs: null,
     });
+  });
+
+  /**
+   * TEST_SCENARIO: The agent's turn failed on a model provider error two
+   * hours ago, and the person reloaded the app since. The transcript alone
+   * showed the tools that ran and not why the turn stopped, so the replay's
+   * turn end must print the error, combined with its details, in the plain
+   * output and carry it in `turn.lastError` under `--json`.
+   */
+  it("should print the error a replayed turn failed with", async () => {
+    relay = startRelay({
+      running: false,
+      notes: [
+        {
+          method: "platform/turnEnded",
+          params: {
+            sessionId: SESSION,
+            stopReason: "error",
+            error: {
+              message: "model provider failed",
+              details: "429 Too Many Requests",
+            },
+            _meta: { platform: { at: "2026-10-29T07:30:00.000Z" } },
+          },
+        },
+      ],
+    });
+    expect(await dam([SESSION])).toBe(0);
+    expect(out.stdout).toContain(
+      "turn: idle\nlast turn ended with: model provider failed: 429 Too Many Requests",
+    );
+
+    out.stdout = "";
+    expect(await dam([SESSION, "--json"])).toBe(0);
+    const shown = JSON.parse(out.stdout) as {
+      turn: { lastError: string | null };
+    };
+    expect(shown.turn.lastError).toBe(
+      "model provider failed: 429 Too Many Requests",
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: A Bash call failed with two and a half thousand characters
+   * of output, and another finished cleanly. The plain output must show the
+   * failed call's output on one indented line, cut to 800 characters, and
+   * nothing under the completed call; `--json` keeps the output itself, cut to
+   * the 2000 characters one step may hold.
+   */
+  it("should print a failed tool call's output and not a completed one's", async () => {
+    const output = "x".repeat(2500);
+    relay = startRelay({
+      running: false,
+      extra: [
+        update(
+          "tool_call",
+          {
+            toolCallId: "t6",
+            title: "x",
+            status: "in_progress",
+            rawInput: { command: "mise run test" },
+            _meta: { claudeCode: { toolName: "Bash" } },
+          },
+          "2026-10-29T08:10:00.000Z",
+        ),
+        update(
+          "tool_call_update",
+          {
+            toolCallId: "t6",
+            status: "failed",
+            content: [
+              { type: "content", content: { type: "text", text: output } },
+            ],
+          },
+          "2026-10-29T08:10:30.000Z",
+        ),
+        update(
+          "tool_call",
+          {
+            toolCallId: "t7",
+            title: "x",
+            status: "in_progress",
+            rawInput: { command: "ls" },
+            _meta: { claudeCode: { toolName: "Bash" } },
+          },
+          "2026-10-29T08:20:00.000Z",
+        ),
+        update(
+          "tool_call_update",
+          {
+            toolCallId: "t7",
+            status: "completed",
+            rawOutput: "completed-output-marker",
+          },
+          "2026-10-29T08:20:01.000Z",
+        ),
+      ],
+    });
+    expect(await dam([SESSION])).toBe(0);
+    expect(out.stdout).toContain(
+      `08:10:00  tool   Bash [failed, 30s] mise run test\n  error: ${"x".repeat(799)}…`,
+    );
+    expect(out.stdout).not.toContain("x".repeat(800));
+    expect(out.stdout).not.toContain("completed-output-marker");
+
+    out.stdout = "";
+    expect(await dam([SESSION, "--json"])).toBe(0);
+    const shown = JSON.parse(out.stdout) as {
+      steps: { toolCallId?: string; output?: string | null }[];
+    };
+    expect(shown.steps.find((s) => s.toolCallId === "t6")?.output).toBe(
+      "x".repeat(2000),
+    );
+    expect(shown.steps.find((s) => s.toolCallId === "t7")?.output).toBe(
+      "completed-output-marker",
+    );
   });
 
   /**

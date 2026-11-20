@@ -21,6 +21,7 @@ import { composeSpendModule } from "./modules/spend/compose.js";
 import { composeSatelliteModule } from "./modules/satellite/index.js";
 import { composeSshModule } from "./modules/ssh/compose.js";
 import { composeMetricsModule } from "./modules/metrics/compose.js";
+import { composeOutageModule } from "./modules/outage/compose.js";
 import { composeOnboardingModule } from "./modules/onboarding/compose.js";
 import { composeSecurityCheckModule } from "./modules/security-check/compose.js";
 import { composeTelemetryModule } from "./modules/telemetry/compose.js";
@@ -100,6 +101,7 @@ export function compose(): Command {
     }),
     composeChannelModule(base),
     composeMetricsModule(base),
+    composeOutageModule(base),
     spend,
     composeBudgetModule(base),
     composeLoginTestimonialsModule(base),
