@@ -596,10 +596,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
           ackText = response?.text ?? "";
         },
         async (text, blocks) => {
-          if (blocks) {
-            commandMessage = { text, blocks };
-            return;
-          }
+          if (blocks) commandMessage = { text, blocks };
           outbound.push({
             kind: "ephemeral",
             teamId: command.teamId,
