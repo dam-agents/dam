@@ -47,7 +47,10 @@ When no branches remain open, or the user asks:
 
 1. Show the decision log from the file, then an "Open questions" list of anything unresolved.
    No intro line.
-2. Session about a GitHub issue → ask whether to post the log as a comment.
+2. Feature or bug → draft its Example Map from the decisions, in the format of [acceptance-criteria.md](../../../docs/guidelines/acceptance-criteria.md): one `### Rule:` per behaviour decided, concrete Examples under each — named people, names and values, one When, the domain's words — and a `### Questions` list of what stays undecided.
+   Never invent an Example the decisions do not support; an open branch is a Question.
+   The map goes at the end of the log.
+3. Session about a GitHub issue → ask whether to post the log as a comment.
    Post with `gh issue comment` only after the user approves the exact text, then `gh issue edit --add-label agent/grilled`.
    Never edit the issue body; if it is now out of date, say so under "Open questions".
-3. No issue → offer to file one with the `file-issue` skill, passing the log as input, and add the `agent/grilled` label to it.
+4. No issue → offer to file one with the `file-issue` skill, passing the log and its Example Map as input, and add the `agent/grilled` label to it.

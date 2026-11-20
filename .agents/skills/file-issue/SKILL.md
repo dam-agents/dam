@@ -27,6 +27,8 @@ Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidel
    **Keep the research out of the issue**: no file paths, function names, line numbers, data structures or architectural detail.
    A sentence that only makes sense to someone who has read the code gets rewritten.
 
+   **An Example Map from grilling** goes into the feature's or bug's `## Done when` section as it stands, in the format of [acceptance-criteria.md](../../../docs/guidelines/acceptance-criteria.md); never write one the grilling did not produce.
+
 3. **Check for duplicates** before drafting, or at the latest before filing, with several keyword variations from the request:
 
    ```sh

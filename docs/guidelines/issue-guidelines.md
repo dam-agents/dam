@@ -58,9 +58,9 @@ Epics have no parent.
 
 ## Acceptance criteria
 
-An issue does not need acceptance criteria, and the templates below do not ask for them.
-When the requester supplies them, add a `## Done when` section with one `### AC-<k>` block per criterion, in the format of [acceptance-criteria.md](acceptance-criteria.md).
-A tester — a person or the QA agent — checks each one through the web UI, Slack or GitHub without reading the code, so write only what a user can see.
+A feature carries an Example Map — Rules, concrete Examples and open Questions — and a bug the Example that reproduces it, in a `## Done when` section, in the format of [acceptance-criteria.md](acceptance-criteria.md).
+The map comes out of grilling with the person who asked, so an issue filed before its grilling has none yet, and the templates below do not ask for one.
+A task and a research task keep a plain **Done when** that names the end state.
 
 ## Attribution
 
