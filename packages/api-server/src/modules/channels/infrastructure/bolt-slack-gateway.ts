@@ -4,6 +4,7 @@ import { formatError } from "../../../core/format-error.js";
 import { agentActionOf } from "../domain/channel-blocks.js";
 import { FileTooLargeError } from "./slack-gateway.js";
 import { keepSocketModeConnected } from "./socket-mode-reconnect.js";
+import { fetchWithCurrentAppToken } from "./slack-app-token-fetch.js";
 import { renderSlackPostText } from "./slack-post-text.js";
 import { classifySlackEdit, type SlackMessageChanged } from "./slack-edit.js";
 import { slackPostOrigin } from "./slack-post-origin.js";
@@ -45,7 +46,7 @@ export interface BoltSlackGatewayDeps {
   renewTokens: () => Promise<void>;
   forgetBotToken: (teamId: string) => void;
   helmBotToken: string | null;
-  appToken: string;
+  resolveAppToken: () => Promise<string | null>;
   commandName: string;
   onCredentialRejected: (teamId: string) => Promise<void>;
   companionAppIds: ReadonlySet<string>;
@@ -61,6 +62,7 @@ interface WorkspaceAuth {
 
 const CHANNEL_HISTORY_PAGE_SIZE = 200;
 const NO_WORKSPACE: SlackWorkspace = "";
+const APP_TOKEN_SET_PER_REQUEST = "xapp-set-per-request";
 const INSTALL_TOKEN_MISSING = "slack workspace is not installed";
 const DEAD_CREDENTIAL = new Set([
   "invalid_auth",
@@ -358,9 +360,14 @@ export function createBoltSlackGateway(
       if (app) return true;
 
       const receiver = new SocketModeReceiver({
-        appToken: deps.appToken,
+        appToken: APP_TOKEN_SET_PER_REQUEST,
         logLevel: LogLevel.INFO,
         autoReconnectEnabled: false,
+        installerOptions: {
+          clientOptions: {
+            fetch: fetchWithCurrentAppToken(deps.resolveAppToken),
+          },
+        },
       });
       const bolt = new App({
         receiver,
