@@ -102,7 +102,7 @@ Any other provider's call is priced in this order, and the first match wins:
   Curve Bender costs nothing.
   Bob uses the Bobcoins in each reply.
   The Claude subscription is valued at Anthropic's list prices, as a value and not a bill.
-- **The Anthropic table:** Anthropic's list prices, copied from a pinned version of LiteLLM's public price list.
+- **The Anthropic table:** Anthropic's list prices, the Anthropic part of the pinned copy of LiteLLM's public price list that the model catalogs also read.
   It prices own Anthropic keys and the subscription value.
 - **Awaiting price:** a call to a model that none of these prices, on a provider that has the Anthropic table or operator prices, costs nothing and is marked estimated until a deploy brings its price ([Estimates](#estimates)).
 
@@ -148,7 +148,10 @@ Two counters, `platform.spend.proxy_cost.compared` and `platform.spend.proxy_cos
 They carry only the provider and the model, which is the reply's model group when the reply names one, so they name no user, agent or Connection.
 
 **Updating prices.** The Anthropic table changes only through a reviewed update to a newer pinned version of LiteLLM's list, which the regular dependency update proposes.
-The update stops when a copied price lacks one of its token prices, so a broken upstream list never reaches DAM.
+One update writes the model catalogs' part and the Anthropic part from one LiteLLM version, so spend and the catalogs know the same models.
+It stops before it writes anything when a model that DAM prices would lose any of its prices, a prompt-size price, a fast-mode or region factor and the web-search price included, so a broken upstream list never reaches DAM.
+A price that Anthropic really removed passes only after a reviewer deletes it from DAM's copy.
+A new model without every token price is left out of the Anthropic part, so its calls wait for their price, while the catalogs still get it.
 Operator prices change through the chart.
 
 **Reading prices.** The api-server reads IBM LiteLLM's own prices from its model info (`/v1/model/info`) with the key of each IBM LiteLLM Connection.

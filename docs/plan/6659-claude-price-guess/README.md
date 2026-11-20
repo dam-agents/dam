@@ -63,7 +63,7 @@ The model catalog side is in [`docs/architecture/harness-config.md`](../../archi
 | --- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
 | 01  | ✅ A call to an unpriced model waits for its price | `lookupPrice` returns `awaiting` instead of the guess; ingest asks for a price read only for IBM LiteLLM; each start prices waiting calls of deploy-priced providers again; docs. AC-1, AC-2.  | —                                        |
 | 02  | ✅ Past guesses priced again at start              | A new repricer kind for the guesses of the last 30 days: priced from the list, or turned into $0 waiting calls; docs. AC-3.                                                                    | 01                                       |
-| 03  | One LiteLLM price list                             | One update task writes one file with the catalog part and the Anthropic part, with a guard against lost prices; spend reads it; the spend copy, its task and one `up` row go away; docs. AC-4. | 02 (only for the order of the doc edits) |
+| 03  | ✅ One LiteLLM price list                          | One update task writes one file with the catalog part and the Anthropic part, with a guard against lost prices; spend reads it; the spend copy, its task and one `up` row go away; docs. AC-4. | 02 (only for the order of the doc edits) |
 
 ## Conventions & glossary
 
