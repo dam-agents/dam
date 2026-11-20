@@ -46,7 +46,7 @@ Then Ben sees the setup read-only, with Ada named as the one who can change it
 ## Writing an Example
 
 - **Concrete.** Name the people, the agents and the values: "Ada", "triage", "Hello Ada", never "a user" or "an agent".
-  The suite's personas are Ada, Ben and Jo.
+  The suite's personas are Ada, Ben and Jo, and Kim, a newcomer who has never accepted the Terms of Use.
   Concrete data is what makes an Example check one thing.
 - **One action.** One When; the Given steps set the state up, the Then steps check the outcome.
   A long story is a journey, not an Example (see [Journeys](#journeys)).

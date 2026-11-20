@@ -48,7 +48,11 @@ async function signIn(
 ): Promise<string> {
   const context = await browser.newContext();
   try {
-    await signInThroughTheBrowser(await context.newPage(), person.account);
+    await signInThroughTheBrowser(
+      await context.newPage(),
+      person.account,
+      person.acceptedTerms,
+    );
     await context.storageState({ path });
   } finally {
     await context.close();
@@ -286,6 +290,8 @@ export const test = base.extend<
       throw new Error(
         "no CLI driver yet: tag no scenario @cli before it exists",
       );
-    await use(surface === "ui" ? uiDriver(world, pages) : apiDriver(world));
+    await use(
+      surface === "ui" ? uiDriver(world, pages) : apiDriver(world, pages),
+    );
   },
 });
