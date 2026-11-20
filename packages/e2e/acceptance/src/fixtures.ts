@@ -2,11 +2,15 @@ import { mkdirSync } from "node:fs";
 
 import { type Browser, expect, type Page } from "@playwright/test";
 import { test as base } from "playwright-bdd";
-import { connectionEgressPlaceholder } from "api-server-api";
+import {
+  connectionEgressPlaceholder,
+  E2E_PERFORM_FETCH_MAX_TIMEOUT_MS,
+} from "api-server-api";
 
 import { acpRequest, promptOnce, promptWhenSettled } from "./acp.js";
 import { signInThroughTheBrowser } from "./auth.js";
 import { mockTemplateId } from "./config.js";
+import { requestOf, waitingApprovals } from "./egress.js";
 import { apiDriver } from "./drivers/api/index.js";
 import type { Driver, Surface } from "./drivers/driver.js";
 import { uiDriver } from "./drivers/ui/index.js";
@@ -41,6 +45,14 @@ interface Setup {
       | { provider: "openai" },
   ): Promise<void>;
   allowAll(persona: Persona, host: string, agent: string): Promise<void>;
+  rule(
+    persona: Persona,
+    agent: string,
+    rule: { method: string; host: string; pathPattern: string },
+    verdict: "allow" | "deny",
+  ): Promise<void>;
+  hold(agent: string, url: string, times: number): Promise<void>;
+  flag(persona: Persona, feature: "chat-network-approvals"): Promise<void>;
   grant(persona: Persona, connection: string, agent: string): Promise<void>;
   agent(persona: Persona, name: string): Promise<void>;
   sleep(agent: string): Promise<void>;
@@ -391,6 +403,99 @@ export const test = base.extend<
           cast.forgetWarm(agent.owner, agent.id);
         });
       },
+      rule: async (persona, agent, { method, host, pathPattern }, verdict) => {
+        const owner = await cast.person(persona);
+        const agentId = world.agent(agent).id;
+        const made = await owner.api.egressRules.create.mutate({
+          agentId,
+          host,
+          method,
+          pathPattern,
+          verdict,
+        });
+        world.undo.push(() =>
+          owner.api.egressRules.revoke.mutate({ id: made.id }),
+        );
+        const covered = `https://${host}${pathPattern === "*" ? "/status/204" : pathPattern.replace("*", "204")}`;
+        await expect
+          .poll(
+            async () =>
+              (
+                await owner.api.e2e.performFetch
+                  .mutate({ agentId, url: covered, timeoutMs: 5_000 })
+                  .catch(() => ({ status: 0 }))
+              ).status,
+            {
+              timeout: 180_000,
+              intervals: [3_000],
+              message: `${agent}'s rule for ${host}${pathPattern} never took effect`,
+            },
+          )
+          .toBe(
+            verdict === "deny"
+              ? 403
+              : covered.includes("/status/204")
+                ? 204
+                : 200,
+          );
+        for (const a of await waitingApprovals(owner, agentId))
+          await owner.api.approvals.dismiss.mutate({ id: a.id });
+      },
+      hold: async (agent, url, times) => {
+        const record = world.agent(agent);
+        const owner = await cast.person(record.owner);
+        for (const a of await waitingApprovals(owner, record.id))
+          await owner.api.approvals.dismiss.mutate({ id: a.id });
+        const request = requestOf(`GET ${url}`);
+        const results: Promise<number>[] = [];
+        for (let i = 0; i < times; i++) {
+          results.push(
+            owner.api.e2e.performFetch
+              .mutate({
+                agentId: record.id,
+                url,
+                timeoutMs: E2E_PERFORM_FETCH_MAX_TIMEOUT_MS,
+              })
+              .then(
+                (r) => r.status,
+                () => 0,
+              ),
+          );
+          let approvalId = "";
+          await expect
+            .poll(
+              async () => {
+                const waiting = await waitingApprovals(
+                  owner,
+                  record.id,
+                  request,
+                );
+                approvalId = waiting[0]?.id ?? "";
+                return waiting.length;
+              },
+              {
+                timeout: 20_000,
+                message: `${agent}'s request to ${url} was not held`,
+              },
+            )
+            .toBe(1);
+          world.held.set(agent, { approvalId, url, results });
+        }
+        // UNIT_BOUNDARY_DESCRIPTION: a request that joins a waiting approval files nothing of its own, so the time it takes to reach the gateway is waited out rather than seen.
+        if (times > 1)
+          await new Promise((resolve) => setTimeout(resolve, 5_000));
+        world.undo.push(async () => {
+          for (const a of await waitingApprovals(owner, record.id))
+            await owner.api.approvals.dismiss.mutate({ id: a.id });
+        });
+      },
+      flag: async (persona, feature) => {
+        const owner = await cast.person(persona);
+        await owner.api.features.setFlag.mutate({ feature, enabled: true });
+        world.undo.push(() =>
+          owner.api.features.setFlag.mutate({ feature, enabled: false }),
+        );
+      },
       runningAgent: async (
         persona,
         name,
@@ -491,6 +596,10 @@ export const test = base.extend<
             .toBe(expected);
         }
         world.agents.set(name, { owner: persona, name: unique, id });
+        world.undo.unshift(async () => {
+          for (const a of await waitingApprovals(owner, id))
+            await owner.api.approvals.dismiss.mutate({ id: a.id });
+        });
         if (requiresNaming !== undefined) {
           await owner.api.agents.setCredentialInjection.mutate({
             id,

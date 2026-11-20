@@ -5,6 +5,7 @@ import { apiConnections } from "./connections.js";
 import { apiArtifacts } from "./artifacts.js";
 import { apiAgents } from "./agents.js";
 import { apiChat } from "./chat.js";
+import { apiEgress } from "./egress.js";
 import { apiEnvironment } from "./environment.js";
 import { apiLive } from "./live.js";
 import { apiSession } from "./session.js";
@@ -24,5 +25,6 @@ export function apiDriver(world: World, pages: Pages): Driver {
     sessions: apiSessions(world),
     live: apiLive(world),
     environment: apiEnvironment(world),
+    egress: apiEgress(world),
   };
 }

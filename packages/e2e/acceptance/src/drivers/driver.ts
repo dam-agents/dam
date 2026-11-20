@@ -96,6 +96,51 @@ export interface EnvironmentDriver {
   ): Promise<void>;
 }
 
+/** UNIT_BOUNDARY_DESCRIPTION: a request an agent makes, as an approval names it: method, host and path. */
+export interface EgressRequest {
+  method: string;
+  host: string;
+  path: string;
+}
+
+export interface EgressDriver {
+  allow(
+    person: Person,
+    agentName: string,
+    method: string,
+    host: string,
+    pathPattern: string,
+  ): Promise<void>;
+  expectRule(
+    person: Person,
+    agentName: string,
+    rule: {
+      method: string;
+      host: string;
+      pathPattern: string;
+      verdict: string;
+    },
+    present: boolean,
+  ): Promise<void>;
+  expectWaiting(
+    person: Person,
+    agentName: string,
+    request: EgressRequest | undefined,
+  ): Promise<void>;
+  answer(
+    person: Person,
+    agentName: string,
+    verdict: "once" | "always",
+  ): Promise<void>;
+  openChat(person: Person, agentName: string): Promise<void>;
+  expectWaitingInChat(
+    person: Person,
+    agentName: string,
+    request: EgressRequest,
+  ): Promise<void>;
+  answerOnceInChat(person: Person, agentName: string): Promise<void>;
+}
+
 export interface SessionsDriver {
   expectListed(
     person: Person,
@@ -130,7 +175,7 @@ export interface ArtifactsDriver {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability (session, agents, chat, sessions, live views, environment, artifacts, connections), independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
+ * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability (session, agents, chat, sessions, live views, environment, egress, artifacts, connections), independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
  */
 export interface Driver {
   readonly surface: Surface;
@@ -141,5 +186,6 @@ export interface Driver {
   readonly connections: ConnectionsDriver;
   readonly sessions: SessionsDriver;
   readonly environment: EnvironmentDriver;
+  readonly egress: EgressDriver;
   readonly live: LiveDriver;
 }

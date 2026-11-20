@@ -5,6 +5,7 @@ import { uiArtifacts } from "./artifacts.js";
 import { uiAgents } from "./agents.js";
 import { uiChat } from "./chat.js";
 import type { Pages } from "./pages.js";
+import { uiEgress } from "./egress.js";
 import { uiEnvironment } from "./environment.js";
 import { uiLive } from "./live.js";
 import { uiSession } from "./session.js";
@@ -24,5 +25,6 @@ export function uiDriver(world: World, pages: Pages): Driver {
     sessions: uiSessions(world, pages),
     live: uiLive(world, pages),
     environment: uiEnvironment(world, pages),
+    egress: uiEgress(world, pages),
   };
 }
