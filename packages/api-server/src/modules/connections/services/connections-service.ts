@@ -35,8 +35,11 @@ import {
   providerAliasConflict,
   harnessFits,
   type ConnectionProviderView,
+  type ConnectionToolAccess,
+  type ConnectionToolAccessRecord,
   type HarnessCatalog,
   type ProviderPresetType,
+  type ToolMode,
 } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
@@ -68,6 +71,12 @@ import {
   normalizePrivateKeyPem,
 } from "../domain/build-connection.js";
 import { parseGitHubAppScope } from "../domain/github-app-scope.js";
+import {
+  isMcpConnection,
+  toolModeOf,
+  toolModesOf,
+  type ToolAccessTemplate,
+} from "../domain/tool-access.js";
 import {
   DAM_KEY_INPUT,
   isDamConnection,
@@ -285,6 +294,8 @@ export function createConnectionsService(deps: {
   damKey?: DamKeyPort;
   /* UNIT_BOUNDARY_DESCRIPTION: whether the install offers the person the Connection that drives it — its per-user flag — which decides their own create and their own grants of it, and never the platform's provisioning. Required, so no composition root can leave this path ungated by forgetting it, and read as not offered when it fails. */
   damConnectionOffered: () => Promise<boolean>;
+  /* UNIT_BOUNDARY_DESCRIPTION: whether the owner may set a Connection to need approval for its tool calls — the `mcp-tool-approval` feature for this person. Required, so no composition root leaves the mode ungated, and read as off when it fails. */
+  toolApprovalOffered: () => Promise<boolean>;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
   providerModelCatalog?: ProviderModelCatalog;
   /* UNIT_BOUNDARY_DESCRIPTION: the Connection a plain create grants from the owner's default for new agents, and the harness that default boots the agent on, in place of the default harness's provider order; null while that default names none the owner holds. */
@@ -485,6 +496,7 @@ export function createConnectionsService(deps: {
           }
         : {};
     const provider = providerView(conn.templateId);
+    const toolAccess = toolAccessView(conn, template);
     const host = connectionHostOf(conn);
     const retiredHost =
       template && host && isRetiredHost(template, host) ? host : undefined;
@@ -505,10 +517,7 @@ export function createConnectionsService(deps: {
       ...oauthExtras,
       ...(conn.parentId ? { parentId: conn.parentId } : {}),
       ...(conn.isParent ? { isParent: true as const } : {}),
-      ...((conn.auth.kind === "oauth" || conn.auth.kind === "github-app") &&
-      conn.auth.fullAccess
-        ? { fullAccess: true as const }
-        : {}),
+      ...(hasFullAccess(conn, template) ? { fullAccess: true as const } : {}),
       ...(template?.toolAccess
         ? {
             accessChoice: {
@@ -516,10 +525,83 @@ export function createConnectionsService(deps: {
             },
           }
         : {}),
+      ...(toolAccess ? { toolAccess } : {}),
       ...(provider
         ? { provider: { ...provider, preferred: conn.id === preferredId } }
         : {}),
     };
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: whether a Connection's view says full access. On a Template that declares tool access it is the allow-all mode, so a client that knows only the read-only choice keeps showing it; elsewhere it is GitHub's unnarrowed Connection. */
+  function hasFullAccess(
+    conn: Connection,
+    template: ToolAccessTemplate | null | undefined,
+  ): boolean {
+    if (template?.toolAccess) return toolModeOf(conn, template) === "allow-all";
+    return (
+      (conn.auth.kind === "oauth" || conn.auth.kind === "github-app") &&
+      conn.auth.fullAccess === true
+    );
+  }
+
+  function toolAccessView(
+    conn: Connection,
+    template: ToolAccessTemplate | null | undefined,
+  ): ConnectionToolAccess | null {
+    if (!isMcpConnection(conn)) return null;
+    return {
+      mode: toolModeOf(conn, template),
+      modes: toolModesOf(conn, template),
+      tools: conn.toolAccess?.tools ?? null,
+      listedAt: conn.toolAccess?.listedAt ?? null,
+      listError: conn.toolAccess?.listError ?? null,
+    };
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: writes a Connection's tool mode, one of the modes it offers; needs approval only while the owner has the `mcp-tool-approval` feature. A mode that limits tool calls writes the Secret again first, so a Secret made before its Template declared tool access asks the gateway for request bodies. */
+  async function setToolMode(conn: Connection, mode: ToolMode): Promise<void> {
+    const template = deps.templates.get(conn.templateId);
+    if (!toolModesOf(conn, template).includes(mode)) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `The connection "${conn.name}" does not offer the tool mode "${mode}".`,
+      });
+    }
+    if (
+      mode === "needs-approval" &&
+      !(await deps.toolApprovalOffered().catch(() => false))
+    ) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message:
+          "Approval of each tool call is an experimental feature that is off for you, so this connection cannot be set to need approval.",
+      });
+    }
+    const from = await deps.connectionLock(
+      connectionRefreshLockKey(conn.id),
+      async () => {
+        const fresh = await deps.repo.get(conn.id, deps.ownerId);
+        if (!fresh) return null;
+        if (mode !== "allow-all") await restampConnectionSecret(fresh);
+        await deps.repo.updateToolAccess(conn.id, {
+          tools: null,
+          listedAt: null,
+          listError: null,
+          ...fresh.toolAccess,
+          mode,
+        });
+        return toolModeOf(fresh, template);
+      },
+    );
+    if (from === null) return;
+    securityLog("info", "connection.access_update", {
+      category: "credential",
+      actor: deps.ownerId,
+      actorKind: "user",
+      target: conn.id,
+      result: "success",
+      detail: { templateId: conn.templateId, from, to: mode },
+    });
   }
 
   async function familyClientCreds(): Promise<
@@ -2564,16 +2646,27 @@ export function createConnectionsService(deps: {
         (built.auth.kind === "oauth" || built.auth.kind === "github-app")
           ? withoutScope(built.auth)
           : built.auth;
-      if (effectiveInput.authKind === "oauth" && effectiveInput.fullAccess) {
-        if (!template.toolAccess || auth.kind !== "oauth") {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message:
-              "This connection has no read-only mode, so full access cannot be set on it.",
-          });
-        }
-        auth = { ...auth, fullAccess: true };
+      const fullAccess =
+        effectiveInput.authKind === "oauth" && effectiveInput.fullAccess;
+      if (fullAccess && (!template.toolAccess || auth.kind !== "oauth")) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "This connection has no read-only mode, so full access cannot be set on it.",
+        });
       }
+      const toolAccess: ConnectionToolAccessRecord | null = contributions.some(
+        (c) => c.kind === "mcp-entry",
+      )
+        ? {
+            mode: fullAccess
+              ? "allow-all"
+              : (template.defaultToolMode ?? "allow-all"),
+            tools: null,
+            listedAt: null,
+            listError: null,
+          }
+        : null;
       const mintFirstToken = async (
         current: TokenAuth,
         credential: {
@@ -2779,6 +2872,7 @@ export function createConnectionsService(deps: {
         auth,
         contributions,
         ...(isParent ? { isParent: true as const } : {}),
+        ...(toolAccess ? { toolAccess } : {}),
       };
       try {
         await deps.repo.insert(record);
@@ -3239,31 +3333,25 @@ export function createConnectionsService(deps: {
           message: "connection not found",
         });
       }
-      const template = deps.templates.get(conn.templateId);
-      if (!template?.toolAccess || conn.auth.kind !== "oauth") {
+      if (!deps.templates.get(conn.templateId)?.toolAccess) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message:
             "This connection has no read-only mode, so its access cannot be changed.",
         });
       }
-      await deps.connectionLock(connectionRefreshLockKey(conn.id), async () => {
-        const fresh = await deps.repo.get(conn.id, deps.ownerId);
-        if (!fresh || fresh.auth.kind !== "oauth") return;
-        const nextAuth: OAuthAuth = { ...fresh.auth };
-        delete nextAuth.fullAccess;
-        if (input.fullAccess) nextAuth.fullAccess = true;
-        if (!input.fullAccess) await restampConnectionSecret(fresh);
-        await deps.repo.updateAuth(conn.id, nextAuth);
-      });
-      securityLog("info", "connection.access_update", {
-        category: "credential",
-        actor: deps.ownerId,
-        actorKind: "user",
-        target: conn.id,
-        result: "success",
-        detail: { templateId: conn.templateId, fullAccess: input.fullAccess },
-      });
+      await setToolMode(conn, input.fullAccess ? "allow-all" : "read-only");
+    },
+
+    async setToolMode(input) {
+      const conn = await deps.repo.get(input.id, deps.ownerId);
+      if (!conn) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "connection not found",
+        });
+      }
+      await setToolMode(conn, input.mode);
     },
 
     async updateGitHubUserTokenScope(input) {

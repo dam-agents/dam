@@ -7,7 +7,7 @@ import { modelCallBodyOf } from "../../apps/ext-authz/grpc.js";
 import {
   makeFakeApprovalsBus,
   makeFakeApprovalsRepo,
-  noReadOnlyLimit,
+  noToolAccessLimit,
 } from "../helpers/approvals-fakes.js";
 
 const allowEverything = {
@@ -66,7 +66,7 @@ function world(options: WorldOptions = {}) {
   const controlReads: string[] = [];
   const ruleReads: string[] = [];
   const gate = createExtAuthzGate({
-    readOnly: noReadOnlyLimit,
+    toolAccess: noToolAccessLimit,
     repo: repo.repo,
     bus: bus.bus,
     attendance,

@@ -649,6 +649,7 @@ function slack(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
       readTools: SLACK_READ_TOOLS,
       fullAccessLabel: "Can post as me",
     },
+    defaultToolMode: "read-only",
     iconSlug: "slack",
     authKind: "oauth",
     setupUrl: "https://api.slack.com/apps",

@@ -13,6 +13,7 @@ export const featureIdSchema = z.enum([
   "chat-network-approvals",
   "one-time-tasks",
   "security-check",
+  "mcp-tool-approval",
 ]);
 
 export const featureModeSchema = z.enum(["off", "experimental", "on"]);

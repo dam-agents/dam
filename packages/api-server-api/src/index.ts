@@ -785,6 +785,10 @@ export type {
   ConnectionView,
   ConnectionAccessChoice,
   ConnectionProviderView,
+  ConnectionTool,
+  ConnectionToolAccess,
+  ConnectionToolAccessRecord,
+  ToolMode,
   ConnectionTemplateView,
   ProviderBalance,
   ProviderKeyCheck,
@@ -809,6 +813,8 @@ export {
 } from "./modules/connections/credential-expiry.js";
 export {
   authConfig as connectionAuthConfigSchema,
+  connectionToolAccessRecord as connectionToolAccessRecordSchema,
+  toolMode as toolModeSchema,
   providerKeyCheck as providerKeyCheckSchema,
   credentialCheck as credentialCheckSchema,
 } from "./modules/connections/types.js";

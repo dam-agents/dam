@@ -1,10 +1,10 @@
-// TEST_OVERVIEW: a read-only Connection at the ext_authz gate. An Agent that holds a Connection whose Template declares read tools, without full access, may call only those tools on the Template's host: a `tools/call` of any other tool is answered with a JSON-RPC error the agent can read, and is never sent on, even when an egress rule allows the host. A Connection with full access is not limited. The choice is read on every request, and a request that names no Connection, or one the Agent does not hold, gets the strictest choice. A body the gateway did not send, or that is not one strict JSON document, is refused rather than passed, and so is a TLS request with a body that comes without its server name while the Agent holds a read-only Connection.
+// TEST_OVERVIEW: the tool mode of a Connection at the ext_authz gate. An Agent that holds a Connection whose Template declares tool access, in read only, may call only the read tools on the Template's host: a `tools/call` of any other tool is answered with a JSON-RPC error the agent can read, and is never sent on, even when an egress rule allows the host. In needs approval every `tools/call` is refused the same way until approvals exist. A Connection in allow all is not limited. The choice is read on every request, and a request that names no Connection, or one the Agent does not hold, gets the strictest choice. A body the gateway did not send, or that is not one strict JSON document, is refused rather than passed, and so is a TLS request with a body that comes without its server name while the Agent holds a read-only Connection.
 import { describe, expect, it } from "vitest";
-import type { Connection } from "api-server-api";
+import type { Connection, ToolMode } from "api-server-api";
 import { createExtAuthzGate } from "../../modules/approvals/services/ext-authz-gate.js";
-import { createReadOnlyGate } from "../../modules/approvals/services/read-only-gate.js";
+import { createToolAccessGate } from "../../modules/approvals/services/tool-access-gate.js";
 import type { ModelCallBody } from "../../modules/approvals/services/web-search-gate.js";
-import { readOnlyAccessFor } from "../../modules/connections/domain/read-only-access.js";
+import { toolAccessFor } from "../../modules/connections/domain/tool-access.js";
 import {
   makeFakeApprovalsBus,
   makeFakeApprovalsRepo,
@@ -12,15 +12,18 @@ import {
 
 const HOST = "mcp.example.com";
 
-const toolAccess = {
-  host: HOST,
-  readTools: ["notes_search", "notes_read"],
-  fullAccessLabel: "Can write as me",
+const template = {
+  toolAccess: {
+    host: HOST,
+    readTools: ["notes_search", "notes_read"],
+    fullAccessLabel: "Can write as me",
+  },
+  defaultToolMode: "read-only" as const,
 };
 
 function connection(
   id: string,
-  opts: { fullAccess?: boolean; templateId?: string } = {},
+  opts: { mode?: ToolMode; templateId?: string } = {},
 ): Connection {
   return {
     id,
@@ -33,9 +36,18 @@ function connection(
       clientId: "cid",
       scopes: [],
       accessTokenRef: { storeId: "test", path: id, field: "access_token" },
-      ...(opts.fullAccess ? { fullAccess: true as const } : {}),
     },
     contributions: [],
+    ...(opts.mode
+      ? {
+          toolAccess: {
+            mode: opts.mode,
+            tools: null,
+            listedAt: null,
+            listError: null,
+          },
+        }
+      : {}),
   } as unknown as Connection;
 }
 
@@ -56,8 +68,8 @@ function toolCall(name: unknown, id: number | string = 1) {
   return { jsonrpc: "2.0", id, method: "tools/call", params: { name } };
 }
 
-const toolAccessOf = (templateId: string) =>
-  templateId === "notes" ? toolAccess : undefined;
+const templateOf = (templateId: string) =>
+  templateId === "notes" ? template : undefined;
 
 function world(granted: Connection[]) {
   const reads: (string | null)[] = [];
@@ -83,14 +95,14 @@ function world(granted: Connection[]) {
     questions: { ask: async () => {} },
     platformAllowedAuthorities: [],
     waitingRuleSpeaksFor: () => false,
-    readOnly: createReadOnlyGate({
+    toolAccess: createToolAccessGate({
       connections: {
         limiting: async (_agentId, request) => {
           reads.push(request.connectionId);
-          return readOnlyAccessFor(granted, toolAccessOf, request);
+          return toolAccessFor(granted, templateOf, request);
         },
         held: async () =>
-          readOnlyAccessFor(granted, toolAccessOf, {
+          toolAccessFor(granted, templateOf, {
             host: HOST,
             connectionId: null,
           }),
@@ -125,7 +137,7 @@ function refusalOf(
   decision: Awaited<ReturnType<ReturnType<typeof world>["send"]>>,
 ) {
   if (typeof decision === "string") throw new Error(`not refused: ${decision}`);
-  expect(decision.basis).toBe("read-only");
+  expect(decision.basis).toBe("tool-access");
   return decision.response;
 }
 
@@ -148,12 +160,14 @@ describe("a read-only Connection at the gate", () => {
     );
     expect(response.status).toBe(200);
     expect(response.headers["content-type"]).toBe("application/json");
-    expect(response.headers["x-platform-refusal"]).toBe("read-only-connection");
+    expect(response.headers["x-platform-refusal"]).toBe(
+      "connection-tool-access",
+    );
     const answer = JSON.parse(response.body);
     expect(answer).toMatchObject({ jsonrpc: "2.0", id: 7 });
     expect(answer.error.message).toContain('"notes_write"');
     expect(answer.error.message).toContain('"conn-a-name" is read only');
-    expect(answer.error.message).toContain('"Can write as me"');
+    expect(answer.error.message).toContain("changing the Connection's access");
     expect(answer.error.message).toContain("egress gateway");
   });
 
@@ -167,18 +181,18 @@ describe("a read-only Connection at the gate", () => {
     );
   });
 
-  // TEST_SCENARIO: the owner gave the Connection full access. Nothing is limited, so a write tool passes.
-  it("passes a write tool of a Connection with full access", async () => {
-    const { send } = world([connection("conn-a", { fullAccess: true })]);
+  // TEST_SCENARIO: the owner set the Connection to allow all. Nothing is limited, so a write tool passes.
+  it("passes a write tool of a Connection that allows all", async () => {
+    const { send } = world([connection("conn-a", { mode: "allow-all" })]);
     expect(
       await send(bodyOf(toolCall("notes_write")), { connectionId: "conn-a" }),
     ).toBe("allow");
   });
 
-  // TEST_SCENARIO: the owner switches the Connection to read only while the agent runs. The gate reads the choice on every request, so the next call is refused with no restart.
+  // TEST_SCENARIO: the owner switches the Connection to read only while the agent runs. The gate reads the mode on every request, so the next call is refused with no restart.
   it("applies a changed choice to the next request", async () => {
     const { send, granted } = world([
-      connection("conn-a", { fullAccess: true }),
+      connection("conn-a", { mode: "allow-all" }),
     ]);
     const call = () =>
       send(bodyOf(toolCall("notes_write")), { connectionId: "conn-a" });
@@ -187,10 +201,10 @@ describe("a read-only Connection at the gate", () => {
     refusalOf(await call());
   });
 
-  // TEST_SCENARIO: the gateway adds a credential to a request that names no Connection when nothing contests the host. Such a request could carry the read-only Connection's credential, so it gets the strictest choice, and so does a request that names a Connection the Agent does not hold.
+  // TEST_SCENARIO: the gateway adds a credential to a request that names no Connection when nothing contests the host. Such a request could carry the read-only Connection's credential, so it gets the strictest mode, and so does a request that names a Connection the Agent does not hold.
   it("limits a request that names no Connection, or an unknown one", async () => {
     const { send } = world([
-      connection("conn-full", { fullAccess: true }),
+      connection("conn-full", { mode: "allow-all" }),
       connection("conn-read"),
     ]);
     const write = bodyOf(toolCall("notes_write"));
@@ -331,7 +345,7 @@ describe("a read-only Connection at the gate", () => {
         tls: false,
       }),
     ).toBe("allow");
-    const full = world([connection("conn-a", { fullAccess: true })]);
+    const full = world([connection("conn-a", { mode: "allow-all" })]);
     expect(await full.send(bodyOf(toolCall("notes_write")), elsewhere)).toBe(
       "allow",
     );
@@ -391,6 +405,43 @@ describe("a read-only Connection at the gate", () => {
         await send(bodyOf({}), { connectionId: "conn-a", method: "PUT" }),
       ).status,
     ).toBe(403);
+  });
+
+  // TEST_SCENARIO: the owner set the Connection to need approval, and approvals of tool calls do not exist yet. Every tool call fails closed, a read tool too, with a JSON-RPC error that says the call needs approval and was not made; a request that calls no tool still passes.
+  it("refuses every tool call of a Connection that needs approval", async () => {
+    const { send } = world([connection("conn-a", { mode: "needs-approval" })]);
+    const named = { connectionId: "conn-a" };
+    const response = refusalOf(
+      await send(bodyOf(toolCall("notes_read", 3)), named),
+    );
+    expect(response.status).toBe(200);
+    const answer = JSON.parse(response.body);
+    expect(answer).toMatchObject({ jsonrpc: "2.0", id: 3 });
+    expect(answer.error.message).toContain('"notes_read"');
+    expect(answer.error.message).toContain(
+      '"conn-a-name" needs approval for every tool call',
+    );
+    expect(answer.error.message).toContain("not available yet");
+    expect(
+      await send(
+        bodyOf({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+        named,
+      ),
+    ).toBe("allow");
+  });
+
+  // TEST_SCENARIO: an unnamed request on a host where the Agent holds one Connection in needs approval and one in read only gets read only, which refuses at once and never asks a person for an approval they did not expect: its read tools pass.
+  it("picks read only over needs approval for an unnamed request", async () => {
+    const { send } = world([
+      connection("conn-ask", { mode: "needs-approval" }),
+      connection("conn-read", { mode: "read-only" }),
+    ]);
+    expect(
+      await send(bodyOf(toolCall("notes_read")), { connectionId: null }),
+    ).toBe("allow");
+    refusalOf(
+      await send(bodyOf(toolCall("notes_read")), { connectionId: "conn-ask" }),
+    );
   });
 
   // TEST_SCENARIO: the limit belongs to the Template's host and to the Connections that declare read tools. A request to another host, or of an Agent that holds no such Connection, is gated as before, body or not.

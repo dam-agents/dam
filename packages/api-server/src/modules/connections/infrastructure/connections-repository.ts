@@ -13,9 +13,11 @@ import {
 import { DAM_KEY_INPUT } from "../domain/dam-connection.js";
 import {
   connectionAuthConfigSchema as authConfigSchema,
+  connectionToolAccessRecordSchema as toolAccessRecordSchema,
   contribution as contributionSchema,
   type Connection,
   type ConnectionAuthConfig,
+  type ConnectionToolAccessRecord,
   type Contribution,
 } from "api-server-api";
 
@@ -30,6 +32,7 @@ export interface ConnectionsRepository {
     contributions: Contribution[];
     parentId?: string;
     isParent?: true;
+    toolAccess?: ConnectionToolAccessRecord;
   }): Promise<void>;
 
   listByOwner(ownerId: string): Promise<Connection[]>;
@@ -41,6 +44,11 @@ export interface ConnectionsRepository {
   listDue(skewSec: number): Promise<Connection[]>;
 
   updateAuth(id: string, auth: ConnectionAuthConfig): Promise<void>;
+
+  updateToolAccess(
+    id: string,
+    toolAccess: ConnectionToolAccessRecord,
+  ): Promise<void>;
 
   mergeInputs(id: string, patch: Record<string, unknown>): Promise<void>;
 
@@ -85,6 +93,7 @@ interface ConnectionRow {
   contributions: unknown;
   parentId?: string | null;
   isParent?: boolean;
+  toolAccess?: unknown;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -92,6 +101,7 @@ interface ConnectionRow {
 export function toConnection(row: ConnectionRow): Connection | null {
   const auth = authConfigSchema.safeParse(row.auth);
   if (!auth.success) return null;
+  const toolAccess = toolAccessRecordSchema.safeParse(row.toolAccess);
   return {
     id: row.id,
     ownerId: row.owner,
@@ -102,6 +112,7 @@ export function toConnection(row: ConnectionRow): Connection | null {
     contributions: contributionsOf(row.contributions),
     ...(row.parentId ? { parentId: row.parentId } : {}),
     ...(row.isParent ? { isParent: true as const } : {}),
+    ...(toolAccess.success ? { toolAccess: toolAccess.data } : {}),
   };
 }
 
@@ -144,6 +155,7 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
         contributions: input.contributions,
         ...(input.parentId ? { parentId: input.parentId } : {}),
         ...(input.isParent ? { isParent: true } : {}),
+        ...(input.toolAccess ? { toolAccess: input.toolAccess } : {}),
       });
     },
 
@@ -223,6 +235,13 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
       await db
         .update(connectionsTable)
         .set({ auth, updatedAt: new Date() })
+        .where(eq(connectionsTable.id, id));
+    },
+
+    async updateToolAccess(id, toolAccess): Promise<void> {
+      await db
+        .update(connectionsTable)
+        .set({ toolAccess, updatedAt: new Date() })
         .where(eq(connectionsTable.id, id));
     },
 

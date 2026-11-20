@@ -14,7 +14,7 @@ import type { SpendCheck } from "../../spend/index.js";
 import type { SpendLimitQuestions } from "./spend-limit-questions.js";
 import { type SettledVerdict, waitForVerdict } from "./held-verdict.js";
 import type { ModelCallBody, WebSearchGate } from "./web-search-gate.js";
-import type { ReadOnlyGate } from "./read-only-gate.js";
+import type { ToolAccessGate } from "./tool-access-gate.js";
 
 export type ExtAuthzVerdict = "allow" | "deny";
 
@@ -28,7 +28,7 @@ export type ExtAuthzDecision =
   | ExtAuthzVerdict
   | {
       readonly verdict: "refuse";
-      readonly basis: "spend" | "rule" | "web-search" | "read-only";
+      readonly basis: "spend" | "rule" | "web-search" | "tool-access";
       readonly response: DeniedResponse;
     };
 
@@ -120,7 +120,7 @@ interface CreateExtAuthzGateDeps {
   spend: Pick<SpendCheck, "checkCall">;
   questions: SpendLimitQuestions;
   webSearch?: WebSearchGate;
-  readOnly: ReadOnlyGate;
+  toolAccess: ToolAccessGate;
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
   waitingRuleSpeaksFor: WaitingRuleSpeaksFor;
@@ -219,7 +219,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           };
       }
 
-      const read = await deps.readOnly.check({
+      const tools = await deps.toolAccess.check({
         agentId,
         identity,
         via,
@@ -231,11 +231,11 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
         connectionId: connectionId ?? null,
         body,
       });
-      if (!read.pass)
+      if (!tools.pass)
         return {
           verdict: "refuse",
-          basis: "read-only",
-          response: read.response,
+          basis: "tool-access",
+          response: tools.response,
         };
 
       if (deps.platformAllowedAuthorities.includes(`${host}:${port}`)) {

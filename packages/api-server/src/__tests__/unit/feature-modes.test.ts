@@ -32,6 +32,7 @@ describe("feature modes", () => {
         "chat-network-approvals": "experimental",
         "one-time-tasks": "experimental",
         "security-check": "experimental",
+        "mcp-tool-approval": "experimental",
       },
     });
     expect(await service.flags()).toMatchObject({
@@ -64,6 +65,7 @@ describe("feature modes", () => {
           "chat-network-approvals": "experimental",
           "one-time-tasks": "experimental",
           "security-check": "experimental",
+          "mcp-tool-approval": "experimental",
         },
       }).flags();
     expect(await flags({})).toMatchObject({

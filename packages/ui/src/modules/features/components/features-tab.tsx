@@ -90,6 +90,12 @@ const FEATURE_ROWS: FeatureRow[] = [
     description:
       "Create a schedule that runs once, at a set time or right away, in a session of its own, and edit one before it runs.",
   },
+  {
+    id: "mcp-tool-approval",
+    label: "Tool approval for MCP connections",
+    description:
+      "Choose for each MCP connection whether an agent may call every tool, only the tools that read, or each tool only after someone approves the call.",
+  },
 ];
 
 function FeatureRowCard({

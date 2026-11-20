@@ -213,6 +213,7 @@ function makeRepo(initial: Connection[]) {
       const c = rows.get(id);
       if (c) rows.set(id, { ...c, auth });
     },
+    updateToolAccess: async () => {},
     updateContributions: async (id, contributions) => {
       const c = rows.get(id);
       if (c) rows.set(id, { ...c, contributions });
@@ -273,6 +274,7 @@ function makeService(initial: Connection[] = [signIn()]) {
   const fannedOut: string[] = [];
   const svc = createConnectionsService({
     damConnectionOffered: async () => true,
+    toolApprovalOffered: async () => true,
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: OWNER,

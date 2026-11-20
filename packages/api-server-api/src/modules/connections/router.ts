@@ -23,6 +23,7 @@ import {
   connectionProbeGitHubUserTokenInputSchema,
   connectionUpdateGitHubUserTokenScopeInputSchema,
   connectionSetFullAccessInputSchema,
+  connectionSetToolModeInputSchema,
   connectionMoveToHostInputSchema,
   connectionAgentCatalogInputSchema,
   connectionGetAgentConnectionsInputSchema,
@@ -170,6 +171,10 @@ export const connectionsRouter = t.router({
   setFullAccess: manageCredentialsProcedure
     .input(connectionSetFullAccessInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.setFullAccess(input)),
+
+  setToolMode: manageCredentialsProcedure
+    .input(connectionSetToolModeInputSchema)
+    .mutation(({ ctx, input }) => ctx.connections.setToolMode(input)),
 
   moveToHost: manageCredentialsProcedure
     .input(connectionMoveToHostInputSchema)

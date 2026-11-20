@@ -42,6 +42,7 @@ function makeService(
   const regions: (string | undefined)[] = [];
   const svc = createConnectionsService({
     damConnectionOffered: async () => true,
+    toolApprovalOffered: async () => true,
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: "owner",

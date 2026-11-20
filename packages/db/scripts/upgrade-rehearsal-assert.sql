@@ -1,5 +1,5 @@
 -- Compares the upgraded database with the pre-upgrade rows (rehearsal_rows) and
--- the two snapshots (rehearsal_snapshot) against what the migrations 0109-0160
+-- the two snapshots (rehearsal_snapshot) against what the migrations 0109-0161
 -- and their comments say they do. Every check names itself; any failure is
 -- collected and raised at the end, so `psql -v ON_ERROR_STOP=1` exits non-zero.
 CREATE TEMP TABLE rehearsal_failure (name text NOT NULL, expected text NOT NULL, actual text);
@@ -21,7 +21,10 @@ CREATE TEMP TABLE rehearsal_failure (name text NOT NULL, expected text NOT NULL,
 --          per agent, for 3 deleted grants over 2 agents (one UPDATE).
 --   0137  "the saved per-user choice has no reader": -3 user_features rows.
 --   0160  "each one says so with fullAccess": +1 row, the one Slack Account
---          connection of the seed, so fullAccess moves by 30 in all.
+--          connection of the seed.
+--   0161  "Only Slack's rows lose fullAccess": -1 row, that same Slack
+--          Account connection, whose choice moves into tool_access, so
+--          fullAccess moves by 29 in all.
 --   Everything else untouched: no row counts of the other tables move.
 INSERT INTO rehearsal_failure
 SELECT e.name, e.expected::text, e.actual::text
@@ -31,7 +34,7 @@ FROM (VALUES
   ('delta.connection_grants', -3, (SELECT a.n - b.n FROM rehearsal_snapshot b JOIN rehearsal_snapshot a USING (name) WHERE b.label = 'before' AND a.label = 'after' AND a.name = 'connection_grants')),
   ('delta.connection_grants.on_incomplete_github_signins', -3, (SELECT a.n - b.n FROM rehearsal_snapshot b JOIN rehearsal_snapshot a USING (name) WHERE b.label = 'before' AND a.label = 'after' AND a.name = 'connection_grants.on_incomplete_github_signins')),
   ('delta.connections', 33, (SELECT a.n - b.n FROM rehearsal_snapshot b JOIN rehearsal_snapshot a USING (name) WHERE b.label = 'before' AND a.label = 'after' AND a.name = 'connections')),
-  ('delta.connections.full_access', 30, (SELECT a.n - b.n FROM rehearsal_snapshot b JOIN rehearsal_snapshot a USING (name) WHERE b.label = 'before' AND a.label = 'after' AND a.name = 'connections.full_access')),
+  ('delta.connections.full_access', 29, (SELECT a.n - b.n FROM rehearsal_snapshot b JOIN rehearsal_snapshot a USING (name) WHERE b.label = 'before' AND a.label = 'after' AND a.name = 'connections.full_access')),
   ('delta.connections.github_enterprise_oauth_complete', 14, (SELECT a.n - b.n FROM rehearsal_snapshot b JOIN rehearsal_snapshot a USING (name) WHERE b.label = 'before' AND a.label = 'after' AND a.name = 'connections.github_enterprise_oauth_complete')),
   ('delta.connections.github_enterprise_oauth_incomplete', 0, (SELECT a.n - b.n FROM rehearsal_snapshot b JOIN rehearsal_snapshot a USING (name) WHERE b.label = 'before' AND a.label = 'after' AND a.name = 'connections.github_enterprise_oauth_incomplete')),
   ('delta.connections.github_oauth_complete', 12, (SELECT a.n - b.n FROM rehearsal_snapshot b JOIN rehearsal_snapshot a USING (name) WHERE b.label = 'before' AND a.label = 'after' AND a.name = 'connections.github_oauth_complete')),
@@ -101,7 +104,8 @@ GROUP BY () HAVING count(*) > 0;
 
 -- 0118 keeps the connection's identity, its inputs, its contributions and its
 -- Secret paths; only the auth keys it moves (refreshTokenRef, refreshBackoff,
--- fullAccess, accessTokenRef.field) and the two columns 0117 adds may differ.
+-- fullAccess, accessTokenRef.field), the two columns 0117 adds and the
+-- tool_access column 0161 adds may differ.
 INSERT INTO rehearsal_failure
 SELECT 'kept.connections.missing', 'every pre-upgrade connection still exists', string_agg(r.key, ', ')
 FROM rehearsal_rows r
@@ -114,8 +118,8 @@ SELECT 'kept.connections.fields', 'name, inputs, contributions, owner, template_
 FROM rehearsal_rows r
 JOIN connections c ON c.id = r.key
 WHERE r.class = 'connections'
-  AND (to_jsonb(c) - '{updated_at,parent_id,is_parent,auth}'::text[])
-      IS DISTINCT FROM (r.payload - '{updated_at,parent_id,is_parent,auth}'::text[])
+  AND (to_jsonb(c) - '{updated_at,parent_id,is_parent,auth,tool_access}'::text[])
+      IS DISTINCT FROM (r.payload - '{updated_at,parent_id,is_parent,auth,tool_access}'::text[])
 GROUP BY () HAVING count(*) > 0;
 
 INSERT INTO rehearsal_failure
@@ -184,14 +188,33 @@ WHERE r.class = 'connections' AND c.parent_id IS NOT NULL
       END
 GROUP BY () HAVING count(*) > 0;
 
--- 0160 marks every Slack Account connection of the release with fullAccess, so
--- none loses the posting it had, and touches no other template.
+-- 0160 marks every OAuth Slack Account connection of the release with
+-- fullAccess, so none loses the posting it had, and 0161 moves that choice
+-- into the tool mode: allow all where the connection had fullAccess after
+-- 0160, read only elsewhere. Recomputed from the pre-upgrade auth.
 INSERT INTO rehearsal_failure
-SELECT 'kept.connections.slack_full_access', 'fullAccess on every pre-upgrade Slack Account connection', string_agg(r.key, ', ')
+SELECT 'kept.connections.slack_tool_mode', 'allow-all on every pre-upgrade Slack Account connection 0160 gave fullAccess, read-only elsewhere', string_agg(r.key, ', ')
 FROM rehearsal_rows r
 JOIN connections c ON c.id = r.key
 WHERE r.class = 'connections' AND c.template_id = 'slack'
-  AND NOT (c.auth ? 'fullAccess')
+  AND c.tool_access ->> 'mode' IS DISTINCT FROM
+      CASE WHEN r.payload -> 'auth' ->> 'kind' = 'oauth' OR r.payload -> 'auth' ? 'fullAccess'
+           THEN 'allow-all' ELSE 'read-only' END
+GROUP BY () HAVING count(*) > 0;
+
+-- 0161 leaves no fullAccess on a Slack Account connection: the mode is its
+-- only choice.
+INSERT INTO rehearsal_failure
+SELECT 'kept.connections.slack_no_full_access', 'no Slack Account connection keeps auth.fullAccess', string_agg(id, ', ')
+FROM connections
+WHERE template_id = 'slack' AND auth ? 'fullAccess'
+GROUP BY () HAVING count(*) > 0;
+
+-- 0161 writes a tool mode on Slack's rows alone.
+INSERT INTO rehearsal_failure
+SELECT 'kept.connections.tool_access_only_slack', 'tool_access only on Slack Account connections', string_agg(id, ', ')
+FROM connections
+WHERE template_id <> 'slack' AND tool_access IS NOT NULL
 GROUP BY () HAVING count(*) > 0;
 
 -- 0118 gives a completed sign-in or an installation a parent that carries the

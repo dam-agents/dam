@@ -116,6 +116,28 @@ export const authConfig = z.discriminatedUnion("kind", [
 export type AuthConfig = z.infer<typeof authConfig>;
 export type { SecretRef };
 
+// UNIT_BOUNDARY_DESCRIPTION: what an Agent may do with the tools of an MCP Connection. `allow-all` lets every tool call through, `read-only` only the read tools, and `needs-approval` holds every tool call until someone answers it.
+export const toolMode = z.enum(["allow-all", "read-only", "needs-approval"]);
+export type ToolMode = z.infer<typeof toolMode>;
+
+// UNIT_BOUNDARY_DESCRIPTION: one tool an MCP server lists. `readOnly` is the server's `readOnlyHint`, or the Template's own read list where it declares one.
+export const connectionTool = z.object({
+  name: z.string(),
+  readOnly: z.boolean(),
+});
+export type ConnectionTool = z.infer<typeof connectionTool>;
+
+// UNIT_BOUNDARY_DESCRIPTION: the tool mode an MCP Connection stores, with the tools the api-server last read from its server. `tools` is null until the first read succeeded, and `listError` says why the last read failed.
+export const connectionToolAccessRecord = z.object({
+  mode: toolMode,
+  tools: z.array(connectionTool).nullable(),
+  listedAt: z.string().nullable(),
+  listError: z.string().nullable(),
+});
+export type ConnectionToolAccessRecord = z.infer<
+  typeof connectionToolAccessRecord
+>;
+
 export const connection = z.object({
   id: z.string().min(1),
   ownerId: z.string().min(1),
@@ -126,6 +148,7 @@ export const connection = z.object({
   contributions: z.array(contribution),
   parentId: z.string().min(1).optional(),
   isParent: z.literal(true).optional(),
+  toolAccess: connectionToolAccessRecord.optional(),
 });
 export type Connection = z.infer<typeof connection>;
 
@@ -183,6 +206,13 @@ export const connectionAccessChoice = z.object({
 });
 export type ConnectionAccessChoice = z.infer<typeof connectionAccessChoice>;
 
+// UNIT_BOUNDARY_DESCRIPTION: the tool mode of an MCP Connection as its owner sees it, with the modes it offers: only `allow-all` where the gateway cannot read the Connection's requests.
+export const connectionToolAccess = connectionToolAccessRecord.extend({
+  modes: z.array(toolMode).readonly(),
+  tools: z.array(connectionTool).readonly().nullable(),
+});
+export type ConnectionToolAccess = z.infer<typeof connectionToolAccess>;
+
 export const connectionProviderView = z.object({
   alias: z.string(),
   harnesses: z.array(z.string()),
@@ -221,6 +251,7 @@ export const connectionView = z.object({
   isParent: z.literal(true).optional(),
   fullAccess: z.literal(true).optional(),
   accessChoice: connectionAccessChoice.optional(),
+  toolAccess: connectionToolAccess.optional(),
   provider: connectionProviderView
     .extend({ preferred: z.boolean() })
     .optional(),
@@ -424,6 +455,9 @@ export interface ConnectionsService {
 
   /** UNIT_BOUNDARY_DESCRIPTION: sets a Connection that offers the choice to read only or to full access. The gateway reads the choice on every tool call, so it holds from the next call with no restart. */
   setFullAccess(input: { id: string; fullAccess: boolean }): Promise<void>;
+
+  /** UNIT_BOUNDARY_DESCRIPTION: sets the tool mode of an MCP Connection, one of the modes it offers. The gateway reads the mode on every tool call, so it holds from the next call with no restart. */
+  setToolMode(input: { id: string; mode: ToolMode }): Promise<void>;
 
   /** UNIT_BOUNDARY_DESCRIPTION: points a GitHub Enterprise sign-in, and every connection made from it, at another host the install offers. Names, grants and scopes stay; the tokens of the old host are dropped, so the sign-in reads expired until its owner authorizes it on the new host. */
   moveToHost(input: { id: string; host: string }): Promise<void>;

@@ -2,37 +2,40 @@ import { securityLog } from "../../../core/security-log.js";
 import { decodedUtf8 } from "../domain/check-body.js";
 import { readMcpRequestBody } from "../domain/mcp-tool-calls.js";
 import {
+  approvalUnavailableToolCalls,
   bodyNotCheckedRefusal,
   methodRefusal,
   refusedToolCalls,
   unreadableRequestRefusal,
-  type ReadOnlyRefusal,
-} from "../domain/read-only-refusal.js";
+  type LimitingToolMode,
+  type ToolAccessRefusal,
+} from "../domain/tool-access-refusal.js";
 import type { AgentIdentityResolver } from "./ext-authz-gate.js";
 import type { ModelCallBody } from "./web-search-gate.js";
 
-export interface ReadOnlyConnection {
+export interface ToolAccessConnection {
   readonly connectionId: string;
   readonly connectionName: string;
+  readonly templateId: string;
+  readonly mode: LimitingToolMode;
   readonly readTools: readonly string[];
-  readonly fullAccessLabel: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the read-only Connection that limits a request of an Agent to a host, read from the database on every call, so a change of the owner's choice holds from the next request. `connectionId` is the Connection the gateway says the request names, or null. Null as the answer means nothing limits the request.
-export interface ReadOnlyConnections {
+// UNIT_BOUNDARY_DESCRIPTION: the Connection that limits the tool calls of a request of an Agent to a host, with its tool mode, read from the database on every call, so a change of the owner's mode holds from the next request. `connectionId` is the Connection the gateway says the request names, or null. Null as the answer means nothing limits the request.
+export interface ToolAccessConnections {
   limiting(
     agentId: string,
     request: { host: string; connectionId: string | null },
-  ): Promise<ReadOnlyConnection | null>;
-  /* UNIT_BOUNDARY_DESCRIPTION: a read-only Connection the Agent holds, on any host, or null when it holds none. */
-  held(agentId: string): Promise<ReadOnlyConnection | null>;
+  ): Promise<ToolAccessConnection | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: a limiting Connection the Agent holds, on any host, or null when it holds none. */
+  held(agentId: string): Promise<ToolAccessConnection | null>;
 }
 
 type EgressIdentity = NonNullable<
   Awaited<ReturnType<AgentIdentityResolver["resolve"]>>
 >;
 
-export interface ReadOnlyGateInput {
+export interface ToolAccessGateInput {
   agentId: string;
   identity: EgressIdentity;
   via: string | undefined;
@@ -47,15 +50,15 @@ export interface ReadOnlyGateInput {
   body: ModelCallBody | undefined;
 }
 
-export type ReadOnlyGateOutcome =
+export type ToolAccessGateOutcome =
   | { readonly pass: true }
-  | { readonly pass: false; readonly response: ReadOnlyRefusal };
+  | { readonly pass: false; readonly response: ToolAccessRefusal };
 
-export interface ReadOnlyGate {
-  check(input: ReadOnlyGateInput): Promise<ReadOnlyGateOutcome>;
+export interface ToolAccessGate {
+  check(input: ToolAccessGateInput): Promise<ToolAccessGateOutcome>;
 }
 
-const PASS: ReadOnlyGateOutcome = { pass: true };
+const PASS: ToolAccessGateOutcome = { pass: true };
 
 const BODILESS_METHODS: ReadonlySet<string> = new Set([
   "GET",
@@ -68,17 +71,17 @@ const NO_CHAIN_METHODS: ReadonlySet<string> = new Set(["CONNECT", "*"]);
 
 const MAX_LOGGED_NAME = 100;
 
-// UNIT_BOUNDARY_DESCRIPTION: the step of the ext_authz gate that keeps a read-only Connection to reading. For a request that such a Connection limits, it reads the whole body the gateway sent and refuses it when a `tools/call` in it names a tool outside the Connection's read tools, also in a batch. The refusal is an error the agent can read, and it answers every request of a batch, since no part of a refused body is sent. The limit is looked up for the TLS server name as well as for the Host header, so a forged Host does not skip it. A gateway that has not yet restarted onto the body check sends no server name, so the Host header alone could hide the Template's host: while the Agent holds a read-only Connection, a TLS request that can carry a body and comes without a server name is refused with the restart's retry. A POST with no body in the check is refused too, even when its headers declare none, because an HTTP/2 request can carry a body without a length header; so is a body read in part or one that is not strict JSON, since a call could hide in it. Every other request passes on to the gate's other checks.
-export function createReadOnlyGate(deps: {
-  connections: ReadOnlyConnections;
-}): ReadOnlyGate {
+// UNIT_BOUNDARY_DESCRIPTION: the tool access step of the ext_authz gate, which holds an MCP Connection to its tool mode. For a request that a Connection in read only or needs approval limits, it reads the whole body the gateway sent. In read only it refuses the body when a `tools/call` in it names a tool outside the Connection's read tools, also in a batch. In needs approval it refuses every `tools/call`, because approvals of tool calls are not available yet, so the mode fails closed. The refusal is an error the agent can read, and it answers every request of a batch, since no part of a refused body is sent. The limit is looked up for the TLS server name as well as for the Host header, so a forged Host does not skip it. A gateway that has not yet restarted onto the body check sends no server name, so the Host header alone could hide the Template's host: while the Agent holds a limiting Connection, a TLS request that can carry a body and comes without a server name is refused with the restart's retry. A POST with no body in the check is refused too, even when its headers declare none, because an HTTP/2 request can carry a body without a length header; so is a body read in part or one that is not strict JSON, since a call could hide in it. Every other request passes on to the gate's other checks.
+export function createToolAccessGate(deps: {
+  connections: ToolAccessConnections;
+}): ToolAccessGate {
   function refuse(
-    input: ReadOnlyGateInput,
-    limit: ReadOnlyConnection,
+    input: ToolAccessGateInput,
+    limit: ToolAccessConnection,
     reason: string,
-    response: ReadOnlyRefusal,
+    response: ToolAccessRefusal,
     detail: Record<string, unknown> = {},
-  ): ReadOnlyGateOutcome {
+  ): ToolAccessGateOutcome {
     securityLog("warn", "egress.decision", {
       category: "egress",
       actor: input.identity.ownerSub,
@@ -91,7 +94,8 @@ export function createReadOnlyGate(deps: {
       detail: {
         method: input.method,
         path: input.path.split("?")[0],
-        basis: "read-only-connection",
+        basis: "tool-access",
+        mode: limit.mode,
         connectionId: limit.connectionId,
         status: response.status,
         via: input.via,
@@ -102,8 +106,8 @@ export function createReadOnlyGate(deps: {
   }
 
   async function limitOf(
-    input: ReadOnlyGateInput,
-  ): Promise<{ limit: ReadOnlyConnection; host: string } | null> {
+    input: ToolAccessGateInput,
+  ): Promise<{ limit: ToolAccessConnection; host: string } | null> {
     const hosts = new Set(
       input.tlsHost === null ? [input.host] : [input.tlsHost, input.host],
     );
@@ -118,8 +122,8 @@ export function createReadOnlyGate(deps: {
   }
 
   async function gatewayNotRestarted(
-    input: ReadOnlyGateInput,
-  ): Promise<ReadOnlyGateOutcome> {
+    input: ToolAccessGateInput,
+  ): Promise<ToolAccessGateOutcome> {
     if (
       input.tlsHost !== null ||
       !input.tls ||
@@ -132,7 +136,7 @@ export function createReadOnlyGate(deps: {
     return refuse(
       input,
       held,
-      "read-only-server-name-missing",
+      "tool-access-server-name-missing",
       bodyNotCheckedRefusal({ ...held, host: input.host }),
     );
   }
@@ -149,7 +153,7 @@ export function createReadOnlyGate(deps: {
         return refuse(
           input,
           limit,
-          "read-only-method",
+          "tool-access-method",
           methodRefusal(shown, input.method),
         );
 
@@ -159,13 +163,13 @@ export function createReadOnlyGate(deps: {
           ? refuse(
               input,
               limit,
-              "read-only-body-missing",
+              "tool-access-body-missing",
               unreadableRequestRefusal(shown),
             )
           : refuse(
               input,
               limit,
-              "read-only-body-not-sent",
+              "tool-access-body-not-sent",
               bodyNotCheckedRefusal(shown),
             );
       }
@@ -178,29 +182,33 @@ export function createReadOnlyGate(deps: {
         return refuse(
           input,
           limit,
-          "read-only-body-unreadable",
+          "tool-access-body-unreadable",
           unreadableRequestRefusal(shown),
         );
 
       const refused = request.messages.filter(
         (message) =>
           message.toolCall &&
-          (message.toolCall.name === null ||
+          (limit.mode === "needs-approval" ||
+            message.toolCall.name === null ||
             !limit.readTools.includes(message.toolCall.name)),
       );
       if (refused.length === 0) return PASS;
       const tools = refused.map((message) => message.toolCall?.name ?? null);
+      const answer = {
+        refused: tools,
+        ids: request.messages.flatMap((message) =>
+          message.request && message.id !== undefined ? [message.id] : [],
+        ),
+        batch: request.batch,
+      };
       return refuse(
         input,
         limit,
-        "read-only-tool",
-        refusedToolCalls(shown, {
-          refused: tools,
-          ids: request.messages.flatMap((message) =>
-            message.request && message.id !== undefined ? [message.id] : [],
-          ),
-          batch: request.batch,
-        }),
+        limit.mode === "read-only" ? "read-only-tool" : "needs-approval-tool",
+        limit.mode === "read-only"
+          ? refusedToolCalls(shown, answer)
+          : approvalUnavailableToolCalls(shown, answer),
         { tools: tools.map((name) => name?.slice(0, MAX_LOGGED_NAME) ?? null) },
       );
     },

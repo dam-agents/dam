@@ -101,6 +101,7 @@ export function serviceHarness(opts: {
   curveBenderDeploymentKey?: string | null;
   damKey?: DamKeyPort;
   damConnectionOffered?: () => Promise<boolean>;
+  toolApprovalOffered?: () => Promise<boolean>;
   insert?: (row: Connection) => Promise<void>;
   adoptDamKey?: (input: {
     id: string;
@@ -153,6 +154,8 @@ export function serviceHarness(opts: {
         void rows.set(id, { ...rows.get(id)!, contributions }),
       updateAuth: async (id, auth) =>
         void rows.set(id, { ...rows.get(id)!, auth }),
+      updateToolAccess: async (id, toolAccess) =>
+        void rows.set(id, { ...rows.get(id)!, toolAccess }),
       updateName: async (id, name) =>
         void rows.set(id, { ...rows.get(id)!, name }),
       delete: async (id) => {
@@ -193,6 +196,7 @@ export function serviceHarness(opts: {
     curveBenderDeploymentKey: opts.curveBenderDeploymentKey ?? null,
     ...(opts.damKey ? { damKey: opts.damKey } : {}),
     damConnectionOffered: opts.damConnectionOffered ?? (async () => true),
+    toolApprovalOffered: opts.toolApprovalOffered ?? (async () => true),
   });
   return { svc, rows, grants, secrets, fannedOut, secretReads };
 }

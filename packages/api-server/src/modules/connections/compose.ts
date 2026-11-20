@@ -37,10 +37,7 @@ import {
   createConnectionTemplateRegistry,
   type ConnectionTemplateRegistry,
 } from "./domain/connection-template.js";
-import {
-  readOnlyAccessFor,
-  type ReadOnlyAccess,
-} from "./domain/read-only-access.js";
+import { toolAccessFor, type ToolAccessLimit } from "./domain/tool-access.js";
 import { buildCatalog, type OperatorCredentials } from "./domain/catalog.js";
 import {
   createConnectionsService,
@@ -286,29 +283,28 @@ export function createProviderEgressScopes(db: Db): {
   };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: answers the egress gate which read-only Connection limits a request of an Agent to a host. It reads the Agent's grants on every call to a host that a Template declares read tools for, so the owner's choice holds from the next request, and reads nothing for any other host. It also answers whether the Agent holds a read-only Connection on any host, for a request whose real host the gateway did not say.
-export function createReadOnlyConnections(
+// UNIT_BOUNDARY_DESCRIPTION: answers the egress gate which Connection limits the tool calls of a request of an Agent to a host, and in which tool mode. It reads the Agent's grants on every call to a host that a Template declares tool access for, so the owner's mode holds from the next request, and reads nothing for any other host. It also answers whether the Agent holds a limiting Connection on any host, for a request whose real host the gateway did not say.
+export function createToolAccessConnections(
   db: Db,
   templates: Pick<ConnectionTemplateRegistry, "get" | "list">,
 ): {
   limiting(
     agentId: string,
     request: { host: string; connectionId: string | null },
-  ): Promise<ReadOnlyAccess | null>;
-  held(agentId: string): Promise<ReadOnlyAccess | null>;
+  ): Promise<ToolAccessLimit | null>;
+  held(agentId: string): Promise<ToolAccessLimit | null>;
 } {
   const repo = createConnectionsRepository(db);
   const limitedHosts = () => [
     ...new Set(templates.list().flatMap((t) => t.toolAccess?.host ?? [])),
   ];
-  const toolAccessOf = (templateId: string) =>
-    templates.get(templateId)?.toolAccess;
+  const templateOf = (templateId: string) => templates.get(templateId);
   return {
     async limiting(agentId, request) {
       if (!limitedHosts().includes(request.host)) return null;
-      return readOnlyAccessFor(
+      return toolAccessFor(
         await repo.listConnectionsForAgent(agentId),
-        toolAccessOf,
+        templateOf,
         request,
       );
     },
@@ -317,7 +313,7 @@ export function createReadOnlyConnections(
       if (hosts.length === 0) return null;
       const granted = await repo.listConnectionsForAgent(agentId);
       for (const host of hosts) {
-        const limit = readOnlyAccessFor(granted, toolAccessOf, {
+        const limit = toolAccessFor(granted, templateOf, {
           host,
           connectionId: null,
         });
@@ -358,6 +354,7 @@ export function composeConnectionsForOwner(opts: {
   maxSharedKbConnections?: number;
   damKey: DamKeyPort;
   damConnectionOffered: () => Promise<boolean>;
+  toolApprovalOffered: () => Promise<boolean>;
   curveBenderDeploymentKey: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
   providerModelCatalog: ProviderModelCatalog;
@@ -418,6 +415,7 @@ export function composeConnectionsForOwner(opts: {
     brandName: opts.brandName,
     damKey: opts.damKey,
     damConnectionOffered: opts.damConnectionOffered,
+    toolApprovalOffered: opts.toolApprovalOffered,
     connectionLock,
     isOwnedAgent: (agentId) => opts.agentsRepo.isOwnedBy(agentId, opts.ownerId),
     resolveKbShare: createKbShareResolver(opts.db),

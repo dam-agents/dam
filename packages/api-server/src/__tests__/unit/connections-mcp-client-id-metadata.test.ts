@@ -575,6 +575,7 @@ describe("discoverMcp", () => {
   function service(callbackUrl = CALLBACK) {
     return createConnectionsService({
       damConnectionOffered: async () => true,
+      toolApprovalOffered: async () => true,
       harnesses: { default: "claude-code", harnesses: [] },
       ownerId: "owner",
       templates: createConnectionTemplateRegistry(buildCatalog()),

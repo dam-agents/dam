@@ -89,6 +89,7 @@ function setup(
 ) {
   const connections = createConnectionsService({
     damConnectionOffered: async () => opts.damOffered ?? true,
+    toolApprovalOffered: async () => true,
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: "owner-1",

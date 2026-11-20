@@ -86,6 +86,7 @@ function makeService(
 ) {
   return createConnectionsService({
     damConnectionOffered: async () => true,
+    toolApprovalOffered: async () => true,
     ...(newAgentProvider && { newAgentProvider }),
     harnesses: { default: defaultHarness, harnesses: CATALOG },
     isOwnedAgent: async () => true,

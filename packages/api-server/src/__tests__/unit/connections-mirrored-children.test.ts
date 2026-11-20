@@ -45,6 +45,7 @@ function setup(mirrors: Record<string, string[]>) {
   };
   const service = createConnectionsService({
     damConnectionOffered: async () => true,
+    toolApprovalOffered: async () => true,
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: OWNER,
