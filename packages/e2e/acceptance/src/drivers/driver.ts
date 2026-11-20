@@ -201,6 +201,26 @@ export interface OrderDriver {
   ): Promise<void>;
 }
 
+export interface BrowserDriver {
+  open(person: Person, agentName: string): Promise<void>;
+  expectNotOffered(person: Person, agentName: string): Promise<void>;
+  expectTabs(person: Person, agentName: string, count: number): Promise<void>;
+  expectFront(
+    person: Person,
+    agentName: string,
+    title: string | undefined,
+  ): Promise<void>;
+  expectGone(person: Person, agentName: string, title: string): Promise<void>;
+  newTab(person: Person, agentName: string): Promise<void>;
+  bringToFront(person: Person, agentName: string, title: string): Promise<void>;
+  close(
+    person: Person,
+    agentName: string,
+    title: string | undefined,
+  ): Promise<void>;
+  goTo(person: Person, agentName: string, url: string): Promise<void>;
+}
+
 export interface SessionsDriver {
   expectListed(
     person: Person,
@@ -235,7 +255,7 @@ export interface ArtifactsDriver {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability (session, agents, chat, sessions, live views, environment, egress, assistant, satellites, sidebar order, artifacts, connections), independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
+ * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability (session, agents, chat, sessions, live views, environment, egress, assistant, satellites, sidebar order, browser, artifacts, connections), independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
  */
 export interface Driver {
   readonly surface: Surface;
@@ -250,5 +270,6 @@ export interface Driver {
   readonly assistant: AssistantDriver;
   readonly satellites: SatellitesDriver;
   readonly order: OrderDriver;
+  readonly browser: BrowserDriver;
   readonly live: LiveDriver;
 }

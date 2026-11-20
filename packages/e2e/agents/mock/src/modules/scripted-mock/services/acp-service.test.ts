@@ -16,6 +16,8 @@ function mockHarness(
   }),
   env: Record<string, string> = {},
   fetched: { url: string; headers?: Record<string, string> }[] = [],
+  shell: string | null = null,
+  ran: { command: string; args: string[] }[] = [],
 ) {
   const sent: JsonRpcFrame[] = [];
   const responses = new Map<number, () => void>();
@@ -40,11 +42,17 @@ function mockHarness(
       fetched.push(request);
       return { status: 200, body: "" };
     },
-    processRunner: { run: async () => ({ code: 0, output: "" }) },
+    processRunner: {
+      run: async ({ command, args }) => {
+        ran.push({ command, args });
+        return { code: 0, output: "Alpha\n" };
+      },
+    },
     slackReply: async () => {},
     callTool,
     toolCall,
     readEnv: (name) => env[name],
+    shell,
   });
   const request = async (id: number, method: string, params = {}) => {
     const replied = new Promise<void>((resolve) => responses.set(id, resolve));
@@ -268,5 +276,38 @@ describe("scripted environment reads", () => {
         headers: { "x-api-key": "platform:conn:abc" },
       },
     ]);
+  });
+});
+
+describe("scripted shell command", () => {
+  // TEST_SCENARIO: an example scripts a command the agent runs in its machine on every turn, as a harness runs a tool, and the agent answers what the command printed.
+  it("runs the command and answers its output", async () => {
+    const ran: { command: string; args: string[] }[] = [];
+    const harness = mockHarness(
+      null,
+      undefined,
+      {},
+      [],
+      "agent-browser eval document.title",
+      ran,
+    );
+    await harness.request(1, "session/new");
+    const { sessionId } = (harness.sent[0] as { result: { sessionId: string } })
+      .result;
+    await harness.request(2, "session/prompt", {
+      sessionId,
+      prompt: [{ type: "text", text: "which page?" }],
+    });
+    expect(ran).toEqual([
+      { command: "sh", args: ["-c", "agent-browser eval document.title"] },
+    ]);
+    const texts = harness.sent
+      .map(
+        (f) =>
+          (f as { params?: { update?: { content?: { text?: string } } } })
+            .params?.update?.content?.text,
+      )
+      .filter((t): t is string => t !== undefined);
+    expect(texts).toContain("Alpha");
   });
 });

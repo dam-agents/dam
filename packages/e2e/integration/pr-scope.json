@@ -11,13 +11,6 @@
       "packages/controller/pkg/reconciler/envoy_bootstrap.go",
       "packages/controller/pkg/reconciler/envoy_connection_address.go"
     ],
-    "23-browser-tabs": [
-      "packages/agents/default",
-      "packages/agent-runtime/src/modules/browser-*",
-      "packages/api-server/src/apps/api-server/routes/browser-stream.ts",
-      "packages/api-server/src/apps/api-server/agent-proxies/browser-stream-relay.ts",
-      "packages/ui/src/modules/browser"
-    ],
     "25-sidebar-order": [
       "packages/api-server/src/modules/sidebar-order",
       "packages/api-server-api/src/modules/sidebar-order",

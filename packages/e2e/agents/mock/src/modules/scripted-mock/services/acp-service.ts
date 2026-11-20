@@ -37,6 +37,7 @@ export interface AcpServiceDeps {
   callTool: PlatformToolCaller;
   toolCall: ToolCall | null;
   readEnv: (name: string) => string | undefined;
+  shell: string | null;
 }
 
 export function startAcpService(deps: AcpServiceDeps): void {
@@ -206,6 +207,15 @@ export function startAcpService(deps: AcpServiceDeps): void {
     }
 
     if (deps.toolCall) await callScriptedTool(sid, deps.toolCall);
+
+    if (deps.shell) {
+      const { output } = await deps.processRunner.run({
+        command: "sh",
+        args: ["-c", deps.shell],
+        timeoutMs: 60_000,
+      });
+      emitText(sid, output.trim());
+    }
 
     for (const entry of deps.state.scriptEntries) {
       if (entry.delayMs && entry.delayMs > 0) await sleep(entry.delayMs);

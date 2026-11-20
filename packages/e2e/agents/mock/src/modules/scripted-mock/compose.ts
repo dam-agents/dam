@@ -67,6 +67,7 @@ export function composeScriptedMock(): { scriptedMock: ScriptedMockService } {
     callTool,
     toolCall: toolCallFromEnv(),
     readEnv: (name) => process.env[name],
+    shell: process.env.MOCK_SHELL || null,
   });
 
   return { scriptedMock };

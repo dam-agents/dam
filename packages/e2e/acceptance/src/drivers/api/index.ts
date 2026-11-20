@@ -6,6 +6,7 @@ import { apiArtifacts } from "./artifacts.js";
 import { apiAgents } from "./agents.js";
 import { apiChat } from "./chat.js";
 import { apiAssistant } from "./assistant.js";
+import { apiBrowser } from "./browser.js";
 import { apiOrder } from "./order.js";
 import { apiSatellites } from "./satellites.js";
 import { apiEgress } from "./egress.js";
@@ -32,5 +33,6 @@ export function apiDriver(world: World, pages: Pages): Driver {
     assistant: apiAssistant(world),
     satellites: apiSatellites(world),
     order: apiOrder(world),
+    browser: apiBrowser(world),
   };
 }

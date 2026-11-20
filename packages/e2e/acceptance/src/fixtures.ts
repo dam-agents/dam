@@ -8,6 +8,7 @@ import {
 } from "api-server-api";
 
 import { acpRequest, promptOnce, promptWhenSettled } from "./acp.js";
+import { browserControl, watchBrowser } from "./browser.js";
 import { signInThroughTheBrowser } from "./auth.js";
 import { mockTemplateId } from "./config.js";
 import { requestOf, waitingApprovals } from "./egress.js";
@@ -30,6 +31,7 @@ export type { Surface } from "./drivers/driver.js";
 
 const mockReplyEnv = "MOCK_DEFAULT_REPLY";
 const mockToolEnv = "MOCK_TOOL_CALL";
+const mockShellEnv = "MOCK_SHELL";
 
 interface Cast {
   person(persona: Persona): Promise<Person>;
@@ -60,6 +62,9 @@ interface Setup {
   agent(persona: Persona, name: string): Promise<void>;
   sleep(agent: string): Promise<void>;
   knowledgeBase(persona: Persona, name: string, folder: string): Promise<void>;
+  freshBrowser(agent: string): Promise<void>;
+  browserTabs(agent: string, titles: string[], front: string): Promise<void>;
+  closedTab(agent: string, title: string): Promise<void>;
   session(persona: Persona, agent: string, text: string): Promise<void>;
   runningAgent(
     persona: Persona,
@@ -68,6 +73,7 @@ interface Setup {
       answer?: string;
       publishes?: string;
       calls?: { name: string; arguments: Record<string, unknown> };
+      shell?: string;
       requiresNaming?: boolean;
     },
   ): Promise<void>;
@@ -399,6 +405,131 @@ export const test = base.extend<
             await agentFiles(owner, id, "remove", { path: dir }).catch(() => 0);
         });
       },
+      freshBrowser: async (agent) => {
+        const record = world.agent(agent);
+        const owner = await cast.person(record.owner);
+        const cleared = await browserControl(owner, record.id, "clearData");
+        expect(cleared.code, cleared.message).toBeUndefined();
+      },
+      browserTabs: async (agent, titles, front) => {
+        const record = world.agent(agent);
+        const owner = await cast.person(record.owner);
+        await browserControl(owner, record.id, "clearData");
+        const watch = await watchBrowser(owner, record.id);
+        world.closers.push(watch.close);
+        await expect
+          .poll(() => watch.latest()?.state, {
+            timeout: 120_000,
+            message: `the browser of ${agent} never came up`,
+          })
+          .toBe("ready");
+        const title = (t: string) =>
+          `agent-browser eval 'document.title="${world.unique(t)}"'`;
+        const script = titles
+          .map((t, i) =>
+            i === 0
+              ? title(t)
+              : `agent-browser tab new about:blank && ${title(t)}`,
+          )
+          .join(" && ");
+        const env =
+          (await owner.api.agents.get.query({ id: record.id })).env ?? [];
+        const previous =
+          env.find((v) => v.name === mockShellEnv)?.value ?? null;
+        const shellIs = async (value: string | null) => {
+          const now =
+            (await owner.api.agents.get.query({ id: record.id })).env ?? [];
+          await owner.api.agents.setEnv.mutate({
+            id: record.id,
+            env: [
+              ...now.filter((v) => v.name !== mockShellEnv),
+              ...(value === null ? [] : [{ name: mockShellEnv, value }]),
+            ],
+          });
+          await expect
+            .poll(
+              async () =>
+                (
+                  await owner.api.e2e.getEnv
+                    .query({ agentId: record.id, name: mockShellEnv })
+                    .catch(() => undefined)
+                )?.value ?? null,
+              { timeout: 120_000, intervals: [250, 500, 1_000] },
+            )
+            .toBe(value);
+          const expected =
+            value === null
+              ? `[env ${mockShellEnv} unset]`
+              : `[env ${mockShellEnv}] ${value}`;
+          await expect
+            .poll(
+              async () => {
+                const turn = await promptWhenSettled(
+                  record.id,
+                  await owner.token(),
+                  `__ENV__ ${mockShellEnv}`,
+                ).catch(() => undefined);
+                if (turn === undefined) return "";
+                world.opened(
+                  record.owner,
+                  agent,
+                  `__ENV__ ${mockShellEnv}`,
+                  turn.sessionId,
+                );
+                return turn.reply.trim();
+              },
+              { timeout: 120_000, intervals: [2_000] },
+            )
+            .toBe(expected);
+        };
+        await shellIs(script);
+        const turn = await promptWhenSettled(
+          record.id,
+          await owner.token(),
+          world.unique("open the tabs"),
+        );
+        world.opened(record.owner, agent, "open the tabs", turn.sessionId);
+        await shellIs(previous);
+        let frontId = "";
+        await expect
+          .poll(
+            () => {
+              const tabs = watch.latest()?.tabs ?? [];
+              frontId =
+                tabs.find((t) => t.title === world.unique(front))?.id ?? "";
+              return titles.every((t) =>
+                tabs.some((tab) => tab.title === world.unique(t)),
+              );
+            },
+            {
+              timeout: 60_000,
+              message: `the browser of ${agent} never showed its tabs`,
+            },
+          )
+          .toBe(true);
+        await browserControl(owner, record.id, "selectTab", { tab: frontId });
+      },
+      closedTab: async (agent, title) => {
+        const record = world.agent(agent);
+        const owner = await cast.person(record.owner);
+        const watch = await watchBrowser(owner, record.id);
+        world.closers.push(watch.close);
+        let id = "";
+        await expect
+          .poll(
+            () => {
+              id =
+                watch
+                  .latest()
+                  ?.tabs.find((t) => t.title === world.unique(title))?.id ?? "";
+              return id;
+            },
+            { timeout: 60_000 },
+          )
+          .not.toBe("");
+        await browserControl(owner, record.id, "closeTab", { tab: id });
+        world.browserTabs.set(`${agent}/${title}`, id);
+      },
       sleep: async (name) => {
         const agent = world.agent(name);
         const owner = await cast.person(agent.owner);
@@ -539,7 +670,7 @@ export const test = base.extend<
       runningAgent: async (
         persona,
         name,
-        { answer, publishes, calls, requiresNaming } = {},
+        { answer, publishes, calls, shell, requiresNaming } = {},
       ) => {
         const index = allocated.get(persona) ?? 0;
         allocated.set(persona, index + 1);
@@ -581,6 +712,7 @@ export const test = base.extend<
                 }),
           ],
         ]);
+        wanted.set(mockShellEnv, shell ?? null);
         const env = (await owner.api.agents.get.query({ id })).env ?? [];
         await owner.api.agents.setEnv.mutate({
           id,
