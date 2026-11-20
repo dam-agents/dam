@@ -17,6 +17,10 @@
       "source": "./.agents/skills/babysit",
       "sourceType": "local"
     },
+    "backfill-features": {
+      "source": "./.agents/skills/backfill-features",
+      "sourceType": "local"
+    },
     "ccweb": {
       "source": "./.agents/skills/ccweb",
       "sourceType": "local"
