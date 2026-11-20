@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { type Browser, expect, type Page } from "@playwright/test";
 import { test as base } from "playwright-bdd";
 
+import { acpRequest, promptOnce } from "./acp.js";
 import { signInThroughTheBrowser } from "./auth.js";
 import { mockTemplateId } from "./config.js";
 import { apiDriver } from "./drivers/api/index.js";
@@ -38,6 +39,7 @@ interface Setup {
   grant(persona: Persona, connection: string, agent: string): Promise<void>;
   agent(persona: Persona, name: string): Promise<void>;
   sleep(agent: string): Promise<void>;
+  session(persona: Persona, agent: string, text: string): Promise<void>;
   runningAgent(
     persona: Persona,
     name: string,
@@ -129,6 +131,7 @@ export const test = base.extend<
   world: async ({ cast }, use, testInfo) => {
     const world = new World();
     await use(world);
+    for (const close of world.closers) close();
     if (testInfo.status === testInfo.expectedStatus) return;
     const agents = [];
     for (const record of world.agents.values()) {
@@ -218,6 +221,15 @@ export const test = base.extend<
           name: made.name,
           id: made.id,
         });
+      },
+      session: async (persona, agent, text) => {
+        const owner = await cast.person(persona);
+        const turn = await promptOnce(
+          world.agent(agent).id,
+          await owner.token(),
+          world.unique(text),
+        );
+        world.opened(persona, agent, text, turn.sessionId);
       },
       sleep: async (name) => {
         const agent = world.agent(name);
@@ -309,6 +321,13 @@ export const test = base.extend<
       const owner = await cast.person(item.owner);
       if (item.kind === "agent")
         await owner.api.agents.delete.mutate({ id: item.id }).catch(() => {});
+      else if (item.kind === "session")
+        await acpRequest(
+          item.agentId!,
+          await owner.token(),
+          "platform/deleteSession",
+          { sessionId: item.id },
+        ).catch(() => {});
       else
         await owner.api.connections.delete
           .mutate({ id: item.id })
