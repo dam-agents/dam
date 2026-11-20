@@ -1,0 +1,101 @@
+#!/usr/bin/env node
+//MISE description="Test (with the real adapter, when CLAUDE_AGENT_ACP names its dist/index.js) that the Claude Code history lib reads a session's newest part from the transcript's end, and that its pages join into the whole read"
+//MISE sources=["claude-code/rootfs/usr/local/lib/harness-history-lib.mjs", ".mise/tasks/test/claude-history-window"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+// TEST_OVERVIEW: a cold open of a long Claude Code session must not parse its whole transcript, most of which is the request records the CLI writes beside the conversation. The history lib reads a window from the transcript's end, and what it answers has to be exactly what the whole read answers: the newest window a suffix of it, and the windows paged back to the start the whole of it. Skipped when CLAUDE_AGENT_ACP names no adapter, since the lib turns entries into messages with the adapter's bundled SDK.
+
+const adapterEntry = process.env.CLAUDE_AGENT_ACP;
+if (!adapterEntry) {
+  console.log("claude-history-window: skipped, set CLAUDE_AGENT_ACP=<path to claude-agent-acp dist/index.js> to run against the real SDK");
+  process.exit(0);
+}
+const dist = dirname(adapterEntry);
+
+const work = mkdtempSync(join(tmpdir(), "claude-history-window-"));
+try {
+  const adapter = join(work, "adapter");
+  mkdirSync(adapter);
+  for (const m of ["sdk-to-acp.js", "message-filters.js"])
+    writeFileSync(join(adapter, m), `export * from ${JSON.stringify(join(dist, m))};\n`);
+  writeFileSync(
+    join(adapter, "claude-agent-sdk.js"),
+    `import { createRequire } from "node:module";\nconst sdk = await import(createRequire(${JSON.stringify(adapterEntry)}).resolve("@anthropic-ai/claude-agent-sdk"));\nexport const { getSessionInfo, getSessionMessages } = sdk;\n`,
+  );
+  const lib = join(work, "harness-history-lib.mjs");
+  writeFileSync(
+    lib,
+    readFileSync(fileURLToPath(new URL("../../../claude-code/rootfs/usr/local/lib/harness-history-lib.mjs", import.meta.url)), "utf8")
+      .replace('"/usr/local/lib/harness/claude-code/adapter"', JSON.stringify(adapter)),
+  );
+
+  const config = join(work, "claude");
+  const cwd = join(work, "project");
+  mkdirSync(cwd);
+  const project = join(config, "projects", cwd.replace(/[^a-zA-Z0-9]/g, "-"));
+  mkdirSync(project, { recursive: true });
+  process.env.CLAUDE_CONFIG_DIR = config;
+
+  // TEST_SCENARIO: a session of many turns, each a prompt, a tool call, its result and a reply, with a request record of the conversation so far after every model call, as Claude Code writes them in auto mode.
+  const sessionId = randomUUID();
+  const lines = [];
+  let parent = null;
+  let at = Date.parse("2026-11-10T10:00:00Z");
+  const stamp = () => new Date((at += 1000)).toISOString();
+  const entry = (type, message, extra = {}) => {
+    const uuid = randomUUID();
+    lines.push(JSON.stringify({ parentUuid: parent, isSidechain: false, type, message, uuid, timestamp: stamp(), sessionId, cwd, ...extra }));
+    parent = uuid;
+  };
+  const request = () =>
+    lines.push(JSON.stringify({ type: "api-request", sessionId, params: { safeguards: [{ classifier_context: { prior_turn_context: "x".repeat(20_000) } }] } }));
+  for (let turn = 0; turn < 120; turn++) {
+    const promptId = randomUUID();
+    entry("user", { role: "user", content: `question ${turn}` }, { promptId });
+    request();
+    const tool = `toolu_${turn}`;
+    entry("assistant", { id: `msg_${turn}a`, role: "assistant", model: "claude-test", content: [{ type: "tool_use", id: tool, name: "Bash", input: { command: `echo ${turn}` } }] });
+    entry("user", { role: "user", content: [{ type: "tool_result", tool_use_id: tool, content: `${turn}` }] }, { promptId });
+    request();
+    entry("assistant", { id: `msg_${turn}b`, role: "assistant", model: "claude-test", content: [{ type: "text", text: `answer ${turn}` }] });
+    lines.push(JSON.stringify({ type: "last-prompt", lastPrompt: `question ${turn}`, sessionId }));
+  }
+  const transcript = join(project, `${sessionId}.jsonl`);
+  writeFileSync(transcript, lines.join("\n") + "\n");
+  assert.ok(statSync(transcript).size > 4 << 20, "precondition: the transcript is longer than the reads a window takes");
+
+  const { loadHistory } = await import(lib);
+  const whole = await loadHistory(sessionId);
+  assert.ok(whole.length > 400, "precondition: the whole read answers every turn");
+
+  const tail = await loadHistory({ sessionId, frames: 40 });
+  assert.ok(tail.lines.length >= 40, "the window holds the frames asked for");
+  assert.ok(tail.lines.length < whole.length / 2, "the window read the whole conversation");
+  assert.deepEqual(tail.lines, whole.slice(whole.length - tail.lines.length), "the window is not the end of the whole read");
+  assert.match(tail.lines[0], /question/, "the window does not start at a prompt");
+
+  // TEST_SCENARIO: paging back from the window's cursor down to the conversation's start gives back exactly the whole read.
+  const pages = [tail.lines];
+  let older = tail.older;
+  while (older !== null) {
+    const page = await loadHistory({ sessionId, frames: 40, before: older });
+    assert.ok(page.lines.length > 0, "a page before the start was empty");
+    pages.unshift(page.lines);
+    older = page.older;
+  }
+  assert.deepEqual(pages.flat(), whole, "the pages do not join into the whole read");
+
+  // TEST_SCENARIO: a session shorter than the window is answered whole, with nothing older.
+  const short = await loadHistory({ sessionId, frames: 10_000 });
+  assert.deepEqual(short, { lines: whole, older: null });
+
+  await assert.rejects(loadHistory({ sessionId: randomUUID(), frames: 40 }), /unknown session/);
+  console.log("claude-history-window: ok");
+} finally {
+  rmSync(work, { recursive: true, force: true });
+}
