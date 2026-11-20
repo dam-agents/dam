@@ -3,6 +3,7 @@ packages:
   - "packages/e2e/agents/mock"
   - "packages/e2e/agents/mock-api"
   - "packages/e2e/playwright"
+  - "packages/e2e/acceptance"
   - "packages/agents/pi-agent/rootfs/usr/local/share/pi-platform/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
 minimumReleaseAgeExclude:

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="Run the behaviour examples and journeys against a running install; args after -- go to playwright test"
+#MISE depends=["//packages/e2e/playwright:install-browsers"]
+#MISE env={ NODE_OPTIONS = "--dns-result-order=ipv4first" }
+set -euo pipefail
+pnpm exec bddgen
+pnpm exec playwright test "$@"

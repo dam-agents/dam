@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Last verified: 2026-11-16
+Last verified: 2026-11-19
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so a full-suite run takes it twice, once per lane.
@@ -77,9 +77,33 @@ The nightly run on main is the one run that also takes the `full/` tier, in the 
 A pull request, a push to main, a dispatch and a tag never take it, and that lane's summary names the tier beside the scope.
 The two summaries hold the same table, so a phase of one lane compares with the same phase of the other; a phase a lane never reached reads `n/a`.
 
+## Acceptance suite
+
+The **acceptance suite** in [`packages/e2e/acceptance`](../../packages/e2e/acceptance/) states what the product does as Gherkin feature files, and `mise run e2e` runs them on the same install after the smoke suite, so both CI lanes run them; `e2e:loop` runs the smoke suite alone.
+Its package depends only on the API contract package and its test tools, so a test cannot import the server's internals: `check:boundary` refuses any other dependency, and any import in its sources that leaves the package or names another package, in every import form TypeScript and Node read.
+A feature file holds **Rules**, each with concrete **Examples** in Given/When/Then form, written in the words of the [glossary](../ubiquitous-language.md) and never in the words of a screen.
+`playwright-bdd` turns the feature files into Playwright tests, and `check:steps` refuses a step that has no step definition.
+
+Each step definition is one call into a **Driver**: the same steps run through the API and through the web UI.
+Every Example runs in the `examples-api` project, through tRPC and the same ACP relay the web UI uses for a chat; an Example tagged `@ui` also runs in the `examples-ui` project, through the browser, as a test of its own.
+Given steps always set the state up through the API, whatever the project, so only the When and Then steps differ between the two.
+The names and texts a feature file writes get a suffix unique to the run, so an implementation that special-cases an Example's literal values fails, and no test mistakes what another made for its own.
+
+The suite's **journeys** are a few standalone stories in the browser, such as a new owner's first use from signing in to an answer from their first Agent.
+Unlike the smoke suite's chained projects, a journey depends on no other test.
+
+Each Playwright worker signs in as the accounts of its own slot, `acceptance-<persona>-<slot>`, which the e2e values provision and nothing else uses, so tests in two workers never see each other's Agents.
+A worker's first use of an account connects a model provider, because the web UI lets a person write to an Agent only once one is connected, and an Agent made afterwards gets it as its default provider.
+The suite runs one worker, with one slot: every owner gets a VM runner of its own that reserves memory, so each extra slot costs the node three runners beside the smoke suite's Agents, and a second slot left a CI node without the memory to boot a machine.
+A slot keeps booted mock Agents, marked by their description, that the Given steps rename and give an answer: an Example costs seconds instead of a machine boot, and a later worker of the slot wakes and reuses them.
+A Given step sets the answer as the Agent's `MOCK_DEFAULT_REPLY` and waits until the Agent reports it, because the mock starts a new process for a new Session and each process takes its first script from that variable.
+A failed test carries its own log bundle in the report: the Playwright trace and a screenshot of every persona's page, the ACP frames and Agent listings the API driver saw, and the state of every Agent it named.
+The job summary times the suite as its own phase beside the smoke suite.
+
 ## Running it
 
-`mise run e2e` is the CI path: a fresh cluster, the suite, teardown.
+`mise run e2e` is the CI path: a fresh cluster, the suite and the acceptance suite, teardown.
+`mise run //packages/e2e/acceptance:run` runs the acceptance suite alone against an install, with `PLATFORM_BASE_URL` and `PLATFORM_KEYCLOAK_URL` pointing at it.
 `e2e:loop` iterates against a warm cluster, and the [cluster-ops skill](../../.agents/skills/cluster-ops/SKILL.md) covers both.
 A warm cluster shares its machine's CPUs with the browser, so `e2e:loop` sets `E2E_TIMEOUT_SCALE` to 3 and the config multiplies its default test and expect timeouts by it; a spec that sets its own timeout keeps it, and CI keeps the defaults.
 

@@ -183,4 +183,15 @@ PLATFORM_BASE_URL="http://localhost:6555" \
 PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:6555" \
   mise run //packages/e2e/playwright:run ${PLAYWRIGHT_ARGS[@]+-- "${PLAYWRIGHT_ARGS[@]}"} || suite_rc=$?
 e2e_mark "suite finished"
+
+# The acceptance suite's examples and journeys run on the same install after the
+# smoke suite, whatever it returned: they sign in as accounts of their own and
+# share no state with it (docs/architecture/e2e.md). Either failing fails the run.
+e2e_mark "acceptance started"
+acceptance_rc=0
+PLATFORM_BASE_URL="http://localhost:6555" \
+PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:6555" \
+  mise run //packages/e2e/acceptance:run || acceptance_rc=$?
+e2e_mark "acceptance finished"
+[ "$suite_rc" -ne 0 ] || suite_rc=$acceptance_rc
 exit "$suite_rc"
