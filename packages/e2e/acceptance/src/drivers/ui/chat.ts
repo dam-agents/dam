@@ -18,13 +18,26 @@ export function uiChat(world: World, pages: Pages): ChatDriver {
         .click();
       await expect(page).toHaveURL(new RegExp(`/chat/${agent.id}`));
       const input = page.getByPlaceholder(/^(queue a )?message(…|\.\.\.)/i);
+      await expect(input, "the chat takes no message").toBeVisible({
+        timeout: 60_000,
+      });
       await input.fill(text);
       await expect(
         page
           .getByTestId("chat-composer")
           .getByRole("button", { name: /^(Send|Queue)$/ }),
       ).toBeEnabled({ timeout: 60_000 });
+      const answers = page.locator(
+        '[data-testid="chat-message"][data-role="assistant"]',
+      );
+      const before = await answers.count();
       await input.press("Enter");
+      await expect
+        .poll(() => answers.count(), {
+          timeout: 120_000,
+          message: `${agent.name} never answered "${text}"`,
+        })
+        .toBeGreaterThan(before);
     },
     async expectAnswer(person, _name, text) {
       const page = await pages.of(person);
