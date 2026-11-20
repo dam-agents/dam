@@ -21,6 +21,7 @@ import {
   createLeaseSweep,
   createSatelliteWorkerOps,
 } from "../../modules/satellites/services/worker-ops.js";
+import { stubFileChannel } from "../helpers/satellite-fakes.js";
 
 /**
  * TEST_OVERVIEW: Which registration of a Satellite a call belongs to. A name
@@ -43,6 +44,8 @@ function satellite(patch: Partial<SatelliteRow> = {}): SatelliteRow {
   return {
     owner: "alice",
     name: "gpu-box",
+    kind: "tools",
+    filesWritable: false,
     description: null,
     host: "gpu-box.internal",
     maxConcurrent: 4,
@@ -76,6 +79,7 @@ function harness(repo: Record<string, unknown> = {}) {
       renewFromManifest: record("renewFromManifest", { incarnation: OLD }),
       ...repo,
     } as never,
+    fileChannel: stubFileChannel(),
     maxConcurrentCeiling: 8,
     deliverOutcome: async () => {},
   });
@@ -321,6 +325,7 @@ describe("writes derived from a snapshot", () => {
     const settles: unknown[][] = [];
     const now = new Date("2026-10-01T12:00:00Z");
     const sweep = createLeaseSweep({
+      fileChannel: stubFileChannel(),
       repo: {
         stopDispatch: async () => [],
         expiredLeases: async () => [
@@ -388,6 +393,7 @@ describe("writes derived from a snapshot", () => {
           requested.push(args);
         },
       } as never,
+      fileChannel: stubFileChannel(),
       owner: "alice",
       agentBinding: "*",
       isAgentOwnedBy: async () => true,

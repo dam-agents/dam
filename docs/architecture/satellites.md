@@ -1,6 +1,6 @@
 # Satellites
 
-Last verified: 2026-11-13
+Last verified: 2026-11-18
 
 ## Overview
 
@@ -94,7 +94,7 @@ A Satellite is therefore unreachable except through Platform, which is the point
 - **Command Pattern** — one permitted command shape (below).
   A Command Surface concept only, enforced entirely on the machine.
 - **Satellite Grant** — the per-Agent permission to reach a Satellite.
-  The granted set decides whether the tools are registered at all.
+  The granted set decides whether the tools are registered at all, and, for a file tree, whether it is mounted at all.
 
 ## Command Patterns
 
@@ -224,7 +224,7 @@ Either way, a worker that cannot authenticate retries like any other failure but
 A Job's result carries one string of at most 1 MiB beside a handful of images, which is the wrong channel for a file: a tool that returned contents would spend the Agent's context on bytes, and a large file would not fit at all.
 So a file travels on **its own request, in the direction the queue cannot go** — the machine makes it, over the same outbound HTTPS the worker already uses, streamed both ways and never through a Job's arguments or its result.
 
-`dam satellite files --root <dir>` exposes one directory on the machine as a **transfer surface**:
+`dam satellite files --root <dir>` exposes one directory on the machine as a **transfer surface**; a Satellite that declares itself a file tree instead offers that directory as a mount, with no tools at all ([Files as a mount](#files-as-a-mount)):
 
 - `download` copies one file, or a slice of one, **into the Agent's workspace**, and the Agent is told only the path the file landed at, its size and its sha256.
   It reads the file with its own tools, never through the model's context.
@@ -303,6 +303,29 @@ The clock and the cancellation signal are checked after every filesystem call, n
 A printed path is a JSON string, so a name carrying a tab, a newline or a quote cannot be mistaken for a column or a line.
 Entries come in filesystem order, not sorted.
 A listing within that budget that is still larger than one message is spilled into a workspace file by the same rule as any other result, so a big directory costs the Agent a path instead of its context.
+
+## Files as a mount
+
+A Satellite is a **tool surface** or a **file tree**; a file tree has no tools and no Jobs, and therefore no Job row and no per-call record.
+Its Agent sees one directory per granted Satellite under `/mnt/sat`, served by a mount inside the Agent's own machine, and every call the mount cannot answer from its cache becomes a **File Operation** on a channel of its own beside Jobs ([Satellite Mount](../ubiquitous-language.md)).
+
+An operation is queued in the shared store under the owner, its Satellite and its Agent, and the machine's ordinary claim long-poll takes it up exactly as a Job is taken up: one operation per Agent per turn, in rotation, so one Agent's walk cannot starve another Agent's single read.
+The answer travels back to the replica holding the Agent's request open, whichever replica the machine's claim landed on; nothing about an operation is pinned to a replica, and nothing about it is written to Postgres.
+A write's body rides a short-lived handoff beside the queue rather than the queue itself, and both are taken exactly once.
+An operation carries the instant its Agent stops waiting, 30 seconds after it was asked for, and a claim drops one that is past it: a change never lands after the Agent was told it failed.
+At most 64 operations wait for one Agent of one Satellite, and beyond that the platform answers "Input/output error" rather than letting one walk fill the shared store.
+
+**Grants are checked on every operation**, because the mount server enforces nothing.
+The platform checks the grant, that the Satellite is a file tree, that the machine is online and not draining, that the grant was not revoked a moment ago, and that the worker was started writable for anything that changes the tree.
+An offline or draining Satellite answers "Host is down" at once, a revoked grant "Permission denied", and a read-only worker "Read-only file system", all before the machine is asked anything.
+A revocation also ends the operations that Agent already has waiting, rather than letting them run out their deadline.
+
+The record is a **summary**: one line per Agent, Satellite and minute, with the operations relayed, the files opened, the bytes read and written, and the entries created, renamed and deleted — and never a path.
+Replicas elect one flusher a minute through a shared key, so a pair is logged once however many replicas relayed its operations.
+Nothing on the platform says which file an Agent read, wrote or deleted, which is the price of the summary and the reason a files Satellite has no safety net.
+
+A session is told about its mounts once, when it starts: the platform names each `/mnt/sat/<name>` and whether it is writable, but only when the mount server has been seen within the last 45 seconds.
+A machine that has not booted the mount server therefore leaves an Agent with no mount words at all, rather than instructions about a directory that is not there.
 
 ## Trust boundary
 

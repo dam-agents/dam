@@ -13,6 +13,7 @@ import {
   satelliteJobs,
   satellites,
 } from "db";
+import { isOnline } from "../domain/admission.js";
 import { formatJobRef } from "api-server-api";
 import type {
   JobStatus,
@@ -34,6 +35,8 @@ function toSatellite(r: typeof satellites.$inferSelect): SatelliteRow {
   return {
     owner: r.owner,
     name: r.name,
+    kind: r.kind === "files" ? "files" : "tools",
+    filesWritable: r.filesWritable,
     description: r.description,
     host: r.host,
     maxConcurrent: r.maxConcurrent,
@@ -118,6 +121,8 @@ export function createSatellitesRepository(db: Db) {
         .values({
           owner,
           name: manifest.name,
+          kind: manifest.kind ?? "tools",
+          filesWritable: manifest.files?.writable ?? false,
           description: manifest.description ?? null,
           host,
           maxConcurrent,
@@ -128,6 +133,8 @@ export function createSatellitesRepository(db: Db) {
         .onConflictDoUpdate({
           target: [satellites.owner, satellites.name],
           set: {
+            kind: manifest.kind ?? "tools",
+            filesWritable: manifest.files?.writable ?? false,
             description: manifest.description ?? null,
             host,
             maxConcurrent,
@@ -156,6 +163,8 @@ export function createSatellitesRepository(db: Db) {
       const [row] = await db
         .update(satellites)
         .set({
+          kind: manifest.kind ?? "tools",
+          filesWritable: manifest.files?.writable ?? false,
           description: manifest.description ?? null,
           host,
           maxConcurrent: Math.min(manifest.maxConcurrent, ceiling),
@@ -309,6 +318,52 @@ export function createSatellitesRepository(db: Db) {
           ),
         );
       return rows[0] ? toSatellite(rows[0]) : null;
+    },
+
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: The file-tree Satellites one Agent may mount,
+     * with whether each is writable and whether it is reachable. It is the list
+     * the mount server polls and the one the Agent's instructions are built
+     * from, so it joins the grant rather than reading one after the other: a
+     * grant removed between the two reads would otherwise name a mount the
+     * Agent no longer holds.
+     */
+    async grantedFilesSatellites(
+      agentId: string,
+      owner: string,
+    ): Promise<
+      { name: string; writable: boolean; online: boolean; draining: boolean }[]
+    > {
+      const rows = await db
+        .select({
+          name: satellites.name,
+          writable: satellites.filesWritable,
+          draining: satellites.draining,
+          lastSeenAt: satellites.lastSeenAt,
+        })
+        .from(satellites)
+        .innerJoin(
+          satelliteGrants,
+          and(
+            eq(satelliteGrants.owner, satellites.owner),
+            eq(satelliteGrants.name, satellites.name),
+          ),
+        )
+        .where(
+          and(
+            eq(satelliteGrants.agentId, agentId),
+            eq(satellites.owner, owner),
+            eq(satellites.kind, "files"),
+          ),
+        )
+        .orderBy(asc(satellites.name));
+      const at = new Date();
+      return rows.map((row) => ({
+        name: row.name,
+        writable: row.writable,
+        online: isOnline(row, at) && !row.draining,
+        draining: row.draining,
+      }));
     },
 
     async grantedNames(

@@ -42,6 +42,10 @@ import type { SatelliteAgentOpsImpl } from "./services/agent-ops.js";
  * own job verb; a tool that loses the claim is dropped rather than failing the
  * session.
  *
+ * A Satellite that is a file tree has no tools and no Jobs, so it registers
+ * nothing at all — not even the job verbs, which would be three tools an Agent
+ * could call to no effect.
+ *
  * The default wait deadline sits under Node's own 300s request timeout, which
  * the harness server does not override. A wait running the full 300s would have
  * its socket torn down instead of answering "still running".
@@ -114,11 +118,15 @@ export function registerSatelliteTools(
   const claim = (registered: string): boolean =>
     taken.has(registered) ? false : (taken.add(registered), true);
 
-  for (const satellite of deps.satellites)
+  const toolSurfaces = deps.satellites.filter(
+    (satellite) => satellite.kind === "tools",
+  );
+
+  for (const satellite of toolSurfaces)
     for (const verb of RESERVED_TOOL_NAMES)
       claim(scopedName(satellite.name, verb));
 
-  for (const satellite of deps.satellites) {
+  for (const satellite of toolSurfaces) {
     const name = satellite.name;
 
     for (const tool of satellite.tools) {

@@ -1168,6 +1168,9 @@ export async function bootstrap() {
   ) => Promise<boolean> = async () => false;
   const satellitesBoot = composeSatellitesModule({
     db,
+    redis: sharedRedis,
+    bus: redisBus,
+    blobs: createRedisBlobHandoff(sharedRedis),
     maxConcurrentCeiling: config.satelliteMaxConcurrentCeiling,
     ownerOf: (agentId) => agentsRepo.getOwner(agentId),
     agentName: async (agentId) => (await agentsRepo.get(agentId))?.name ?? null,
@@ -1210,6 +1213,9 @@ export async function bootstrap() {
   deliverSatelliteOutcome = createOutcomeDelivery(outcomeDeliveryDeps);
   await periodicJobs.register("satellite-lease-sweep", 60_000, () =>
     satellitesBoot.sweepLeases().then(() => undefined),
+  );
+  await periodicJobs.register("satellite-file-summary", 60_000, () =>
+    satellitesBoot.fileChannel.flushSummary(),
   );
   const retrySatelliteOutcomes = createOutcomeWakeRetry(
     outcomeDeliveryDeps,

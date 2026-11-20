@@ -2,20 +2,25 @@ import { TRPCError } from "@trpc/server";
 import {
   formatJobRef,
   type ClaimInput,
+  type FileResultInput,
   type HeartbeatInput,
   type ReportInput,
   type SatelliteManifest,
   type WorkItem,
 } from "api-server-api";
-import type { JobRow } from "../domain/types.js";
+import type { JobRow, SatelliteRow } from "../domain/types.js";
 import type { SatellitesRepository } from "../infrastructure/satellites-repository.js";
+import type { SatelliteFileChannel } from "./file-channel.js";
 
 export const LEASE_MS = 60_000;
 const STALE_JOB_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const CLAIM_POLL_MS = 500;
+const TOUCH_INTERVAL_MS = 20_000;
+const TOUCH_MEMORY_MS = 5 * 60_000;
 
 export interface WorkerOpsDeps {
   repo: SatellitesRepository;
+  fileChannel: SatelliteFileChannel;
   maxConcurrentCeiling: number;
   deliverOutcome: (input: {
     owner: string;
@@ -35,6 +40,30 @@ export interface WorkerOpsDeps {
  */
 export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
   const now = deps.now ?? (() => new Date());
+  const lastTouch = new Map<string, number>();
+
+  async function fileItems(
+    owner: string,
+    input: ClaimInput,
+    satellite: SatelliteRow,
+    deadline: number,
+  ): Promise<WorkItem[]> {
+    const key = `${owner}:${input.satellite}`;
+    const at = now().getTime();
+    for (const [seen, touched] of lastTouch)
+      if (at - touched > TOUCH_MEMORY_MS) lastTouch.delete(seen);
+    if (at - (lastTouch.get(key) ?? 0) >= TOUCH_INTERVAL_MS) {
+      lastTouch.set(key, at);
+      await deps.repo.touch(owner, input.satellite, input.incarnation);
+    }
+    return deps.fileChannel.take(
+      owner,
+      input.satellite,
+      satellite.incarnation,
+      input.capacity,
+      Math.max(0, deadline - now().getTime()),
+    );
+  }
 
   return {
     /**
@@ -96,6 +125,13 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
             false,
             input.incarnation,
           );
+
+        if (satellite.kind === "files") {
+          const files = await fileItems(owner, input, satellite, deadline);
+          if (files.length > 0 || now().getTime() >= deadline) return files;
+          await new Promise((resolve) => setTimeout(resolve, CLAIM_POLL_MS));
+          continue;
+        }
 
         await deps.repo.touch(owner, input.satellite, input.incarnation);
 
@@ -208,6 +244,15 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
       });
     },
 
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: One file operation's answer, from the worker
+     * that claimed it. It goes straight to the channel: a files Satellite keeps
+     * no Job row, so there is nothing here to settle, deliver or wake.
+     */
+    async fileResult(owner: string, input: FileResultInput): Promise<void> {
+      await deps.fileChannel.settle(owner, input);
+    },
+
     async drain(
       owner: string,
       satellite: string,
@@ -222,6 +267,7 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
           });
       }
       await deps.repo.setDraining(owner, satellite, true, incarnation);
+      await deps.fileChannel.satelliteOffline(owner, satellite);
     },
   };
 }

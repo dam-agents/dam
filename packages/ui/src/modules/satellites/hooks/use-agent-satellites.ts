@@ -29,7 +29,10 @@ export function useAgentSatellites(agentId: string) {
         onSuccess: () =>
           emitToast({
             kind: "success",
-            message: `Added ${satellite.name}. The agent picks up its tools when its harness next starts.`,
+            message:
+              satellite.kind === "files"
+                ? `Added ${satellite.name}. It appears at /mnt/sat/${satellite.name} within 30 seconds, with no restart.`
+                : `Added ${satellite.name}. The agent picks up its tools when its harness next starts.`,
           }),
       });
     },

@@ -1,5 +1,8 @@
 import type { Db } from "db";
+import type { Redis } from "ioredis";
 import type { SatellitesService } from "api-server-api";
+import type { BlobHandoff } from "../../core/blob-handoff.js";
+import type { RedisBus } from "../../core/redis-bus.js";
 import {
   createSatellitesRepository,
   type SatellitesRepository,
@@ -12,6 +15,10 @@ import {
 } from "./services/agent-ops.js";
 import { createSatellitesService } from "./services/satellites-service.js";
 import {
+  createSatelliteFileChannel,
+  type SatelliteFileChannel,
+} from "./services/file-channel.js";
+import {
   createLeaseSweep,
   createSatelliteWorkerOps,
   type SatelliteWorkerOpsImpl,
@@ -20,6 +27,7 @@ import {
 
 export interface SatellitesComposition {
   repo: SatellitesRepository;
+  fileChannel: SatelliteFileChannel;
   spillLog: AgentOpsDeps["spillLog"];
   agentOps: SatelliteAgentOpsImpl;
   workerOps: SatelliteWorkerOpsImpl;
@@ -34,6 +42,9 @@ export interface SatellitesComposition {
 
 export function composeSatellitesModule(deps: {
   db: Db;
+  redis: Redis;
+  bus: RedisBus;
+  blobs: BlobHandoff;
   maxConcurrentCeiling: number;
   ownerOf: AgentOpsDeps["ownerOf"];
   isAgentOwnedBy: (agentId: string, owner: string) => Promise<boolean>;
@@ -42,6 +53,12 @@ export function composeSatellitesModule(deps: {
   agentName?: WorkerOpsDeps["agentName"];
 }): SatellitesComposition {
   const repo = createSatellitesRepository(deps.db);
+  const fileChannel = createSatelliteFileChannel({
+    redis: deps.redis,
+    bus: deps.bus,
+    blobs: deps.blobs,
+    ...(deps.agentName === undefined ? {} : { agentName: deps.agentName }),
+  });
 
   const stopDispatch = async (
     scope: { owner?: string; satellite?: string; agentId?: string },
@@ -66,6 +83,7 @@ export function composeSatellitesModule(deps: {
   };
   const workerDeps: WorkerOpsDeps = {
     repo,
+    fileChannel,
     maxConcurrentCeiling: deps.maxConcurrentCeiling,
     deliverOutcome: deps.deliverOutcome,
     ...(deps.agentName === undefined ? {} : { agentName: deps.agentName }),
@@ -73,6 +91,7 @@ export function composeSatellitesModule(deps: {
 
   return {
     repo,
+    fileChannel,
     spillLog: deps.spillLog,
     agentOps: createSatelliteAgentOps({
       repo,
@@ -84,6 +103,7 @@ export function composeSatellitesModule(deps: {
     serviceFor: (owner, agentBinding) =>
       createSatellitesService({
         repo,
+        fileChannel,
         owner,
         agentBinding,
         isAgentOwnedBy: deps.isAgentOwnedBy,
@@ -92,8 +112,11 @@ export function composeSatellitesModule(deps: {
           stopDispatch({ ...scope, owner }, reason),
       }),
     onAgentDeleted: async (agentId) => {
+      const granted = await repo.grantedNames(agentId);
       await repo.revokeAgentGrants(agentId);
       await stopDispatch({ agentId }, "the agent was deleted");
+      for (const { owner, name } of granted)
+        await fileChannel.revoke(owner, name, agentId);
     },
     listAgentIds: () => repo.listGrantedAgentIds(),
   };
