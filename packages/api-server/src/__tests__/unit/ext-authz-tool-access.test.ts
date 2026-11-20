@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the tool mode of a Connection at the ext_authz gate. An Agent that holds an MCP Connection in read only may call only its read tools on the Connection's MCP host: a `tools/call` of any other tool is answered with a JSON-RPC error the agent can read, and is never sent on, even when an egress rule allows the host. In needs approval a `tools/call` waits as a tool-call approval that names the tool and its arguments: approve once sends it, and deny once, the end of the hold window or a channel turn nobody attends answers it with a JSON-RPC error. The same call sent again joins the approval, and a batch with such a call is refused, since one approval answers one call. A Connection in allow all is not limited. The choice is read on every request, and a request that names no Connection, or one the Agent does not hold, gets the strictest choice. A body the gateway did not send, or that is not one strict JSON document, is refused rather than passed, and so is a TLS request with a body that comes without its server name while the Agent holds a read-only Connection.
+// TEST_OVERVIEW: the tool mode of a Connection at the ext_authz gate. An Agent that holds an MCP Connection in read only may call only its read tools on the Connection's MCP host: a `tools/call` of any other tool is answered with a JSON-RPC error the agent can read, and is never sent on, even when an egress rule allows the host. In needs approval a `tools/call` waits as a tool-call approval that names the tool and its arguments: approve once sends it, and deny once, the end of the hold window or a channel turn nobody attends answers it with a JSON-RPC error. The same call sent again within the approval's hold window joins it, and a batch with such a call is refused, since one approval answers one call. A held call whose client goes away stops waiting and leaves the approval pending. Each approve once makes exactly one call: the held call it releases, or else the next identical call sent before the hold window ends. A Connection in allow all is not limited. The choice is read once on every request, and a request that names no Connection, or one the Agent does not hold, gets the strictest choice. A body the gateway did not send, or that is not one strict JSON document, is refused rather than passed, and so is a TLS request with a body that comes without its server name while the Agent holds a read-only Connection.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Connection, ToolMode } from "api-server-api";
 import { createExtAuthzGate } from "../../modules/approvals/services/ext-authz-gate.js";
@@ -137,6 +137,7 @@ function world(granted: Connection[], opts: { channelTurn?: boolean } = {}) {
       host?: string;
       tlsHost?: string | null;
       tls?: boolean;
+      signal?: AbortSignal;
     } = {},
   ) =>
     gate.gateRequest({
@@ -149,6 +150,7 @@ function world(granted: Connection[], opts: { channelTurn?: boolean } = {}) {
       body,
       connectionId: opts.connectionId ?? null,
       tlsHost: opts.tlsHost === undefined ? (opts.host ?? HOST) : opts.tlsHost,
+      signal: opts.signal,
     });
   return { send, reads, granted, repo, bus };
 }
@@ -513,7 +515,7 @@ describe("a Connection that needs approval at the gate", () => {
     expect(w.bus.publishes[0]!.channel).toBe("inject:agent-1");
     expect(w.bus.publishes[0]!.payload).toContain("notes_read on conn-a-name");
 
-    w.repo.resolve(row.id, "allow");
+    w.repo.resolve(row.id, "allow_once");
     w.bus.fire(`approval:${row.id}`, "");
     expect(await inflight).toBe("allow");
   });
@@ -572,6 +574,121 @@ describe("a Connection that needs approval at the gate", () => {
     void w.send(bodyOf(toolCall("notes_write", 3, { a: 1, b: 3 })), named);
     await flushMicrotasks();
     expect(w.repo.inserts).toBe(2);
+  });
+
+  const approveOnce = (w: ReturnType<typeof world>, id: string) => {
+    w.repo.resolve(id, "allow_once");
+    w.bus.fire(`approval:${id}`, "");
+  };
+
+  const abandoned = async (w: ReturnType<typeof world>) => {
+    const client = new AbortController();
+    const inflight = w.send(bodyOf(toolCall("notes_write", 1, { a: 1 })), {
+      ...named,
+      signal: client.signal,
+    });
+    await flushMicrotasks();
+    client.abort();
+    expect(await inflight).toBe("deny");
+    return w.repo.rows[0]!;
+  };
+
+  // TEST_SCENARIO: the client gives up on a held call before the owner answers and closes its request. The wait stops at once, the approval stays pending for the owner, and the same call sent again joins it rather than filing another.
+  it("leaves the approval pending when the client goes away, and a retry joins it", async () => {
+    const w = asking();
+    const row = await abandoned(w);
+    expect(row.status).toBe("pending");
+    expect(w.repo.expirePendingCalls).toEqual([]);
+
+    const retry = w.send(bodyOf(toolCall("notes_write", 2, { a: 1 })), named);
+    await flushMicrotasks();
+    expect(w.repo.inserts).toBe(1);
+    approveOnce(w, row.id);
+    expect(await retry).toBe("allow");
+  });
+
+  // TEST_SCENARIO: the owner approves once while no request waits, because the client gave up. The next identical call is made at once, and the call after it files a new approval, since one approve once makes one call.
+  it("makes the next identical call with an approve once nobody waited for, and only that one", async () => {
+    const w = asking();
+    const row = await abandoned(w);
+    approveOnce(w, row.id);
+
+    expect(
+      await w.send(bodyOf(toolCall("notes_write", 2, { a: 1 })), named),
+    ).toBe("allow");
+    expect(w.repo.inserts).toBe(1);
+
+    void w.send(bodyOf(toolCall("notes_write", 3, { a: 1 })), named);
+    await flushMicrotasks();
+    expect(w.repo.inserts).toBe(2);
+  });
+
+  // TEST_SCENARIO: an approve once lasts only until the hold window ends. An identical call sent after that files a new approval instead of using the old one.
+  it("files a new approval for a retry after the hold window", async () => {
+    const w = asking();
+    const row = await abandoned(w);
+    approveOnce(w, row.id);
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    void w.send(bodyOf(toolCall("notes_write", 2, { a: 1 })), named);
+    await flushMicrotasks();
+    expect(w.repo.inserts).toBe(2);
+  });
+
+  // TEST_SCENARIO: two identical calls arrive at the same time after one approve once that no request waited for. Exactly one of them is made; the other is held as a new approval.
+  it("makes exactly one of two identical calls racing on one approve once", async () => {
+    const w = asking();
+    const row = await abandoned(w);
+    approveOnce(w, row.id);
+
+    const outcomes: unknown[] = [];
+    for (const id of [2, 3])
+      void w
+        .send(bodyOf(toolCall("notes_write", id, { a: 1 })), named)
+        .then((d) => outcomes.push(d));
+    await flushMicrotasks();
+    expect(outcomes).toEqual(["allow"]);
+    expect(w.repo.inserts).toBe(2);
+  });
+
+  // TEST_SCENARIO: approve once releases a held call, and an identical request waits on the same approval. The released call uses the approval up, so only one of the two is made, the other gets an error that says why, and an identical retry right after files a new approval.
+  it("uses up the approval with the call it releases", async () => {
+    const w = asking();
+    const first = w.send(bodyOf(toolCall("notes_write", 1, { a: 1 })), named);
+    await flushMicrotasks();
+    const twin = w.send(bodyOf(toolCall("notes_write", 2, { a: 1 })), named);
+    await flushMicrotasks();
+    approveOnce(w, w.repo.rows[0]!.id);
+
+    const decisions = await Promise.all([first, twin]);
+    expect(decisions.filter((d) => d === "allow")).toHaveLength(1);
+    const refused = decisions.find((d) => d !== "allow")!;
+    const answer = JSON.parse(refusalOf(refused).body);
+    expect(answer.error.message).toContain("was made with that approval");
+
+    void w.send(bodyOf(toolCall("notes_write", 3, { a: 1 })), named);
+    await flushMicrotasks();
+    expect(w.repo.inserts).toBe(2);
+  });
+
+  // TEST_SCENARIO: an approval the client gave up on stays pending, but nobody can approve it once its hold window ends. A call sent again near the end of the window joins it and waits only until the window ends, not a whole new window; a call sent after the window files a new approval.
+  it("joins an approval only within its window, and waits only until it ends", async () => {
+    const w = asking();
+    await abandoned(w);
+    await vi.advanceTimersByTimeAsync(29_000);
+    const late = w.send(bodyOf(toolCall("notes_write", 2, { a: 1 })), named);
+    await flushMicrotasks();
+    expect(w.repo.inserts).toBe(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    const answer = JSON.parse(refusalOf(await late).body);
+    expect(answer.error.message).toContain("nobody answered");
+
+    const other = asking();
+    await abandoned(other);
+    await vi.advanceTimersByTimeAsync(30_000);
+    void other.send(bodyOf(toolCall("notes_write", 2, { a: 1 })), named);
+    await flushMicrotasks();
+    expect(other.repo.inserts).toBe(2);
   });
 
   // TEST_SCENARIO: the arguments are larger than the approval keeps. The payload keeps only the first part of their JSON, as text, and says how large the whole arguments are.

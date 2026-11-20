@@ -9,7 +9,10 @@ export interface FakeRepo {
   inserts: number;
   expirePendingCalls: string[];
   setInitial(row: PendingApprovalRow): void;
-  resolve(id: string, verdict: "allow" | "deny"): void;
+  resolve(
+    id: string,
+    verdict: "allow" | "deny" | "allow_once" | "deny_once",
+  ): void;
 }
 
 export function makeFakeApprovalsRepo(): FakeRepo {
@@ -53,8 +56,29 @@ export function makeFakeApprovalsRepo(): FakeRepo {
           r.agentId === agentId &&
           r.status === "pending" &&
           r.payload.kind === "mcp_tool_call" &&
-          r.payload.key === key,
+          r.payload.key === key &&
+          r.expiresAt > new Date(),
       ) ?? null,
+    consumeAllowOnce: async (target) => {
+      const row = rows
+        .filter(
+          (r) =>
+            r.type === "mcp_tool_call" &&
+            r.status === "resolved" &&
+            r.verdict === "allow_once" &&
+            r.deliveredAt === null &&
+            ("id" in target
+              ? r.id === target.id
+              : r.agentId === target.agentId &&
+                r.payload.kind === "mcp_tool_call" &&
+                r.payload.key === target.key &&
+                r.expiresAt > new Date()),
+        )
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0];
+      if (!row) return null;
+      row.deliveredAt = new Date();
+      return row.id;
+    },
     findActivePendingExtAuthz: async ({
       agentId,
       host,
@@ -111,7 +135,7 @@ export function makeFakeApprovalsRepo(): FakeRepo {
       const row = rows.find((r) => r.id === id);
       if (!row) return;
       row.status = "resolved";
-      row.verdict = verdict === "allow" ? "allow" : "deny";
+      row.verdict = verdict;
       row.resolvedAt = new Date();
     },
   } as FakeRepo;

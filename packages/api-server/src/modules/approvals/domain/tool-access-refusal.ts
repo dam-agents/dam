@@ -104,7 +104,8 @@ export function unnamedToolCall(
   return jsonRpcErrors(message, input.ids, false);
 }
 
-export type HeldToolCallEnd = "unattended" | "denied" | "expired" | "child";
+export type HeldToolCallEnd =
+  "unattended" | "denied" | "expired" | "child" | "used-up";
 
 function holdWindow(seconds: number): string {
   if (seconds % 60 !== 0) return `${seconds} seconds`;
@@ -112,7 +113,7 @@ function holdWindow(seconds: number): string {
   return minutes === 1 ? "1 minute" : `${minutes} minutes`;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the answer to a held tool call that will not be made: nobody attends the run to approve it now, the owner denied it, nobody answered within the hold window, or it came from a sub-agent with network access of its own, which cannot ask the owner. It is a JSON-RPC error for the call's id on a successful HTTP reply, so the agent reads why and its session goes on.
+// UNIT_BOUNDARY_DESCRIPTION: the answer to a held tool call that will not be made: nobody attends the run to approve it now, the owner denied it, nobody answered within the hold window, it came from a sub-agent with network access of its own, which cannot ask the owner, or the owner approved it once and the same call, sent again, used that approval first. It is a JSON-RPC error for the call's id on a successful HTTP reply, so the agent reads why and its session goes on.
 export function heldToolCallRefusal(
   limit: ToolAccessLimit,
   call: { tool: string; id: JsonRpcId | undefined },
@@ -126,6 +127,7 @@ export function heldToolCallRefusal(
     denied: `${gateway} the owner denied this call of ${tool} on the Connection "${limit.connectionName}", so it was not made.`,
     expired: `${gateway} the Connection "${limit.connectionName}" needs approval for every tool call, and nobody answered within ${holdWindow(holdSeconds)}, so the call of ${tool} was not made.`,
     child: `${gateway} the Connection "${limit.connectionName}" needs approval for every tool call, and an agent with network access of its own cannot ask the owner for one, so the call of ${tool} was not made.`,
+    "used-up": `${gateway} the owner approved one call of ${tool} on the Connection "${limit.connectionName}", and the same call, sent again, was made with that approval, so this one was not made.`,
   }[end];
   return jsonRpcErrors(message, call.id === undefined ? [] : [call.id], false);
 }

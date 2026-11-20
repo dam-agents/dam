@@ -34,11 +34,13 @@ export interface ToolCallHoldInput {
   method: string;
   path: string;
   toolCall: HeldToolCall;
+  signal: AbortSignal | undefined;
 }
 
 export type ToolCallHoldOutcome =
   | { readonly kind: "allow" }
-  | { readonly kind: "refuse"; readonly response: ToolAccessRefusal };
+  | { readonly kind: "refuse"; readonly response: ToolAccessRefusal }
+  | { readonly kind: "abandoned" };
 
 export interface ToolCallHold {
   hold(input: ToolCallHoldInput): Promise<ToolCallHoldOutcome>;
@@ -46,11 +48,12 @@ export interface ToolCallHold {
 
 const MAX_LOGGED_NAME = 100;
 
-// UNIT_BOUNDARY_DESCRIPTION: the hold of one `tools/call` of an MCP Connection in needs approval, as a tool-call approval. The same call sent again while one waits (same Connection, tool and arguments, told by the payload's key) joins that approval; any other call files its own. A channel turn nobody attends cannot get an answer, so the call is refused at once and the approval stays for the owner. Otherwise the in-session prompt goes to attached clients and the request waits up to the hold window: approve once sends it, and deny once or the end of the window answers it with a JSON-RPC error. A sub-agent with network access of its own cannot ask the owner, so its call is refused without an approval. The security log names the Connection and the tool, never the arguments.
+// UNIT_BOUNDARY_DESCRIPTION: the hold of one `tools/call` of an MCP Connection in needs approval, as a tool-call approval. The same call sent again while one waits (same Connection, tool and arguments, told by the payload's key) joins that approval and waits only until its hold window ends; any other call, or one sent after that window, files its own. A channel turn nobody attends cannot get an answer, so the call is refused at once and the approval stays for the owner. Otherwise the in-session prompt goes to attached clients and the request waits up to the hold window: approve once sends it, and deny once or the end of the window answers it with a JSON-RPC error. A sub-agent with network access of its own cannot ask the owner, so its call is refused without an approval. An approve once outlives the client's own tool timeout until the hold window ends: a client that gives up closes its request, which stops the wait and leaves the approval pending, and the same call sent again after approve once is made, once. Each approve once makes exactly one call: the request that makes it uses the approval up first, so a held request that a retry beat to it is refused. The security log names the Connection and the tool, never the arguments.
 export function createToolCallHold(deps: {
   repo: Pick<
     ApprovalsRepository,
     | "findActivePendingMcpToolCall"
+    | "consumeAllowOnce"
     | "insertPending"
     | "getPending"
     | "expirePending"
@@ -60,7 +63,7 @@ export function createToolCallHold(deps: {
   holdSeconds: number;
 }): ToolCallHold {
   return {
-    async hold({ identity, via, method, path, toolCall }) {
+    async hold({ identity, via, method, path, toolCall, signal }) {
       const { connection, tool } = toolCall;
       const log = (
         level: "info" | "warn",
@@ -116,21 +119,35 @@ export function createToolCallHold(deps: {
         return refuse("child");
       }
 
-      const attendee = identity.own?.parentAgentId ?? identity.agentId;
-      const unattended =
-        (await deps.attendance.hasOpenChannelTurn(attendee)) &&
-        !(await deps.attendance.hasInteractiveSession(attendee));
-
       const key = toolCallKey(
         connection.connectionId,
         tool,
         toolCall.arguments,
       );
+      const approved = await deps.repo.consumeAllowOnce({
+        agentId: identity.agentId,
+        key,
+      });
+      if (approved) {
+        log("info", "egress.decision", {
+          decision: "allow",
+          reason: "allow-once-used",
+          correlationId: approved,
+        });
+        return { kind: "allow" };
+      }
+
+      const attendee = identity.own?.parentAgentId ?? identity.agentId;
+      const unattended =
+        (await deps.attendance.hasOpenChannelTurn(attendee)) &&
+        !(await deps.attendance.hasInteractiveSession(attendee));
       const existing = await deps.repo.findActivePendingMcpToolCall({
         agentId: identity.agentId,
         key,
       });
       const pendingId = existing?.id ?? randomUUID();
+      const expiresAt =
+        existing?.expiresAt ?? new Date(Date.now() + deps.holdSeconds * 1000);
       if (!existing) {
         await deps.repo.insertPending({
           id: pendingId,
@@ -155,7 +172,7 @@ export function createToolCallHold(deps: {
               : {}),
             ...(identity.own ? { forAgentId: identity.own.parentAgentId } : {}),
           },
-          expiresAt: new Date(Date.now() + deps.holdSeconds * 1000),
+          expiresAt,
         });
         emit({
           type: EventType.ApprovalRequested,
@@ -190,7 +207,18 @@ export function createToolCallHold(deps: {
         detail: { joined: existing !== null },
       });
 
-      const settled = await waitForVerdict(deps, pendingId);
+      const settled = await waitForVerdict(deps, pendingId, {
+        signal,
+        expiresAt,
+      });
+      if (settled.reason === "hold-abandoned") {
+        log("warn", "egress.decision", {
+          decision: "deny",
+          reason: settled.reason,
+          correlationId: pendingId,
+        });
+        return { kind: "abandoned" };
+      }
       if (settled.reason === "hold-expired" && settled.flipped) {
         emit({
           type: EventType.ApprovalResolved,
@@ -201,13 +229,17 @@ export function createToolCallHold(deps: {
         });
       }
       const expired = settled.reason === "hold-expired";
-      log(settled.verdict === "deny" ? "warn" : "info", "egress.decision", {
-        decision: expired ? "expired" : settled.verdict,
-        reason: settled.reason,
+      const usedUp =
+        settled.verdict === "allow" &&
+        (await deps.repo.consumeAllowOnce({ id: pendingId })) === null;
+      const verdict = usedUp ? "deny" : settled.verdict;
+      log(verdict === "deny" ? "warn" : "info", "egress.decision", {
+        decision: expired ? "expired" : verdict,
+        reason: usedUp ? "allow-once-used-up" : settled.reason,
         correlationId: pendingId,
       });
-      if (settled.verdict === "allow") return { kind: "allow" };
-      return refuse(expired ? "expired" : "denied");
+      if (verdict === "allow") return { kind: "allow" };
+      return refuse(expired ? "expired" : usedUp ? "used-up" : "denied");
     },
   };
 }

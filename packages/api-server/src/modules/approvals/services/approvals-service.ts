@@ -261,6 +261,8 @@ export function createApprovalsService(
       }
       if (!row || row.status !== "pending") return NOT_ACTIONABLE;
       if (row.payload.kind === "egress_proposal") return NOT_ACTIONABLE;
+      if (row.type === "mcp_tool_call" && row.expiresAt <= new Date())
+        return NOT_ACTIONABLE;
       if (
         row.type === "ext_authz" ||
         row.type === "web_search" ||

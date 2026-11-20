@@ -48,6 +48,9 @@ drivers:
     keyPath: mcp_servers
     urlKey: url
     headersKey: http_headers
+    # A Connection's entry waits for a tool call as long as the gateway holds
+    # it for the owner's approval; Codex's own default gives up after 60s.
+    toolTimeout: { key: tool_timeout_sec, unit: seconds }
 
   # Codex's built-in model list names OpenAI's own models, which an
   # OpenAI-compatible endpoint need not serve, so the list is discovered from

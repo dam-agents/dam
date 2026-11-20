@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-11-20
+Last verified: 2026-11-21
 
 ## Overview
 
@@ -137,7 +137,7 @@ A list that fails keeps the tools read before and stores why, for the owner to s
 A Template may declare its own read list, as the Slack Account does, and that list wins over the server's hints, in the stored list and at the gate.
 The Slack Account's default is read only, and its connect form and its "Can post as me" choice set allow all or read only.
 In read only the gateway lets only the read tools pass, and a tool the list does not name is not a read tool: a tool the server adds later is refused until a new read of the list names it as reading.
-In needs approval the gateway holds every tool call, read tools included, as a [tool-call approval](security-and-credentials.md#hitl-ext_authz) that shows the tool and its arguments where network approvals show; approve once sends it, and deny once or no answer within the hold window refuses it.
+In needs approval the gateway holds every tool call, read tools included, as a tool-call approval (below) that shows the tool and its arguments where network approvals show; approve once sends it, and deny once or no answer within the hold window refuses it.
 Only an owner with the `mcp-tool-approval` [experimental feature](features.md) on can choose it.
 A Template may also render its own tool calls on that approval: the Slack Account shows a call that posts, saves a draft or schedules a message as its target and text, and every other tool, or a call whose arguments are not in the shape the renderer expects, shows as the tool name and its arguments as JSON.
 The Agent still sees every tool the server lists, and a refused call is answered with an error it can read.
@@ -152,6 +152,18 @@ While the Agent holds a Connection in read only or needs approval, a TLS request
 That window opens only when a Connection whose Secret was written before every MCP Connection with a Secret asked for the body is first limited, because its Secret then starts to ask for it.
 A change holds from the Agent's next request, and whoever acts with the owner's rights can make it, an Agent that holds the owner's [DAM Connection](connection-presets.md#platform-preset-this-install-itself) included.
 The Slack Account Connections made before tool access existed kept full access, so none was narrowed silently; when the mode moved out of the OAuth auth, one with full access became allow all and one without it read only.
+
+A **tool-call approval** answers one call, so a request that carries one tool call is held, and a batch that contains one is refused with a request to send the calls one by one.
+Calls with the same Connection, tool and arguments share one approval, whatever their request id or key order: a retry joins the waiting approval, and a call with other arguments files its own.
+It takes approve once and deny once only, so nothing is remembered and no rule is written.
+Deny once, and the end of the hold window, answer the call with an error the Agent can read, and its session goes on.
+The arguments are kept only while the approval waits, and are dropped when it resolves or expires.
+An unattended channel turn refuses the call at once and files the approval, as for a network request ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)); a sub-agent with network access of its own cannot ask, so its call is refused without one.
+MCP clients give up on a tool call after a timeout of their own, so where a harness lets the platform set it, each Connection's MCP entry carries the hold window as that timeout.
+A client that gives up first leaves the approval pending: the owner still sees it, and the same call sent again within the window joins it and waits only until the window ends.
+An approve once given while no call waits is used up by the next identical call within the window, which is made at once; the call after it files a new approval.
+Each approve once makes exactly one call, even when identical calls race for it, and a held call that lost the race gets an error that says so.
+After the window, a retry files a new approval and the old one can no longer be approved.
 
 A Connection that acts as a person rather than as the Agent records **whose account** it acts as, so the product can name that person wherever the Connection is listed.
 The platform asks the provider with the Connection's own credential (Slack, GitHub and the Google services today) when the credential first works: at the OAuth callback, at create for a token, and again on every re-consent or rotation, since a new credential may belong to someone else.

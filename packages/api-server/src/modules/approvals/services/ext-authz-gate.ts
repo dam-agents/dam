@@ -53,6 +53,8 @@ interface ExtAuthzGateInput {
   connectionId?: string | null;
   /* UNIT_BOUNDARY_DESCRIPTION: the server name of the request's TLS session, which a chain that checks bodies sends. It names the chain that carries the request, whatever Host header the agent wrote. */
   tlsHost?: string | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: aborts when the gateway cancels the check, which it does when the client that sent the request goes away. A held tool call then stops waiting, so it never uses up an approval on a request nobody reads. */
+  signal?: AbortSignal;
 }
 
 export interface ExtAuthzGate {
@@ -142,6 +144,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       body,
       connectionId,
       tlsHost,
+      signal,
     }) {
       const host = canonicalEgressHost(requestHost);
       const identity = await deps.identityResolver.resolve(agentId);
@@ -261,14 +264,18 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           method,
           path,
           toolCall: tools.toolCall,
+          signal,
         });
-        return held.kind === "allow"
-          ? "allow"
-          : {
-              verdict: "refuse",
-              basis: "tool-access",
-              response: held.response,
-            };
+        return match(held)
+          .returnType<ExtAuthzDecision>()
+          .with({ kind: "allow" }, () => "allow")
+          .with({ kind: "abandoned" }, () => "deny")
+          .with({ kind: "refuse" }, ({ response }) => ({
+            verdict: "refuse",
+            basis: "tool-access",
+            response,
+          }))
+          .exhaustive();
       }
 
       if (deps.platformAllowedAuthorities.includes(`${host}:${port}`)) {
@@ -549,6 +556,11 @@ function waitingRefusal(
       "hold-expired",
       () =>
         "the network rule that would allow it still waits for the owner's approval, and the owner did not answer in time",
+    )
+    .with(
+      "hold-abandoned",
+      () =>
+        "the network rule that would allow it still waits for the owner's approval, and the request stopped waiting",
     )
     .exhaustive();
   return {

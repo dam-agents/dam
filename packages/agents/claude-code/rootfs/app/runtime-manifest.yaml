@@ -1,5 +1,5 @@
 # Claude Code manifest. Built-in drivers are on by default; this declares only
-# the Claude-specific harness-config, writing model/mode/effort defaults into
+# the Claude-specific mcp-entry tool timeout and harness-config, writing model/mode/effort defaults into
 # $HOME/.claude/settings.json. Models use concrete aliases (opus/sonnet/haiku),
 # never Claude's `default` alias — that resolves to a model the account can't reach.
 manifestVersion: 1
@@ -102,6 +102,15 @@ sessionCut:
 agentProcesses: ["claude"]
 
 drivers:
+  # The built-in entry shape, plus a per-server `timeout` in milliseconds: a
+  # Connection's entry waits for a tool call as long as the gateway holds it
+  # for the owner's approval. Claude Code's own idle check would end a held
+  # HTTP call after five minutes; a per-server timeout also raises that floor.
+  mcp-entry:
+    path: "$HOME/.mcp.json"
+    keyPath: mcpServers
+    toolTimeout: { key: timeout, unit: milliseconds }
+
   harness-config:
     file: "$HOME/.claude/settings.json"
     sessionModel: true

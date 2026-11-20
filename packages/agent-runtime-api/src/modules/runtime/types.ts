@@ -135,6 +135,8 @@ export const mcpEntryContribution = z.object({
   name: z.string().min(1),
   url: z.string().url(),
   headers: z.record(z.string(), z.string()).optional(),
+  /* UNIT_BOUNDARY_DESCRIPTION: how long the harness should wait for one tool call of this server: the gateway's approval hold window, so a call held for the owner's approval does not time out in the client first. Only a Connection's entry has it. */
+  toolTimeoutSeconds: z.number().int().positive().optional(),
 });
 
 export const skillRefContribution = z.object({

@@ -1,10 +1,12 @@
-// TEST_OVERVIEW: the verdicts on a held MCP tool call. A tool-call approval takes approve once and deny once only: each answers the one held call and writes no rule. Nothing is remembered for the next call, so always allow, allow the whole host and always deny change nothing and answer not actionable.
+// TEST_OVERVIEW: the verdicts on a held MCP tool call. A tool-call approval takes approve once and deny once only: each answers the one held call and writes no rule. Nothing is remembered for the next call, so always allow, allow the whole host and always deny change nothing and answer not actionable. An approve once counts only inside the hold window: after it, the approval answers not actionable.
 import { describe, expect, it } from "vitest";
 import type { PendingApprovalRow } from "../../modules/approvals/domain/types.js";
 import type { ApprovalsRepository } from "../../modules/approvals/infrastructure/approvals-repository.js";
 import { createApprovalsService } from "../../modules/approvals/services/approvals-service.js";
 
-function toolCallRow(): PendingApprovalRow {
+function toolCallRow(
+  expiresAt = new Date(Date.now() + 60_000),
+): PendingApprovalRow {
   return {
     id: "call-1",
     type: "mcp_tool_call",
@@ -22,7 +24,7 @@ function toolCallRow(): PendingApprovalRow {
       argumentsBytes: 16,
     },
     createdAt: new Date(),
-    expiresAt: new Date(Date.now() + 60_000),
+    expiresAt,
     resolvedAt: null,
     verdict: null,
     decidedBy: null,
@@ -31,8 +33,8 @@ function toolCallRow(): PendingApprovalRow {
   };
 }
 
-function makeService() {
-  const rows = [toolCallRow()];
+function makeService(row = toolCallRow()) {
+  const rows = [row];
   const rules: unknown[] = [];
   const repo = {
     getPending: async (id: string) => {
@@ -94,5 +96,20 @@ describe("verdicts on a held MCP tool call", () => {
       expect((await answer("call-1")).outcome).toBe("not_actionable");
     expect(rows[0]!.status).toBe("pending");
     expect(rules).toEqual([]);
+  });
+
+  // TEST_SCENARIO: the hold window has ended, whether or not the sweeper has marked the approval expired yet. No call could use an approve once now, so it answers not actionable and leaves the approval as it is.
+  it("answers not actionable after the hold window", async () => {
+    const past = new Date(Date.now() - 1_000);
+    const late = makeService(toolCallRow(past));
+    expect((await late.service.approveOnce("call-1")).outcome).toBe(
+      "not_actionable",
+    );
+    expect(late.rows[0]!.status).toBe("pending");
+
+    const expired = makeService({ ...toolCallRow(past), status: "expired" });
+    expect((await expired.service.approveOnce("call-1")).outcome).toBe(
+      "not_actionable",
+    );
   });
 });

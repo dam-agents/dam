@@ -1035,6 +1035,7 @@ export async function bootstrap() {
     db,
     namespace: config.namespace,
     damSkill,
+    mcpToolTimeoutSeconds: config.approvalHoldSeconds,
     bullConnection,
     agentRunningPort: {
       isRunning: (agentId) => agentsRepo.isReady(agentId),

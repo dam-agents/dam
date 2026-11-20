@@ -63,10 +63,15 @@ export interface ApprovalsRepository {
     agentId: string;
     key: string;
   }): Promise<PendingApprovalRow | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: the newest pending approval of a tool call, by its key, whose hold window has not ended. A pending approval past its window can no longer be approved, so a call sent again files a new one instead of joining it. */
   findActivePendingMcpToolCall(input: {
     agentId: string;
     key: string;
   }): Promise<PendingApprovalRow | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: uses up one approve once of a tool call, so exactly one request makes the call. By key, it takes the oldest unused approve once of that call whose hold window has not ended, for a call sent again after the client gave up; by id, it takes that approval, for the held request it released. It returns the id it used, or null when there was none to use, such as when another request got there first. */
+  consumeAllowOnce(
+    target: { agentId: string; key: string } | { id: string },
+  ): Promise<string | null>;
   listPendingForOwner(
     ownerSub: string,
     opts?: ListApprovalsRepoOpts,
@@ -170,7 +175,7 @@ function toPendingRow(r: RawPending): PendingApprovalRow {
 
 const payloadLeavingPending = sql`CASE WHEN ${pendingApprovals.type} = 'mcp_tool_call' THEN ${pendingApprovals.payload} - 'arguments' ELSE ${pendingApprovals.payload} END`;
 
-// UNIT_BOUNDARY_DESCRIPTION: the approvals store. A tool-call approval keeps the call's arguments only while it waits: every update that moves a row out of `pending` (a verdict or an expiry) drops `arguments` from its payload in the same statement.
+// UNIT_BOUNDARY_DESCRIPTION: the approvals store. A tool-call approval keeps the call's arguments only while it waits: every update that moves a row out of `pending` (a verdict or an expiry) drops `arguments` from its payload in the same statement. For a tool-call approval, `delivered_at` marks an approve once that a request has used up; no frame is ever delivered for one, so nothing else reads or sets it on such a row.
 export function createApprovalsRepository(db: Db): ApprovalsRepository {
   return {
     async insertPending(row) {
@@ -304,11 +309,47 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
             eq(pendingApprovals.status, "pending"),
             eq(pendingApprovals.type, "mcp_tool_call"),
             sql`${pendingApprovals.payload}->>'key' = ${key}`,
+            sql`${pendingApprovals.expiresAt} > now()`,
           ),
         )
         .orderBy(desc(pendingApprovals.createdAt))
         .limit(1);
       return rows.length ? toPendingRow(rows[0] as RawPending) : null;
+    },
+
+    async consumeAllowOnce(target) {
+      const unused = and(
+        eq(pendingApprovals.type, "mcp_tool_call"),
+        eq(pendingApprovals.status, "resolved"),
+        eq(pendingApprovals.verdict, "allow_once"),
+        isNull(pendingApprovals.deliveredAt),
+      );
+      const which =
+        "id" in target
+          ? eq(pendingApprovals.id, target.id)
+          : inArray(
+              pendingApprovals.id,
+              db
+                .select({ id: pendingApprovals.id })
+                .from(pendingApprovals)
+                .where(
+                  and(
+                    unused,
+                    eq(pendingApprovals.agentId, target.agentId),
+                    sql`${pendingApprovals.payload}->>'key' = ${target.key}`,
+                    sql`${pendingApprovals.expiresAt} > now()`,
+                  ),
+                )
+                .orderBy(asc(pendingApprovals.createdAt))
+                .limit(1)
+                .for("update", { skipLocked: true }),
+            );
+      const rows = await db
+        .update(pendingApprovals)
+        .set({ deliveredAt: new Date() })
+        .where(and(which, unused))
+        .returning({ id: pendingApprovals.id });
+      return rows[0]?.id ?? null;
     },
 
     async listPendingForOwner(ownerSub, opts) {
