@@ -11,6 +11,7 @@ import { acpRequest, promptOnce, promptWhenSettled } from "./acp.js";
 import { signInThroughTheBrowser } from "./auth.js";
 import { mockTemplateId } from "./config.js";
 import { requestOf, waitingApprovals } from "./egress.js";
+import { agentFiles } from "./kb.js";
 import { apiDriver } from "./drivers/api/index.js";
 import type { Driver, Surface } from "./drivers/driver.js";
 import { uiDriver } from "./drivers/ui/index.js";
@@ -20,6 +21,7 @@ import {
   type Person,
   personas,
   preparePerson,
+  warmKnowledgeBase,
   warmMockAgent,
 } from "./people.js";
 import { customHeader, World } from "./world.js";
@@ -34,6 +36,7 @@ interface Cast {
   storageState(persona: Persona): Promise<string>;
   warmAgent(persona: Persona, index: number): Promise<string>;
   forgetWarm(persona: Persona, id: string): void;
+  warmKnowledgeBase(persona: Persona): Promise<string>;
 }
 
 interface Setup {
@@ -56,6 +59,7 @@ interface Setup {
   grant(persona: Persona, connection: string, agent: string): Promise<void>;
   agent(persona: Persona, name: string): Promise<void>;
   sleep(agent: string): Promise<void>;
+  knowledgeBase(persona: Persona, name: string, folder: string): Promise<void>;
   session(persona: Persona, agent: string, text: string): Promise<void>;
   runningAgent(
     persona: Persona,
@@ -110,6 +114,7 @@ export const test = base.extend<
       const people = new Map<Persona, Promise<Person>>();
       const states = new Map<Persona, Promise<string>>();
       const warm = new Map<Persona, string[]>();
+      const knowledgeBases = new Map<Persona, Promise<string>>();
       mkdirSync(".auth", { recursive: true });
       const person = (persona: Persona) => {
         if (!people.has(persona))
@@ -132,6 +137,14 @@ export const test = base.extend<
           const agents = warm.get(persona) ?? [];
           const index = agents.indexOf(id);
           if (index >= 0) delete agents[index];
+        },
+        warmKnowledgeBase: async (persona) => {
+          if (!knowledgeBases.has(persona))
+            knowledgeBases.set(
+              persona,
+              warmKnowledgeBase(await person(persona)),
+            );
+          return knowledgeBases.get(persona)!;
         },
         warmAgent: async (persona, index) => {
           const agents = warm.get(persona) ?? [];
@@ -358,6 +371,32 @@ export const test = base.extend<
           world.unique(text),
         );
         world.opened(persona, agent, text, turn.sessionId);
+      },
+      knowledgeBase: async (persona, name, folder) => {
+        if (folder !== "wiki")
+          throw new Error(
+            `the warm knowledge base shares "wiki", not "${folder}"`,
+          );
+        const owner = await cast.person(persona);
+        const id = await cast.warmKnowledgeBase(persona);
+        if ((await owner.api.agents.get.query({ id })).state !== "running")
+          await owner.api.agents.wake.mutate({ id }).catch(() => {});
+        await expect
+          .poll(async () => (await owner.api.agents.get.query({ id })).state, {
+            timeout: 240_000,
+            intervals: [1_000, 2_000],
+            message: `${persona}'s knowledge base did not come up`,
+          })
+          .toBe("running");
+        const { name: shown } = await owner.api.agents.get.query({ id });
+        world.agents.set(name, { owner: persona, name: shown, id });
+        world.undo.push(async () => {
+          await owner.api.kbShares.revoke
+            .mutate({ agentId: id })
+            .catch(() => {});
+          for (const dir of ["work/wiki", "work/notes"])
+            await agentFiles(owner, id, "remove", { path: dir }).catch(() => 0);
+        });
       },
       sleep: async (name) => {
         const agent = world.agent(name);
