@@ -1,5 +1,6 @@
 import type {
   CallWorkItem,
+  FileResultInput,
   SatelliteImage,
   SatelliteManifest,
   SatelliteTool,
@@ -66,6 +67,18 @@ export interface WorkerTransport {
   }): Promise<void>;
   drain(input: { satellite: string; incarnation?: string }): Promise<void>;
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a files worker needs of the same transport. A
+ * File Operation has no Job to report against: it is answered on its own request
+ * with `fileResult`, by the registration it was queued for.
+ */
+export type FileWorkerTransport = Pick<
+  WorkerTransport,
+  "connect" | "claim" | "heartbeat" | "drain"
+> & {
+  fileResult(input: FileResultInput): Promise<void>;
+};
 
 export class SatelliteRemovedError extends Error {
   constructor(satellite: string) {

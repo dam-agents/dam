@@ -67,7 +67,7 @@ export type Opened =
 
 export type FileKind = "file" | "dir" | "link" | "other";
 
-function kindOf(info: Stats): FileKind {
+export function kindOf(info: Stats): FileKind {
   if (info.isSymbolicLink()) return "link";
   if (info.isDirectory()) return "dir";
   if (info.isFile()) return "file";
@@ -121,7 +121,7 @@ export function pathSegments(raw: unknown): string[] | null {
   return segments;
 }
 
-interface Proved {
+export interface Proved {
   dev: number;
   ino: number;
 }
@@ -200,7 +200,7 @@ export async function walkInRoot(
  * check and this move would otherwise steer it. Returns null when the directory
  * is no longer the one that was verified, before anything is written.
  */
-function insideDirectory<T>(
+export function insideDirectory<T>(
   dir: string,
   proved: Proved,
   step: () => T,

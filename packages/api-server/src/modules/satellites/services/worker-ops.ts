@@ -33,6 +33,21 @@ export interface WorkerOpsDeps {
 }
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: A manifest is refused only for a shape the platform
+ * cannot serve at all. A tool that declares a transfer belongs to the file
+ * transfer tools a Satellite Mount replaced, and the only worker that sends one is
+ * a `dam satellite files` from before the mount: it would register a Satellite
+ * whose tools no Agent is offered, and its Jobs would never run, so the worker is
+ * told to update the CLI instead of being registered. An MCP or shell Satellite
+ * never sends one, and a tool merely *named* `download` is an ordinary tool.
+ */
+function retiredTransferTool(manifest: SatelliteManifest): string | null {
+  const retired = manifest.tools.find((tool) => tool.transfer !== undefined);
+  if (retired === undefined) return null;
+  return `${manifest.name} offers "${retired.name}" as a file transfer, which a satellite files mount replaces — update the CLI (\`dam update\`) and start the worker again`;
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: The Satellite side of the queue — connect, claim,
  * heartbeat, report, drain. It moves MCP tool calls out and outcomes back and
  * never reads either: only the machine knows what its arguments mean.
@@ -82,6 +97,9 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
       host?: string,
       resume?: string,
     ): Promise<{ incarnation: string }> {
+      const retired = retiredTransferTool(manifest);
+      if (retired !== null)
+        throw new TRPCError({ code: "BAD_REQUEST", message: retired });
       if (resume === undefined)
         return deps.repo.upsertFromManifest(
           owner,

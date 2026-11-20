@@ -175,6 +175,12 @@ describe("relaying one operation across two replicas", () => {
       agent: { id: AGENT, name: `Agent ${AGENT}` },
     });
     expect(Buffer.from(items[0]!.data!, "base64").toString()).toBe("hello");
+    /**
+     * TEST_SCENARIO: The wait travels as what is left of it, so a machine whose
+     * clock disagrees with the platform's still honours the Agent's 30 seconds.
+     */
+    expect(items[0]!.remainingMs).toBeGreaterThan(0);
+    expect(items[0]!.remainingMs).toBeLessThanOrEqual(5_000);
 
     await b.workerOps.fileResult(OWNER, {
       satellite: SATELLITE,
@@ -1132,6 +1138,10 @@ describe("what a session is told about its mounts", () => {
     expect(text).toContain("Host is down");
     expect(text).toContain("Stale file handle");
     expect(text).toContain("Operation not permitted");
+    expect(text).toContain("Permission denied");
+    expect(text).toContain("a hard link, a FIFO, a socket or a device");
+    expect(text).toContain("a file that has a second hard link");
+    expect(text).not.toContain("setuid");
   });
 
   /**
