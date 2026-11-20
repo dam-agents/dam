@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 
 import type { Schedule } from "../../../types.js";
 import { useAgentDisplayName } from "../../agents/api/queries.js";
+import { AskAssistantLink } from "../../assistants/components/ask-assistant-link.js";
+import { askAboutSchedule } from "../../assistants/lib/ask-prefill.js";
 import { useDefaultModelNotices } from "../../home/hooks/use-default-model-notices.js";
 import {
   defaultModelScheduleWarning,
@@ -146,6 +148,18 @@ export function ScheduleCard({
                 >
                   {outcome.label}
                 </span>
+                {outcome.failed && (
+                  <AskAssistantLink
+                    agentId={schedule.agentId}
+                    className="self-center"
+                    prefill={askAboutSchedule({
+                      agentName: sandboxName,
+                      scheduleName: name,
+                      at: status?.lastRun ?? new Date().toISOString(),
+                      result: status?.lastResult ?? "",
+                    })}
+                  />
+                )}
               </>
             )}
             {nextRunHint && (

@@ -7,6 +7,8 @@ import { Spinner } from "@/components/ui/spinner";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
+import { AskAssistantLink } from "../../assistants/components/ask-assistant-link.js";
+import { askAboutUnavailable } from "../../assistants/lib/ask-prefill.js";
 import { useRestartAgent } from "../hooks/use-restart-agent.js";
 import { useWakeAgent } from "../hooks/use-wake-agent.js";
 import { overlayDescription } from "../lib/overlay-copy.js";
@@ -133,6 +135,17 @@ export function AgentUnavailableOverlay({
         <Button onClick={() => restart(agent.id)} disabled={restarting}>
           <Restart size={14} /> Restart agent
         </Button>
+      )}
+      {description && (state === "error" || state === "over_budget") && (
+        <AskAssistantLink
+          agentId={agent.id}
+          className="self-center"
+          prefill={askAboutUnavailable({
+            agentName: agent.name,
+            at: new Date().toISOString(),
+            description,
+          })}
+        />
       )}
     </OverlayFrame>
   );

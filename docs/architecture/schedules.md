@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-11-13
+Last verified: 2026-11-18
 
 ## Overview
 
@@ -226,6 +226,7 @@ The one-shot SQL migration carries its dry-run count query in its comment.
 from it.
 A one-time schedule is the exception: its stamp is the flag that says the task already fired, so a refused one-time fire writes it (and records its reason as the task's result).
 The reason clears itself when the schedule works again — a fire that commits, or a Precheck that declines, replaces the failure.
+A card whose last result failed or was missed also offers *Ask <assistant name>*, which opens the owner's assistant with the result already in its composer and sends nothing ([assistant](assistant.md#asking-from-where-an-error-shows)).
 A held fire records its reason the same way and leaves the stamp too: nothing ran, and the hold lifts on its own.
 A refusal the api-server reaches before it commits the trigger — a saved choice that no longer holds, or no granted provider that can run the harness — delivers nothing and wakes nothing: the fire writes the reason and arms the next occurrence.
 A refusal the runtime reaches instead — a harness that refuses the session's model at fire time — settles as a failed *run*, a stage distinct from a broken Precheck, so it is not redelivered, and leaves the unprompted session behind, empty.

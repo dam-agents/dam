@@ -47,6 +47,11 @@ Builds published before these accounts were added have only `qa-owner`; there an
   Each of the three opens a list with *Back* and *Manage* (the same section of the agent's settings): a skill's switch installs or removes it while the agent runs, a recurring schedule's switch pauses or resumes it (a one-time task has none), and the Connections list shows the connections the agent holds, one card per service, each with its ⋯ menu; *Add connection* grants more.
   A schedule's ⋮ menu offers *Run now*, *Edit schedule* and *Delete schedule*, as on the Schedules section.
   *Add source*, *Create schedule* and *Add connection* open the usual dialogs; *Or, describe to create* (skills and schedules) leaves *Create a skill that...* or *Every morning at 9am...* in the box in place of any draft, and sends nothing.
+- **Ask <assistant>** — the link under a failure that asks the account's assistant about it, labelled with the install's assistant name (*Ask Dammy*).
+  It shows on the error card under a reply whose turn failed, on a crash notice about one agent (out of memory, storage full, stopped answering), on the overlay that says an agent hit an error or is over budget, and on a schedule card whose last result is *Failed* or *Missed* — not on a held, pending or succeeded one, not on a sleeping agent's overlay, and not on the provider-failure card.
+  It is there only for the agent's owner, only when the account has an assistant, and never in the assistant's own chat.
+  Choosing it opens a new chat with the assistant with the agent, the session or schedule, the time and the first line of the error already in the message box, and sends nothing.
+  A crash notice carrying the link stays until it is closed, so *Tab* reaches the link and *Enter* opens the chat as a click does.
 - **Starter kit** — a ready setup an agent is created from (connections, schedules, size).
   Its tile and its modal say who publishes it: "By" the brand, with a check mark, for the platform team's kits, or "By" a named user, linked from the modal.
 - **Connection** — a stored credential (model provider, GitHub, Slack…) granted to agents.

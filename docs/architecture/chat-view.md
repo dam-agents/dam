@@ -1,6 +1,6 @@
 # Chat view
 
-Last verified: 2026-11-17
+Last verified: 2026-11-18
 
 ## Overview
 
@@ -30,6 +30,10 @@ Every way into the Agent's settings from its chat — the agent menu's *Agent se
 The modal's banner shows the Agent's avatar, which opens the avatar picker, and its name; its editable name and avatar head the General section too.
 The modal keeps every section, Browser too for an Agent with a browser; the section list, two lines a row, scrolls up and down on its own when it does not fit and never sideways, and the open section scrolls beside it, its bar clear of the content.
 The old agent page's address, `/sandboxes/<id>/<section>`, which the server still writes into Slack and Telegram messages and spend alerts, opens the Agent's chat with the modal on that section, never Not found; the address becomes the chat's and keeps an `#anchor` the modal scrolls to, and a sign-in started in the modal returns to it the same way, on Connections.
+
+## A turn that failed
+
+A reply whose turn ended in an error shows the platform's card under it, naming what went wrong and where to fix it; for the Agent's owner, and never in the assistant's own chat, the card also offers *Ask <assistant name>*, which opens the assistant's chat with the failure already in its composer and sends nothing ([assistant](assistant.md#asking-from-where-an-error-shows)).
 
 ## The composer's + menu
 
