@@ -20,12 +20,18 @@ const REFRESH_AHEAD_MS = 11 * 60 * 60_000;
 const EXCHANGE_RETRY_MS = 10 * 60_000;
 const ROTATING_TOKEN_PREFIX = "xoxe.";
 
+export interface SpentRefreshTokens {
+  mark: (fingerprint: string) => Promise<void>;
+  isSpent: (fingerprint: string) => Promise<boolean>;
+}
+
 export interface SlackAppTokenServiceDeps {
   helmToken: string;
   secrets: SecretStore;
   lock: XactLock;
   rotation: SlackTokenRotation;
   exchangeLongLivedToken: boolean;
+  spentRefreshTokens: SpentRefreshTokens;
 }
 
 export interface SlackAppTokenService {
@@ -82,7 +88,13 @@ function logAppToken(
  * refresh token, so it is kept in memory and served, and the next call saves
  * it under the lock before it asks Slack for anything. It is saved only over
  * the pair it replaced: when the Secret has moved on, another replica saved a
- * newer pair, and the kept one is dropped. A failed renewal
+ * newer pair, and the kept one is dropped. Until it is saved, the refresh
+ * token it replaced is marked spent, by fingerprint, where every replica
+ * sees it: another replica reads the old pair from the Secret, and while its
+ * token is still valid it serves that token instead of offering the spent
+ * refresh token to Slack again. Once that token has expired, a renewal is
+ * tried anyway, because the replica holding the kept pair may have
+ * restarted. A failed renewal
  * keeps serving the token while it is still valid. Once it has expired, Slack
  * refusing the refresh token as dead marks the Secret refused, and nothing is
  * served until a person sets a new app-level token in Helm values: a Helm
@@ -183,7 +195,21 @@ export function createSlackAppTokenService(
       importedFrom: helmFingerprint,
       refused: false,
     };
-    unsaved = (await save(pair)) ? null : { pair, replaces };
+    if (await save(pair)) {
+      unsaved = null;
+      return pair.token;
+    }
+    unsaved = { pair, replaces };
+    if (replaces !== null) {
+      try {
+        await deps.spentRefreshTokens.mark(fingerprint(replaces));
+      } catch (err) {
+        logAppToken("error", "slack.app_token.spent_unmarked", {
+          result: "failure",
+          reason: formatError(err),
+        });
+      }
+    }
     return pair.token;
   }
 
@@ -246,8 +272,25 @@ export function createSlackAppTokenService(
         }
       }
       if (!renewalDue(stored)) return served(stored);
-      return stored === null ? exchange() : refresh(stored);
+      if (stored === null) return exchange();
+      if (await spentElsewhere(stored)) return served(stored);
+      return refresh(stored);
     });
+  }
+
+  async function spentElsewhere(stored: StoredAppToken): Promise<boolean> {
+    if (stored.expiresAt <= now()) return false;
+    try {
+      return await deps.spentRefreshTokens.isSpent(
+        fingerprint(stored.refreshToken),
+      );
+    } catch (err) {
+      logAppToken("error", "slack.app_token.spent_unread", {
+        result: "failure",
+        reason: formatError(err),
+      });
+      return false;
+    }
   }
 
   async function resolveAppToken(): Promise<string | null> {

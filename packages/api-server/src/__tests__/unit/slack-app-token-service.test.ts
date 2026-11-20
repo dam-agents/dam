@@ -52,6 +52,13 @@ function setup(opts?: {
   if (opts?.stored) secrets[SLACK_APP_TOKEN_SECRET_PATH] = { ...opts.stored };
   const calls = { exchange: [] as string[], refresh: [] as string[] };
   const storage = { down: false };
+  const spent = new Set<string>();
+  const spentRefreshTokens = {
+    mark: async (fingerprint: string) => {
+      spent.add(fingerprint);
+    },
+    isSpent: async (fingerprint: string) => spent.has(fingerprint),
+  };
   const store = {
     storeId: "k8s",
     get: async ({ path }: { path: string }) =>
@@ -87,6 +94,7 @@ function setup(opts?: {
       now: () => clock,
     },
     exchangeLongLivedToken: opts?.rotationOn ?? true,
+    spentRefreshTokens,
   };
   return {
     svc: createSlackAppTokenService(deps),
@@ -295,6 +303,49 @@ describe("Slack app-level token", () => {
   });
 
   /**
+   * TEST_SCENARIO: One replica renewed the token but could not save the new
+   * pair, so the Secret still holds the refresh token it spent. Another
+   * replica finds that pair due. While the old token is still valid it
+   * serves that token and leaves the spent refresh token alone; the replica
+   * holding the new pair saves it once the Secret takes writes again.
+   */
+  it("keeps another replica off a refresh token spent but not yet saved", async () => {
+    const env = await exchanged();
+    env.advance(2 * HOUR);
+    env.storage.down = true;
+    expect(await env.svc.resolveAppToken()).toBe("xoxe.xapp-2");
+
+    const other = env.rebuild(HELM);
+    expect(await other.resolveAppToken()).toBe("xoxe.xapp-1");
+    await other.renew();
+    expect(env.calls.refresh).toEqual(["xoxe-1-r1"]);
+
+    env.storage.down = false;
+    await env.svc.renew();
+    expect(env.secret()?.["refreshToken"]).toBe("xoxe-1-r2");
+    expect(await other.resolveAppToken()).toBe("xoxe.xapp-2");
+  });
+
+  /**
+   * TEST_SCENARIO: The replica holding the unsaved pair restarted, so no one
+   * will save it, and the old token has now expired. The spent mark no longer
+   * holds the other replica back: it tries the renewal, so Slack decides
+   * whether the refresh token still works, and a refusal reaches the
+   * operator as a refused Secret.
+   */
+  it("tries the renewal once the old token expired despite the spent mark", async () => {
+    const env = await exchanged();
+    env.advance(2 * HOUR);
+    env.storage.down = true;
+    await env.svc.resolveAppToken();
+    env.storage.down = false;
+
+    env.advance(11 * HOUR);
+    await env.rebuild(HELM).renew();
+    expect(env.calls.refresh).toEqual(["xoxe-1-r1", "xoxe-1-r1"]);
+  });
+
+  /**
    * TEST_SCENARIO: A renewal fails while the token is still valid. The token
    * keeps serving, so a Slack outage costs nothing until it expires.
    */
@@ -386,6 +437,7 @@ describe("Slack app-level token", () => {
         now: () => env.now(),
       },
       exchangeLongLivedToken: false,
+      spentRefreshTokens: { mark: async () => {}, isSpent: async () => false },
     });
     env.advance(2 * HOUR);
 

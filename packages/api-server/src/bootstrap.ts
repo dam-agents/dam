@@ -191,6 +191,7 @@ import {
 import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
 import { createSlackAppTokenService } from "./modules/channels/services/slack-app-token-service.js";
+import { createRedisSpentRefreshTokens } from "./modules/channels/infrastructure/slack-spent-refresh-tokens.js";
 import { createChannelProfiles } from "./modules/channels/infrastructure/channel-profile.js";
 import { createChannelProviderOutage } from "./modules/channels/infrastructure/provider-outage-copy.js";
 import {
@@ -1914,6 +1915,7 @@ export async function bootstrap() {
         lock: createXactLock(db),
         rotation: slackTokenRotation,
         exchangeLongLivedToken: config.slackTokenRotation,
+        spentRefreshTokens: createRedisSpentRefreshTokens(sharedRedis),
       })
     : null;
 
