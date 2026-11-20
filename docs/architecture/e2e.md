@@ -12,6 +12,8 @@ It also still holds the smoke specs of product behaviour that the feature files 
 
 ## Lanes
 
+The lanes run the integration suite; the acceptance suite has a job of its own on the default topology, beside them ([Acceptance suite](#acceptance-suite)).
+
 A **lane** is a gateway topology for the Agents a spec creates, each a machine on its owner's VM runner.
 One lane runs the chart's default, a gateway pod per Agent; the other turns on the [owner gateway](credential-gateway.md#owner-gateway), one gateway pod per owner.
 The lanes differ in nothing else but the nightly run's `full/` tier, which the default lane alone takes, and each runs on its own runner.
@@ -87,7 +89,8 @@ The two summaries hold the same table, so a phase of one lane compares with the 
 
 ## Acceptance suite
 
-The **acceptance suite** in [`packages/e2e/acceptance`](../../packages/e2e/acceptance/) states what the product does as Gherkin feature files, and `mise run e2e` runs them on the same install after the smoke suite, so both CI lanes run them; `e2e:loop` runs the smoke suite alone.
+The **acceptance suite** in [`packages/e2e/acceptance`](../../packages/e2e/acceptance/) states what the product does as Gherkin feature files, and runs them on every run the integration suite runs, in CI jobs of its own, `mise e2e (vm, acceptance N/3)`, each on a cluster of its own: every owner gets a VM runner that reserves memory, and the two suites' owners together left one CI node without room to boot a machine.
+The three jobs run a third of the Examples each (`E2E_ACCEPTANCE_SHARD`, Playwright's `--shard`), so a pull request waits for one third of them on top of one cluster's start.
 Its package depends only on the API contract package and its test tools, so a test cannot import the server's internals: `check:boundary` refuses any other dependency, and any import in its sources that leaves the package or names another package, in every import form TypeScript and Node read.
 A feature file holds **Rules**, each with concrete **Examples** in Given/When/Then form, written in the words of the [glossary](../ubiquitous-language.md) and never in the words of a screen.
 `playwright-bdd` turns the feature files into Playwright tests, and `check:steps` refuses a step that has no step definition.
@@ -120,7 +123,7 @@ The job summary times the suite as its own phase beside the smoke suite.
 
 ## Running it
 
-`mise run e2e` is the CI path: a fresh cluster, the suite and the acceptance suite, teardown.
+`mise run e2e` is the CI path: a fresh cluster, the suites `E2E_SUITES` names — `integration`, `acceptance`, or both by default — and teardown; the integration lanes set `integration`, the acceptance jobs `acceptance`.
 `mise run //packages/e2e/acceptance:run` runs the acceptance suite alone against an install, with `PLATFORM_BASE_URL` and `PLATFORM_KEYCLOAK_URL` pointing at it.
 `e2e:loop` iterates against a warm cluster, and the [cluster-ops skill](../../.agents/skills/cluster-ops/SKILL.md) covers both.
 A warm cluster shares its machine's CPUs with the browser, so `e2e:loop` sets `E2E_TIMEOUT_SCALE` to 3 and the config multiplies its default test and expect timeouts by it; a spec that sets its own timeout keeps it, and CI keeps the defaults.
