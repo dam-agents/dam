@@ -1249,9 +1249,10 @@ type RefuseDirectMessage = (
   user: string | null,
 ) => Promise<{ error: string } | null>;
 
+/* UNIT_BOUNDARY_DESCRIPTION: `turnChannel` is the channel of the turn being
+ * answered: someone spoke to the Agent there, so it may answer there as in a
+ * bound conversation. */
 interface OutboundReach {
-  /** The channel of the turn being answered: someone spoke to the Agent
-   *  there, so it may answer there as in a bound conversation. */
   turnChannel?: string | undefined;
   refuseDirectMessage: RefuseDirectMessage;
 }
