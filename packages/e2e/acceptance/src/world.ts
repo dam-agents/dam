@@ -4,6 +4,9 @@ export interface ConnectionRecord {
   owner: Persona;
   name: string;
   id: string;
+  host?: string;
+  secret?: string;
+  envName?: string;
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: the variable a custom-header connection of the examples sets: one per connection name, so two connections never write one variable. */
@@ -11,22 +14,26 @@ export function envNameOf(name: string): string {
   return `ACCEPTANCE_${name.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: the inputs of a custom-header connection the examples make, through any surface. */
+/** UNIT_BOUNDARY_DESCRIPTION: the inputs of a custom-header connection the examples make, through any surface: its secret is unique to the run, and it sets a variable of its own unless the example says it sets none. */
 export function customHeader(
   world: World,
   name: string,
   host: string,
-  variable = true,
+  {
+    variable = true,
+    key = "acceptance-secret",
+    envName = envNameOf(name),
+  } = {},
 ) {
   return {
     templateId: "custom-header",
     name: world.unique(name),
     authKind: "header" as const,
-    value: world.unique("acceptance-secret"),
+    value: world.unique(key),
     host,
     headerName: "x-api-key",
     valueFormat: "{value}",
-    ...(variable ? { envName: envNameOf(name) } : {}),
+    ...(variable ? { envName } : {}),
   };
 }
 
@@ -58,6 +65,8 @@ export class World {
     agentId?: string;
   }[] = [];
   readonly closers: (() => void)[] = [];
+  /** UNIT_BOUNDARY_DESCRIPTION: what puts a warm agent back as the example found it, run newest first when the example ends. */
+  readonly undo: (() => Promise<unknown>)[] = [];
   readonly evidence: Record<string, unknown>[] = [];
 
   unique(text: string): string {

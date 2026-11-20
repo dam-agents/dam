@@ -6,7 +6,7 @@ import { agentCard, agentUp, openHome, type Pages } from "./pages.js";
 
 export function uiChat(world: World, pages: Pages): ChatDriver {
   return {
-    async send(person, name, text) {
+    async send(person, name, text, verbatim = false) {
       const agent = world.agent(name);
       const page = await pages.of(person);
       await openHome(page);
@@ -21,7 +21,7 @@ export function uiChat(world: World, pages: Pages): ChatDriver {
       await expect(input, "the chat takes no message").toBeVisible({
         timeout: 180_000,
       });
-      await input.fill(world.unique(text));
+      await input.fill(verbatim ? text : world.unique(text));
       await expect(
         page
           .getByTestId("chat-composer")
@@ -43,6 +43,14 @@ export function uiChat(world: World, pages: Pages): ChatDriver {
         new URL(page.url()).pathname.split("/")[3] ?? "",
       );
       world.opened(person.persona, name, text, sessionId);
+    },
+    async expectAnswerWithout(person, _name, text) {
+      const page = await pages.of(person);
+      const last = page
+        .locator('[data-testid="chat-message"][data-role="assistant"]')
+        .last();
+      await expect(last).toBeVisible();
+      await expect(last).not.toContainText(text);
     },
     async expectAnswer(person, _name, text) {
       const page = await pages.of(person);
