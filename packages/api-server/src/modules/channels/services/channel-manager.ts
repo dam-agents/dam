@@ -191,7 +191,7 @@ export interface ChannelManager {
     instanceName: string,
     channelType: ChannelType,
     start: ThreadStart,
-  ): Promise<StartedThread | { error: string }>;
+  ): Promise<StartedThread | { error: string; refused?: string }>;
   listThreads(
     instanceName: string,
     channelType: ChannelType,
@@ -409,7 +409,10 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     attachmentResultSchema,
     z.object({ error: z.string() }),
   ]),
-  startThread: z.union([startedThreadSchema, z.object({ error: z.string() })]),
+  startThread: z.union([
+    startedThreadSchema,
+    z.object({ error: z.string(), refused: z.string().optional() }),
+  ]),
   listThreads: z.union([
     ownedThreadsResultSchema,
     z.object({ error: z.string() }),
