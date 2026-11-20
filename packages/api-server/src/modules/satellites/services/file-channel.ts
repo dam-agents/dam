@@ -464,6 +464,7 @@ export function createSatelliteFileChannel(deps: {
       ...(record.path === undefined ? {} : { path: record.path }),
       ...(record.args === undefined ? {} : { args: record.args }),
       ...(data === undefined ? {} : { data }),
+      remainingMs: Math.max(0, record.deadline - now()),
       deadline: record.deadline,
       agent: { id: record.agentId, name },
     };
