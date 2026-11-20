@@ -196,8 +196,10 @@ export function composeSpendSystem(deps: {
         await prices.readAllIfEmpty(provider);
     },
     async repriceDeployPriced() {
-      for (const provider of deployPricedProviders(priceBook.current()))
+      for (const provider of deployPricedProviders(priceBook.current())) {
         await repricer.repriceAwaiting(provider);
+        await repricer.repriceGuesses(provider);
+      }
     },
     readPricesSaga: startReadPricesOnConnectionSaga({
       reader: prices,

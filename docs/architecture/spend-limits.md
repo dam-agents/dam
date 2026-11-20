@@ -129,6 +129,11 @@ Some calls are priced again from their stored token counts, at the standard tier
   It stays an estimate only when another reason remains, such as a cut stream.
 - **An IBM LiteLLM estimate written before calls recorded where their price came from** is priced again after each full read, while it is inside the 30 days of call rows, has input tokens and names a model with a price.
   It stays marked as an estimate, because its row does not say why it was estimated.
+- **A guess written before DAM stopped guessing**, a call priced by the highest prices of its model's family, is priced again at each api-server start, on a provider priced by the Anthropic table or by operator prices, while it is inside the 30 days of call rows and has input tokens.
+  It takes its cost from the list when its model has a price now, and else costs nothing and waits for its price.
+  An estimate from before calls recorded where their price came from may be a guess or a real price, for example a cut stream priced from the Anthropic table in fast mode.
+  It keeps its cost when its model's price, with or without the price's fast-mode and region factors, gives that cost, because a guess never had a factor and no Anthropic price changed while such rows were written; else it is a guess.
+  It stays marked as an estimate, because its row does not say why it was estimated, until it waits for a price and then gets one.
 
 A call that had a real price never changes.
 A call without input tokens never changes either, because its cost came from the payer's most expensive call or from nothing, not from a price.

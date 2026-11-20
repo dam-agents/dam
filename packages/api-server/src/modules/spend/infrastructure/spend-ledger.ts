@@ -31,7 +31,9 @@ import {
   type SpendRow,
 } from "../domain/ledger.js";
 import {
-  REPRICED_SOURCE,
+  GUESS_REASON,
+  GUESS_SOURCE,
+  UNRECORDED_SOURCE,
   type CallReprice,
   type RepriceCandidate,
   type RepriceKind,
@@ -895,11 +897,30 @@ export function createSpendLedger(db: Db): SpendLedger {
     },
 
     async repriceCandidates({ provider, kind, since, after, limit }) {
+      const priced = sql`model <> ${UNKNOWN_MODEL}
+        AND uncached_input_tokens + cache_read_tokens
+          + cache_write_5m_tokens + cache_write_1h_tokens > 0`;
+      const rowsOfKind = match(kind)
+        .with("awaiting", () => sql`price_source = 'awaiting'`)
+        .with(
+          "backfill",
+          () =>
+            sql`price_source = ${UNRECORDED_SOURCE} AND estimated AND ${priced}`,
+        )
+        .with(
+          "guess",
+          () => sql`${priced} AND (
+            (price_source = ${GUESS_SOURCE} AND ${GUESS_REASON} = ANY(estimate_reasons))
+            OR (price_source = ${UNRECORDED_SOURCE} AND estimated))`,
+        )
+        .exhaustive();
       const rows = await db.execute<{
         calling_agent_id: string;
         call_id: string;
         model: string;
         price_model: string;
+        price_source: string;
+        cost_micros: string;
         estimated: boolean;
         estimate_reasons: string[];
         uncached_input_tokens: string;
@@ -909,21 +930,14 @@ export function createSpendLedger(db: Db): SpendLedger {
         cache_write_1h_tokens: string;
         web_searches: number;
       }>(sql`
-        SELECT calling_agent_id, call_id, model, price_model, estimated,
-          estimate_reasons, uncached_input_tokens, output_tokens,
-          cache_read_tokens, cache_write_5m_tokens, cache_write_1h_tokens,
-          web_searches
+        SELECT calling_agent_id, call_id, model, price_model, price_source,
+          cost_micros::text AS cost_micros, estimated, estimate_reasons,
+          uncached_input_tokens, output_tokens, cache_read_tokens,
+          cache_write_5m_tokens, cache_write_1h_tokens, web_searches
         FROM ${spendCalls}
         WHERE provider_template = ${provider}
-          AND price_source = ${REPRICED_SOURCE[kind]}
+          AND ${rowsOfKind}
           AND started_at >= ${since.toISOString()}::timestamptz
-          ${
-            kind === "backfill"
-              ? sql`AND estimated AND model <> ${UNKNOWN_MODEL}
-                AND uncached_input_tokens + cache_read_tokens
-                  + cache_write_5m_tokens + cache_write_1h_tokens > 0`
-              : sql``
-          }
           ${
             after
               ? sql`AND (calling_agent_id, call_id) > (${after.callingAgentId}, ${after.callId})`
@@ -937,6 +951,8 @@ export function createSpendLedger(db: Db): SpendLedger {
         provider,
         model: r.model,
         priceModel: r.price_model,
+        priceSource: r.price_source,
+        costMicros: Number(r.cost_micros),
         estimated: r.estimated,
         estimateReasons: r.estimate_reasons,
         uncachedInputTokens: Number(r.uncached_input_tokens),

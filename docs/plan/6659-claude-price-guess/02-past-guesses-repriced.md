@@ -25,6 +25,10 @@ Apply the `/typescript-engineering` skill.
      - When the result is a price row: the new cost is the row's cost, the price source is the result's source, the price model is `candidate.model`.
        Remove `model-unpriced` from the reasons; the row stays estimated only when another reason remains.
        A row from before migration `0154` (source `''`, no reasons) stays estimated, as the IBM back-fill does, because its row does not say why it was estimated.
+     - **A row from before `0154` may hold a real price** (decided during implementation): a stream that a user stopped is estimated but priced from the table, maybe with a fast or US factor.
+       The table only grew since spend started and no Anthropic price changed, so its stored cost equals its model's list cost at the standard tier or at one of the row's factors (`fast`, a region, or both).
+       When the stored cost equals one of these costs, keep that cost and stamp the row with the result's source, so a later start does not read it again; only a cost that no list price explains is a guess and takes the list cost at the standard tier.
+       The candidate carries its stored cost for this check.
      - When the result is `awaiting`: cost 0, price source `awaiting`, price model `candidate.model`, estimated, reasons = the old reasons without `model-unpriced`, plus `awaiting-price`.
      - Any other result (for example `unpriced`): return null.
    - Keep the existing `"awaiting"` and `"backfill"` behavior unchanged; IBM LiteLLM keeps using them.
@@ -54,6 +58,7 @@ Apply the `/typescript-engineering` skill.
 - [ ] At start, for `anthropic` and `anthropic-oauth`, every call row of the last 30 days with input tokens and either (`price_source = 'estimate'` and the reason `model-unpriced`) or (`price_source = ''` and `estimated`) is changed once: to its list cost when the model has a price, else to cost 0 with `price_source = 'awaiting'` and the reason `awaiting-price`.
 - [ ] After the change, no such row keeps the reason `model-unpriced`; a row from before `0154` whose model has a price stays estimated.
 - [ ] A row without input tokens, a row of another provider, and a row with a real price do not change.
+  A row from before `0154` whose cost its model's list price explains, at the standard tier or with a fast or region factor, keeps its cost and only gets the source `table`.
 - [ ] The daily rollup and today's day counter move by the same difference as the call rows; `spend.repriced` logs kind `guess` with the number of calls and the total difference.
 - [ ] A second start finds no row to change (for a model still without a price, the waiting row is now handled by kind `awaiting`).
 - [ ] IBM LiteLLM's `awaiting` and `backfill` runs behave as before.
