@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-11-13
+Last verified: 2026-11-20
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -128,7 +128,7 @@ One cross-cutting concern is owned elsewhere and only summarized here:
 
 Both adapters share the same shape inside the api-server — a worker that owns the messenger socket, the channel manager that supervises lifecycle, the ACP relay for inbound, and the per-Agent MCP endpoint for outbound.
 The interesting parts are where the two diverge: Slack hangs off a workspace-wide identity link table; Telegram hangs off its own binding table (chat → Agent).
-Telegram's token comes from Helm values; Slack's app-level token does too, but a Slack bot token is per workspace and comes from the install handshake.
+Telegram's token comes from Helm values; Slack's app-level token does too — imported into a K8s Secret where token rotation is on — but a Slack bot token is per workspace and comes from the install handshake.
 
 ### Slack — platform channel
 
@@ -164,7 +164,7 @@ flowchart LR
   MCP --> CM
 ```
 
-The App-Level Token comes from Helm values and lives in api-server env; a Bot Token is per workspace, comes from the install handshake and lives in a K8s Secret — neither is per-Agent.
+The App-Level Token comes from Helm values and lives in api-server env, or, with token rotation on, in the K8s Secret it is exchanged into; a Bot Token is per workspace, comes from the install handshake and lives in a K8s Secret — neither is per-Agent.
 Resolving the channel's binding yields the Agent and the binding owner; the relay is single-track to the main agent.
 The workspace-wide identity-link table backs the `/platform login` flow, which authorizes the in-chat bind, unbind, ambient, whisper on/off and default commands — never who may drive a turn.
 
@@ -215,18 +215,10 @@ The differences are transport, identity model, and where the bot token comes fro
   The api-server has no inbound network access requirement; events arrive over the socket the api-server itself opened.
   Slack caps Socket Mode at ten concurrent connections per app, which is the install-level scale ceiling for Slack.
   The gateway reconnects a dropped socket itself, with the Socket Mode client's own reconnect turned off: the first reconnect runs 1 s after the drop, and a reconnect Slack refuses, even `invalid_auth` on the app token, is retried after 5 s, 15 s, 30 s and then every 60 s, so a Slack auth outage stops only Slack, never the api-server, and the socket comes back once Slack accepts the token again.
-- **Token provenance.** The App-Level Token (`xapp-…`) is app-scoped: it comes from Helm values and stays singular, so one Socket Mode connection serves every installed workspace, and it alone decides whether the Slack worker runs.
+- **Token provenance.** The App-Level Token (`xapp-…`) is app-scoped: it comes from Helm values and stays singular, so one Socket Mode connection serves every installed workspace, and its Helm value alone decides whether the Slack worker runs.
   A **Bot Token is per workspace**, because Slack scopes one to one workspace, and every workspace gets its token the same way: by completing Slack's install handshake, the token that mints landing in a K8s Secret with a row pointing at it — no credential in Postgres, and none served from api-server env.
   Neither token is per-Agent.
-- **Token rotation.** Where the Slack app has token rotation turned on, the handshake mints a bot token that expires after twelve hours together with a single-use refresh token, and both go into the workspace's Secret.
-  The token is swapped for a fresh pair once it is an hour old — by a sweep every ten minutes, or by whichever replica needs it first — so an outage has eleven hours to pass before any workspace goes dark, and Slack's two-live-tokens-per-workspace limit is never crossed.
-  The swap runs under the workspace's lock — two replicas spending the same refresh token would leave one holding a revoked pair — with the Secret re-read inside the lock so the later one takes what the earlier one wrote.
-  A refresh that fails while the token still works keeps serving it; once the token has expired, a refresh Slack refuses as a dead credential marks it like any other rejection, while a refusal that may pass — being rate limited — or one Slack never answered leaves it unmarked for the next try.
-  Slack reports revoked tokens by workspace rather than by token, and a rotated-out token may be the one it reports, so a revocation marks the credential only when the workspace's current token is refused too.
-  Rotation is one switch on the Slack app, but a token minted before it was on keeps not expiring until it is exchanged, one call per token: once the install says rotation is on, every such token is exchanged in one sweep as soon as the lease-holding replica's socket is up, under the same lock.
-  Slack retires the old token as it answers, so the pair replaces it in the workspace's Secret at once.
-  A failed exchange keeps serving the old token and tries again later.
-  Renewing depends only on what a Secret holds, so the install setting only starts exchanges — turning it back off changes nothing for tokens already exchanged, and cannot, since Slack's own switch is one-way.
+- **Token rotation.** Where the Slack app has token rotation turned on, every bot token and the App-Level Token expire after twelve hours and are renewed before then; how, and how the Helm value becomes a one-time import, is on [slack-tokens](slack-tokens.md).
 - **Connecting a workspace is an operator act, and an invitation rather than open enrollment.** A new workspace is install-wide reach, not one Agent's config, so starting the handshake sits behind its own realm role (`platform-slack-installer`) — the chart creates it and a group mapped to it, the same shape the inspector role uses ([usage-tracking](usage-tracking.md)) — and an install that configured no Slack client credentials mounts no install surface at all.
   What the operator issues is a one-time invitation; the consent itself belongs to an admin of the workspace being added, who needs no platform account.
   Both sides therefore agree before a workspace is served.
@@ -397,7 +389,7 @@ A channel message becoming an agent turn — the inbound relay into an ACP sessi
 
 ## Per-Agent vs. platform channel
 
-Both messengers are platform channels: credentials belong to the install rather than to an Agent — Telegram's token and Slack's app-level token from Helm, a Slack bot token per workspace from its install handshake — and a binding table, keyed by conversation on Slack and by chat on Telegram, differing mainly in where the binding is gestured — Slack from the UI/CLI, an in-chat `/platform bind`, or the link the bot posts when it is invited; Telegram from an in-chat `/bind` plus the web agent picker.
+Both messengers are platform channels: credentials belong to the install rather than to an Agent — Telegram's token and Slack's app-level token from Helm (the latter imported into a Secret where it rotates), a Slack bot token per workspace from its install handshake — and a binding table, keyed by conversation on Slack and by chat on Telegram, differing mainly in where the binding is gestured — Slack from the UI/CLI, an in-chat `/platform bind`, or the link the bot posts when it is invited; Telegram from an in-chat `/bind` plus the web agent picker.
 The verbs match; the spelling follows each messenger — Slack prefixes its registered slash command, Telegram uses bare ones.
 Future channels (WhatsApp Business, Discord, SMS) follow the same pattern — the Telegram flow is the template for messengers without a workspace identity to anchor per-user links against.
 
@@ -409,6 +401,7 @@ Channels touch these stores; the substrate details live on [persistence](persist
   An identity link ties a messenger user to a platform identity, populated by Slack's `/platform login` — which is what authorizes the in-chat bind/unbind/ambient/default commands.
   Table shapes and indexes: [persistence](persistence.md).
   Telegram's token and Slack's app-level token live in api-server env from Helm values; a Slack workspace's bot token is a K8s Secret, which its install row points at.
+  With token rotation on, the app-level token's rotating pair lives in one install-wide K8s Secret ([slack-tokens](slack-tokens.md)).
 
 - **Loop guard drops (Postgres).** One row per Slack conversation where the bot-post limit dropped a post, written by the leader and read with the Agent's channels; a drop more than a day after the last starts the count again.
 

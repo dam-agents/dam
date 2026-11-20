@@ -190,6 +190,8 @@ import {
 } from "./modules/channels/infrastructure/slack-installs-repository.js";
 import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
+import { createSlackAppTokenService } from "./modules/channels/services/slack-app-token-service.js";
+import { createRedisSpentRefreshTokens } from "./modules/channels/infrastructure/slack-spent-refresh-tokens.js";
 import { createChannelProfiles } from "./modules/channels/infrastructure/channel-profile.js";
 import { createChannelProviderOutage } from "./modules/channels/infrastructure/provider-outage-copy.js";
 import {
@@ -1906,9 +1908,18 @@ export async function bootstrap() {
     resolveSlackChannelsByInstance: findSlackChannelsByAgent(db),
   };
 
-  const slackAppToken = config.slackAppToken;
+  const slackAppTokens = config.slackAppToken
+    ? createSlackAppTokenService({
+        helmToken: config.slackAppToken,
+        secrets: secretStore,
+        lock: createXactLock(db),
+        rotation: slackTokenRotation,
+        exchangeLongLivedToken: config.slackTokenRotation,
+        spentRefreshTokens: createRedisSpentRefreshTokens(sharedRedis),
+      })
+    : null;
 
-  const slackGatewayFactory = slackAppToken
+  const slackGatewayFactory = slackAppTokens
     ? () =>
         createBoltSlackGateway({
           resolveBotToken: slackInstalls.resolveBotToken,
@@ -1916,7 +1927,7 @@ export async function bootstrap() {
           renewTokens: slackInstalls.renewAll,
           forgetBotToken: slackInstalls.forgetBotToken,
           helmBotToken: config.slackBotToken,
-          appToken: slackAppToken,
+          resolveAppToken: slackAppTokens.resolveAppToken,
           commandName: `/${config.brand.short}`,
           onCredentialRejected: slackInstalls.markRejected,
           companionAppIds: new Set(config.slackCompanionAppIds),
@@ -2334,9 +2345,9 @@ export async function bootstrap() {
         ]
       : [],
   });
-  if (config.slackAppToken) {
+  if (slackAppTokens) {
     await periodicJobs.register("slack-token-renew", 10 * 60_000, () =>
-      slackInstalls.renewAll(),
+      Promise.all([slackInstalls.renewAll(), slackAppTokens.renew()]),
     );
   }
   await periodicJobs.register("approvals-delivery-sweep", 30_000, () =>
