@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a read-only Connection at the ext_authz gate. An Agent that holds a Connection whose Template declares read tools, without full access, may call only those tools on the Template's host: a `tools/call` of any other tool is answered with a JSON-RPC error the agent can read, and is never sent on, even when an egress rule allows the host. A Connection with full access is not limited. The choice is read on every request, and a request that names no Connection, or one the Agent does not hold, gets the strictest choice. A body the gateway did not send, or that is not one strict JSON document, is refused rather than passed.
+// TEST_OVERVIEW: a read-only Connection at the ext_authz gate. An Agent that holds a Connection whose Template declares read tools, without full access, may call only those tools on the Template's host: a `tools/call` of any other tool is answered with a JSON-RPC error the agent can read, and is never sent on, even when an egress rule allows the host. A Connection with full access is not limited. The choice is read on every request, and a request that names no Connection, or one the Agent does not hold, gets the strictest choice. A body the gateway did not send, or that is not one strict JSON document, is refused rather than passed, and so is a TLS request with a body that comes without its server name while the Agent holds a read-only Connection.
 import { describe, expect, it } from "vitest";
 import type { Connection } from "api-server-api";
 import { createExtAuthzGate } from "../../modules/approvals/services/ext-authz-gate.js";
@@ -56,6 +56,9 @@ function toolCall(name: unknown, id: number | string = 1) {
   return { jsonrpc: "2.0", id, method: "tools/call", params: { name } };
 }
 
+const toolAccessOf = (templateId: string) =>
+  templateId === "notes" ? toolAccess : undefined;
+
 function world(granted: Connection[]) {
   const reads: (string | null)[] = [];
   const gate = createExtAuthzGate({
@@ -84,12 +87,13 @@ function world(granted: Connection[]) {
       connections: {
         limiting: async (_agentId, request) => {
           reads.push(request.connectionId);
-          return readOnlyAccessFor(
-            granted,
-            (templateId) => (templateId === "notes" ? toolAccess : undefined),
-            request,
-          );
+          return readOnlyAccessFor(granted, toolAccessOf, request);
         },
+        held: async () =>
+          readOnlyAccessFor(granted, toolAccessOf, {
+            host: HOST,
+            connectionId: null,
+          }),
       },
     }),
   });
@@ -99,19 +103,20 @@ function world(granted: Connection[]) {
       connectionId?: string | null;
       method?: string;
       host?: string;
-      tlsHost?: string;
+      tlsHost?: string | null;
+      tls?: boolean;
     } = {},
   ) =>
     gate.gateRequest({
       agentId: "agent-1",
       host: opts.host ?? HOST,
       port: 443,
-      tls: true,
+      tls: opts.tls ?? true,
       method: opts.method ?? "POST",
       path: "/mcp",
       body,
       connectionId: opts.connectionId ?? null,
-      tlsHost: opts.tlsHost ?? null,
+      tlsHost: opts.tlsHost === undefined ? (opts.host ?? HOST) : opts.tlsHost,
     });
   return { send, reads, granted };
 }
@@ -294,6 +299,42 @@ describe("a read-only Connection at the gate", () => {
       }),
     );
     expect(JSON.parse(response.body).error.message).toContain(`not by ${HOST}`);
+  });
+
+  // TEST_SCENARIO: the owner made the Connection read only, and its gateway has not restarted yet, so it sends neither the body nor the TLS server name. A POST with the Template's credential and a Host header of another host must not slip through in that window: the gate cannot see the real host, so it asks for a retry, which reaches the restarted gateway.
+  it("asks for a retry when the gateway sent no server name", async () => {
+    const { send } = world([connection("conn-a")]);
+    const response = refusalOf(
+      await send(bodyOf(toolCall("notes_write")), {
+        host: "api.example.com",
+        tlsHost: null,
+      }),
+    );
+    expect(response.status).toBe(503);
+    expect(response.headers["retry-after"]).toBe("5");
+    expect(response.body).toContain("conn-a-name");
+  });
+
+  // TEST_SCENARIO: without a server name only a request that could change something is refused. Reads, a CONNECT that opens a tunnel, plain HTTP, which reaches no chain, and an Agent with no read-only Connection go on as before.
+  it("refuses only a TLS request with a body when the server name is missing", async () => {
+    const limited = world([connection("conn-a")]);
+    const elsewhere = { host: "api.example.com", tlsHost: null };
+    expect(await limited.send(undefined, { ...elsewhere, method: "GET" })).toBe(
+      "allow",
+    );
+    expect(
+      await limited.send(undefined, { ...elsewhere, method: "CONNECT" }),
+    ).toBe("allow");
+    expect(
+      await limited.send(bodyOf(toolCall("notes_write")), {
+        ...elsewhere,
+        tls: false,
+      }),
+    ).toBe("allow");
+    const full = world([connection("conn-a", { fullAccess: true })]);
+    expect(await full.send(bodyOf(toolCall("notes_write")), elsewhere)).toBe(
+      "allow",
+    );
   });
 
   // TEST_SCENARIO: a server may match JSON keys in any letter case. A method under the key "Method", or a second tool name under "Name" next to "name", must not slip past the gate.

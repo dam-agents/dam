@@ -136,6 +136,8 @@ It reads the Connection's choice from the database on every request.
 A request that names a Connection the Agent holds gets that Connection's choice; any other request to that host gets the strictest choice among the Agent's Connections there, because the gateway adds a credential to a request that names none where nothing contests the host.
 The refusal is a JSON-RPC error on a successful reply that says the gateway refused the call, which Connection is read only and who can change it, so the Agent can explain it and its session goes on.
 A POST whose body did not come with the check, was read in part, or is not one strict JSON document with unique keys is refused rather than passed, and so is a method an MCP client does not need.
+While the Agent holds a read-only Connection, a TLS request that can carry a body and comes without a server name is refused with a retry: its gateway has not restarted onto the check yet, and there the Host header alone could hide the Template's host.
+That window opens only when a Connection made before the choice existed is first made read only, because its Secret then starts to ask for the body.
 A change holds from the Agent's next request, and whoever acts with the owner's rights can make it, an Agent that holds the owner's [DAM Connection](connection-presets.md#platform-preset-this-install-itself) included.
 The Slack Account Connections made before the choice existed keep full access, so none was narrowed silently.
 

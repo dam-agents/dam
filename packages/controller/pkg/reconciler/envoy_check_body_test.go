@@ -8,7 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-// TEST_OVERVIEW: a Connection can ask for its requests to be checked with their body. Its Secret says so with `checkBody` on an entry of the injection-hosts annotation. The chain of that host then sends each request's whole body to the ext_authz check, so the api-server can read what the request does before it lets it through. The body is read whole or not at all, and the check also gets the server name of the TLS session, which names the chain's real host whatever Host header the agent wrote. A host that no Connection flags renders what it rendered before. The flag is part of the gateway's revision, so a gateway picks it up when it appears or goes away.
+// TEST_OVERVIEW: a Connection can ask for its requests to be checked with their body. Its Secret says so with `checkBody` on an entry of the injection-hosts annotation. The chain of that host then sends each request's whole body to the ext_authz check, so the api-server can read what the request does before it lets it through. The body is read whole or not at all, and the check also gets the server name of the TLS session, which names the chain's real host whatever Host header the agent wrote. Every other TLS chain of that agent sends the server name too. An agent with no flagged host renders what it rendered before. The flag is part of the gateway's revision, so a gateway picks it up when it appears or goes away.
 
 const checkedHost = "mcp.example.com"
 
@@ -47,6 +47,17 @@ func TestCheckBody_FlaggedChainSendsTheServerName(t *testing.T) {
 
 	unflagged := renderWithChoices(t, gatewayChoices{}, checkedHostSecret("mcp", false))
 	assert.NotContains(t, extAuthzConfigForHost(t, unflagged, checkedHost), "include_tls_session")
+}
+
+// TEST_SCENARIO: a gateway that has not restarted onto the check sends no server name, and there a forged Host could hide the checked host. So once one chain of an agent checks a body, every TLS chain of that agent sends its server name, the Environment chain included, and the api-server can refuse a request that comes without one. An agent with no checked chain renders what it rendered before.
+func TestCheckBody_EveryChainOfTheAgentSendsTheServerName(t *testing.T) {
+	flagged := renderWithChoices(t, gatewayChoices{}, checkedHostSecret("mcp", true), githubSecret(), agentKeySecret("agent-key", "inst-1"))
+	assert.Equal(t, true, extAuthzConfigForHost(t, flagged, "api.github.com")["include_tls_session"])
+	assert.Equal(t, true, extAuthzConfigForHost(t, flagged, testEnvironmentsDomain)["include_tls_session"])
+
+	unflagged := renderWithChoices(t, gatewayChoices{}, checkedHostSecret("mcp", false), githubSecret(), agentKeySecret("agent-key", "inst-1"))
+	assert.NotContains(t, extAuthzConfigForHost(t, unflagged, "api.github.com"), "include_tls_session")
+	assert.NotContains(t, extAuthzConfigForHost(t, unflagged, testEnvironmentsDomain), "include_tls_session")
 }
 
 // TEST_SCENARIO: a host with no flagged entry reads no body, and a flag on one host adds no body reading to another host of the same agent.

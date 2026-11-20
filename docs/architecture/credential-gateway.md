@@ -117,6 +117,7 @@ For an agent with web search control on, such a chain also sends each request's 
 **Checking a request body.** A Connection's Secret can ask for the body: its host's chain then sends each request's whole body with its ext_authz check, up to 4 MiB, far above one MCP tool call, and answers a longer body with a 413, since a body read in part could hide a tool call after the part that was read.
 The Connections context asks for it on the host of a Template that declares read tools, whatever the Connection's choice is, so a switch between read only and full access restarts nothing ([connections](connections.md#connection)).
 Such a chain also sends the TLS server name the request came on: the chain and its credential are chosen by that name, while the Host header is the agent's to write, so the gate reads both.
+Every other TLS chain of that agent, the Agent Key chain included, sends its server name too, so a TLS request that comes without one is from a gateway that has not restarted onto the check yet.
 What a chain sends is part of what the gateway renders, so a Secret that starts to ask rolls that agent's gateway once, or replaces that agent's listener on an owner gateway.
 The check also carries the address step's marker, set by the gateway and never by the agent, so the gate knows which Connection a request names.
 

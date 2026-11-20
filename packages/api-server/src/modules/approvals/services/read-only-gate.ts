@@ -24,6 +24,8 @@ export interface ReadOnlyConnections {
     agentId: string,
     request: { host: string; connectionId: string | null },
   ): Promise<ReadOnlyConnection | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: a read-only Connection the Agent holds, on any host, or null when it holds none. */
+  held(agentId: string): Promise<ReadOnlyConnection | null>;
 }
 
 type EgressIdentity = NonNullable<
@@ -35,6 +37,8 @@ export interface ReadOnlyGateInput {
   identity: EgressIdentity;
   via: string | undefined;
   host: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: whether the request came over TLS. A gateway that checks a body sends the server name with every TLS request of its chains, so a TLS request without one comes from a gateway that has not restarted yet. */
+  tls: boolean;
   /* UNIT_BOUNDARY_DESCRIPTION: the server name of the TLS session the request came on, when the gateway sent it. The gateway picks the chain and its credential by that name, and the agent writes the Host header freely, so the limit is looked up for both names. */
   tlsHost: string | null;
   method: string;
@@ -60,9 +64,11 @@ const BODILESS_METHODS: ReadonlySet<string> = new Set([
   "DELETE",
 ]);
 
+const NO_CHAIN_METHODS: ReadonlySet<string> = new Set(["CONNECT", "*"]);
+
 const MAX_LOGGED_NAME = 100;
 
-// UNIT_BOUNDARY_DESCRIPTION: the step of the ext_authz gate that keeps a read-only Connection to reading. For a request that such a Connection limits, it reads the whole body the gateway sent and refuses it when a `tools/call` in it names a tool outside the Connection's read tools, also in a batch. The refusal is an error the agent can read, and it answers every request of a batch, since no part of a refused body is sent. The limit is looked up for the TLS server name as well as for the Host header, so a forged Host does not skip it. A POST with no body in the check is refused too, even when its headers declare none, because an HTTP/2 request can carry a body without a length header; so is a body read in part or one that is not strict JSON, since a call could hide in it. Every other request passes on to the gate's other checks.
+// UNIT_BOUNDARY_DESCRIPTION: the step of the ext_authz gate that keeps a read-only Connection to reading. For a request that such a Connection limits, it reads the whole body the gateway sent and refuses it when a `tools/call` in it names a tool outside the Connection's read tools, also in a batch. The refusal is an error the agent can read, and it answers every request of a batch, since no part of a refused body is sent. The limit is looked up for the TLS server name as well as for the Host header, so a forged Host does not skip it. A gateway that has not yet restarted onto the body check sends no server name, so the Host header alone could hide the Template's host: while the Agent holds a read-only Connection, a TLS request that can carry a body and comes without a server name is refused with the restart's retry. A POST with no body in the check is refused too, even when its headers declare none, because an HTTP/2 request can carry a body without a length header; so is a body read in part or one that is not strict JSON, since a call could hide in it. Every other request passes on to the gate's other checks.
 export function createReadOnlyGate(deps: {
   connections: ReadOnlyConnections;
 }): ReadOnlyGate {
@@ -111,10 +117,30 @@ export function createReadOnlyGate(deps: {
     return null;
   }
 
+  async function gatewayNotRestarted(
+    input: ReadOnlyGateInput,
+  ): Promise<ReadOnlyGateOutcome> {
+    if (
+      input.tlsHost !== null ||
+      !input.tls ||
+      BODILESS_METHODS.has(input.method) ||
+      NO_CHAIN_METHODS.has(input.method)
+    )
+      return PASS;
+    const held = await deps.connections.held(input.agentId);
+    if (!held) return PASS;
+    return refuse(
+      input,
+      held,
+      "read-only-server-name-missing",
+      bodyNotCheckedRefusal({ ...held, host: input.host }),
+    );
+  }
+
   return {
     async check(input) {
       const found = await limitOf(input);
-      if (!found) return PASS;
+      if (!found) return gatewayNotRestarted(input);
       const { limit } = found;
       const shown = { ...limit, host: found.host };
 

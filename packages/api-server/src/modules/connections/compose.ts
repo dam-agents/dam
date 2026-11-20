@@ -286,7 +286,7 @@ export function createProviderEgressScopes(db: Db): {
   };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: answers the egress gate which read-only Connection limits a request of an Agent to a host. It reads the Agent's grants on every call to a host that a Template declares read tools for, so the owner's choice holds from the next request, and reads nothing for any other host.
+// UNIT_BOUNDARY_DESCRIPTION: answers the egress gate which read-only Connection limits a request of an Agent to a host. It reads the Agent's grants on every call to a host that a Template declares read tools for, so the owner's choice holds from the next request, and reads nothing for any other host. It also answers whether the Agent holds a read-only Connection on any host, for a request whose real host the gateway did not say.
 export function createReadOnlyConnections(
   db: Db,
   templates: Pick<ConnectionTemplateRegistry, "get" | "list">,
@@ -295,18 +295,35 @@ export function createReadOnlyConnections(
     agentId: string,
     request: { host: string; connectionId: string | null },
   ): Promise<ReadOnlyAccess | null>;
+  held(agentId: string): Promise<ReadOnlyAccess | null>;
 } {
   const repo = createConnectionsRepository(db);
-  const limitsHost = (host: string) =>
-    templates.list().some((t) => t.toolAccess?.host === host);
+  const limitedHosts = () => [
+    ...new Set(templates.list().flatMap((t) => t.toolAccess?.host ?? [])),
+  ];
+  const toolAccessOf = (templateId: string) =>
+    templates.get(templateId)?.toolAccess;
   return {
     async limiting(agentId, request) {
-      if (!limitsHost(request.host)) return null;
+      if (!limitedHosts().includes(request.host)) return null;
       return readOnlyAccessFor(
         await repo.listConnectionsForAgent(agentId),
-        (templateId) => templates.get(templateId)?.toolAccess,
+        toolAccessOf,
         request,
       );
+    },
+    async held(agentId) {
+      const hosts = limitedHosts();
+      if (hosts.length === 0) return null;
+      const granted = await repo.listConnectionsForAgent(agentId);
+      for (const host of hosts) {
+        const limit = readOnlyAccessFor(granted, toolAccessOf, {
+          host,
+          connectionId: null,
+        });
+        if (limit) return limit;
+      }
+      return null;
     },
   };
 }

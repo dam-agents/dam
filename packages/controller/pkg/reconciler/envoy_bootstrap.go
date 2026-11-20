@@ -528,7 +528,7 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 	} else if c.CheckBody {
 		extAuthz = withWholeRequestBody(extAuthz, connectionBodyLimitBytes)
 	}
-	if c.CheckBody {
+	if p.checksAnyBody() {
 		extAuthz = withServerName(extAuthz)
 	}
 	if c.Metered() {
@@ -957,7 +957,7 @@ func agentKeyHCM(p bootstrapParams, c envoyHostChain, statPrefix string) ev {
 		"@type":           "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
 		"stat_prefix":     statPrefix,
 		"upgrade_configs": []any{ev{"upgrade_type": "websocket"}},
-		"http_filters":    []any{extAuthzHTTPFilter(p), injector, routerHTTPFilter()},
+		"http_filters":    []any{agentKeyExtAuthz(p), injector, routerHTTPFilter()},
 		"route_config": ev{
 			"name": "forward_" + c.ChainID,
 			"virtual_hosts": []any{
@@ -1286,6 +1286,23 @@ func withWholeRequestBody(extAuthz ev, limitBytes int) ev {
 func withServerName(extAuthz ev) ev {
 	extAuthz["typed_config"].(ev)["include_tls_session"] = true
 	return extAuthz
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether any chain of this agent checks a body. Then every TLS chain of the agent sends its server name, not only the checked one. The api-server refuses a TLS request without a server name from an agent that holds a read-only Connection, because such a request comes from a gateway that has not restarted onto the check, where a forged Host could hide the checked host. An agent with no checked chain renders what it rendered before.
+func (p bootstrapParams) checksAnyBody() bool {
+	for _, c := range p.Chains {
+		if c.CheckBody {
+			return true
+		}
+	}
+	return false
+}
+
+func agentKeyExtAuthz(p bootstrapParams) ev {
+	if p.checksAnyBody() {
+		return withServerName(extAuthzHTTPFilter(p))
+	}
+	return extAuthzHTTPFilter(p)
 }
 
 func extAuthzDisabledPerRoute() ev {

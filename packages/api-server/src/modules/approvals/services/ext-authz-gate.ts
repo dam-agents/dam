@@ -224,6 +224,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
         identity,
         via,
         host,
+        tls,
         tlsHost: tlsHost ? canonicalEgressHost(tlsHost) : null,
         method,
         path,
