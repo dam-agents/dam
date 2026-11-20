@@ -294,7 +294,7 @@ export interface AddressedWorker {
   startThread(
     instanceName: string,
     start: ThreadStart,
-  ): Promise<StartedThread | { error: string }>;
+  ): Promise<StartedThread | { error: string; refused?: string }>;
   listThreads(
     instanceName: string,
     sessionId: string,
