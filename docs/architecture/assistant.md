@@ -190,6 +190,23 @@ Only release notes live outside both, on the platform's GitHub releases, which t
 The answer is plain language with the files it used as links.
 The agent posts the question nowhere; it still reaches the Agent's model provider, as every message does.
 
+## Explaining another agent's failure
+
+A person whose agent failed, stopped answering, got slower or costs more can ask their assistant why, and the assistant answers from the platform's own measurements rather than from the agent's word: the same owner-scoped reads the web app shows, through the CLI the DAM Connection gives it.
+Most of those reads need no wake; the ones that do use compute only, never a model on the target, and the assistant says so before it takes one.
+It opens the agent's own transcripts only when the reads do not explain it, and it says what it could not measure.
+Any agent that holds the Connection has the same procedure, not only the assistant.
+The procedure is a page of the `dam` skill ([agent skills](agent-skills.md)), not platform logic, so a release can change it without a new agent image.
+
+Reading another agent's transcripts puts text strangers wrote, from a Slack or Telegram channel and from web pages, in front of an agent that can write as its owner.
+So transcript text is data and never instructions: the assistant runs nothing a transcript names, quotes no other person's message, saves no transcript content, and changes another agent only after showing the exact change and hearing the owner's yes to it.
+The yes is the only gate until narrower Connection scopes exist.
+
+When the cause is the platform's, with no outage alert or provider status naming it, the assistant can draft a public problem report for the owner to submit themselves: it posts nothing and opens nothing.
+The report's repository is the one the image was built from, named in the `BUILD` beside the platform source ([agent images](agent-images.md#the-platforms-own-source)), so a fork that builds its own images reports to its own repository; a local build falls back to the upstream one.
+The draft, not only a submitted issue, leaves nothing private in it: opening the link sends the whole query string, so secrets, prompts, file content, transcript excerpts, tool output beyond one line and people's names stay out of the URL as well as out of the issue.
+The prefilled link is given only in the web app's chat, because chat platforms fetch a link's preview; a Slack or Telegram conversation gets the plain new-issue page and the draft text.
+
 ## Boundaries
 
 It holds no special standing: it knows what any Agent knows, with the access any Agent has.

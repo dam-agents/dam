@@ -327,8 +327,10 @@ build_default() (
 # The platform's own docs, charts and source, which the platform-docs skill
 # searches to answer questions about the platform the agent runs on: what git
 # tracks, less tests, generated data, lockfiles and binaries. BUILD names the
-# commit and the chart's version. Lima's copy of the tree has no .git, but holds
-# only what git does not ignore, so there the build's own outputs are pruned.
+# commit, the chart's version and, when CI knows it, the repository the image
+# was built from; the dam skill's platform-problem report reads that line.
+# Lima's copy of the tree has no .git, but holds only what git does not ignore,
+# so there the build's own outputs are pruned.
 # Ceiling: image:resolve keys the image on its own sources only, so an image
 # reused on a main push carries the tree of the commit it was built at, which
 # BUILD names; a release tag rebuilds every image, so a release carries its own.
@@ -336,7 +338,7 @@ build_default() (
 # the commit base/user-docs.pin names; a failed fetch or a wrong digest fails the
 # build, as a pinned tool's does.
 bake_source() {
-  local pin="$agents/base/user-docs.pin" docs_commit docs_sum
+  local pin="$agents/base/user-docs.pin" docs_commit docs_sum repository
   docs_commit="$(sed -n 's/^commit=//p' "$pin")" docs_sum="$(sed -n 's/^sha256=//p' "$pin")"
   local paths=(README.md AGENTS.md docs helm skills packages)
   local skip='((^|/)\._|/__tests__/|\.test\.tsx?$|_test\.go$|\.spec\.ts$|^packages/db/drizzle/meta/|(^|/)pnpm-lock\.yaml$|\.lock$|/image-locks/|\.(png|jpe?g|gif|svg|ico|webp|woff2?|ttf|otf|mp4|pdf|tar|gz|tgz|zip|wasm)$|^packages/e2e/|(^|/)\.env|/testdata/|/fixtures/)'
@@ -355,6 +357,12 @@ bake_source() {
   printf 'commit: %s\nversion: %s\nuser-docs-commit: %s\n' \
     "${GITHUB_SHA:-${PLATFORM_SOURCE_COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}}" \
     "$(sed -n 's/^appVersion: "\(.*\)"$/\1/p' helm/Chart.yaml)" "$docs_commit" > "$1/BUILD"
+  # A local build knows no repository, so the line is absent and its readers
+  # fall back to the upstream one.
+  if [ -n "${GITHUB_REPOSITORY:-}" ]; then
+    repository="${GITHUB_SERVER_URL:-https://github.com}"
+    printf 'repository: %s\n' "${repository%/}/${GITHUB_REPOSITORY}" >> "$1/BUILD"
+  fi
 }
 
 # The default image's mise project, the tool configs and lockfile it ships in

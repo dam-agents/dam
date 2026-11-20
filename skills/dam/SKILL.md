@@ -1,13 +1,14 @@
 ---
 name: dam
 description: >
-  Drive the user's DAM deployment from this machine with the `dam` CLI: their agents (create, run, restart, delete), prompts and answers, files, artifact sharing, starter kits, schedules, connections, network rules, approvals, channels, skills and spend.
+  Drive the user's DAM deployment with the `dam` CLI: agents, prompts and answers, files, artifacts, starter kits, schedules, connections, network rules, approvals, channels, skills and spend.
   Use whenever the user asks to do anything on DAM or with one of their DAM agents, or mentions `dam`.
-  Covers installing the CLI, signing in, and that you never see a secret: the user types every credential on a DAM page or into a command you hand them.
-  Its security advisory says how to set agents up so credentials stay out of reach and the user knows who acts as them.
-  It asks before it deletes anything and waits for the user's answer in a later message: a request to delete is not that answer.
-  Its map of the web app says where in the app each task is done, by the page the app shows.
-  A DAM agent holding the install's own connection has the CLI and this skill already, and the personal assistant the install gave the user reads it before it starts on a task.
+  Covers installing the CLI, signing in, and that you never see a secret: the user types every credential on a DAM page.
+  Its security advisory says how to set agents up so credentials stay out of reach.
+  It asks before it deletes anything and waits for the answer in a later message: the request is not that answer.
+  Its map of the web app says where each task is done.
+  A DAM agent holding the install's own connection has the CLI and this skill already; the personal assistant reads it before a task.
+  It diagnoses another of the user's agents when asked why one failed, slowed or costs more, and drafts a platform problem report the user sends, posting nothing.
 ---
 
 DAM runs the user's AI agents in isolated sandboxes on a server.
@@ -203,10 +204,13 @@ Run `dam <command> --help` for every flag; it is the authority when it disagrees
 ```sh
 dam agent list --json
 dam agent get my-agent --json
+dam outage list --json
 dam template list
 dam kit list
 dam connection list
 ```
+
+The [diagnosing an agent](references/diagnose-an-agent.md) reference says how to read a failure, and [reporting a platform problem](references/diagnose-an-agent.md#8-reporting-a-platform-problem) how to draft one.
 
 ### Create an agent
 
@@ -530,7 +534,8 @@ It exposes the user's machine, so start one only when the user asks for it.
 
 When the user asks where in the app to do something, answer with the page rather than a command, and name pages only as they are named here.
 
-- **Home**: their agents, the approvals waiting on them, and **API spend** — **Today**, **This month**, which is the calendar month, and **Last month**, whose **Usage details** opens Settings › Usage.
+- **Home**: their agents, the approvals waiting on them, **API spend** — **Today**, **This month**, which is the calendar month, and **Last month**, whose **Usage details** opens Settings › Usage — and the compute card showing the memory, storage and CPU their agents share, with each agent's share.
+  The bell in the chat's top strip holds the outage alerts when a model provider fails their unattended work, and a banner across the top says when a provider is having problems.
 - **Artifacts** — what their agents made for them — and **Starter kits**, what an agent is created from.
 - **Settings › Connections**: the credentials their agents work with, such as a GitHub sign-in, a token or an MCP server.
   **Settings › Providers**: the LLM providers they connected and the default for new agents.
@@ -566,3 +571,17 @@ The CLI is meant to do everything the web app does, so a task it can't do is a g
 Don't work around it through the API (hard rule 6).
 Tell the user which command or flag is missing, so the gap can be closed, and point them to the web app to do it for now.
 If the CLI may just be old, update it first and check `dam <command> --help` again.
+
+## Diagnosing an agent
+
+When the user asks why one of their agents failed, stopped answering, got slower or costs so much, read [diagnosing one of the user's agents](references/diagnose-an-agent.md) before you answer.
+It reads what the platform measured first; it opens the agent's own transcripts only when that does not explain it, and it says what it could not see.
+It holds for any agent that holds this install's DAM connection, not only the personal assistant.
+
+## Reporting a platform problem
+
+When the cause is the platform's and no outage alert or provider status explains it, and the user asks you to report it, write a short draft meant to be public and give them a link that opens the platform's new-issue form filled in; they review and submit it themselves.
+You post nothing and open nothing.
+The repository comes from the `BUILD` file in the agent's image, or the upstream repository when that file is not there, never from the install's brand.
+[Drafting the report](references/diagnose-an-agent.md#8-reporting-a-platform-problem) holds the rules: what never goes in the URL, the length, and the plain new-issue page for Slack and Telegram.
+That is the one exception to the `platform-docs` rule against putting the user's question in a URL; the rule otherwise stands.

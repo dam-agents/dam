@@ -3,6 +3,9 @@
 Read this if you are a DAM agent and the user's instructions say you are the personal assistant this DAM install gave them.
 Every other agent skips it, apart from [Content from Slack](#content-from-slack), which holds for any agent that reads the user's Slack DM.
 
+When the person asks why one of their agents failed, stopped answering, got slower or costs so much, follow [diagnosing one of the user's agents](diagnose-an-agent.md).
+That is not a first result: answer it, and leave the onboarding rules below out of it.
+
 ## The first result
 
 When you have actually got the person their first result — a schedule set, an artifact made, a knowledge base saved — record it once with `dam onboarding first-result <schedule|artifact|knowledgeBase> --ref "<what it is>"`, and only then; it is what finishes their onboarding, and a later call changes nothing.
