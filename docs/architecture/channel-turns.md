@@ -298,7 +298,7 @@ What the agent sees:
   An unnamed call while any Slack turn is live, and one naming a turn the Agent is not running, are both refused: answering them as though a turn had been declined would record nothing, and the turn would then be repaired as undelivered — posting the very answer the Agent chose to withhold.
 - **Slack reach is the bound conversations.** A bound Agent posts into a channel only when that channel is bound to it: the binding is the channel's consent.
   A channel its owner is in, or one the bot happens to be in, is not enough, since the people there never connected the Agent; `describe_channel` lists the bound conversations alone, and any other channel is refused as a target, with a refusal that tells the Agent not to post elsewhere instead.
-  The one exception is the channel of the turn being answered, where someone spoke to the Agent: it may reply and react there.
+  The one exception is the channel of the turn being answered, where someone spoke to the Agent: `reply`, `react`, `edit_post` and the read tools work there, bound or not, while `post` and `start_thread` still need a binding.
   A Slack user id opens a DM, but only with the owner, the person in a bound 1:1 DM, or a member of a bound channel, and a DM id is held to the same rule: the shared bot can open a DM with anyone in the workspace, so without it an Agent could message people who never met it or its owner.
   That DM rule is its own check, apart from the channel rule, so it can change alone.
   Membership is verified at send time; a bound conversation short-circuits every check.
