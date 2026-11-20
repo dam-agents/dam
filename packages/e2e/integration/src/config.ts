@@ -29,3 +29,9 @@ export const assistantOwnerUser = {
   username: process.env.PLATFORM_E2E_ASSISTANT_OWNER_USERNAME ?? "dammy-owner",
   password: process.env.PLATFORM_E2E_ASSISTANT_PASSWORD ?? "dammy-e2e",
 };
+
+/* UNIT_BOUNDARY_DESCRIPTION: the account 01-auth.spec.ts proves the Terms gate on, which no setup accepts the Terms for, so the gate stands when that spec runs whatever ran before it. */
+export const termsGateUser = {
+  username: process.env.PLATFORM_E2E_TERMS_GATE_USERNAME ?? "terms-gate",
+  password: process.env.PLATFORM_E2E_TERMS_GATE_PASSWORD ?? "terms-gate-e2e",
+};
