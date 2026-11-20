@@ -334,15 +334,11 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           });
           if (live?.sessionId === intendedSessionId) {
             ({ connection, isOpen, sessionId } = live);
-          } else if (!conversationShown() || !mountedRef.current) {
-            aside = await engageAside(intendedSessionId);
-            ({ connection, isOpen, sessionId } = aside);
-          } else if (!live) {
+          } else if (!live && conversationShown() && mountedRef.current) {
             throw new Error("Failed to establish connection");
           } else {
-            throw new Error(
-              "Couldn't send — the conversation changed while the message was on its way.",
-            );
+            aside = await engageAside(intendedSessionId);
+            ({ connection, isOpen, sessionId } = aside);
           }
         } else {
           started = await beginSession();
