@@ -12,6 +12,7 @@ import type { OAuthFlowService } from "../../modules/connections/services/oauth-
 import type { SecretStore } from "../../modules/secret-store/index.js";
 import { configureLogger } from "../../core/logger.js";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
+import { fakeMcpToolLister } from "../helpers/connections-service.js";
 
 /**
  * TEST_OVERVIEW: the consumer side of a shared knowledge base outliving the
@@ -151,6 +152,7 @@ function makeService(
   const svc = createConnectionsService({
     damConnectionOffered: async () => true,
     toolApprovalOffered: async () => true,
+    mcpToolLister: fakeMcpToolLister(),
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: OWNER,

@@ -115,7 +115,8 @@ The depth is on [spend-limits](spend-limits.md).
 For an agent with web search control on, such a chain also sends each request's whole body with its check, and refuses a body too long to send whole ([web-search-control](web-search-control.md#the-gateway)).
 
 **Checking a request body.** A Connection's Secret can ask for the body: its host's chain then sends each request's whole body with its ext_authz check, up to 4 MiB, far above one MCP tool call, and answers a longer body with a 413, since a body read in part could hide a tool call after the part that was read.
-The Connections context asks for it on the host of a Template that declares tool access, whatever the Connection's tool mode is, so a change of mode restarts nothing ([connections](connections.md#connection)).
+The Connections context asks for it on the MCP host of every MCP Connection with a Secret, whatever the Connection's tool mode is, so a change of mode restarts nothing ([connections](connections.md#connection)).
+A Secret written before that asks for it when its Connection is first set to read only or needs approval, and its gateway rolls once then.
 Such a chain also sends the TLS server name the request came on: the chain and its credential are chosen by that name, while the Host header is the agent's to write, so the gate reads both.
 Every other TLS chain of that agent, the Agent Key chain included, sends its server name too, so a TLS request that comes without one is from a gateway that has not restarted onto the check yet.
 What a chain sends is part of what the gateway renders, so a Secret that starts to ask rolls that agent's gateway once, or replaces that agent's listener on an owner gateway.

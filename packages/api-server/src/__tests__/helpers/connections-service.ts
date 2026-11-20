@@ -7,6 +7,10 @@ import type { SecretStore } from "../../modules/secret-store/index.js";
 import type { XactLock } from "../../core/xact-lock.js";
 import type { ProviderModelCatalog } from "../../modules/connections/services/provider-model-catalog.js";
 import type { DamKeyPort } from "../../modules/connections/domain/dam-connection.js";
+import type {
+  McpToolLister,
+  McpToolListOutcome,
+} from "../../modules/connections/domain/tool-access.js";
 
 /**
  * TEST_OVERVIEW: the in-memory Connections store and service wiring the
@@ -32,6 +36,25 @@ export function keyedMutex(): XactLock {
     );
     return run;
   };
+}
+
+export interface FakeMcpToolLister extends McpToolLister {
+  calls: { url: string; headers: Record<string, string> }[];
+  answer: McpToolListOutcome;
+}
+
+export function fakeMcpToolLister(
+  answer: McpToolListOutcome = { ok: true, tools: [] },
+): FakeMcpToolLister {
+  const lister: FakeMcpToolLister = {
+    calls: [],
+    answer,
+    list: async (url, headers) => {
+      lister.calls.push({ url: url.toString(), headers });
+      return lister.answer;
+    },
+  };
+  return lister;
 }
 
 export interface StoredSecret {
@@ -102,6 +125,7 @@ export function serviceHarness(opts: {
   damKey?: DamKeyPort;
   damConnectionOffered?: () => Promise<boolean>;
   toolApprovalOffered?: () => Promise<boolean>;
+  mcpToolLister?: McpToolLister;
   insert?: (row: Connection) => Promise<void>;
   adoptDamKey?: (input: {
     id: string;
@@ -197,6 +221,7 @@ export function serviceHarness(opts: {
     ...(opts.damKey ? { damKey: opts.damKey } : {}),
     damConnectionOffered: opts.damConnectionOffered ?? (async () => true),
     toolApprovalOffered: opts.toolApprovalOffered ?? (async () => true),
+    mcpToolLister: opts.mcpToolLister ?? fakeMcpToolLister(),
   });
   return { svc, rows, grants, secrets, fannedOut, secretReads };
 }

@@ -25,14 +25,18 @@ export interface ToolAccessConnection {
   readonly readTools: readonly string[];
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Connection that limits the tool calls of a request of an Agent to a host, with its tool mode, read from the database on every call, so a change of the owner's mode holds from the next request. `connectionId` is the Connection the gateway says the request names, or null. Null as the answer means nothing limits the request.
+// UNIT_BOUNDARY_DESCRIPTION: the tool-access limits of one Agent, read from the database once for each request, so a change of the owner's mode holds from the next request and one check never reads twice.
 export interface ToolAccessConnections {
-  limiting(
-    agentId: string,
-    request: { host: string; connectionId: string | null },
-  ): Promise<ToolAccessConnection | null>;
-  /* UNIT_BOUNDARY_DESCRIPTION: a limiting Connection the Agent holds, on any host, or null when it holds none. */
-  held(agentId: string): Promise<ToolAccessConnection | null>;
+  forAgent(agentId: string): Promise<ToolAccessLimits>;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the Agent's granted Connections as one read saw them. `limiting` answers which Connection limits the tool calls of a request to a host, where `connectionId` is the Connection the gateway says the request names, or null; null as the answer means nothing limits the request. `held` answers a limiting Connection the Agent holds on any host, or null when it holds none.
+export interface ToolAccessLimits {
+  limiting(request: {
+    host: string;
+    connectionId: string | null;
+  }): ToolAccessConnection | null;
+  held(): ToolAccessConnection | null;
 }
 
 type EgressIdentity = NonNullable<
@@ -85,7 +89,7 @@ const NO_CHAIN_METHODS: ReadonlySet<string> = new Set(["CONNECT", "*"]);
 
 const MAX_LOGGED_NAME = 100;
 
-// UNIT_BOUNDARY_DESCRIPTION: the tool access step of the ext_authz gate, which holds an MCP Connection to its tool mode. For a request that a Connection in read only or needs approval limits, it reads the whole body the gateway sent. In read only it refuses the body when a `tools/call` in it names a tool outside the Connection's read tools, also in a batch. In needs approval it answers a body of one `tools/call` that names a tool with a hold, which the gate files as a tool-call approval; a batch that holds a `tools/call`, or a call that names no tool, is refused, since one approval answers one call. A refusal is an error the agent can read, and it answers every request of a batch, since no part of a refused body is sent. The limit is looked up for the TLS server name as well as for the Host header, so a forged Host does not skip it. A gateway that has not yet restarted onto the body check sends no server name, so the Host header alone could hide the Template's host: while the Agent holds a limiting Connection, a TLS request that can carry a body and comes without a server name is refused with the restart's retry. A POST with no body in the check is refused too, even when its headers declare none, because an HTTP/2 request can carry a body without a length header; so is a body read in part or one that is not strict JSON, since a call could hide in it. Every other request passes on to the gate's other checks.
+// UNIT_BOUNDARY_DESCRIPTION: the tool access step of the ext_authz gate, which holds an MCP Connection to its tool mode. For a request that a Connection in read only or needs approval limits, it reads the whole body the gateway sent. In read only it refuses the body when a `tools/call` in it names a tool outside the Connection's read tools, also in a batch. In needs approval it answers a body of one `tools/call` that names a tool with a hold, which the gate files as a tool-call approval; a batch that holds a `tools/call`, or a call that names no tool, is refused, since one approval answers one call. A refusal is an error the agent can read, and it answers every request of a batch, since no part of a refused body is sent. The limit is looked up for the TLS server name as well as for the Host header, so a forged Host does not skip it. A gateway that has not yet restarted onto the body check sends no server name, so the Host header alone could hide the Connection's MCP host: while the Agent holds a limiting Connection, a TLS request that can carry a body and comes without a server name is refused with the restart's retry. A POST with no body in the check is refused too, even when its headers declare none, because an HTTP/2 request can carry a body without a length header; so is a body read in part or one that is not strict JSON, since a call could hide in it. Every other request passes on to the gate's other checks.
 export function createToolAccessGate(deps: {
   connections: ToolAccessConnections;
 }): ToolAccessGate {
@@ -119,14 +123,15 @@ export function createToolAccessGate(deps: {
     return { kind: "refuse", response };
   }
 
-  async function limitOf(
+  function limitOf(
     input: ToolAccessGateInput,
-  ): Promise<{ limit: ToolAccessConnection; host: string } | null> {
+    limits: ToolAccessLimits,
+  ): { limit: ToolAccessConnection; host: string } | null {
     const hosts = new Set(
       input.tlsHost === null ? [input.host] : [input.tlsHost, input.host],
     );
     for (const host of hosts) {
-      const limit = await deps.connections.limiting(input.agentId, {
+      const limit = limits.limiting({
         host,
         connectionId: input.connectionId,
       });
@@ -135,9 +140,10 @@ export function createToolAccessGate(deps: {
     return null;
   }
 
-  async function gatewayNotRestarted(
+  function gatewayNotRestarted(
     input: ToolAccessGateInput,
-  ): Promise<ToolAccessGateOutcome> {
+    limits: ToolAccessLimits,
+  ): ToolAccessGateOutcome {
     if (
       input.tlsHost !== null ||
       !input.tls ||
@@ -145,7 +151,7 @@ export function createToolAccessGate(deps: {
       NO_CHAIN_METHODS.has(input.method)
     )
       return PASS;
-    const held = await deps.connections.held(input.agentId);
+    const held = limits.held();
     if (!held) return PASS;
     return refuse(
       input,
@@ -157,8 +163,9 @@ export function createToolAccessGate(deps: {
 
   return {
     async check(input) {
-      const found = await limitOf(input);
-      if (!found) return gatewayNotRestarted(input);
+      const limits = await deps.connections.forAgent(input.agentId);
+      const found = limitOf(input, limits);
+      if (!found) return gatewayNotRestarted(input, limits);
       const { limit } = found;
       const shown = { ...limit, host: found.host };
 

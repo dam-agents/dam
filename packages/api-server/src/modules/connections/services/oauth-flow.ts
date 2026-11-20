@@ -30,6 +30,8 @@ import { scopeGitHubUserToken } from "./github-user-token.js";
 import { rederiveGitHubChildren } from "./github-children.js";
 import { withoutParentScope } from "../domain/github-parent.js";
 import { recordAccountLabel } from "./account-label.js";
+import { createMcpToolList } from "./mcp-tool-list.js";
+import { mcpServerOf, type McpToolLister } from "../domain/tool-access.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 
@@ -63,7 +65,17 @@ export function createOAuthFlowService(deps: {
   ownerId: string;
   callbackUrl: string;
   connectionLock: XactLock;
+  mcpToolLister: McpToolLister;
 }): OAuthFlowService {
+  const toolList = createMcpToolList({
+    lister: deps.mcpToolLister,
+    repo: deps.repo,
+    templates: deps.templates,
+    secretStore: deps.secretStore,
+    connectionLock: deps.connectionLock,
+    engine: deps.engine,
+    githubAppEngine: deps.githubAppEngine,
+  });
   return {
     async startOAuth(connectionId, opts): Promise<{ authUrl: string }> {
       const conn = await deps.repo.get(connectionId, deps.ownerId);
@@ -256,6 +268,23 @@ export function createOAuthFlowService(deps: {
           await applyGitHubIdentity(each, tokens.accessToken, deps);
         }
         await recordAccountLabel(each, tokens.accessToken, deps);
+      }
+      const connected =
+        conn.isParent || !mcpServerOf(conn)
+          ? null
+          : await deps.repo.get(conn.id, pending.ctx.ownerId);
+      if (connected) {
+        await toolList.read(connected).catch((err: unknown) => {
+          securityLog("warn", "connection.tools_list", {
+            category: "credential",
+            actor: pending.ctx.ownerId,
+            actorKind: "user",
+            target: conn.id,
+            result: "failure",
+            reason: err instanceof Error ? err.message : "unknown",
+            detail: { templateId: conn.templateId },
+          });
+        });
       }
 
       return {

@@ -23,9 +23,8 @@ export interface ConnectionFamily {
   title: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a Template's declaration of the MCP server whose tool calls the gateway reads. `host` is that server, `readTools` are the only tools a read-only Connection may call there, and `fullAccessLabel` is the Template's own name for the allow-all mode. A tool the server adds later is not in the list, so a read-only Connection cannot call it.
+// UNIT_BOUNDARY_DESCRIPTION: a Template's own read list for its MCP server, which wins over the hints the server sets. `readTools` are the only tools a read-only Connection may call there, and `fullAccessLabel` is the Template's own name for the allow-all mode. A tool the server adds later is not in the list, so a read-only Connection cannot call it.
 export interface TemplateToolAccess {
-  host: string;
   readTools: readonly string[];
   fullAccessLabel: string;
 }

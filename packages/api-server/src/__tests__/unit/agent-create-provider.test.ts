@@ -25,6 +25,7 @@ import {
   attachProviderToBareAgents,
   connectionGrantProvisioner,
 } from "../../modules/agents/compose.js";
+import { fakeMcpToolLister } from "../helpers/connections-service.js";
 
 type AgentsDeps = Parameters<typeof createAgentsService>[0];
 type ConnectionsDeps = Parameters<typeof createConnectionsService>[0];
@@ -90,6 +91,7 @@ function setup(
   const connections = createConnectionsService({
     damConnectionOffered: async () => opts.damOffered ?? true,
     toolApprovalOffered: async () => true,
+    mcpToolLister: fakeMcpToolLister(),
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: "owner-1",

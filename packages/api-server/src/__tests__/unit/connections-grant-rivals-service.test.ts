@@ -16,6 +16,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Connection, Contribution } from "api-server-api";
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
+import { fakeMcpToolLister } from "../helpers/connections-service.js";
 
 type ConnectionsDeps = Parameters<typeof createConnectionsService>[0];
 
@@ -95,6 +96,7 @@ function setup(
   const service = createConnectionsService({
     damConnectionOffered: async () => true,
     toolApprovalOffered: async () => true,
+    mcpToolLister: fakeMcpToolLister(),
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async (agentId) => agentId === AGENT,
     ownerId: OWNER,

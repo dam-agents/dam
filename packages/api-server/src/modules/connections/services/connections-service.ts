@@ -73,10 +73,13 @@ import {
 import { parseGitHubAppScope } from "../domain/github-app-scope.js";
 import {
   isMcpConnection,
+  mcpServerOf,
   toolModeOf,
   toolModesOf,
+  type McpToolLister,
   type ToolAccessTemplate,
 } from "../domain/tool-access.js";
+import { createMcpToolList } from "./mcp-tool-list.js";
 import {
   DAM_KEY_INPUT,
   isDamConnection,
@@ -296,6 +299,8 @@ export function createConnectionsService(deps: {
   damConnectionOffered: () => Promise<boolean>;
   /* UNIT_BOUNDARY_DESCRIPTION: whether the owner may set a Connection to need approval for its tool calls — the `mcp-tool-approval` feature for this person. Required, so no composition root leaves the mode ungated, and read as off when it fails. */
   toolApprovalOffered: () => Promise<boolean>;
+  /* UNIT_BOUNDARY_DESCRIPTION: reads the tool list of an MCP server, with the credential the service hands over; the service stores what it returns on the Connection. */
+  mcpToolLister: McpToolLister;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
   providerModelCatalog?: ProviderModelCatalog;
   /* UNIT_BOUNDARY_DESCRIPTION: the Connection a plain create grants from the owner's default for new agents, and the harness that default boots the agent on, in place of the default harness's provider order; null while that default names none the owner holds. */
@@ -313,6 +318,15 @@ export function createConnectionsService(deps: {
       createProviderModelCatalog({ secretStore: deps.secretStore }));
   const maxSharedKbConnections =
     deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
+  const toolList = createMcpToolList({
+    lister: deps.mcpToolLister,
+    repo: deps.repo,
+    templates: deps.templates,
+    secretStore: deps.secretStore,
+    connectionLock: deps.connectionLock,
+    engine: deps.oauthEngine,
+    githubAppEngine: deps.githubAppEngine,
+  });
 
   function writerDeps(lockKey: string): CredentialWriterDeps {
     return {
@@ -551,7 +565,7 @@ export function createConnectionsService(deps: {
     if (!isMcpConnection(conn)) return null;
     return {
       mode: toolModeOf(conn, template),
-      modes: toolModesOf(conn, template),
+      modes: toolModesOf(conn),
       tools: conn.toolAccess?.tools ?? null,
       listedAt: conn.toolAccess?.listedAt ?? null,
       listError: conn.toolAccess?.listError ?? null,
@@ -561,7 +575,7 @@ export function createConnectionsService(deps: {
   /* UNIT_BOUNDARY_DESCRIPTION: writes a Connection's tool mode, one of the modes it offers; needs approval only while the owner has the `mcp-tool-approval` feature. A mode that limits tool calls writes the Secret again first, so a Secret made before its Template declared tool access asks the gateway for request bodies. */
   async function setToolMode(conn: Connection, mode: ToolMode): Promise<void> {
     const template = deps.templates.get(conn.templateId);
-    if (!toolModesOf(conn, template).includes(mode)) {
+    if (!toolModesOf(conn).includes(mode)) {
       throw new TRPCError({
         code: "BAD_REQUEST",
         message: `The connection "${conn.name}" does not offer the tool mode "${mode}".`,
@@ -602,6 +616,26 @@ export function createConnectionsService(deps: {
       result: "success",
       detail: { templateId: conn.templateId, from, to: mode },
     });
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: reads the tool list of an MCP Connection once its credential works: at create, and again when a new credential replaces the old one, since read only refuses every tool the list does not name. The list is for the owner and for read only, not for the Connection to work, so a failure is stored on the Connection or logged, and never fails the create or the update. */
+  async function readToolsAfterConnect(conn: Connection): Promise<void> {
+    await toolList.read(conn).catch((err: unknown) => {
+      securityLog("warn", "connection.tools_list", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: conn.id,
+        result: "failure",
+        reason: err instanceof Error ? err.message : "unknown",
+        detail: { templateId: conn.templateId },
+      });
+    });
+  }
+
+  async function readToolsAfterCredentialWrite(id: string): Promise<void> {
+    const fresh = await deps.repo.get(id, deps.ownerId).catch(() => null);
+    if (fresh && !fresh.isParent) await readToolsAfterConnect(fresh);
   }
 
   async function familyClientCreds(): Promise<
@@ -715,9 +749,9 @@ export function createConnectionsService(deps: {
     ];
   }
 
+  /* UNIT_BOUNDARY_DESCRIPTION: writes a Connection's Secret with the gateway's annotations for the contributions it injects. `conn` is the Connection the Secret belongs to, with the contributions written here. */
   async function putConnectionSecret(
-    connectionId: string,
-    templateId: string,
+    conn: Pick<Connection, "id" | "templateId" | "auth">,
     path: string,
     fields: Record<string, string>,
     contributions: Contribution[],
@@ -727,25 +761,28 @@ export function createConnectionsService(deps: {
       fields,
       {
         owner: deps.ownerId,
-        purpose: `connection:${templateId}`,
+        purpose: `connection:${conn.templateId}`,
         extraLabels: {
           "agent-platform.ai/secret-type": "connection",
-          "agent-platform.ai/connection": connectionId,
+          "agent-platform.ai/connection": conn.id,
         },
         extraAnnotations: connectionSecretAnnotations(
           contributions,
-          checkBodyHostsOf(templateId),
+          checkBodyHostsOf({ auth: conn.auth, contributions }),
         ),
       },
     );
   }
 
-  function checkBodyHostsOf(templateId: string): string[] {
-    const host = deps.templates.get(templateId)?.toolAccess?.host;
-    return host ? [host] : [];
+  /* UNIT_BOUNDARY_DESCRIPTION: the hosts whose requests the gateway sends to the check with their whole body: the MCP host of every MCP Connection with a Secret, whatever its tool mode, so a change of mode holds from the next request with no restart. */
+  function checkBodyHostsOf(
+    conn: Pick<Connection, "auth" | "contributions">,
+  ): string[] {
+    const server = mcpServerOf(conn);
+    return server ? [server.injectHost] : [];
   }
 
-  /* UNIT_BOUNDARY_DESCRIPTION: writes a Connection's Secret again with the annotations its Template asks for today. A Secret written before its Template declared read tools has no `checkBody`, so its gateway sends no body to the check, and a read-only Connection would have every call refused. */
+  /* UNIT_BOUNDARY_DESCRIPTION: writes a Connection's Secret again with the annotations asked for today. A Secret written before every MCP Connection with a Secret asked for request bodies has no `checkBody`, so its gateway sends no body to the check, and a Connection in read only or needs approval would have every call refused. */
   async function restampConnectionSecret(conn: Connection): Promise<void> {
     const path = connectionSecretPath(conn.auth);
     if (!path) return;
@@ -755,8 +792,7 @@ export function createConnectionsService(deps: {
     });
     if (!fields) return;
     await putConnectionSecret(
-      conn.id,
-      conn.templateId,
+      conn,
       path,
       fields,
       conn.isParent ? [] : conn.contributions,
@@ -1349,6 +1385,7 @@ export function createConnectionsService(deps: {
       },
     );
     if (!repointed) return false;
+    await readToolsAfterCredentialWrite(conn.id);
     securityLog("info", "connection.update", {
       category: "credential",
       actor: deps.ownerId,
@@ -1774,8 +1811,7 @@ export function createConnectionsService(deps: {
     token: string,
   ): Promise<void> {
     await putConnectionSecret(
-      record.id,
-      record.templateId,
+      record,
       secretPath,
       {
         access_token: token,
@@ -1822,8 +1858,7 @@ export function createConnectionsService(deps: {
     if (app.appSlug) next.appSlug = app.appSlug;
     const injected = conn.isParent ? [] : contributions;
     await putConnectionSecret(
-      conn.id,
-      conn.templateId,
+      conn,
       auth.accessTokenRef.path,
       {
         [auth.accessTokenRef.field]: "",
@@ -2367,6 +2402,7 @@ export function createConnectionsService(deps: {
       if (contributions !== null)
         assertNotInstallHost(conn.templateId, contributions);
 
+      let credentialWritten = false;
       switch (conn.auth.kind) {
         case "header": {
           const value =
@@ -2389,6 +2425,7 @@ export function createConnectionsService(deps: {
             );
             holdUnlessPassed(credentialCheck, policy);
             await rotateHeaderValue(conn, conn.auth, value);
+            credentialWritten = true;
             await deps.repo.mergeInputs(conn.id, {
               [KEY_CHECK_INPUT_KEY]: check,
               [CREDENTIAL_CHECK_INPUT_KEY]: credentialCheck,
@@ -2409,6 +2446,7 @@ export function createConnectionsService(deps: {
         }
         case "client-credentials":
           await rotateClientSecret(conn, conn.auth, singleValueOf(credential));
+          credentialWritten = true;
           break;
         case "github-app":
           refuseOnChild(conn);
@@ -2420,6 +2458,7 @@ export function createConnectionsService(deps: {
             );
           } else {
             await rotatePrivateKey(conn, conn.auth, singleValueOf(credential));
+            credentialWritten = true;
           }
           break;
         case "oauth":
@@ -2448,6 +2487,7 @@ export function createConnectionsService(deps: {
         result: "success",
         detail: { templateId: conn.templateId, authKind: conn.auth.kind },
       });
+      if (credentialWritten) await readToolsAfterCredentialWrite(conn.id);
     },
 
     async deleteConnection(id: string): Promise<void> {
@@ -2843,8 +2883,7 @@ export function createConnectionsService(deps: {
           CONNECTION_TOKEN_PLACEHOLDER,
         );
         await putConnectionSecret(
-          id,
-          template.id,
+          { id, templateId: template.id, auth },
           secretPath,
           { ...placeholderSds, ...(built.secrets.get(secretPath) ?? {}) },
           injected,
@@ -2911,6 +2950,7 @@ export function createConnectionsService(deps: {
       if (headerValue) {
         await recordAccountLabel(record, headerValue, deps);
       }
+      if (record.auth.kind !== "oauth") await readToolsAfterConnect(record);
       if (firstChild) {
         try {
           return await createChild(record, connectionName, firstChild);
@@ -3354,6 +3394,30 @@ export function createConnectionsService(deps: {
       await setToolMode(conn, input.mode);
     },
 
+    async refreshTools(input) {
+      const conn = await deps.repo.get(input.id, deps.ownerId);
+      if (!conn) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "connection not found",
+        });
+      }
+      const stored = await toolList.read(conn);
+      const view = stored
+        ? toolAccessView(
+            { ...conn, toolAccess: stored },
+            deps.templates.get(conn.templateId),
+          )
+        : null;
+      if (!view) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `The connection "${conn.name}" has no MCP server whose tools the platform reads: only an MCP server connected with a credential has one.`,
+        });
+      }
+      return view;
+    },
+
     async updateGitHubUserTokenScope(input) {
       const { conn } = await requireGitHubUserTokenConnection(input.id);
       refuseOnParent(conn);
@@ -3492,8 +3556,7 @@ export function createConnectionsService(deps: {
         );
         if ((moved || rotated) && keep.auth.kind === "header") {
           await putConnectionSecret(
-            keep.id,
-            provider.templateId,
+            keep,
             keep.auth.valueRef.path,
             {
               value: key,

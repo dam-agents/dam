@@ -128,22 +128,27 @@ A **GitHub App** installation and a **GitHub sign-in** made through a GitHub App
 
 Every MCP Connection has one **tool mode**: allow all, read only or needs approval.
 The mode lives on the Connection, so every Agent that holds it gets the same one, and a Connection that stores none takes its Template's default, else allow all.
-A Template may declare **tool access** for its MCP server, as the Slack Account does: the host whose tool calls the gateway reads, and the server's **read tools**.
-Only such a Connection offers all three modes today, because only its host's requests reach the gate with their body; every other MCP Connection offers allow all alone.
+Every MCP Connection with a Secret offers all three modes, because the gateway injects its credential, so it reads the requests to the Connection's MCP host and sends their body to the gate.
+A custom MCP server with no auth has no Secret, so its requests pass the gateway unread and it offers allow all alone ([mcp-connections](mcp-connections.md#tool-list)).
+The **read tools** are the tools that pass in read only.
+The api-server reads the server's **tool list** itself, as an MCP client with the Connection's own credential, because the gate never sees the server's answer and the Agent cannot be trusted to report it.
+It reads the list when the credential first works, at create or at the OAuth callback, again when a new credential replaces the old one, and when the owner refreshes it, and stores each tool's name and whether it reads: the server's `readOnlyHint`.
+A list that fails keeps the tools read before and stores why, for the owner to see, and never fails the create or the update.
+A Template may declare its own read list, as the Slack Account does, and that list wins over the server's hints, in the stored list and at the gate.
 The Slack Account's default is read only, and its connect form and its "Can post as me" choice set allow all or read only.
-In read only the gateway lets only the read tools pass, and a tool the server adds later is in no list, so it is refused until the list names it.
+In read only the gateway lets only the read tools pass, and a tool the list does not name is not a read tool: a tool the server adds later is refused until a new read of the list names it as reading.
 In needs approval the gateway holds every tool call, read tools included, as a [tool-call approval](security-and-credentials.md#hitl-ext_authz) that shows the tool and its arguments where network approvals show; approve once sends it, and deny once or no answer within the hold window refuses it.
 Only an owner with the `mcp-tool-approval` [experimental feature](features.md) on can choose it.
 The Agent still sees every tool the server lists, and a refused call is answered with an error it can read.
 The limit is the **tool access step** of the ext_authz gate ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)), after the spend and web search steps and before any rule is read, so no egress rule lets a refused call through.
-On the Template's host, named by the request's TLS server name or its Host header, the gate reads the request's whole body, which that host's chain sends with every check ([credential-gateway](credential-gateway.md#envoy-credential-injection)), and refuses a tool call the mode does not let through, also inside a batch, with JSON keys read in any letter case.
-It reads the Connection's mode from the database on every request.
+On the Connection's MCP host, named by the request's TLS server name or its Host header, the gate reads the request's whole body, which that host's chain sends with every check ([credential-gateway](credential-gateway.md#envoy-credential-injection)), and refuses a tool call the mode does not let through, also inside a batch, with JSON keys read in any letter case.
+It reads the Agent's Connections and their modes from the database once on every request, with no cache.
 A request that names a Connection the Agent holds gets that Connection's mode; any other request to that host gets the strictest mode among the Agent's Connections there, because the gateway adds a credential to a request that names none where nothing contests the host.
 Read only is the strictest, then needs approval: read only refuses at once and never asks a person for an approval they did not expect.
 The refusal is a JSON-RPC error on a successful reply that says the gateway refused the call, which Connection limits it and in which mode, and who can change it, so the Agent can explain it and its session goes on.
 A POST whose body did not come with the check, was read in part, or is not one strict JSON document with unique keys is refused rather than passed, and so is a method an MCP client does not need.
-While the Agent holds a Connection in read only or needs approval, a TLS request that can carry a body and comes without a server name is refused with a retry: its gateway has not restarted onto the check yet, and there the Host header alone could hide the Template's host.
-That window opens only when a Connection made before the Template declared its tool access is first limited, because its Secret then starts to ask for the body.
+While the Agent holds a Connection in read only or needs approval, a TLS request that can carry a body and comes without a server name is refused with a retry: its gateway has not restarted onto the check yet, and there the Host header alone could hide the MCP host.
+That window opens only when a Connection whose Secret was written before every MCP Connection with a Secret asked for the body is first limited, because its Secret then starts to ask for it.
 A change holds from the Agent's next request, and whoever acts with the owner's rights can make it, an Agent that holds the owner's [DAM Connection](connection-presets.md#platform-preset-this-install-itself) included.
 The Slack Account Connections made before tool access existed kept full access, so none was narrowed silently; when the mode moved out of the OAuth auth, one with full access became allow all and one without it read only.
 

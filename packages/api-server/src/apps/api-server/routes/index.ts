@@ -95,6 +95,7 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
       githubAppEngine: boot.connectionsBoot.githubAppEngine,
       templates: boot.connectionsBoot.templates,
       runtimeMutator: boot.runtimeMutator,
+      mcpToolLister: boot.connectionsBoot.mcpToolLister,
       uiBaseUrl: config.uiBaseUrl,
       brandName: config.brand.name,
     }),

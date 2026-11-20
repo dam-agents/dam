@@ -645,7 +645,6 @@ function slack(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
     description:
       "Search and read Slack as you, backed by Slack's MCP server. Read only unless you let it post as you.",
     toolAccess: {
-      host: SLACK_MCP_HOST,
       readTools: SLACK_READ_TOOLS,
       fullAccessLabel: "Can post as me",
     },

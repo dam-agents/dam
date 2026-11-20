@@ -459,6 +459,9 @@ export interface ConnectionsService {
   /** UNIT_BOUNDARY_DESCRIPTION: sets the tool mode of an MCP Connection, one of the modes it offers. The gateway reads the mode on every tool call, so it holds from the next call with no restart. */
   setToolMode(input: { id: string; mode: ToolMode }): Promise<void>;
 
+  /** UNIT_BOUNDARY_DESCRIPTION: reads the tool list of an MCP Connection's server again, with the Connection's own credential, and returns its tool access. A list that came back replaces the stored tools and `listedAt`; a failure keeps the old tools and says why in `listError`. Only an MCP Connection with a credential has a list to read. */
+  refreshTools(input: { id: string }): Promise<ConnectionToolAccess>;
+
   /** UNIT_BOUNDARY_DESCRIPTION: points a GitHub Enterprise sign-in, and every connection made from it, at another host the install offers. Names, grants and scopes stay; the tokens of the old host are dropped, so the sign-in reads expired until its owner authorizes it on the new host. */
   moveToHost(input: { id: string; host: string }): Promise<void>;
 

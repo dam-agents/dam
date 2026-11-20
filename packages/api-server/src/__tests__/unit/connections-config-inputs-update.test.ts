@@ -7,6 +7,7 @@ import type { ConnectionsRepository } from "../../modules/connections/infrastruc
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
 import { configureLogger } from "../../core/logger.js";
+import { fakeMcpToolLister } from "../helpers/connections-service.js";
 
 /**
  * TEST_OVERVIEW: a provider connection's settings (the Bob pins) change in
@@ -34,6 +35,7 @@ function makeService() {
   const svc = createConnectionsService({
     damConnectionOffered: async () => true,
     toolApprovalOffered: async () => true,
+    mcpToolLister: fakeMcpToolLister(),
     harnesses: { default: "claude-code", harnesses: [] },
     ownerId: "owner",
     templates: createConnectionTemplateRegistry(buildCatalog()),

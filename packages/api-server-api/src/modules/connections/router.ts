@@ -176,6 +176,10 @@ export const connectionsRouter = t.router({
     .input(connectionSetToolModeInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.setToolMode(input)),
 
+  refreshTools: manageCredentialsProcedure
+    .input(connectionIdInputSchema)
+    .mutation(({ ctx, input }) => ctx.connections.refreshTools(input)),
+
   moveToHost: manageCredentialsProcedure
     .input(connectionMoveToHostInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.moveToHost(input)),

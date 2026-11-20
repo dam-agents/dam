@@ -283,6 +283,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ),
       damConnectionOffered,
       toolApprovalOffered: featureOn("mcp-tool-approval"),
+      mcpToolLister: connectionsBoot.mcpToolLister,
       newAgentProvider: async () => {
         const chosen = await newAgentDefault();
         return chosen

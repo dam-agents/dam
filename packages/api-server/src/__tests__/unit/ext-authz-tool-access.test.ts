@@ -1,10 +1,13 @@
-// TEST_OVERVIEW: the tool mode of a Connection at the ext_authz gate. An Agent that holds a Connection whose Template declares tool access, in read only, may call only the read tools on the Template's host: a `tools/call` of any other tool is answered with a JSON-RPC error the agent can read, and is never sent on, even when an egress rule allows the host. In needs approval a `tools/call` waits as a tool-call approval that names the tool and its arguments: approve once sends it, and deny once, the end of the hold window or a channel turn nobody attends answers it with a JSON-RPC error. The same call sent again joins the approval, and a batch with such a call is refused, since one approval answers one call. A Connection in allow all is not limited. The choice is read on every request, and a request that names no Connection, or one the Agent does not hold, gets the strictest choice. A body the gateway did not send, or that is not one strict JSON document, is refused rather than passed, and so is a TLS request with a body that comes without its server name while the Agent holds a read-only Connection.
+// TEST_OVERVIEW: the tool mode of a Connection at the ext_authz gate. An Agent that holds an MCP Connection in read only may call only its read tools on the Connection's MCP host: a `tools/call` of any other tool is answered with a JSON-RPC error the agent can read, and is never sent on, even when an egress rule allows the host. In needs approval a `tools/call` waits as a tool-call approval that names the tool and its arguments: approve once sends it, and deny once, the end of the hold window or a channel turn nobody attends answers it with a JSON-RPC error. The same call sent again joins the approval, and a batch with such a call is refused, since one approval answers one call. A Connection in allow all is not limited. The choice is read on every request, and a request that names no Connection, or one the Agent does not hold, gets the strictest choice. A body the gateway did not send, or that is not one strict JSON document, is refused rather than passed, and so is a TLS request with a body that comes without its server name while the Agent holds a read-only Connection.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Connection, ToolMode } from "api-server-api";
 import { createExtAuthzGate } from "../../modules/approvals/services/ext-authz-gate.js";
 import { createToolAccessGate } from "../../modules/approvals/services/tool-access-gate.js";
 import type { ModelCallBody } from "../../modules/approvals/services/web-search-gate.js";
-import { toolAccessFor } from "../../modules/connections/domain/tool-access.js";
+import {
+  heldToolAccess,
+  toolAccessFor,
+} from "../../modules/connections/domain/tool-access.js";
 import {
   makeFakeApprovalsBus,
   makeFakeApprovalsRepo,
@@ -14,7 +17,6 @@ const HOST = "mcp.example.com";
 
 const template = {
   toolAccess: {
-    host: HOST,
     readTools: ["notes_search", "notes_read"],
     fullAccessLabel: "Can write as me",
   },
@@ -37,7 +39,15 @@ function connection(
       scopes: [],
       accessTokenRef: { storeId: "test", path: id, field: "access_token" },
     },
-    contributions: [],
+    contributions: [
+      {
+        kind: "egress-inject",
+        host: HOST,
+        headerName: "Authorization",
+        valueFormat: "Bearer {value}",
+      },
+      { kind: "mcp-entry", name: id, url: `https://${HOST}/mcp` },
+    ],
     ...(opts.mode
       ? {
           toolAccess: {
@@ -81,7 +91,7 @@ const templateOf = (templateId: string) =>
   templateId === "notes" ? template : undefined;
 
 function world(granted: Connection[], opts: { channelTurn?: boolean } = {}) {
-  const reads: (string | null)[] = [];
+  const reads: string[] = [];
   const repo = makeFakeApprovalsRepo();
   const bus = makeFakeApprovalsBus();
   const gate = createExtAuthzGate({
@@ -108,15 +118,13 @@ function world(granted: Connection[], opts: { channelTurn?: boolean } = {}) {
     waitingRuleSpeaksFor: () => false,
     toolAccess: createToolAccessGate({
       connections: {
-        limiting: async (_agentId, request) => {
-          reads.push(request.connectionId);
-          return toolAccessFor(granted, templateOf, request);
+        forAgent: async (agentId) => {
+          reads.push(agentId);
+          return {
+            limiting: (request) => toolAccessFor(granted, templateOf, request),
+            held: () => heldToolAccess(granted, templateOf),
+          };
         },
-        held: async () =>
-          toolAccessFor(granted, templateOf, {
-            host: HOST,
-            connectionId: null,
-          }),
       },
     }),
   });
@@ -314,7 +322,7 @@ describe("a read-only Connection at the gate", () => {
     expect(response.headers).not.toHaveProperty("retry-after");
   });
 
-  // TEST_SCENARIO: the gateway picks the chain and its credential by the TLS server name, and the agent writes the Host header. A request to the Template's host with a Host header of another host is still limited, because the gate also looks up the server name.
+  // TEST_SCENARIO: the gateway picks the chain and its credential by the TLS server name, and the agent writes the Host header. A request to the MCP host with a Host header of another host is still limited, because the gate also looks up the server name.
   it("limits a request whose Host header names another host", async () => {
     const { send } = world([connection("conn-a")]);
     const response = refusalOf(
@@ -325,6 +333,19 @@ describe("a read-only Connection at the gate", () => {
       }),
     );
     expect(JSON.parse(response.body).error.message).toContain(`not by ${HOST}`);
+  });
+
+  // TEST_SCENARIO: one check looks up the limit for the server name and for the Host header, and for a gateway that sent no server name it also asks whether the Agent holds a limit on any host. The Agent's granted Connections are read from the database once for the whole check, not once for each of these questions.
+  it("reads the Agent's Connections once for each request", async () => {
+    const { send, reads } = world([connection("conn-a")]);
+    const write = bodyOf(toolCall("notes_write"));
+    await send(write, {
+      host: "api.example.com",
+      tlsHost: "other.example.com",
+    });
+    expect(reads).toEqual(["agent-1"]);
+    await send(write, { host: "api.example.com", tlsHost: null });
+    expect(reads).toEqual(["agent-1", "agent-1"]);
   });
 
   // TEST_SCENARIO: the owner made the Connection read only, and its gateway has not restarted yet, so it sends neither the body nor the TLS server name. A POST with the Template's credential and a Host header of another host must not slip through in that window: the gate cannot see the real host, so it asks for a retry, which reaches the restarted gateway.
@@ -434,7 +455,7 @@ describe("a read-only Connection at the gate", () => {
     expect(repo.inserts).toBe(1);
   });
 
-  // TEST_SCENARIO: the limit belongs to the Template's host and to the Connections that declare read tools. A request to another host, or of an Agent that holds no such Connection, is gated as before, body or not.
+  // TEST_SCENARIO: the limit belongs to the Connection's MCP host and to a Connection that does not allow all. A request to another host, or of an Agent whose Connection there allows all, is gated as before, body or not.
   it("leaves other hosts and other Connections alone", async () => {
     const limited = world([connection("conn-a")]);
     expect(

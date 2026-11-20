@@ -1348,6 +1348,7 @@ export async function bootstrap() {
       damKey: damKeyFor(ownerId),
       damConnectionOffered: () => damConnectionOfferedFor(ownerId),
       toolApprovalOffered: () => toolApprovalOfferedFor(ownerId),
+      mcpToolLister: connectionsBoot.mcpToolLister,
     });
   await periodicJobs
     .register("oauth-refresh", 60_000, () =>

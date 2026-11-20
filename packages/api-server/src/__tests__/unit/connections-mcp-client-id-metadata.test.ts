@@ -21,7 +21,11 @@ import { createOAuthRoutes } from "../../modules/connections/oauth-routes.js";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
 import type { OAuthCallbackDeps } from "../../modules/connections/oauth-routes.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
-import { keyedMutex, unused } from "../helpers/connections-service.js";
+import {
+  keyedMutex,
+  unused,
+  fakeMcpToolLister,
+} from "../helpers/connections-service.js";
 
 /**
  * TEST_OVERVIEW: a Custom MCP server (OAuth) connection gets its client the
@@ -183,6 +187,7 @@ describe("custom MCP OAuth client", () => {
       connectionLock: keyedMutex(),
       githubAppEngine: unused(),
       runtimeMutator: unused(),
+      mcpToolLister: fakeMcpToolLister(),
     });
     if (failure === "degraded-root") {
       const started = new URL((await flow.startOAuth(conn.id)).authUrl);
@@ -253,6 +258,7 @@ describe("custom MCP OAuth client", () => {
             conn = { ...conn, auth };
           },
         }),
+        mcpToolLister: fakeMcpToolLister(),
       });
       const resource = source === "protected-resource" ? MCP_URL : null;
       if (source === "authorization-server")
@@ -444,6 +450,7 @@ describe("custom MCP OAuth client", () => {
         connectionLock: keyedMutex(),
         githubAppEngine: unused(),
         runtimeMutator: unused(),
+        mcpToolLister: fakeMcpToolLister(),
       });
       if (state === "changed-server") {
         await expect(flow.startOAuth(conn.id)).rejects.toThrow(
@@ -576,6 +583,7 @@ describe("discoverMcp", () => {
     return createConnectionsService({
       damConnectionOffered: async () => true,
       toolApprovalOffered: async () => true,
+      mcpToolLister: fakeMcpToolLister(),
       harnesses: { default: "claude-code", harnesses: [] },
       ownerId: "owner",
       templates: createConnectionTemplateRegistry(buildCatalog()),

@@ -1,10 +1,10 @@
 # MCP connections
 
-Last verified: 2026-11-16
+Last verified: 2026-11-20
 
 A custom MCP server is a [Connection](connections.md) whose endpoint becomes an MCP entry when an Agent holds it.
 Credentials stay gateway-side, as other Connection credentials do.
-This page owns its OAuth client discovery and the scopes and resource identifier used through sign-in and refresh.
+This page owns its OAuth client discovery, the scopes and resource identifier used through sign-in and refresh, and how the platform reads its tool list.
 
 ## OAuth client
 
@@ -24,3 +24,12 @@ If only authorization-server metadata is available, a Connection with stored res
 Refresh uses the stored configuration, so it does not depend on the MCP metadata endpoint being available.
 An older Connection acquires resource binding when its user signs in again and Protected Resource Metadata is available.
 If Protected Resource Metadata remains unavailable, an older unbound Connection stays unbound until a later sign-in discovers it.
+
+## Tool list
+
+The api-server reads an MCP server's tool list with the Connection's own credential, so that read only knows which tools read ([connections](connections.md#connection)).
+It connects as an MCP client over Streamable HTTP to the address of the Connection's MCP entry, with the credential in the header the gateway injects: the OAuth access token, refreshed first when it is about to expire, or the header value.
+It pages through the list up to 1000 tools and gives up after 15 seconds in all.
+It follows a redirect only on the same origin, so the credential never reaches another host.
+A failure is stored as a short reason the owner can read, such as the HTTP status or a timeout.
+A custom MCP server with no auth has no Secret, so the gateway does not read its requests and cannot hold it to a mode: it offers allow all alone, and its tool list is not read.

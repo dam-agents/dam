@@ -27,6 +27,7 @@ import {
 import type { ConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+import { fakeMcpToolLister } from "../helpers/connections-service.js";
 
 /**
  * TEST_OVERVIEW: a GitHub sign-in made through the GitHub App is a parent: it
@@ -275,6 +276,7 @@ function makeService(initial: Connection[] = [signIn()]) {
   const svc = createConnectionsService({
     damConnectionOffered: async () => true,
     toolApprovalOffered: async () => true,
+    mcpToolLister: fakeMcpToolLister(),
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: OWNER,
@@ -767,6 +769,7 @@ describe("GitHub sign-in — signing in again", () => {
       callbackUrl: "https://cb.example/oauth/callback",
       connectionLock: <T>(_key: string, fn: () => Promise<T>): Promise<T> =>
         fn(),
+      mcpToolLister: fakeMcpToolLister(),
     });
     return { flow, rows, ...secrets };
   }
