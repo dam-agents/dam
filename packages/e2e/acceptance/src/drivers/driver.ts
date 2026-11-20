@@ -2,8 +2,17 @@ import type { Person } from "../people.js";
 
 export type Surface = "api" | "ui" | "cli";
 
+export type CliAnswer = "allows" | "refuses";
+
 export interface SessionDriver {
   signIn(person: Person): Promise<void>;
+  expectAskedForTerms(person: Person): Promise<void>;
+  readTerms(person: Person): Promise<void>;
+  expectTermsShown(person: Person): Promise<void>;
+  followSignedOut(person: Person, path: string): Promise<void>;
+  expectAt(person: Person, path: string): Promise<void>;
+  signInCli(person: Person, answer: CliAnswer): Promise<void>;
+  expectCliSignedIn(person: Person, signedIn: boolean): Promise<void>;
 }
 
 export interface AgentsDriver {

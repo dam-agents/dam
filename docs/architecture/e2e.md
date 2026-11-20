@@ -63,7 +63,7 @@ A project whose prerequisite fails is left unrun.
 A local run asks for this tier with `--full`, and in upstream CI only the nightly run takes it.
 The tier under `src/tests/full/` is slow scenario specs: a local run asks for it with `--full`, and in CI only the nightly run takes it.
 Every project, the tier's too, starts after the setup project, and `check:setup-first` fails a config where a project could run beside it.
-The auth project proves the Terms gate on an account of its own, `terms-gate`, that no setup accepts the Terms for, so the gate stands whatever ran before it.
+The auth project proves the Terms gate on both tRPC transports, and a deep link through both the sign-in and the Terms gate, on an account of its own, `terms-gate`, that no setup accepts the Terms for, so the gate stands whatever ran before it; what a person meets at the gate, and the CLI's sign-in, are the acceptance suite's Examples.
 
 ## Scope: what a pull request runs
 
@@ -112,6 +112,7 @@ It runs only on the surfaces its tags name, and a step that crosses surfaces nam
 Unlike the smoke suite's chained projects, a journey depends on no other test.
 
 Each Playwright worker signs in as the accounts of its own slot, `acceptance-<persona>-<slot>`, which the e2e values provision and nothing else uses, so tests in two workers never see each other's Agents.
+One persona, Kim, never accepts the Terms of Use, so the Examples of the Terms gate find it standing; the others accept them at a worker's first use of their account.
 A worker's first use of an account connects a model provider, because the web UI lets a person write to an Agent only once one is connected, and an Agent made afterwards gets it as its default provider.
 The suite runs one worker, with one slot: every owner gets a VM runner of its own that reserves memory, so each extra slot costs the node three runners beside the smoke suite's Agents, and a second slot left a CI node without the memory to boot a machine.
 A slot keeps booted mock Agents, marked by their description, that the Given steps rename and give an answer: an Example costs seconds instead of a machine boot, and a later worker of the slot wakes and reuses them.
