@@ -86,18 +86,48 @@ export function refusedToolCalls(
   return jsonRpcErrors(message, input.ids, input.batch);
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the answer to a tool call of a Connection that needs approval for every tool call, while the gateway cannot ask anyone for one yet. It fails closed: no call is sent, as a JSON-RPC error the agent can read, in the same shape as a read-only refusal.
-export function approvalUnavailableToolCalls(
+// UNIT_BOUNDARY_DESCRIPTION: the answer to a batch that holds a tool call of a Connection that needs approval for every tool call. The gateway holds one call at a time, as one approval, so it sends no part of the batch and asks the agent to send each call in a request of its own. It answers every request of the batch, in the same shape as a read-only refusal.
+export function batchedToolCalls(
   limit: ToolAccessLimit,
-  input: {
-    refused: readonly (string | null)[];
-    ids: readonly JsonRpcId[];
-    batch: boolean;
-  },
+  input: { ids: readonly JsonRpcId[] },
 ): ToolAccessRefusal {
-  const unsent = input.batch ? " No request of this batch was sent." : "";
-  const message = `Refused by the platform's egress gateway, not by ${limit.host}: the Connection "${limit.connectionName}" needs approval for every tool call, and approvals of tool calls are not available yet, so it did not call ${toolList(input.refused)}.${unsent} ${wayOut()}`;
-  return jsonRpcErrors(message, input.ids, input.batch);
+  const message = `Refused by the platform's egress gateway, not by ${limit.host}: the Connection "${limit.connectionName}" needs approval for every tool call, and the gateway asks for approval of one call at a time, so no request of this batch was sent. Send each tools/call in a request of its own.`;
+  return jsonRpcErrors(message, input.ids, true);
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the answer to a tool call of a Connection that needs approval when the call names no tool: nobody could tell what they approve, so it is not held and not sent.
+export function unnamedToolCall(
+  limit: ToolAccessLimit,
+  input: { ids: readonly JsonRpcId[] },
+): ToolAccessRefusal {
+  const message = `Refused by the platform's egress gateway, not by ${limit.host}: the Connection "${limit.connectionName}" needs approval for every tool call, and this call names no tool, so it was not sent.`;
+  return jsonRpcErrors(message, input.ids, false);
+}
+
+export type HeldToolCallEnd = "unattended" | "denied" | "expired" | "child";
+
+function holdWindow(seconds: number): string {
+  if (seconds % 60 !== 0) return `${seconds} seconds`;
+  const minutes = seconds / 60;
+  return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the answer to a held tool call that will not be made: nobody attends the run to approve it now, the owner denied it, nobody answered within the hold window, or it came from a sub-agent with network access of its own, which cannot ask the owner. It is a JSON-RPC error for the call's id on a successful HTTP reply, so the agent reads why and its session goes on.
+export function heldToolCallRefusal(
+  limit: ToolAccessLimit,
+  call: { tool: string; id: JsonRpcId | undefined },
+  end: HeldToolCallEnd,
+  holdSeconds: number,
+): ToolAccessRefusal {
+  const tool = `"${shown(call.tool)}"`;
+  const gateway = `Refused by the platform's egress gateway, not by ${limit.host}:`;
+  const message = {
+    unattended: `${gateway} the Connection "${limit.connectionName}" needs approval for every tool call, and nobody is in the app to approve the call of ${tool} now, so it was not made. The owner was asked to approve it in the app.`,
+    denied: `${gateway} the owner denied this call of ${tool} on the Connection "${limit.connectionName}", so it was not made.`,
+    expired: `${gateway} the Connection "${limit.connectionName}" needs approval for every tool call, and nobody answered within ${holdWindow(holdSeconds)}, so the call of ${tool} was not made.`,
+    child: `${gateway} the Connection "${limit.connectionName}" needs approval for every tool call, and an agent with network access of its own cannot ask the owner for one, so the call of ${tool} was not made.`,
+  }[end];
+  return jsonRpcErrors(message, call.id === undefined ? [] : [call.id], false);
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the answer to a request of a limited Connection whose body the gateway did not send with the check. That happens only while the gateway restarts onto a Secret that asks for the body, so the answer asks for a retry.

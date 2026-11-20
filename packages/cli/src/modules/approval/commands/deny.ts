@@ -3,7 +3,7 @@ import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import type { ApprovalService } from "../services/approval-service.js";
-import { printOutcomeAndExit } from "./outcome.js";
+import { durableOrOnce, printOutcomeAndExit } from "./outcome.js";
 
 export function buildDenyCommand(deps: {
   compatService: CompatService;
@@ -24,7 +24,7 @@ export function buildDenyCommand(deps: {
     .option("--json", "emit the raw action outcome as JSON")
     .addHelpText(
       "after",
-      "\nBare `deny` is durable: for a network (ext_authz) request it writes a\npermanent deny rule — future requests of that shape are blocked without\nprompting, and the rule appears in `dam network list <agent>`. Use --once to\ndeny only the held call. Tool-call (acp_native) denials never write an egress\nrule; the verdict goes to the harness. A spend-limit question (spend_limit)\ncannot be denied: the limit stays reached until you continue it, change it, or\nthe UTC day ends. On a rule an agent proposed (egress_proposal), every form of\ndeny declines it and writes no rule. On a held web search (web_search), deny\nwrites the agent's web search rule, so every later search is refused.\n",
+      "\nBare `deny` is durable: for a network (ext_authz) request it writes a\npermanent deny rule — future requests of that shape are blocked without\nprompting, and the rule appears in `dam network list <agent>`. Use --once to\ndeny only the held call. Tool-call (acp_native) denials never write an egress\nrule; the verdict goes to the harness. A spend-limit question (spend_limit)\ncannot be denied: the limit stays reached until you continue it, change it, or\nthe UTC day ends. On a rule an agent proposed (egress_proposal), every form of\ndeny declines it and writes no rule. On a held web search (web_search), deny\nwrites the agent's web search rule, so every later search is refused. On a held\nMCP tool call (mcp_tool_call), deny refuses only this call, with or without --once.\n",
     )
     .action(
       async (
@@ -36,7 +36,10 @@ export function buildDenyCommand(deps: {
         const service = deps.createApprovalService(host);
         const result = await (opts.once
           ? service.dismiss(id)
-          : service.denyForever(id));
+          : durableOrOnce(
+              () => service.denyForever(id),
+              () => service.dismiss(id),
+            ));
         exitOnServiceError(result, host);
 
         printOutcomeAndExit(result.value, opts, {

@@ -15,6 +15,7 @@ import type { SpendLimitQuestions } from "./spend-limit-questions.js";
 import { type SettledVerdict, waitForVerdict } from "./held-verdict.js";
 import type { ModelCallBody, WebSearchGate } from "./web-search-gate.js";
 import type { ToolAccessGate } from "./tool-access-gate.js";
+import { createToolCallHold } from "./tool-call-hold.js";
 
 export type ExtAuthzVerdict = "allow" | "deny";
 
@@ -127,6 +128,7 @@ interface CreateExtAuthzGateDeps {
 }
 
 export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
+  const toolCallHold = createToolCallHold(deps);
   return {
     async gateRequest({
       agentId,
@@ -159,6 +161,20 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       }
 
       const via = identity.agentId !== agentId ? agentId : undefined;
+      const dotSegmentDeny = (): ExtAuthzDecision => {
+        securityLog("warn", "egress.decision", {
+          category: "egress",
+          actor: identity.ownerSub,
+          actorKind: "agent",
+          surface: "ext-authz",
+          agentId: identity.agentId,
+          target: host,
+          decision: "deny",
+          reason: "dot-segment",
+          detail: { method, path, via },
+        });
+        return "deny";
+      };
 
       if (spendCall) {
         const spend = await deps.spend.checkCall({
@@ -231,12 +247,29 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
         connectionId: connectionId ?? null,
         body,
       });
-      if (!tools.pass)
+      if (tools.kind === "refuse")
         return {
           verdict: "refuse",
           basis: "tool-access",
           response: tools.response,
         };
+      if (tools.kind === "hold") {
+        if (hasDotSegment(path)) return dotSegmentDeny();
+        const held = await toolCallHold.hold({
+          identity,
+          via,
+          method,
+          path,
+          toolCall: tools.toolCall,
+        });
+        return held.kind === "allow"
+          ? "allow"
+          : {
+              verdict: "refuse",
+              basis: "tool-access",
+              response: held.response,
+            };
+      }
 
       if (deps.platformAllowedAuthorities.includes(`${host}:${port}`)) {
         securityLog("info", "egress.decision", {
@@ -252,20 +285,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
         return "allow";
       }
 
-      if (hasDotSegment(path)) {
-        securityLog("warn", "egress.decision", {
-          category: "egress",
-          actor: identity.ownerSub,
-          actorKind: "agent",
-          surface: "ext-authz",
-          agentId: identity.agentId,
-          target: host,
-          decision: "deny",
-          reason: "dot-segment",
-          detail: { method, path, via },
-        });
-        return "deny";
-      }
+      if (hasDotSegment(path)) return dotSegmentDeny();
 
       const matched = await deps.ruleMatcher.match(
         identity.agentId,

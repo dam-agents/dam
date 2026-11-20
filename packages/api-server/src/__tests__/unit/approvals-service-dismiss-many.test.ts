@@ -43,6 +43,7 @@ function makeService(rows: PendingApprovalRow[]) {
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
     findActivePendingExtAuthz: async () => null,
     findActivePendingWebSearch: async () => null,
+    findActivePendingMcpToolCall: async () => null,
     listPendingForOwner: async () => rows,
     listPendingForInstance: async () => rows,
     resolvePending: async (id, verdict, decidedBy) => {

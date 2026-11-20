@@ -965,6 +965,7 @@ export type {
   SpendLimitPayload,
   EgressProposalPayload,
   WebSearchPayload,
+  McpToolCallPayload,
   AcpPermissionOption,
   AcpPermissionOptionKind,
   ApprovalView,
@@ -985,7 +986,11 @@ export {
   recordedOptionsOf,
   recordedToolOf,
 } from "./modules/approvals/format.js";
-export { RPC_ID_MAX, TOOL_CALL_ID_MAX } from "./modules/approvals/format.js";
+export {
+  MCP_TOOL_CALL_ARGUMENTS_MAX_BYTES,
+  RPC_ID_MAX,
+  TOOL_CALL_ID_MAX,
+} from "./modules/approvals/format.js";
 export {
   toolApprovalEndedInputSchema,
   toolApprovalWaitingInputSchema,

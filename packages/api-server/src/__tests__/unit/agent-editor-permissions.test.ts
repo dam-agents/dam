@@ -55,6 +55,7 @@ const APPROVALS: Record<string, { agentId: string; type: ApprovalType }> = {
   "tool-call": { agentId: "alice-bot", type: "acp_native" },
   "network-access": { agentId: "alice-bot", type: "ext_authz" },
   "proposed-rule": { agentId: "alice-bot", type: "egress_proposal" },
+  "mcp-tool-call": { agentId: "alice-bot", type: "mcp_tool_call" },
   "spend-limit": { agentId: "alice-bot", type: "spend_limit" },
   "other-agent": { agentId: "alice-other", type: "acp_native" },
 };
@@ -251,10 +252,11 @@ describe("an editor acting on a shared agent", () => {
 });
 
 describe("an editor answering the shared agent's approvals", () => {
-  // TEST_SCENARIO: An editor allows a tool call, or network access, of the shared agent. The answer runs in the owner's context, where the approval lives, and the audit names the permission the approval needed: sessions for a tool call, egressRules for network access.
+  // TEST_SCENARIO: An editor allows a tool call, network access, or a call of an MCP Connection's tool, of the shared agent. The answer runs in the owner's context, where the approval lives, and the audit names the permission the approval needed: sessions for a harness tool call, egressRules for network access and for an MCP tool call, which is answered as a network approval.
   it.each([
     { id: "tool-call", needs: "view,sessions" },
     { id: "network-access", needs: "view,egressRules" },
+    { id: "mcp-tool-call", needs: "view,egressRules" },
   ])("answers $id as the owner would", async ({ id, needs }) => {
     const w = world(BOB);
     await w.caller.approvals.approveOnce({ id });
@@ -278,6 +280,16 @@ describe("an editor answering the shared agent's approvals", () => {
     const w = world(BOB);
     await expect(
       w.caller.approvals.approveOnce({ id: "tool-call" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(w.ownerServices.approvals.approveOnce).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: An MCP tool call needs egressRules, as network access does, so an editor without it cannot approve one.
+  it("refuses an MCP tool call to an editor without egressRules", async () => {
+    editorPermissions = EDITS.filter((p) => p !== "egressRules");
+    const w = world(BOB);
+    await expect(
+      w.caller.approvals.approveOnce({ id: "mcp-tool-call" }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(w.ownerServices.approvals.approveOnce).not.toHaveBeenCalled();
   });

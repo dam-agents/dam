@@ -132,7 +132,7 @@ A Template may declare **tool access** for its MCP server, as the Slack Account 
 Only such a Connection offers all three modes today, because only its host's requests reach the gate with their body; every other MCP Connection offers allow all alone.
 The Slack Account's default is read only, and its connect form and its "Can post as me" choice set allow all or read only.
 In read only the gateway lets only the read tools pass, and a tool the server adds later is in no list, so it is refused until the list names it.
-In needs approval the gateway refuses every tool call, read tools included, because tool calls cannot be approved yet: the mode fails closed.
+In needs approval the gateway holds every tool call, read tools included, as a [tool-call approval](security-and-credentials.md#hitl-ext_authz) that shows the tool and its arguments where network approvals show; approve once sends it, and deny once or no answer within the hold window refuses it.
 Only an owner with the `mcp-tool-approval` [experimental feature](features.md) on can choose it.
 The Agent still sees every tool the server lists, and a refused call is answered with an error it can read.
 The limit is the **tool access step** of the ext_authz gate ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)), after the spend and web search steps and before any rule is read, so no egress rule lets a refused call through.

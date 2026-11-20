@@ -63,6 +63,10 @@ export interface ApprovalsRepository {
     agentId: string;
     key: string;
   }): Promise<PendingApprovalRow | null>;
+  findActivePendingMcpToolCall(input: {
+    agentId: string;
+    key: string;
+  }): Promise<PendingApprovalRow | null>;
   listPendingForOwner(
     ownerSub: string,
     opts?: ListApprovalsRepoOpts,
@@ -164,6 +168,9 @@ function toPendingRow(r: RawPending): PendingApprovalRow {
   };
 }
 
+const payloadLeavingPending = sql`CASE WHEN ${pendingApprovals.type} = 'mcp_tool_call' THEN ${pendingApprovals.payload} - 'arguments' ELSE ${pendingApprovals.payload} END`;
+
+// UNIT_BOUNDARY_DESCRIPTION: the approvals store. A tool-call approval keeps the call's arguments only while it waits: every update that moves a row out of `pending` (a verdict or an expiry) drops `arguments` from its payload in the same statement.
 export function createApprovalsRepository(db: Db): ApprovalsRepository {
   return {
     async insertPending(row) {
@@ -287,6 +294,23 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
       return rows.length ? toPendingRow(rows[0] as RawPending) : null;
     },
 
+    async findActivePendingMcpToolCall({ agentId, key }) {
+      const rows = await db
+        .select()
+        .from(pendingApprovals)
+        .where(
+          and(
+            eq(pendingApprovals.agentId, agentId),
+            eq(pendingApprovals.status, "pending"),
+            eq(pendingApprovals.type, "mcp_tool_call"),
+            sql`${pendingApprovals.payload}->>'key' = ${key}`,
+          ),
+        )
+        .orderBy(desc(pendingApprovals.createdAt))
+        .limit(1);
+      return rows.length ? toPendingRow(rows[0] as RawPending) : null;
+    },
+
     async listPendingForOwner(ownerSub, opts) {
       const limit = clampLimit(opts?.limit);
       const where = opts?.status
@@ -376,6 +400,7 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
           verdict,
           decidedBy,
           resolvedAt: now,
+          payload: payloadLeavingPending,
           ...(opts?.markDelivered ? { deliveredAt: now } : {}),
         })
         .where(
@@ -457,7 +482,11 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
     async expirePending(id) {
       const rows = await db
         .update(pendingApprovals)
-        .set({ status: "expired", resolvedAt: new Date() })
+        .set({
+          status: "expired",
+          resolvedAt: new Date(),
+          payload: payloadLeavingPending,
+        })
         .where(
           and(
             eq(pendingApprovals.id, id),
@@ -471,7 +500,11 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
     async expireOverdue(now) {
       const rows = await db
         .update(pendingApprovals)
-        .set({ status: "expired", resolvedAt: now })
+        .set({
+          status: "expired",
+          resolvedAt: now,
+          payload: payloadLeavingPending,
+        })
         .where(
           and(
             eq(pendingApprovals.status, "pending"),

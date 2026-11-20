@@ -66,6 +66,10 @@ export function approvalHeadline(approval: ApprovalView): string {
         : "Proposes a network rule",
     )
     .with({ kind: "web_search" }, () => "Wants to search the web")
+    .with(
+      { kind: "mcp_tool_call" },
+      (payload) => `Wants to use ${payload.tool} on ${payload.connectionName}`,
+    )
     .exhaustive();
 }
 
@@ -121,6 +125,8 @@ export function approvalDetail(
   if (payload.kind === "spend_limit")
     return spendLimitDetail(payload, connectionName);
   if (payload.kind === "acp_native") return payload.toolName;
+  if (payload.kind === "mcp_tool_call")
+    return `${payload.tool} on ${payload.connectionName}`;
   if (payload.kind === "web_search") {
     const query = payload.query ?? "The model chooses the query";
     if (payload.viaEnvironment)

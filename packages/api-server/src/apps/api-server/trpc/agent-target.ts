@@ -15,6 +15,7 @@ const APPROVAL_NEEDS: Record<ApprovalType, AgentPermission | null> = {
   ext_authz: "egressRules",
   egress_proposal: "egressRules",
   web_search: "egressRules",
+  mcp_tool_call: "egressRules",
   spend_limit: null,
 };
 
@@ -27,8 +28,8 @@ const onAgent = (agentId: string | undefined | null): ResolvedTarget | null =>
  * Rule, an Environment or approvals, so the Agent is read from that record
  * without any owner scope. Records given together must all belong to one
  * Agent. An approval also needs the permission of what it lets through: a
- * tool call needs `sessions`, network access and a proposed rule need
- * `egressRules`. A spend limit question has no target, because continuing it
+ * harness tool call needs `sessions`; network access, a web search, a
+ * proposed rule and a call of an MCP Connection's tool need `egressRules`. A spend limit question has no target, because continuing it
  * raises the owner's own spending. Null when a record is gone, records span
  * Agents or one has no target: the procedure then runs as the caller, and the
  * owner-scoped service answers as it always did.

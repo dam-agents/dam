@@ -47,6 +47,14 @@ export function makeFakeApprovalsRepo(): FakeRepo {
           r.payload.kind === "web_search" &&
           r.payload.key === key,
       ) ?? null,
+    findActivePendingMcpToolCall: async ({ agentId, key }) =>
+      rows.find(
+        (r) =>
+          r.agentId === agentId &&
+          r.status === "pending" &&
+          r.payload.kind === "mcp_tool_call" &&
+          r.payload.key === key,
+      ) ?? null,
     findActivePendingExtAuthz: async ({
       agentId,
       host,
@@ -146,5 +154,5 @@ export function makeFakeApprovalsBus(): FakeBus {
 }
 
 export const noToolAccessLimit: ToolAccessGate = {
-  check: async () => ({ pass: true }),
+  check: async () => ({ kind: "pass" }),
 };

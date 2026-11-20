@@ -359,6 +359,11 @@ export function useApprovalActions(
       childRequest ? childRequestActions : proposalActions,
     )
     .with("web_search", () => webSearchActions)
+    .with("mcp_tool_call", () =>
+      egressActions.filter(
+        (action) => action.id === "allow-once" || action.id === "dismiss",
+      ),
+    )
     .with("ext_authz", "acp_native", () => egressActions)
     .exhaustive()
     .filter((action) => offeredByAgent(row, action.id));

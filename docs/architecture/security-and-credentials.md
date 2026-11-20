@@ -307,6 +307,15 @@ At a limit it refuses at once, with a response shaped for the call's API path in
 
 **Web search.** With web search control on, the gate then holds a model call that declares a web search tool, under its own rule ([web-search-control](web-search-control.md)).
 
+**Tool calls.** The [tool access step](connections.md#connection) holds a `tools/call` of an MCP Connection in needs approval as a tool-call approval (`mcp_tool_call`), before any egress rule is read.
+A request body of one call is held; a batch with such a call is refused, since one approval answers one call, and the agent is asked to send the calls one by one.
+The approval names the Connection, the tool and the call's arguments, cut to their first 64 KiB of JSON with the full size kept beside them.
+Its join key is the sha256 of the Connection id, the tool name and the arguments as canonical JSON, so the same call sent again joins the waiting approval whatever its JSON-RPC id or key order, and a call with other arguments files its own.
+It takes approve once and deny once only: nothing is remembered, and always allow, allowing the whole host and always deny answer not actionable.
+Approve once sends the held call; deny once and the end of the hold window answer it with a JSON-RPC error on a successful reply, so the agent reads why and its session goes on.
+The arguments are kept only while the approval waits: the update that resolves or expires it drops them.
+An unattended channel turn refuses the call at once and files the approval, as for a network request below; a sub-agent with network access of its own cannot ask, so its call is refused without one.
+
 The HTTP filter on TLS-terminated chains sees method/path; the network filter on the catch-all chain sees SNI only.
 
 **Paths.** A rule's path pattern matches the path as the agent sent it, query included, and the gateway forwards that path unchanged.

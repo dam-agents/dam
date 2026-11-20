@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-11-17
+Last verified: 2026-11-20
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -19,6 +19,7 @@ A rule an Agent proposes is an approval too ([security-and-credentials](security
 The rules an Agent asks for on one of its sub-agents or Environments share one card, named after the asking Agent: a line per rule with its own "Allow" and "Decline", one button that allows them all, and, for a rule wider than the Agent's own, "Allow, and stop asking", which turns on the Agent's switch for its children's network access ([invocations](invocations.md#spawning)).
 A one-off sub-agent whose start is held for such a rule shows as "Waiting for you", not as working.
 So is a held web search ([web-search-control](web-search-control.md#the-hold)): its card shows the query, or that the model chooses it, offers to allow or deny it once or always, and shows in the Agent's chat beside its held network requests.
+So is a held call of an MCP Connection's tool ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)), which takes approve once and deny once only.
 A tool approval — the harness asking to run a tool — is written by two paths into one row.
 Its card offers only the choices the harness offered for that request: a verdict reaches the harness as the option of its kind, and one with no such option would cancel the tool call, so a request with no "always" option, such as Bob's writes to its own settings, offers no "Always allow" or "Always deny".
 The chat relay mirrors the prompt while a client engages the session, and the agent-runtime reports it over the runtime channel when no client does, so a request in a session nobody has open is on Home as soon as the agent asks.

@@ -25,7 +25,8 @@ function emitResolved(row: PendingApprovalRow, verdict: ApprovalVerdict): void {
     resolution: verdict,
     ...((row.payload.kind === "ext_authz" ||
       row.payload.kind === "egress_proposal" ||
-      row.payload.kind === "web_search") &&
+      row.payload.kind === "web_search" ||
+      row.payload.kind === "mcp_tool_call") &&
     row.payload.forAgentId
       ? { forAgentId: row.payload.forAgentId }
       : {}),
@@ -260,7 +261,11 @@ export function createApprovalsService(
       }
       if (!row || row.status !== "pending") return NOT_ACTIONABLE;
       if (row.payload.kind === "egress_proposal") return NOT_ACTIONABLE;
-      if (row.type === "ext_authz" || row.type === "web_search") {
+      if (
+        row.type === "ext_authz" ||
+        row.type === "web_search" ||
+        row.type === "mcp_tool_call"
+      ) {
         return resolveOnce(deps, row, "allow_once", "allow");
       }
       return resolveAndDeliverAcpNative(deps, row, "allow_once");
@@ -272,6 +277,7 @@ export function createApprovalsService(
         return answerSpendQuestion(deps, row, "allow");
       }
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
+      if (row.payload.kind === "mcp_tool_call") return NOT_ACTIONABLE;
       if (row.payload.kind === "web_search") {
         return writeWebSearchRuleAndResolve(deps, row, "allow");
       }
@@ -296,7 +302,11 @@ export function createApprovalsService(
         return answerSpendQuestion(deps, row, "allow");
       }
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
-      if (row.payload.kind === "web_search") return NOT_ACTIONABLE;
+      if (
+        row.payload.kind === "web_search" ||
+        row.payload.kind === "mcp_tool_call"
+      )
+        return NOT_ACTIONABLE;
       if (
         row.payload.kind === "ext_authz" ||
         row.payload.kind === "egress_proposal"
@@ -345,6 +355,7 @@ export function createApprovalsService(
       const row = await loadOwned(deps, id);
       if (row?.type === "spend_limit") refuseSpendDeny();
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
+      if (row.payload.kind === "mcp_tool_call") return NOT_ACTIONABLE;
       if (row.payload.kind === "egress_proposal") {
         return declineProposal(deps, row);
       }
@@ -390,7 +401,11 @@ async function dismissOne(
   if (row.payload.kind === "egress_proposal") {
     return declineProposal(deps, row);
   }
-  if (row.type === "ext_authz" || row.type === "web_search") {
+  if (
+    row.type === "ext_authz" ||
+    row.type === "web_search" ||
+    row.type === "mcp_tool_call"
+  ) {
     return resolveOnce(deps, row, "deny_once", "deny");
   }
   return resolveAndDeliverAcpNative(deps, row, "deny_once");
