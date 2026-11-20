@@ -23,12 +23,13 @@ export interface Turn {
 const turnTimeoutMs = 240_000;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: one chat turn with an Agent through the same ACP relay the web UI uses, `/api/agents/<id>/acp`: initialize, open a Session, send one prompt, and collect the Agent's message chunks until the prompt's answer names its stop reason. Every frame is kept, so a failed example carries the whole exchange.
+ * UNIT_BOUNDARY_DESCRIPTION: one chat turn with an Agent through the same ACP relay the web UI uses, `/api/agents/<id>/acp`: initialize, open a Session, or load the one it names, send one prompt, and collect the Agent's message chunks until the prompt's answer names its stop reason. Every frame is kept, so a failed example carries the whole exchange.
  */
 export async function promptOnce(
   agentId: string,
   token: string,
   text: string,
+  inSession?: string,
 ): Promise<Turn> {
   const url = `${baseUrl.replace(/^http/, "ws")}/api/agents/${agentId}/acp?token=${encodeURIComponent(token)}`;
   const ws = new WebSocket(url);
@@ -78,11 +79,16 @@ export async function promptOnce(
         if (frame.error !== undefined)
           return fail(`request ${frame.id} failed`);
         if (frame.id === 1)
-          send("session/new", { cwd: "/home/agent/work", mcpServers: [] });
-        if (frame.id === 2) sessionId = frame.result?.sessionId ?? "";
+          send(inSession === undefined ? "session/new" : "session/load", {
+            ...(inSession === undefined ? {} : { sessionId: inSession }),
+            cwd: "/home/agent/work",
+            mcpServers: [],
+          });
+        if (frame.id === 2)
+          sessionId = inSession ?? frame.result?.sessionId ?? "";
         if (frame.id === 2)
           send("session/prompt", {
-            sessionId: frame.result?.sessionId,
+            sessionId,
             prompt: [{ type: "text", text }],
           });
         if (frame.id === 3) {

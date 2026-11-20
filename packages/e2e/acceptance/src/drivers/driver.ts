@@ -179,6 +179,28 @@ export interface SatellitesDriver {
   remove(person: Person, satellite: string): Promise<void>;
 }
 
+export interface OrderDriver {
+  expectAgents(person: Person, names: string[]): Promise<void>;
+  move(
+    person: Person,
+    name: string,
+    where: "before" | "after",
+    target: string,
+  ): Promise<void>;
+  openSessions(person: Person, agentName: string): Promise<void>;
+  sendIn(
+    person: Person,
+    agentName: string,
+    session: string,
+    text: string,
+  ): Promise<void>;
+  expectSessions(
+    person: Person,
+    agentName: string,
+    texts: string[],
+  ): Promise<void>;
+}
+
 export interface SessionsDriver {
   expectListed(
     person: Person,
@@ -213,7 +235,7 @@ export interface ArtifactsDriver {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability (session, agents, chat, sessions, live views, environment, egress, assistant, satellites, artifacts, connections), independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
+ * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability (session, agents, chat, sessions, live views, environment, egress, assistant, satellites, sidebar order, artifacts, connections), independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
  */
 export interface Driver {
   readonly surface: Surface;
@@ -227,5 +249,6 @@ export interface Driver {
   readonly egress: EgressDriver;
   readonly assistant: AssistantDriver;
   readonly satellites: SatellitesDriver;
+  readonly order: OrderDriver;
   readonly live: LiveDriver;
 }
