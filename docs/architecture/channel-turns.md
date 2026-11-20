@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-11-12
+Last verified: 2026-11-20
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -296,12 +296,14 @@ What the agent sees:
   It posts nothing and touches no channel, but it does mark the turn declined — which keeps a sanctioned silence out of the unanswered-turn signal.
   On Slack it always names the turn it ends, for the same reason a hand-off does; Telegram has no thread id to pass, so the name is required by the Slack worker rather than the tool.
   An unnamed call while any Slack turn is live, and one naming a turn the Agent is not running, are both refused: answering them as though a turn had been declined would record nothing, and the turn would then be repaired as undelivered — posting the very answer the Agent chose to withhold.
-- **Slack reach is where the owner is a member.** A bound Agent may post beyond its bound conversations, into a channel that both the bot and the Agent's owner are members of (known from the owner's linked Slack identity), public or private alike: reaching a channel means being able to post there, and Slack lets a person post only where they have joined, so seeing a public channel is not reaching it.
-  Other channels are left out of `describe_channel` and refused as a target, and an owner with no linked identity reaches none.
+- **Slack reach is the bound conversations.** A bound Agent posts into a channel only when that channel is bound to it: the binding is the channel's consent.
+  A channel its owner is in, or one the bot happens to be in, is not enough, since the people there never connected the Agent; `describe_channel` lists the bound conversations alone, and any other channel is refused as a target, with a refusal that tells the Agent not to post elsewhere instead.
+  The one exception is the channel of the turn being answered, where someone spoke to the Agent: it may reply and react there.
   A Slack user id opens a DM, but only with the owner, the person in a bound 1:1 DM, or a member of a bound channel, and a DM id is held to the same rule: the shared bot can open a DM with anyone in the workspace, so without it an Agent could message people who never met it or its owner.
-  Membership is verified at send time; a bound conversation short-circuits every check, since the binding is the channel's consent.
+  That DM rule is its own check, apart from the channel rule, so it can change alone.
+  Membership is verified at send time; a bound conversation short-circuits every check.
   Every outbound post is made by the bot and footed with an [Agent Footer](#the-agent-footer).
-  The binding governs who may drive the Agent inbound; the owner's membership governs where it may go outbound.
+  The binding governs both who may drive the Agent inbound and where it may post outbound.
   Telegram has no analogue: its outbound targets stay the chats bound to the Agent, any forum topic in them included.
 - **Tools are always registered.** Calls are rejected at invocation time when no channel is connected for the Agent — no dynamic tool list, no per-session toggle.
   `describe_channel_users`, `describe_message_reactions` and `fetch_message_attachment` stay registered too, and report the scope their workspace withheld (see [Slack scopes: required vs. optional](channels.md#slack-scopes-required-vs-optional)).

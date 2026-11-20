@@ -1239,11 +1239,22 @@ function workspaceOf(
   );
 }
 
-type RefuseOutsideReach = (
+/* UNIT_BOUNDARY_DESCRIPTION: who an Agent may message directly outside its
+ * bound conversations — a 1:1 DM, by user id or DM id. Kept apart from the
+ * channel rule on purpose: whether such DMs stay allowed is its own decision
+ * (#6780), and it changes here alone. */
+type RefuseDirectMessage = (
   conversationId: string,
   teamId: SlackWorkspace,
-  directMessage?: { user: string | null },
+  user: string | null,
 ) => Promise<{ error: string } | null>;
+
+interface OutboundReach {
+  /** The channel of the turn being answered: someone spoke to the Agent
+   *  there, so it may answer there as in a bound conversation. */
+  turnChannel?: string | undefined;
+  refuseDirectMessage: RefuseDirectMessage;
+}
 
 type AdmitTarget = (
   teamId: SlackWorkspace,
@@ -1259,7 +1270,7 @@ async function resolveOutboundTarget(
   bound: SlackBoundConversation[],
   conversationId: string | undefined,
   turnWorkspace: TurnWorkspace,
-  refuseOutsideOwnerReach: RefuseOutsideReach,
+  reach: OutboundReach,
   admit?: AdmitTarget,
 ): Promise<{ id: string; teamId: SlackWorkspace } | { error: string }> {
   const target = await resolveTarget(
@@ -1267,18 +1278,36 @@ async function resolveOutboundTarget(
     bound,
     conversationId,
     turnWorkspace,
-    refuseOutsideOwnerReach,
+    reach,
   );
   if ("error" in target) return target;
   return (admit ? await admit(target.teamId, target.id) : null) ?? target;
 }
 
+function notConnectedError(
+  conversationId: string,
+  bound: SlackBoundConversation[],
+): string {
+  return (
+    `${conversationId} is not a conversation you are connected to. You may ` +
+    `post only into the conversations you are connected to ` +
+    `(${bound.map((c) => c.id).join(", ")}) and into direct messages. Do not ` +
+    `post the message into another conversation instead: say that it could ` +
+    `not be delivered, and that your owner can connect ${conversationId} to ` +
+    `you if you should post there`
+  );
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: an Agent posts into a channel only when the
+ * channel is bound to it — the binding is the channel's consent (#6780). A
+ * channel its owner is in, or one the bot happens to be in, is not enough: the
+ * people there never connected the Agent. */
 async function resolveTarget(
   gateway: SlackGateway,
   bound: SlackBoundConversation[],
   conversationId: string | undefined,
   turnWorkspace: TurnWorkspace,
-  refuseOutsideOwnerReach: RefuseOutsideReach,
+  reach: OutboundReach,
 ): Promise<{ id: string; teamId: SlackWorkspace } | { error: string }> {
   if (!conversationId) {
     if (bound.length === 1)
@@ -1306,9 +1335,11 @@ async function resolveTarget(
   }
 
   if (/^[UW][A-Z0-9]+$/.test(conversationId)) {
-    const refused = await refuseOutsideOwnerReach(conversationId, teamId, {
-      user: conversationId,
-    });
+    const refused = await reach.refuseDirectMessage(
+      conversationId,
+      teamId,
+      conversationId,
+    );
     if (refused) return refused;
     try {
       return {
@@ -1320,6 +1351,11 @@ async function resolveTarget(
         error: `could not open a direct message with ${conversationId}: ${formatError(err)}`,
       };
     }
+  }
+  const answering = conversationId === reach.turnChannel;
+  const directMessage = isDirectMessageId(conversationId);
+  if (!answering && !directMessage) {
+    return { error: notConnectedError(conversationId, bound) };
   }
   let lookup: SlackConversationLookup;
   try {
@@ -1340,18 +1376,30 @@ async function resolveTarget(
   }
   if (!info.isMember) {
     return {
-      error: `the bot is not a member of ${conversationId} — invite it to the channel first (/invite), or pick a chat from describe_channel`,
+      error: `the bot is not a member of ${conversationId} — invite it to the channel first (/invite)`,
     };
   }
-  if (!info.isGroupDirectMessage) {
-    const refused = await refuseOutsideOwnerReach(
+  if (!answering) {
+    const refused = await reach.refuseDirectMessage(
       conversationId,
       teamId,
-      info.isDirectMessage ? { user: info.directMessageUser } : undefined,
+      info.isDirectMessage ? info.directMessageUser : null,
     );
     if (refused) return refused;
   }
   return { id: conversationId, teamId };
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: Slack refusing the call carries its error code,
+ * and that is the one answer that proves nothing was posted. Any other
+ * failure — a dropped socket, a timeout, an answer nobody saw — stays a plain
+ * error, so a caller that must not repeat a message can tell the two apart. */
+function sendFailure(err: unknown): { error: string; refused?: string } {
+  const data = (err as { data?: { error?: unknown } } | null)?.data;
+  const refusal = typeof data?.error === "string" ? data.error : null;
+  return refusal
+    ? { error: formatError(err), refused: refusal }
+    : { error: formatError(err) };
 }
 
 export const TURN_LINGER_MS = 60 * 60_000;
@@ -1707,25 +1755,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
   }
 
-  async function ownerReach(
-    gw: SlackGateway,
-    instanceName: string,
-    teamId: SlackWorkspace,
-  ): Promise<Set<string> | "unlinked"> {
-    const owner = await getInstanceOwner(instanceName);
-    const slackUsers = owner
-      ? await identityLinks.externalUsersOf("slack", owner)
-      : [];
-    if (slackUsers.length === 0) return "unlinked";
-    const reach = new Set<string>();
-    for (const userId of slackUsers) {
-      for (const id of await gw.listSharedChannels(userId, teamId)) {
-        reach.add(id);
-      }
-    }
-    return reach;
-  }
-
   async function linkedWorkspaces(
     links: { teamId: string | null }[],
   ): Promise<SlackWorkspace[]> {
@@ -1761,62 +1790,43 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return shared.some((id) => boundIds.has(id));
   }
 
-  async function refuseOutsideOwnerReach(
+  async function refuseOutsideDirectReach(
     gw: SlackGateway,
     instanceName: string,
     conversationId: string,
     teamId: SlackWorkspace,
-    directMessage?: { user: string | null },
+    user: string | null,
   ): Promise<{ error: string } | null> {
-    if (directMessage) {
-      const { user } = directMessage;
-      if (!user) {
-        return {
-          error: `could not tell who ${conversationId} is a direct message with, so it is not one you may post into`,
-        };
-      }
-      let allowed: boolean;
-      try {
-        allowed = await mayMessageDirectly(gw, instanceName, user, teamId);
-      } catch (err) {
-        return {
-          error: `could not check whether you may message ${user} directly: ${formatError(err)}`,
-        };
-      }
-      return allowed
-        ? null
-        : {
-            error:
-              `${user} is not your owner, nor in a conversation you are ` +
-              `connected to. You may message directly only your owner, the ` +
-              `person in a 1:1 DM you are connected to, and the members of ` +
-              `channels you are connected to`,
-          };
+    if (!user) {
+      return {
+        error: `could not tell who ${conversationId} is a direct message with, so it is not one you may post into`,
+      };
     }
-    let reach: Set<string> | "unlinked";
+    let allowed: boolean;
     try {
-      reach = await ownerReach(gw, instanceName, teamId);
+      allowed = await mayMessageDirectly(gw, instanceName, user, teamId);
     } catch (err) {
       return {
-        error: `could not check whether your owner is a member of ${conversationId}: ${formatError(err)}`,
+        error: `could not check whether you may message ${user} directly: ${formatError(err)}`,
       };
     }
-    if (reach === "unlinked") {
-      return {
-        error:
-          `You may reach only channels your owner is a member of, and your ` +
-          `owner has not linked their Slack account: ask them to run ` +
-          `\`/${brandShort} login\` in Slack`,
-      };
-    }
-    if (!reach.has(conversationId)) {
-      return {
-        error:
-          `your owner is not a member of ${conversationId}. You may reach ` +
-          `only channels your owner is in`,
-      };
-    }
-    return null;
+    return allowed
+      ? null
+      : {
+          error:
+            `${user} is not your owner, nor in a conversation you are ` +
+            `connected to. You may message directly only your owner, the ` +
+            `person in a 1:1 DM you are connected to, and the members of ` +
+            `channels you are connected to`,
+        };
+  }
+
+  function directReach(
+    gw: SlackGateway,
+    instanceName: string,
+  ): RefuseDirectMessage {
+    return (conversationId, teamId, user) =>
+      refuseOutsideDirectReach(gw, instanceName, conversationId, teamId, user);
   }
 
   async function isOwnerDirectMessage(
@@ -9158,7 +9168,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       const bound =
         await channelRegistry.resolveSlackChannelsByInstance(instanceName);
       if (bound.length === 0) return [];
-      const boundIds = bound.map((c) => c.id);
 
       let botChannels: SlackChannelInfo[] = [];
       const gw = await ensureGateway();
@@ -9174,7 +9183,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           }
         }
       }
-      const boundConversations = bound.map(({ id }) => {
+      return bound.map(({ id }) => {
         const info = botChannels.find((c) => c.id === id);
         return {
           id,
@@ -9185,24 +9194,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               : id,
         };
       });
-      const reachable = new Set<string>();
-      if (gw) {
-        for (const teamId of new Set(bound.map((c) => c.teamId))) {
-          try {
-            const reach = await ownerReach(gw, instanceName, teamId);
-            if (reach !== "unlinked") reach.forEach((id) => reachable.add(id));
-          } catch (err) {
-            process.stderr.write(
-              `[slack] owner channel lookup failed: ${formatError(err)}\n`,
-            );
-          }
-        }
-      }
-      const others = botChannels
-        .filter((c) => !boundIds.includes(c.id) && reachable.has(c.id))
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((c) => ({ id: c.id, title: `#${c.name}` }));
-      return [...boundConversations, ...others];
     },
 
     async postMessage(
@@ -9233,8 +9224,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         boundChannelIds,
         conversationId,
         turnWorkspace(instanceName),
-        (id, teamId, dm) =>
-          refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
+        { refuseDirectMessage: directReach(gw, instanceName) },
         (teamId, id) => bridgeClosed(instanceName, teamId, id),
       );
       if ("error" in target) {
@@ -9324,16 +9314,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           ...(attachmentError ? { attachmentError } : {}),
         };
       } catch (err) {
-        /* UNIT_BOUNDARY_DESCRIPTION: Slack refusing the call carries its error
-         * code, and that is the one answer that proves nothing was posted. Any
-         * other failure — a dropped socket, a timeout, an answer nobody saw —
-         * stays a plain error, so a caller that must not repeat a message can
-         * tell the two apart. */
-        const data = (err as { data?: { error?: unknown } } | null)?.data;
-        const refusal = typeof data?.error === "string" ? data.error : null;
-        return refusal
-          ? { error: formatError(err), refused: refusal }
-          : { error: formatError(err) };
+        return sendFailure(err);
       }
     },
 
@@ -9601,10 +9582,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               boundChannelIds,
               args.conversationId ?? turn?.channel,
               turnWorkspace(instanceName),
-              async (id, teamId, dm) =>
-                id === turn?.channel
-                  ? null
-                  : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
+              {
+                turnChannel: turn?.channel,
+                refuseDirectMessage: directReach(gw, instanceName),
+              },
             );
       if ("error" in target) return target;
       const bridged = await bridgeClosed(
@@ -9704,7 +9685,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           ...(uploadError ? { attachmentError: uploadError } : {}),
         };
       } catch (err) {
-        return { error: formatError(err) };
+        return sendFailure(err);
       }
     },
 
@@ -9725,10 +9706,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         boundChannelIds,
         edit.conversationId,
         turnWorkspace(instanceName),
-        async (id, teamId, dm) =>
-          id === turnChannel
-            ? null
-            : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
+        {
+          turnChannel,
+          refuseDirectMessage: directReach(gw, instanceName),
+        },
       );
       if ("error" in target) return target;
       const bridged = await bridgeClosed(
@@ -9860,10 +9841,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         boundChannelIds,
         args.conversationId ?? turnChannel,
         turnWorkspace(instanceName),
-        async (id, teamId, dm) =>
-          id === turnChannel
-            ? null
-            : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
+        {
+          turnChannel,
+          refuseDirectMessage: directReach(gw, instanceName),
+        },
       );
       if ("error" in target) return target;
 
@@ -10019,10 +10000,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         boundChannelIds,
         query.conversationId ?? turnChannel,
         turnWorkspace(instanceName),
-        async (id, teamId, dm) =>
-          id === turnChannel
-            ? null
-            : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
+        {
+          turnChannel,
+          refuseDirectMessage: directReach(gw, instanceName),
+        },
       );
       if ("error" in target) return target;
 
@@ -10063,10 +10044,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         boundChannelIds,
         query.conversationId ?? turnChannel,
         turnWorkspace(instanceName),
-        async (id, teamId, dm) =>
-          id === turnChannel
-            ? null
-            : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
+        {
+          turnChannel,
+          refuseDirectMessage: directReach(gw, instanceName),
+        },
       );
       if ("error" in target) return target;
 
