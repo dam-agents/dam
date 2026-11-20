@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-11-09
+Last verified: 2026-11-18
 
 The pods every Agent runs on: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -59,6 +59,8 @@ The runner's serving certificate is issued by cert-manager, for the runner's Ser
 It is not the gateways' MITM CA: that one signs leaves for hostnames taken from users' credential hosts, and a leaf naming a runner's host would let its key pass for that runner.
 Until it is issued the runner's pod cannot start and the controller cannot dial it, so the agent's reconcile waits for it as it waits for its gateway's leaf; the runner re-reads a renewed certificate in place, so a renewal reboots nothing.
 Each machine also gets a read-only **share** carrying the MITM CA, **platform-init**, the guest's init that mounts the agent's home from the disk before handing off to the image's own, so persistence is the platform's to guarantee for any image, the launch record of what the image runs (its command, env and working directory, readable by the guest's root alone), and, once the machine's guest has first answered, the record that its disk holds a home, which lets platform-init refuse a disk that has lost it ([vm storage](vm-storage.md#the-disk)); and **platform-runc**, which gives the containers the guest runs that CA ([agent-images](agent-images.md)).
+The init also mounts the Agent's granted files Satellites at `/mnt/sat`, served by threads of its own rather than by a process beside it: nothing an image's entrypoint exit kills can leave a mount that answers "Transport endpoint is not connected", and every image gets the mount.
+Until the platform grants a files Satellite the mount lists nothing, and the init asks the platform for the grant list every 30 s.
 The runner's claim holds the machine disks, the bookkeeping a restart rebuilds — each file of it replaced whole, never written in place, so a runner killed mid-write leaves the old one or the new — and the runtime's disk templates, expanded once per release rather than on every roll; the image directory is its own mount, read-only: the node cache ([persistence](persistence.md)).
 It publishes each guest's agent port on a port of the pod, on an address the runner is told (every interface of a pod's own network), and the agent's Service selects that runner and maps the agent port onto the one its machine publishes there.
 The selector reaches the runner only because the Service shares the agent namespace.
