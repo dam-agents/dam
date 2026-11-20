@@ -73,8 +73,11 @@ function logAppToken(
  * value stops being useful within hours.
  *
  * Exchange and renewal run under one lock, with the Secret re-read inside it,
- * so two replicas never spend the same refresh token. A failed exchange keeps
- * serving the Helm token and tries again ten minutes later. A failed renewal
+ * so two replicas never spend the same refresh token. A failed exchange, or
+ * one whose pair could not be saved, keeps serving the Helm token, which
+ * Slack retires only at the first renewal, and tries again ten minutes later.
+ * A renewed pair that could not be saved is still served, so the socket stays
+ * up until the token expires and the error is in the log. A failed renewal
  * keeps serving the token while it is still valid. Once it has expired, Slack
  * refusing the refresh token as dead marks the Secret refused, and nothing is
  * served until a person sets a new app-level token in Helm values: a Helm
@@ -148,20 +151,29 @@ export function createSlackAppTokenService(
       });
       return deps.helmToken;
     }
-    await deps.secrets.put(
-      {
-        storeId: deps.secrets.storeId,
-        path: SLACK_APP_TOKEN_SECRET_PATH,
-        field: TOKEN_FIELD,
-      },
-      {
-        [TOKEN_FIELD]: result.accessToken,
-        [REFRESH_TOKEN_FIELD]: result.refreshToken,
-        [EXPIRES_AT_FIELD]: String(result.expiresAt),
-        [IMPORTED_FROM_FIELD]: helmFingerprint,
-      },
-      SECRET_META,
-    );
+    try {
+      await deps.secrets.put(
+        {
+          storeId: deps.secrets.storeId,
+          path: SLACK_APP_TOKEN_SECRET_PATH,
+          field: TOKEN_FIELD,
+        },
+        {
+          [TOKEN_FIELD]: result.accessToken,
+          [REFRESH_TOKEN_FIELD]: result.refreshToken,
+          [EXPIRES_AT_FIELD]: String(result.expiresAt),
+          [IMPORTED_FROM_FIELD]: helmFingerprint,
+        },
+        SECRET_META,
+      );
+    } catch (err) {
+      exchangeRetryAt = now() + EXCHANGE_RETRY_MS;
+      logAppToken("error", "slack.app_token.exchange.unsaved", {
+        result: "failure",
+        reason: formatError(err),
+      });
+      return deps.helmToken;
+    }
     logAppToken("info", "slack.app_token.exchanged", { result: "success" });
     return result.accessToken;
   }
@@ -175,11 +187,18 @@ export function createSlackAppTokenService(
       field: TOKEN_FIELD,
     };
     if (result.ok) {
-      await deps.secrets.putFields(ref, {
-        [TOKEN_FIELD]: result.accessToken,
-        [REFRESH_TOKEN_FIELD]: result.refreshToken,
-        [EXPIRES_AT_FIELD]: String(result.expiresAt),
-      });
+      try {
+        await deps.secrets.putFields(ref, {
+          [TOKEN_FIELD]: result.accessToken,
+          [REFRESH_TOKEN_FIELD]: result.refreshToken,
+          [EXPIRES_AT_FIELD]: String(result.expiresAt),
+        });
+      } catch (err) {
+        logAppToken("error", "slack.app_token.refresh.unsaved", {
+          result: "failure",
+          reason: formatError(err),
+        });
+      }
       return result.accessToken;
     }
     const refused = expired && result.credentialDead;

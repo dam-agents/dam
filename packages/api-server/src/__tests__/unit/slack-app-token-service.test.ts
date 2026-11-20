@@ -176,6 +176,36 @@ describe("Slack app-level token", () => {
   });
 
   /**
+   * TEST_SCENARIO: Slack exchanged the token, but the Secret could not be
+   * written. The Helm token still works until the first renewal, so it keeps
+   * the socket up instead of the socket going down for a storage error.
+   */
+  it("serves the Helm token when the exchanged pair cannot be saved", async () => {
+    const env = setup();
+    const failing = createSlackAppTokenService({
+      helmToken: HELM,
+      secrets: {
+        storeId: "k8s",
+        get: async () => null,
+        put: async () => {
+          throw new Error("secrets is forbidden");
+        },
+      } as unknown as SecretStore,
+      lock: mutex(),
+      rotation: {
+        exchange: async () => grant("xoxe.xapp-1", "xoxe-1-r1", 12 * HOUR),
+        refresh: async () => {
+          throw new Error("no refresh expected");
+        },
+        now: env.now,
+      },
+      exchangeLongLivedToken: true,
+    });
+
+    expect(await failing.resolveAppToken()).toBe(HELM);
+  });
+
+  /**
    * TEST_SCENARIO: The stored token is more than an hour old. It is renewed
    * with its refresh token, and the new pair replaces the old one, so the
    * spent refresh token is never offered to Slack again.
