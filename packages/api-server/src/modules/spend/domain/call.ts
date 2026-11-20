@@ -138,7 +138,6 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
       [outputShort && !record.complete, "stream-cut"],
       [outputShort && record.complete, "output-uncounted"],
       [ambiguous, "providers-ambiguous"],
-      [price.source === "estimate", "model-unpriced"],
       [awaiting, "awaiting-price"],
       [record.final && !reported, "usage-missing"],
       [record.final && reported && cost === null, "cost-unknown"],

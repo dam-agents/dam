@@ -62,7 +62,7 @@ export type CallPrice =
   | {
       readonly kind: "row";
       readonly row: PriceRow;
-      readonly source: "override" | "list" | "table" | "estimate";
+      readonly source: "override" | "list" | "table";
     }
   | { readonly kind: "zero"; readonly source: "provider-rule" }
   | { readonly kind: "credits"; readonly source: "provider-rule" }
@@ -74,7 +74,7 @@ export type CallPrice =
   | { readonly kind: "awaiting"; readonly source: "awaiting" }
   | { readonly kind: "unpriced"; readonly source: "unpriced" };
 
-export type PriceSource = CallPrice["source"] | "replay";
+export type PriceSource = CallPrice["source"] | "replay" | "estimate";
 
 const ANTHROPIC_TABLE_PROVIDERS: ReadonlySet<string> = new Set([
   "anthropic",
@@ -85,15 +85,18 @@ export const LISTED_PROVIDERS: readonly string[] = ["ibm-litellm"];
 const LISTED: ReadonlySet<string> = new Set(LISTED_PROVIDERS);
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the price of one call, first match wins. A
- * provider with its own price list (IBM LiteLLM) never takes an estimate
- * from similar models: its call is priced by an operator price, the RITS
- * rule, the provider's list, then the proxy's own cost in the reply, and a
- * call that none of them prices costs nothing and waits for its price. A
- * listed price with a free search quota gives way to the reply's cost on a
- * call with web searches, because only the proxy knows how much of the quota
- * is left. Its names are the reply's model group, then the reply's model.
- * Other providers keep an estimate from their model family.
+ * UNIT_BOUNDARY_DESCRIPTION: the price of one call, first match wins. No
+ * call takes an estimate from similar models, because a model family's
+ * highest price can be several times the real one. A provider with its own
+ * price list (IBM LiteLLM) prices a call by an operator price, the RITS rule,
+ * the provider's list, then the proxy's own cost in the reply; a listed price
+ * with a free search quota gives way to the reply's cost on a call with web
+ * searches, because only the proxy knows how much of the quota is left, and
+ * its names are the reply's model group, then the reply's model. Any other
+ * provider prices a call by an operator price, its provider rule, then the
+ * Anthropic table. A call that a provider's price sources do not price costs
+ * nothing and waits for its price; a provider with no price source at all,
+ * such as OpenAI without operator prices, leaves the call unpriced.
  */
 export function lookupPrice(book: PriceBook, query: PriceQuery): CallPrice {
   if (LISTED.has(query.provider)) return listedPrice(book, query);
@@ -123,15 +126,17 @@ export function lookupPrice(book: PriceBook, query: PriceQuery): CallPrice {
   const listed = matchModel(tableRows, names);
   if (listed) return { kind: "row", row: listed.row, source: "table" };
 
-  const known = [...operatorRows, ...tableRows];
-  if (known.length === 0) return { kind: "unpriced", source: "unpriced" };
-  const families = new Set(names.map(modelFamily).filter((f) => f !== ""));
-  const family = known.filter((p) => families.has(modelFamily(p.model)));
-  return {
-    kind: "row",
-    row: highestPrices(family.length > 0 ? family : known),
-    source: "estimate",
-  };
+  if (operatorRows.length === 0 && tableRows.length === 0)
+    return { kind: "unpriced", source: "unpriced" };
+  return { kind: "awaiting", source: "awaiting" };
+}
+
+export function deployPricedProviders(book: PriceBook): string[] {
+  const providers = new Set([
+    ...ANTHROPIC_TABLE_PROVIDERS,
+    ...book.operatorPrices.map((p) => p.provider),
+  ]);
+  return [...providers].filter((provider) => !LISTED.has(provider));
 }
 
 function listedPrice(book: PriceBook, query: PriceQuery): CallPrice {
@@ -181,12 +186,6 @@ function looseName(model: string): string {
   return lastSegment(model).replace(/-(\d{8}|\d{4}-\d{2}-\d{2})$/, "");
 }
 
-function modelFamily(model: string): string {
-  const parts = lastSegment(model).split("-");
-  const firstVersion = parts.findIndex((part) => /\d/.test(part));
-  return firstVersion <= 0 ? "" : parts.slice(0, firstVersion).join("-");
-}
-
 function highestRow<T extends PricedModel>(rows: readonly T[]): T {
   return rows.reduce((best, next) =>
     next.row.prices.input > best.row.prices.input ||
@@ -195,23 +194,4 @@ function highestRow<T extends PricedModel>(rows: readonly T[]): T {
       ? next
       : best,
   );
-}
-
-function highestPrices(rows: readonly PricedModel[]): PriceRow {
-  const max = (pick: (p: PriceRow) => number | undefined) => {
-    const values = rows
-      .map((p) => pick(p.row))
-      .filter((v): v is number => v !== undefined);
-    return values.length > 0 ? Math.max(...values) : undefined;
-  };
-  return {
-    prices: {
-      input: max((r) => r.prices.input) ?? 0,
-      output: max((r) => r.prices.output) ?? 0,
-      cacheRead: max((r) => r.prices.cacheRead),
-      cacheWrite5m: max((r) => r.prices.cacheWrite5m),
-      cacheWrite1h: max((r) => r.prices.cacheWrite1h),
-    },
-    webSearchMicros: max((r) => r.webSearchMicros),
-  };
 }

@@ -20,8 +20,9 @@ const DAY_MS = 86_400_000;
 /**
  * UNIT_BOUNDARY_DESCRIPTION: prices again the call rows of a provider whose
  * model had no price when they were metered: the calls that waited for their
- * price, after each read that adds prices, and the estimates written before
- * calls recorded where their price came from, after each full read. Each
+ * price, after each read that adds prices or, for a provider whose prices
+ * come with a deploy, at each start, and the estimates written before calls
+ * recorded where their price came from, after each full read. Each
  * batch moves the call rows and their rollup rows in one transaction, then
  * today's day counters and the calls' kept state by the same difference, so
  * a late record of the same call adds nothing twice. A row is re-priced only

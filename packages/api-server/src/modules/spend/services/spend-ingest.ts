@@ -19,7 +19,7 @@ import {
   type CallAmounts,
   type SpendRow,
 } from "../domain/ledger.js";
-import type { PriceBook } from "../domain/prices.js";
+import { LISTED_PROVIDERS, type PriceBook } from "../domain/prices.js";
 import { payingProvider, unitOf } from "../domain/units.js";
 import type { CallMeta, CallStates } from "../infrastructure/call-states.js";
 import type { DayCounters } from "../infrastructure/day-counters.js";
@@ -407,7 +407,12 @@ export function createSpendIngest(deps: {
         priceModel: measure.priceModel,
         estimateReasons: measure.estimateReasons,
       });
-      if (awaiting && record.final && record.connectionId)
+      if (
+        awaiting &&
+        record.final &&
+        record.connectionId &&
+        LISTED_PROVIDERS.includes(measure.provider)
+      )
         deps.prices.requestRead(record.connectionId);
       if (settled && awaiting) {
         deps.metrics.awaitingPrice({
