@@ -435,7 +435,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 
 	idleTimeout := effectiveIdleTimeout(agent.Spec.HibernationTimeout, r.config.AgentBase)
 	running := shouldRun(agent.Annotations, idleTimeout, time.Now().UTC())
-	if ready := apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionReady); ready != nil && parkedTargetWaits(agent.Annotations, ready.Reason) {
+	if parkedTargetWaits(agent.Annotations, readReason(agent.Status.Conditions, apiv1.ConditionReady), readReason(agent.Status.Conditions, apiv1.ConditionAgentPodReady)) {
 		running = true
 	}
 

@@ -3,10 +3,12 @@ package reconciler
 import (
 	"time"
 
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
+	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
 const (
@@ -46,14 +48,17 @@ func shouldRun(annotations map[string]string, idleTimeout time.Duration, now tim
 	return now.Sub(t) <= idleTimeout
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a sweepable Agent parked for room is an Invocation target that has not started: it keeps asking to run until a stop or its Invocation's deadline, since a hibernation would let the Agent Sweep delete it and fail the Invocation as a deleted target instead of one that waited for room.
-func parkedTargetWaits(annotations map[string]string, readyReason string) bool {
+// UNIT_BOUNDARY_DESCRIPTION: a sweepable Agent parked for room is an Invocation target that has not started: it keeps asking to run until a stop or its Invocation's deadline, since a hibernation would let the Agent Sweep delete it and fail the Invocation as a deleted target instead of one that waited for room. The wait is read from Ready and from the machine's own condition, since a boot the runner already admitted and the node has not yet granted memory for keeps running and reads Ready as plain PodsNotReady, with the wait only on AgentPodReady.
+func parkedTargetWaits(annotations map[string]string, reasons ...string) bool {
 	if annotations[annSweepable] != "true" || annotations[annStopRequested] != "" {
 		return false
 	}
-	switch readyReason {
-	case apiv1.ReasonOverBudget, apiv1.ReasonAwaitingMemory, apiv1.ReasonAwaitingAllocation, apiv1.ReasonAwaitingWarmUp, apiv1.ReasonAllocationUnreadable:
-		return true
+	for _, reason := range reasons {
+		switch reason {
+		case apiv1.ReasonOverBudget, apiv1.ReasonAwaitingMemory, apiv1.ReasonAwaitingAllocation, apiv1.ReasonAwaitingWarmUp, apiv1.ReasonAllocationUnreadable,
+			vmrunner.ReasonAwaitingAllocation, vmrunner.ReasonOutOfCapacity:
+			return true
+		}
 	}
 	return false
 }
@@ -64,4 +69,12 @@ func effectiveIdleTimeout(override *metav1.Duration, base config.AgentBase) time
 		return override.Duration
 	}
 	return base.VMIdleTimeout.AsDuration()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the reason a condition of the status carries, or none when the status has no such condition.
+func readReason(conds []metav1.Condition, condType string) string {
+	if cond := apimeta.FindStatusCondition(conds, condType); cond != nil {
+		return cond.Reason
+	}
+	return ""
 }

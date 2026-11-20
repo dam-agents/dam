@@ -886,17 +886,20 @@ func deferredResizeOnNode(t *testing.T, stepped bool) (context.Context, *AgentRe
 	return ctx, r, node, agent
 }
 
-// TEST_SCENARIO: a sweepable Invocation target parked for room keeps asking to run after its activity expires, so its reconcile never publishes it hibernated for the Agent Sweep to delete; a parked Agent that is not sweepable, and a parked target someone stopped, hibernate as before.
+// TEST_SCENARIO: a sweepable Invocation target parked for room keeps asking to run after its activity expires, whether the wait reads on Ready or only on the machine's condition, so its reconcile never publishes it hibernated for the Agent Sweep to delete; a parked Agent that is not sweepable, and a parked target someone stopped, hibernate as before.
 func TestAParkedInvocationTargetKeepsWaitingForRoom(t *testing.T) {
 	stale := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	for _, tc := range []struct {
 		name        string
 		annotations map[string]string
+		onMachine   bool
 		waits       bool
 	}{
-		{"sweepable", map[string]string{annSweepable: "true"}, true},
-		{"not sweepable", map[string]string{}, false},
-		{"sweepable and stopped", map[string]string{annSweepable: "true", annStopRequested: stale}, false},
+		{"sweepable", map[string]string{annSweepable: "true"}, false, true},
+		{"not sweepable", map[string]string{}, false, false},
+		{"sweepable and stopped", map[string]string{annSweepable: "true", annStopRequested: stale}, false, false},
+		{"sweepable, waiting for the node's grant", map[string]string{annSweepable: "true"}, true, true},
+		{"not sweepable, waiting for the node's grant", map[string]string{}, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			agent := vmAgentCR()
@@ -905,6 +908,12 @@ func TestAParkedInvocationTargetKeepsWaitingForRoom(t *testing.T) {
 				agent.Annotations[k] = v
 			}
 			agent.Status.Conditions = []metav1.Condition{{Type: apiv1.ConditionReady, Status: metav1.ConditionFalse, Reason: apiv1.ReasonOverBudget, LastTransitionTime: metav1.Now()}}
+			if tc.onMachine {
+				agent.Status.Conditions = []metav1.Condition{
+					{Type: apiv1.ConditionAgentPodReady, Status: metav1.ConditionFalse, Reason: vmrunner.ReasonAwaitingAllocation, LastTransitionTime: metav1.Now()},
+					{Type: apiv1.ConditionReady, Status: metav1.ConditionFalse, Reason: "PodsNotReady", LastTransitionTime: metav1.Now()},
+				}
+			}
 			r, node, _ := setupVMReconciler(t, agent)
 			node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000}
 
