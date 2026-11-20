@@ -262,7 +262,7 @@ describe("slack outbound — cross-workspace reach", () => {
         ),
       });
       expect((result as { error: string }).error).toContain(
-        "Do not post the message into another conversation instead",
+        "Do not post into another conversation instead",
       );
     }
     expect(h.gw.readOutbound()).toHaveLength(0);

@@ -1291,11 +1291,11 @@ function notConnectedError(
 ): string {
   return (
     `${conversationId} is not a conversation you are connected to. You may ` +
-    `post only into the conversations you are connected to ` +
-    `(${bound.map((c) => c.id).join(", ")}) and into direct messages. Do not ` +
-    `post the message into another conversation instead: say that it could ` +
-    `not be delivered, and that your owner can connect ${conversationId} to ` +
-    `you if you should post there`
+    `reach only the conversations you are connected to ` +
+    `(${bound.map((c) => c.id).join(", ")}) and direct messages. Do not ` +
+    `post into another conversation instead: say that you could not reach ` +
+    `${conversationId}, and that your owner can connect it to you if you ` +
+    `should use it`
   );
 }
 
