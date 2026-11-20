@@ -2,8 +2,6 @@ import { expect, test } from "@playwright/test";
 import { TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "api-server-api";
 
-import type { ApiClient } from "../../lib/api-client.js";
-
 import { createApiClient, createWsApiClient } from "../../lib/api-client.js";
 import {
   answerDeviceGrant,
@@ -15,10 +13,10 @@ import {
   keycloakCliClientId,
   keycloakRealm,
   keycloakUrl,
+  termsGateUser,
 } from "../../config.js";
-const storageStatePath = "./.auth/user.json";
 
-// TEST_OVERVIEW: The auth project in declaration order: the tests that must run before any terms acceptance come first, then the deep-link roundtrip, then the login that persists storage state for every later project, then the CLI's device grant.
+// TEST_OVERVIEW: The auth project in declaration order: the Terms gate on both tRPC doors, then the deep-link roundtrip through that gate, both on the gate account no setup accepts the Terms for, then the CLI's device grant. The shared account's login, Terms and assistant are the setup project's.
 
 function trpcError(err: unknown): TRPCClientError<AppRouter> {
   expect(err).toBeInstanceOf(TRPCClientError);
@@ -52,7 +50,7 @@ test("both tRPC doors: bad bearers refused, stale terms gate all but terms.*", a
     }
   });
 
-  const token = await getAccessToken();
+  const token = await getAccessToken(termsGateUser);
 
   await test.step("terms — HTTP door: 412 terms_stale for the app, terms.* exempt", async () => {
     const gated = await fetch(`${baseUrl}/api/trpc/agents.list?batch=1`, {
@@ -117,7 +115,7 @@ test("a bind deep link survives the login roundtrip and the Terms gate (#3107)",
     name: /this link is invalid or has expired/i,
   });
 
-  await submitKeycloakLoginForm(page);
+  await submitKeycloakLoginForm(page, termsGateUser);
   await expect(termsButton.or(expiredLink)).toBeVisible();
   if (await termsButton.isVisible()) await termsButton.click();
 
@@ -127,30 +125,6 @@ test("a bind deep link survives the login roundtrip and the Terms gate (#3107)",
       url.pathname === "/slack/bind" &&
       url.searchParams.get("flow") === bindFlowId,
   );
-});
-
-// TEST_SCENARIO: On a fresh run the deep-link test above has already accepted the terms, so this login may or may not see the terms screen; either way it must end authenticated and persist storage state for the later projects.
-test("login via Keycloak and accept terms", async ({ page }) => {
-  wireBrowserDiagnostics(page);
-  await page.goto(baseUrl);
-
-  await page.waitForURL(/\/realms\/platform\/protocol\/openid-connect\/auth/);
-  await submitKeycloakLoginForm(page);
-
-  const termsButton = page.getByRole("button", {
-    name: /I accept the Terms of Use/,
-  });
-  const appSidebar = page.getByTestId("app-sidebar");
-
-  await expect(termsButton.or(appSidebar)).toBeVisible();
-
-  if (await termsButton.isVisible()) {
-    await termsButton.click();
-    await page.waitForURL(`${baseUrl}/`);
-  }
-  await expect(appSidebar).toBeVisible();
-
-  await page.context().storageState({ path: storageStatePath });
 });
 
 async function deviceGrantPoll(deviceCode: string) {
@@ -210,50 +184,3 @@ test("the CLI's device grant: No refuses the sign-in, Yes grants it", async ({
     expect(poll.access_token).toBeTruthy();
   });
 });
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the state every later project's account holds: the
- * shared account declines the assistant. The suite keeps the chart's mode, so
- * the assistant ships on for everyone, and a lane that does not test it must not
- * meet it — its chat would be where the first sign-in landed, with a provider
- * prompt over the page the specs click on. It runs here, at the end of the auth
- * project, because the flag cannot be stored before the account accepts the
- * Terms: the tests above prove the gate that refuses it, and this file's login
- * is what accepts them.
- */
-test.afterAll(async () => {
-  const api = createApiClient(await getAccessToken());
-  const terms = await api.terms.current.query();
-  await api.terms.accept.mutate({ version: terms.version });
-  await api.features.setFlag.mutate({
-    feature: "dambledore",
-    enabled: false,
-  });
-  await leaveNoAssistant(api);
-});
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the account holds no assistant when the project
- * ends. A create runs behind the request that asked for one, so the switches
- * above may be stored while one is still in flight: the wait lets the record
- * settle, or turns up nothing, and the Agent the record names is then deleted —
- * a later spec counts the Agents it made and must not meet one it did not.
- */
-async function leaveNoAssistant(api: ApiClient): Promise<void> {
-  const deadline = Date.now() + 60_000;
-  let state = await api.assistants.state.query();
-  while ((state === null || !state.ready) && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
-    state = await api.assistants.state.query();
-  }
-  if (state === null) return;
-  const agentId = state.agentId;
-  await api.agents.delete.mutate({ id: agentId });
-  await expect
-    .poll(
-      async () =>
-        (await api.agents.list.query()).some((agent) => agent.id === agentId),
-      { timeout: 120_000, intervals: [2_000] },
-    )
-    .toBe(false);
-}
