@@ -5,9 +5,15 @@ export interface AgentSweep {
   tick(): Promise<void>;
 }
 
+/** UNIT_BOUNDARY_DESCRIPTION: who the sweep is in the security log. It deletes through the owner's Agents service, which is what scopes the delete to the owner's Agent, but the delete is the platform's, so the row names the sweep and not the owner. */
+export const AGENT_SWEEP_ACTOR = {
+  actor: "system:agent-sweep",
+  actorKind: "system",
+} as const;
+
 export interface CreateAgentSweepDeps {
   listAgents: () => Promise<InfraAgent[]>;
-  agentsFor: (owner: string) => AgentsService;
+  agentsFor: (owner: string, as: typeof AGENT_SWEEP_ACTOR) => AgentsService;
 }
 
 function isSweepDue(agent: InfraAgent, now: Date): boolean {
@@ -31,7 +37,7 @@ export function createAgentSweep(deps: CreateAgentSweepDeps): AgentSweep {
         if (!isSweepDue(agent, at)) continue;
         if (!agent.owner) continue;
         try {
-          await deps.agentsFor(agent.owner).delete(agent.id);
+          await deps.agentsFor(agent.owner, AGENT_SWEEP_ACTOR).delete(agent.id);
           reaped += 1;
         } catch (err) {
           process.stderr.write(

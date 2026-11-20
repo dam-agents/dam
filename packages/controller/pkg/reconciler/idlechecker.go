@@ -187,7 +187,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 			continue
 		}
 
-		if ready, _, _ := vmStartConditions(agent); parkedTargetWaits(agent.GetAnnotations(), fmt.Sprint(ready["reason"])) {
+		if ready, podReady, _ := vmStartConditions(agent); parkedTargetWaits(agent.GetAnnotations(), fmt.Sprint(ready["reason"]), fmt.Sprint(podReady["reason"])) {
 			continue
 		}
 

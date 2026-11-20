@@ -2730,8 +2730,12 @@ export async function bootstrap() {
   const wakeAgentFor = async (agentId: string) => {
     await agentsRepo.wakeIfHibernated(agentId);
   };
-  const harnessAgentsServiceFor = (owner: string) =>
+  const harnessAgentsServiceFor = (
+    owner: string,
+    as?: { actor: string; actorKind: "user" | "system" },
+  ) =>
     composeAgentsModule({
+      ...as,
       api,
       readSlackLoopGuardDrops: (ids) => loopGuardDrops.readMany(ids),
       storageGate: composeStorageGate({ k8s: k8sClient, owner }),
