@@ -10,6 +10,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { credentialCopyFor } from "../forms/field-copy.js";
+import { EDIT_ACCESS_TITLE } from "../lib/access-choice.js";
 import { parentNoun } from "../lib/connection-hierarchy.js";
 import { childRepair } from "../lib/github-card.js";
 import type {
@@ -97,7 +98,7 @@ export function ConnectionRowActions({
           onClick={narrow}
           data-testid={`catalog-narrow-${connection.id}`}
         >
-          Narrow access
+          {connection.accessChoice ? EDIT_ACCESS_TITLE : "Narrow access"}
         </Button>
       )}
     </div>
@@ -152,7 +153,9 @@ export function ConnectionRowMenu({
           onSelect={maintenance.onEditScope}
           data-testid={`catalog-edit-scope-${connection.id}`}
         >
-          Edit repositories &amp; permissions
+          {connection.accessChoice
+            ? EDIT_ACCESS_TITLE
+            : "Edit repositories & permissions"}
         </DropdownMenuItem>
       )}
       {maintenance?.onUpdateCredential && (

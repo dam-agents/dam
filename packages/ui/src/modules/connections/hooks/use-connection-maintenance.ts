@@ -81,7 +81,8 @@ export function useConnectionMaintenance() {
           ...(connection.hasClientSecret
             ? { onUpdateCredential: () => openUpdate(connection) }
             : {}),
-          ...(connection.githubUserToken && connection.status !== "pending"
+          ...(connection.accessChoice ||
+          (connection.githubUserToken && connection.status !== "pending")
             ? { onEditScope: () => openEditScope(connection) }
             : {}),
         };

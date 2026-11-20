@@ -46,8 +46,7 @@ export function SlackChannelExplainer({
         from the {getBrand().name} bot, signed with the agent&apos;s name.
       </p>
       <p>
-        Want the agent to use your Slack access to monitor or post on your
-        behalf?{" "}
+        Want the agent to read your Slack, or post on your behalf?{" "}
         <CrossLink
           label="Use a Slack connection"
           onFollow={onGoToConnections}
@@ -75,8 +74,9 @@ export function SlackAccountExplainer({
     >
       <p>
         Lets {forAgent ? "this agent" : "an agent"} use your Slack account to
-        search, read, and post anywhere you can. Its posts come from you, not
-        the {getBrand().name} bot.
+        search and read anywhere you can. It is read only unless you let it post
+        as you: then it also posts anywhere you can, and those posts come from
+        you, not the {getBrand().name} bot.
       </p>
       <p>
         Want people to chat with {forAgent ? "the agent" : "an agent"} in Slack?{" "}

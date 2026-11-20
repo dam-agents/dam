@@ -19,6 +19,7 @@ import {
 } from "../forms/field-copy.js";
 import { LabeledInput } from "../forms/labeled-input.js";
 import { mutationMessage } from "../lib/mutation-message.js";
+import { ConnectionEditAccessDialog } from "./connection-edit-access-dialog.js";
 import { ConnectionEditGithubAppScopeDialog } from "./connection-edit-github-app-scope-dialog.js";
 import { ConnectionEditGithubUserTokenScopeDialog } from "./connection-edit-github-user-token-scope-dialog.js";
 import { ConnectionMoveHostDialog } from "./connection-move-host-dialog.js";
@@ -44,6 +45,14 @@ export function ConnectionMaintenanceDialog({
       <ConnectionMoveHostDialog
         {...maintenance.movingHost}
         onClose={maintenance.closeMoveHost}
+      />
+    );
+  }
+  if (maintenance.editingScope?.accessChoice && maintenance.closeEditScope) {
+    return (
+      <ConnectionEditAccessDialog
+        connection={maintenance.editingScope}
+        onClose={maintenance.closeEditScope}
       />
     );
   }

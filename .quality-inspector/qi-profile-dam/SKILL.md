@@ -123,6 +123,11 @@ Builds published before these accounts were added have only `qa-owner`; there an
     So each request goes in a thread of its own: a root without a mention (`personSays(text)`), then the mention in that thread (`personSays(text, root)`), then `botReplies(root)`.
     A task that should post in Slack gets a thread of its own the same way: the root, then its link (`threadLink(root)`) in the task's prompt, then `botReplies(root)` for the agent's post — a post at the channel's top level would share one count with every other run's posts there and could be dropped.
     A Mock agent answers a Slack mention in the thread with its scripted reply, without a model.
+  - **The Slack Account connection** is not a channel: it gives an agent its owner's own Slack, through Slack's sign-in (Settings → Connections → Slack Account).
+    Its form asks what agents can do with it: **Read only**, the default, or **Can post as me**.
+    Every row of the connection, also under an agent's **Connections**, says which in the line under its name (*Read only: …* or *Searches, reads and posts as you*), and one that can post also carries the red mark *Can post as me*; *Change access* in the row's menu switches between them.
+    With *Read only* the platform refuses every Slack tool that posts or changes something, and the agent says so in its reply.
+    A test never drives Slack's own sign-in pages, so a criterion that needs the connection signed in is `blocked — Slack sign-in`, never failed; one that checks only the form, the marks or the dialog stays testable.
   - **Testability limit — Slack account linking.**
     A user links their Slack account only inside Slack: `/dam login` (then a DAM sign-in page), or `/dam bind` typed in the channel itself.
     The test person writes through Slack's API, which cannot send a slash command, and a test never drives Slack's own app.
