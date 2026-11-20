@@ -126,7 +126,10 @@ export function createSessionsService(deps: {
   sessionMetadata: SessionMetadataStore;
   isRunning: (sessionId: string) => boolean;
   changes: SessionChanges;
-  sessionFrames: (sessionId: string) => SessionHistory;
+  sessionFrames: (
+    sessionId: string,
+    opts?: { tail?: number; history?: readonly string[] },
+  ) => SessionHistory & { needsHistory?: boolean };
   delegations: DelegationFramesStore;
   historyProvider?: HistoryProvider;
   terminalSessionPins?: () => PlatformSessionOf;
@@ -231,13 +234,27 @@ export function createSessionsService(deps: {
      * over the chat protocol, for a caller that wants to keep the conversation
      * rather than show it. The live transcript answers while the session is
      * loaded; otherwise the harness image's own history provider does, which is
-     * the same source a cold re-attach replays from. Neither having anything is
+     * the same source a cold re-attach replays from. When the transcript no
+     * longer holds the bytes of an image in its tail, or evicted the start of
+     * the conversation, that provider's history fills what the read returns.
+     * Neither having anything is
      * an empty answer, not a failure: a harness that declares no provider, or a
      * session that produced nothing, has nothing to keep.
      */
     async history(sessionId, opts): Promise<SessionHistory> {
-      const live = deps.sessionFrames(sessionId);
-      if (live.frames.length > 0) return newestTail(live, opts?.tail);
+      const tail = opts?.tail;
+      let live = deps.sessionFrames(sessionId, { tail });
+      if (live.needsHistory && deps.historyProvider) {
+        const history = await deps.historyProvider
+          .fetch(sessionId)
+          .catch(() => null);
+        if (history) live = deps.sessionFrames(sessionId, { tail, history });
+      }
+      if (live.frames.length > 0)
+        return newestTail(
+          { frames: live.frames, truncated: live.truncated },
+          tail,
+        );
       const stored = await deps.historyProvider?.fetch(sessionId);
       return stored
         ? newestTail({ frames: stored, truncated: false }, opts?.tail)

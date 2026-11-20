@@ -145,6 +145,13 @@ export interface SessionBootstrapDeps {
  * harness load.
  * fill runs the same cold fill for the runtime itself, with no client
  * waiting: it reports whether the transcript now holds the session.
+ * A load or a page whose replay reaches what the transcript no longer holds —
+ * the bytes of an image it dropped over its cap, or the start of a
+ * conversation it evicted — first reads the harness's own history from the
+ * provider and hands it to the transcript, which fills the replay from it; a
+ * load just filled from the provider hands over the lines it was filled
+ * from. With no provider, or one that fails, the replay goes on from the
+ * transcript alone.
  */
 export function createSessionBootstrap(
   deps: SessionBootstrapDeps,
@@ -215,6 +222,7 @@ export function createSessionBootstrap(
     sessionId: string,
     tail: boolean,
     loadToken?: string,
+    history?: readonly string[],
   ): void {
     const metadata = deps.transcript.metadataOf(sessionId);
     if (!metadata.cached) {
@@ -228,6 +236,7 @@ export function createSessionBootstrap(
         clip = deps.transcript.catchUp(channel, sessionId, {
           tail,
           replayFor: loadToken,
+          ...(history && { history }),
         });
         deps.engage(channel, sessionId);
       })
@@ -251,6 +260,94 @@ export function createSessionBootstrap(
         kind === "load" ? deps.queueOf(sessionId) : [],
         kind === "load" ? deps.continuedFromOf(sessionId) : null,
         kind === "load" ? deps.attributionOf(sessionId) : NO_ATTRIBUTION,
+        deps.capabilities(),
+      ),
+    });
+    if (channel.isOpen()) channel.send(rewriteAuthError(response));
+  }
+
+  function loadFromLog(
+    channel: ClientChannel,
+    originalId: JsonRpcId,
+    sessionId: string,
+    tail: boolean,
+    loadToken: string | undefined,
+  ): void {
+    const provider = deps.historyProvider;
+    if (
+      !provider ||
+      !deps.transcript.catchUpNeedsHistory(channel, sessionId, { tail })
+    ) {
+      respondFromLog("load", channel, originalId, sessionId, tail, loadToken);
+      return;
+    }
+    void provider
+      .fetch(sessionId)
+      .catch(() => null)
+      .then((history) => {
+        if (!channel.isOpen()) return;
+        if (!deps.transcript.metadataOf(sessionId).cached) {
+          park(sessionId, {
+            kind: "load",
+            channel,
+            originalId,
+            tail,
+            loadToken,
+          });
+          return;
+        }
+        respondFromLog(
+          "load",
+          channel,
+          originalId,
+          sessionId,
+          tail,
+          loadToken,
+          history ?? undefined,
+        );
+      });
+  }
+
+  function sendPage(
+    channel: ClientChannel,
+    originalId: JsonRpcId,
+    sessionId: string,
+    cursor: string,
+    loadToken: string | undefined,
+    history?: readonly string[],
+  ): void {
+    const metadata = deps.transcript.metadataOf(sessionId);
+    const page = metadata.cached
+      ? deps.transcript.replayPage(channel, sessionId, cursor, {
+          replayFor: loadToken,
+          ...(history && { history }),
+        })
+      : ({ ok: false } as const);
+    if (!metadata.cached || !page.ok) {
+      const error = JSON.stringify({
+        jsonrpc: "2.0",
+        id: originalId,
+        error: {
+          code: -32602,
+          message: "replay window expired; load the session again",
+        },
+      });
+      if (channel.isOpen()) channel.send(error);
+      return;
+    }
+    const response = JSON.stringify({
+      jsonrpc: "2.0",
+      id: originalId,
+      result: withReplayMeta(
+        metadata.value,
+        page.clip,
+        null,
+        [],
+        [],
+        [],
+        [],
+        null,
+        NO_ATTRIBUTION,
         deps.capabilities(),
       ),
     });
@@ -322,6 +419,7 @@ export function createSessionBootstrap(
         sessionId,
         waiter.tail,
         waiter.loadToken,
+        served,
       );
     }
   }
@@ -404,14 +502,7 @@ export function createSessionBootstrap(
     requestLoad(channel, originalId, sessionId, opts) {
       const tail = opts?.tail ?? false;
       if (deps.transcript.metadataOf(sessionId).cached) {
-        respondFromLog(
-          "load",
-          channel,
-          originalId,
-          sessionId,
-          tail,
-          opts?.loadToken,
-        );
+        loadFromLog(channel, originalId, sessionId, tail, opts?.loadToken);
         return;
       }
       park(sessionId, {
@@ -424,41 +515,29 @@ export function createSessionBootstrap(
     },
 
     requestPage(channel, originalId, sessionId, cursor, opts) {
-      const metadata = deps.transcript.metadataOf(sessionId);
-      if (metadata.cached) {
-        const page = deps.transcript.replayPage(channel, sessionId, cursor, {
-          replayFor: opts?.loadToken,
-        });
-        if (page.ok) {
-          const response = JSON.stringify({
-            jsonrpc: "2.0",
-            id: originalId,
-            result: withReplayMeta(
-              metadata.value,
-              page.clip,
-              null,
-              [],
-              [],
-              [],
-              [],
-              null,
-              NO_ATTRIBUTION,
-              deps.capabilities(),
-            ),
-          });
-          if (channel.isOpen()) channel.send(rewriteAuthError(response));
-          return;
-        }
+      const provider = deps.historyProvider;
+      if (
+        !provider ||
+        !deps.transcript.metadataOf(sessionId).cached ||
+        !deps.transcript.pageNeedsHistory(sessionId, cursor)
+      ) {
+        sendPage(channel, originalId, sessionId, cursor, opts?.loadToken);
+        return;
       }
-      const error = JSON.stringify({
-        jsonrpc: "2.0",
-        id: originalId,
-        error: {
-          code: -32602,
-          message: "replay window expired; load the session again",
-        },
-      });
-      if (channel.isOpen()) channel.send(error);
+      void provider
+        .fetch(sessionId)
+        .catch(() => null)
+        .then((history) => {
+          if (!channel.isOpen()) return;
+          sendPage(
+            channel,
+            originalId,
+            sessionId,
+            cursor,
+            opts?.loadToken,
+            history ?? undefined,
+          );
+        });
     },
 
     fill(sessionId, done, adjustLines) {
