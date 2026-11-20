@@ -141,6 +141,18 @@ export interface EgressDriver {
   answerOnceInChat(person: Person, agentName: string): Promise<void>;
 }
 
+export interface AssistantDriver {
+  switchTo(person: Person, on: boolean): Promise<void>;
+  openChat(person: Person): Promise<void>;
+  expectGreeting(
+    person: Person,
+    greeting: string,
+    ideas: string[],
+  ): Promise<void>;
+  pickIdea(person: Person, label: string): Promise<void>;
+  expectComposerHolds(person: Person, text: string): Promise<void>;
+}
+
 export interface SessionsDriver {
   expectListed(
     person: Person,
@@ -175,7 +187,7 @@ export interface ArtifactsDriver {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability (session, agents, chat, sessions, live views, environment, egress, artifacts, connections), independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
+ * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability (session, agents, chat, sessions, live views, environment, egress, assistant, artifacts, connections), independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
  */
 export interface Driver {
   readonly surface: Surface;
@@ -187,5 +199,6 @@ export interface Driver {
   readonly sessions: SessionsDriver;
   readonly environment: EnvironmentDriver;
   readonly egress: EgressDriver;
+  readonly assistant: AssistantDriver;
   readonly live: LiveDriver;
 }
