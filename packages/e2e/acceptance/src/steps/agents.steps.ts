@@ -8,13 +8,13 @@ const { Given, When, Then } = createBdd(test);
 Given(
   "{word} has a running agent called {string}",
   async ({ setup }, persona: Persona, name: string) =>
-    setup.runningAgent(persona, name, undefined),
+    setup.runningAgent(persona, name),
 );
 
 Given(
   "{word} has a running agent called {string} that answers {string}",
   async ({ setup }, persona: Persona, name: string, answer: string) =>
-    setup.runningAgent(persona, name, answer),
+    setup.runningAgent(persona, name, { answer }),
 );
 
 When(

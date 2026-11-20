@@ -1,5 +1,6 @@
 import type { World } from "../../world.js";
 import type { Driver } from "../driver.js";
+import { apiArtifacts } from "./artifacts.js";
 import { apiAgents } from "./agents.js";
 import { apiChat } from "./chat.js";
 import { apiSession } from "./session.js";
@@ -13,5 +14,6 @@ export function apiDriver(world: World): Driver {
     session: apiSession(world),
     agents: apiAgents(world),
     chat: apiChat(world),
+    artifacts: apiArtifacts(world),
   };
 }

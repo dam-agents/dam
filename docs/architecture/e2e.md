@@ -109,7 +109,9 @@ Each Playwright worker signs in as the accounts of its own slot, `acceptance-<pe
 A worker's first use of an account connects a model provider, because the web UI lets a person write to an Agent only once one is connected, and an Agent made afterwards gets it as its default provider.
 The suite runs one worker, with one slot: every owner gets a VM runner of its own that reserves memory, so each extra slot costs the node three runners beside the smoke suite's Agents, and a second slot left a CI node without the memory to boot a machine.
 A slot keeps booted mock Agents, marked by their description, that the Given steps rename and give an answer: an Example costs seconds instead of a machine boot, and a later worker of the slot wakes and reuses them.
-A Given step sets the answer as the Agent's `MOCK_DEFAULT_REPLY` and waits until the Agent reports it, because the mock starts a new process for a new Session and each process takes its first script from that variable.
+A Given step scripts an Agent through its environment, because the mock starts a new process for a new Session and each process takes its first script from there: `MOCK_DEFAULT_REPLY` is the answer, and `MOCK_TOOL_CALL` names a platform tool, with its arguments, that the Agent calls on every turn before it answers.
+The call goes to the Agent's platform MCP server the way a real harness's does, and the turn reports it as a `tool_call` and a `tool_call_update` carrying the tool's result, so an artifact the tool publishes reaches the library, attributed to the Agent and its Session, as one a real model's call publishes.
+A Given step sets the answer when the Example names one, sets or clears the tool call on every warm Agent it takes, and waits until the Agent reports both.
 A failed test carries its own log bundle in the report: the Playwright trace and a screenshot of every persona's page, the ACP frames and Agent listings the API driver saw, and the state of every Agent it named.
 The job summary times the suite as its own phase beside the smoke suite.
 

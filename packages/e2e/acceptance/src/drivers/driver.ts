@@ -22,12 +22,22 @@ export interface ChatDriver {
   ): Promise<void>;
 }
 
+export interface ArtifactsDriver {
+  expectInLibrary(person: Person, title: string): Promise<void>;
+  expectPublishedBy(
+    person: Person,
+    title: string,
+    agentName: string,
+  ): Promise<void>;
+}
+
 /**
- * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability, independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
+ * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability (session, agents, chat, artifacts), independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
  */
 export interface Driver {
   readonly surface: Surface;
   readonly session: SessionDriver;
   readonly agents: AgentsDriver;
   readonly chat: ChatDriver;
+  readonly artifacts: ArtifactsDriver;
 }
