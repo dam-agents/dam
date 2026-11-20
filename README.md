@@ -1,18 +1,5 @@
- <p align="center">
-  <img src="docs/assets/dam-dark.svg#gh-light-mode-only" alt="DAM" />
-  <img src="docs/assets/dam-light.svg#gh-dark-mode-only" alt="DAM" />
-</p>
-
-<p align="center">
-  <img src="docs/assets/readme-hero.svg" alt="A dense cluster of agents: some work heads down at a laptop with headphones, some chat, some sleep until someone needs them." width="480" />
-</p>
-
-<h3 align="center">
-Engineering agents that run your entire stack.<br />
-AI teammates that work with you in Slack.
-</h3>
-
-<p align="center">An open platform to run them densely on your Kubernetes.</p>
+<img src="docs/assets/readme-hero.svg#gh-light-mode-only" alt="DAM: Run AI agents on your own Kubernetes. Each agent runs in its own VM, works with your team in Slack, connects to GitHub and your other tools, and never holds your credentials.">
+<img src="docs/assets/readme-hero-dark.svg#gh-dark-mode-only" alt="DAM: Run AI agents on your own Kubernetes. Each agent runs in its own VM, works with your team in Slack, connects to GitHub and your other tools, and never holds your credentials.">
 
 <p align="center">
   <a href="#get-started"><strong>Get started</strong></a>
