@@ -62,11 +62,37 @@ export interface ConnectionsDriver {
 }
 
 export interface ChatDriver {
-  send(person: Person, name: string, text: string): Promise<void>;
+  send(
+    person: Person,
+    name: string,
+    text: string,
+    verbatim?: boolean,
+  ): Promise<void>;
+  expectAnswerWithout(
+    person: Person,
+    name: string,
+    text: string,
+  ): Promise<void>;
   expectAnswer(
     person: Person,
     name: string,
     text: string | undefined,
+  ): Promise<void>;
+}
+
+export interface EnvironmentDriver {
+  set(
+    person: Person,
+    agentName: string,
+    name: string,
+    value: string,
+  ): Promise<void>;
+  remove(person: Person, agentName: string, name: string): Promise<void>;
+  expectShown(
+    person: Person,
+    agentName: string,
+    name: string,
+    value: string,
   ): Promise<void>;
 }
 
@@ -104,7 +130,7 @@ export interface ArtifactsDriver {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability (session, agents, chat, sessions, live views, artifacts, connections), independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
+ * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability (session, agents, chat, sessions, live views, environment, artifacts, connections), independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
  */
 export interface Driver {
   readonly surface: Surface;
@@ -114,5 +140,6 @@ export interface Driver {
   readonly artifacts: ArtifactsDriver;
   readonly connections: ConnectionsDriver;
   readonly sessions: SessionsDriver;
+  readonly environment: EnvironmentDriver;
   readonly live: LiveDriver;
 }

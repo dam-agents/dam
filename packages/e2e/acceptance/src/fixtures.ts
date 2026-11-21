@@ -2,8 +2,9 @@ import { mkdirSync } from "node:fs";
 
 import { type Browser, expect, type Page } from "@playwright/test";
 import { test as base } from "playwright-bdd";
+import { connectionEgressPlaceholder } from "api-server-api";
 
-import { acpRequest, promptOnce } from "./acp.js";
+import { acpRequest, promptOnce, promptWhenSettled } from "./acp.js";
 import { signInThroughTheBrowser } from "./auth.js";
 import { mockTemplateId } from "./config.js";
 import { apiDriver } from "./drivers/api/index.js";
@@ -28,14 +29,18 @@ interface Cast {
   person(persona: Persona): Promise<Person>;
   storageState(persona: Persona): Promise<string>;
   warmAgent(persona: Persona, index: number): Promise<string>;
+  forgetWarm(persona: Persona, id: string): void;
 }
 
 interface Setup {
   connection(
     persona: Persona,
     name: string,
-    kind: { host: string; variable?: boolean } | { provider: "openai" },
+    kind:
+      | { host: string; variable?: boolean; key?: string; envName?: string }
+      | { provider: "openai" },
   ): Promise<void>;
+  allowAll(persona: Persona, host: string, agent: string): Promise<void>;
   grant(persona: Persona, connection: string, agent: string): Promise<void>;
   agent(persona: Persona, name: string): Promise<void>;
   sleep(agent: string): Promise<void>;
@@ -43,7 +48,11 @@ interface Setup {
   runningAgent(
     persona: Persona,
     name: string,
-    behaviour?: { answer?: string; publishes?: string },
+    behaviour?: {
+      answer?: string;
+      publishes?: string;
+      requiresNaming?: boolean;
+    },
   ): Promise<void>;
 }
 
@@ -107,6 +116,11 @@ export const test = base.extend<
             );
           return states.get(persona)!;
         },
+        forgetWarm: (persona, id) => {
+          const agents = warm.get(persona) ?? [];
+          const index = agents.indexOf(id);
+          if (index >= 0) delete agents[index];
+        },
         warmAgent: async (persona, index) => {
           const agents = warm.get(persona) ?? [];
           warm.set(persona, agents);
@@ -158,13 +172,15 @@ export const test = base.extend<
       connection: async (persona, name, kind) => {
         const owner = await cast.person(persona);
         const unique = world.unique(name);
-        const made =
+        const input =
           "host" in kind
-            ? await owner.api.connections.create.mutate(
-                customHeader(world, name, kind.host, kind.variable),
-              )
+            ? customHeader(world, name, kind.host, kind)
+            : undefined;
+        const made =
+          input !== undefined
+            ? await owner.api.connections.create.mutate(input)
             : await owner.api.connections.create.mutate({
-                templateId: kind.provider,
+                templateId: "openai",
                 name: unique,
                 authKind: "header",
                 value: "sk-acceptance-second-key",
@@ -173,6 +189,10 @@ export const test = base.extend<
           owner: persona,
           name: unique,
           id: made.id,
+          host: input?.host,
+          secret:
+            "key" in kind && kind.key !== undefined ? input?.value : undefined,
+          envName: input?.envName,
         });
         world.made.push({ kind: "connection", owner: persona, id: made.id });
         world.note({
@@ -186,10 +206,27 @@ export const test = base.extend<
         const owner = await cast.person(persona);
         const agentId = world.agent(agent).id;
         const connectionId = world.connection(connection).id;
+        // UNIT_BOUNDARY_DESCRIPTION: a warm agent may still hold a connection an earlier example made, while its removal reaches the agent; one to the same host is let go first, so the grant meets only what this example made.
+        const grantedHost = world.connection(connection).host;
+        const owned = await owner.api.connections.list.query();
+        const ours = new Set([...world.connections.values()].map((c) => c.id));
+        const stale = (
+          await owner.api.connections.getAgentConnections.query({ agentId })
+        ).connections
+          .map((c) => owned.find((o) => o.id === c.connectionId))
+          .filter(
+            (c) =>
+              c !== undefined &&
+              !ours.has(c.id) &&
+              c.templateId === "custom-header" &&
+              grantedHost !== undefined &&
+              JSON.stringify(c).includes(grantedHost),
+          )
+          .map((c) => c!.id);
         await owner.api.connections.updateAgentConnections.mutate({
           agentId,
           grant: [connectionId],
-          revoke: [],
+          revoke: stale,
         });
         await expect
           .poll(
@@ -202,6 +239,85 @@ export const test = base.extend<
             { timeout: 30_000, message: `${agent} never held ${connection}` },
           )
           .toContain(connectionId);
+        const { host, secret, envName } = world.connection(connection);
+        if (host === undefined || secret === undefined || envName === undefined)
+          return;
+        const placeholder = connectionEgressPlaceholder(connectionId);
+        await expect
+          .poll(
+            async () =>
+              (
+                await owner.api.e2e.performFetch
+                  .mutate({
+                    agentId,
+                    url: `https://${host}/headers`,
+                    headers: { "x-api-key": placeholder },
+                  })
+                  .catch(() => ({ body: "" }))
+              ).body,
+            {
+              timeout: 180_000,
+              intervals: [3_000],
+              message: `${agent}'s gateway never put ${connection}'s secret on a request to ${host}`,
+            },
+          )
+          .toContain(secret);
+        await expect
+          .poll(
+            async () => {
+              const turn = await promptWhenSettled(
+                agentId,
+                await owner.token(),
+                `__ENV__ ${envName}`,
+              ).catch(() => undefined);
+              if (turn === undefined) return "";
+              world.made.push({
+                kind: "session",
+                owner: persona,
+                id: turn.sessionId,
+                agentId,
+              });
+              return turn.reply.trim();
+            },
+            {
+              timeout: 120_000,
+              intervals: [3_000],
+              message: `${agent} never ran with ${connection}'s placeholder in ${envName}`,
+            },
+          )
+          .toBe(`[env ${envName}] ${placeholder}`);
+      },
+      allowAll: async (persona, host, agent) => {
+        const owner = await cast.person(persona);
+        const rule = await owner.api.egressRules.create.mutate({
+          agentId: world.agent(agent).id,
+          host,
+          verdict: "allow",
+        });
+        world.undo.push(() =>
+          owner.api.egressRules.revoke.mutate({ id: rule.id }),
+        );
+        const agentId = world.agent(agent).id;
+        await expect
+          .poll(
+            async () =>
+              (
+                await owner.api.e2e.performFetch
+                  .mutate({
+                    agentId,
+                    url: `https://${host}/status/204`,
+                    timeoutMs: 15_000,
+                  })
+                  .catch(() => ({ status: 0 }))
+              ).status,
+            {
+              timeout: 120_000,
+              intervals: [3_000],
+              message: `${agent}'s rule for all of ${host} never took effect`,
+            },
+          )
+          .not.toBe(0);
+        world.note({ step: "egress allowed", host, agent, rule: rule.id });
       },
       agent: async (persona, name) => {
         const owner = await cast.person(persona);
@@ -247,8 +363,39 @@ export const test = base.extend<
           )
           .toBe("hibernated");
         world.note({ step: "agent asleep", name: agent.name });
+        world.undo.push(async () => {
+          await owner.api.agents.wake.mutate({ id: agent.id }).catch(() => {});
+          const up = await expect
+            .poll(
+              async () =>
+                (await owner.api.agents.get.query({ id: agent.id })).state,
+              { timeout: 240_000, intervals: [2_000] },
+            )
+            .toBe("running")
+            .then(
+              () => true,
+              () => false,
+            );
+          const { description } = await owner.api.agents.get.query({
+            id: agent.id,
+          });
+          if (up || description?.endsWith(" kb")) return;
+          // UNIT_BOUNDARY_DESCRIPTION: a warm agent that does not come back from its sleep is retired, so the examples after this one get a new one instead of waiting on it; this example's own steps have already failed if the wake mattered to it.
+          await owner.api.agents.update.mutate({
+            id: agent.id,
+            description: "retired",
+          });
+          await owner.api.agents.delete
+            .mutate({ id: agent.id })
+            .catch(() => {});
+          cast.forgetWarm(agent.owner, agent.id);
+        });
       },
-      runningAgent: async (persona, name, { answer, publishes } = {}) => {
+      runningAgent: async (
+        persona,
+        name,
+        { answer, publishes, requiresNaming } = {},
+      ) => {
         const index = allocated.get(persona) ?? 0;
         allocated.set(persona, index + 1);
         const id = await cast.warmAgent(persona, index);
@@ -313,10 +460,53 @@ export const test = base.extend<
               },
             )
             .toBe(value);
+        for (const [envName, value] of wanted) {
+          const expected =
+            value === null
+              ? `[env ${envName} unset]`
+              : `[env ${envName}] ${value}`;
+          await expect
+            .poll(
+              async () => {
+                const turn = await promptWhenSettled(
+                  id,
+                  await owner.token(),
+                  `__ENV__ ${envName}`,
+                ).catch(() => undefined);
+                if (turn === undefined) return "";
+                world.made.push({
+                  kind: "session",
+                  owner: persona,
+                  id: turn.sessionId,
+                  agentId: id,
+                });
+                return turn.reply.trim();
+              },
+              {
+                timeout: 120_000,
+                intervals: [2_000],
+                message: `${persona}'s agent never ran with ${envName}`,
+              },
+            )
+            .toBe(expected);
+        }
         world.agents.set(name, { owner: persona, name: unique, id });
+        if (requiresNaming !== undefined) {
+          await owner.api.agents.setCredentialInjection.mutate({
+            id,
+            requireConnectionAddress: requiresNaming,
+          });
+          world.undo.push(() =>
+            owner.api.agents.setCredentialInjection.mutate({
+              id,
+              requireConnectionAddress: true,
+            }),
+          );
+        }
         world.note({ step: "agent ready", persona, name: unique, id });
       },
     });
+    for (const undo of world.undo.reverse()) await undo().catch(() => {});
     for (const item of world.made.reverse()) {
       const owner = await cast.person(item.owner);
       if (item.kind === "agent")

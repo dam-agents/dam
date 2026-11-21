@@ -149,3 +149,21 @@ export async function acpRequest(
     ws.close();
   }
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: one chat turn that waits out a harness the agent is recycling for an environment change: the relay closes a connection a recycle cuts short, and the turn is sent again, at most three times.
+ */
+export async function promptWhenSettled(
+  agentId: string,
+  token: string,
+  text: string,
+): Promise<Turn> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await promptOnce(agentId, token, text);
+    } catch (error) {
+      if (attempt >= 3 || !String(error).includes("recycled")) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
+    }
+  }
+}
