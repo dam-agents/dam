@@ -92,6 +92,8 @@ A provider that cannot say leaves the key unverified; the CurveBender deployment
 The result of that check and its time are kept on the Connection, since a key that worked when it was saved can be revoked or expire later; the owner can recheck the keys of all their provider Connections at once, server-side, which Settings › Providers also does each time it opens, and a key the provider refuses then reads as refused until it is replaced.
 A rotation rewrites the credential and its SDS — or, for a key pair, the credentials file the gateway signs with — onto the same per-Connection Secret; nothing else moves — identity, contributions and every agent grant are preserved, and since the live value is read gateway-side, no Agent-spec patch or pod roll is needed.
 A static key pair has no expiry and no horizon: it reads active until it is rotated or the Connection is removed.
+Removing a Connection takes it from every Agent it is granted to, and those Agents are delivered again without it.
+A Connection made from an Agent's own connections, in its settings, is granted to that Agent as it is made.
 A credential can also be typed on a **secret-entry page** of the web app instead of into the client that asked for it.
 The client hands the api-server every input except the secret and gets a single-use link that expires after ten minutes; the request lives in Redis and the link carries only a random id.
 The page and its submit run as the signed-in user and refuse a request another user made, so a link sent to someone else collects nothing.

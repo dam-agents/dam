@@ -1,10 +1,5 @@
 {
   "specs": {
-    "12-connection-regrant": [
-      "packages/api-server/src/modules/connections",
-      "packages/ui/src/modules/connections",
-      "packages/ui/src/modules/sandboxes/components/connections-section.tsx"
-    ],
     "18-satellites": [
       "packages/api-server/src/modules/satellites",
       "packages/api-server-api/src/modules/satellites",

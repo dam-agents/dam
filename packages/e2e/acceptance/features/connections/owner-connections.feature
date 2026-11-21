@@ -2,6 +2,13 @@ Feature: An owner's connections
   A connection holds what an agent needs to reach one external service.
   It belongs to the person who made it.
 
+  Rule: An owner makes a connection to a service
+
+    @ui
+    Example: Ada makes a connection to the weather service
+      When Ada makes a connection called "weather" to "api.weather.test"
+      Then Ada sees a connection called "weather"
+
   Rule: An owner's connections are listed for that owner only
 
     @ui
