@@ -67,6 +67,8 @@ export class World {
   }[] = [];
   readonly closers: (() => void)[] = [];
   readonly keys = new Map<string, HeldKey>();
+  /** UNIT_BOUNDARY_DESCRIPTION: the ids of browser tabs an example closed, by agent and title, so a later step can name a tab that is gone. */
+  readonly browserTabs = new Map<string, string>();
   outcome: Outcome | undefined;
   /** UNIT_BOUNDARY_DESCRIPTION: the requests an agent holds for its owner's verdict, by agent: the approval that waits and what each request got back once answered. */
   readonly held = new Map<
