@@ -4,6 +4,7 @@ import { type Browser, expect, type Page } from "@playwright/test";
 import { test as base } from "playwright-bdd";
 
 import { signInThroughTheBrowser } from "./auth.js";
+import { mockTemplateId } from "./config.js";
 import { apiDriver } from "./drivers/api/index.js";
 import type { Driver, Surface } from "./drivers/driver.js";
 import { uiDriver } from "./drivers/ui/index.js";
@@ -35,6 +36,8 @@ interface Setup {
     kind: { host: string; variable?: boolean } | { provider: "openai" },
   ): Promise<void>;
   grant(persona: Persona, connection: string, agent: string): Promise<void>;
+  agent(persona: Persona, name: string): Promise<void>;
+  sleep(agent: string): Promise<void>;
   runningAgent(
     persona: Persona,
     name: string,
@@ -197,11 +200,60 @@ export const test = base.extend<
           )
           .toContain(connectionId);
       },
+      agent: async (persona, name) => {
+        const owner = await cast.person(persona);
+        const made = await owner.api.agents.create.mutate({
+          name: world.unique(name),
+          templateId: mockTemplateId,
+        });
+        world.agents.set(name, {
+          owner: persona,
+          name: made.name,
+          id: made.id,
+        });
+        world.made.push({ kind: "agent", owner: persona, id: made.id });
+        world.note({
+          step: "agent made",
+          persona,
+          name: made.name,
+          id: made.id,
+        });
+      },
+      sleep: async (name) => {
+        const agent = world.agent(name);
+        const owner = await cast.person(agent.owner);
+        await owner.api.agents.sleep.mutate({ id: agent.id });
+        await expect
+          .poll(
+            async () =>
+              (await owner.api.agents.get.query({ id: agent.id })).state,
+            {
+              timeout: 120_000,
+              intervals: [1_000, 2_000],
+              message: `${agent.name} did not fall asleep`,
+            },
+          )
+          .toBe("hibernated");
+        world.note({ step: "agent asleep", name: agent.name });
+      },
       runningAgent: async (persona, name, { answer, publishes } = {}) => {
         const index = allocated.get(persona) ?? 0;
         allocated.set(persona, index + 1);
         const id = await cast.warmAgent(persona, index);
         const owner = await cast.person(persona);
+        if ((await owner.api.agents.get.query({ id })).state !== "running") {
+          await owner.api.agents.wake.mutate({ id });
+          await expect
+            .poll(
+              async () => (await owner.api.agents.get.query({ id })).state,
+              {
+                timeout: 240_000,
+                intervals: [1_000, 2_000],
+                message: `${persona}'s warm agent did not wake`,
+              },
+            )
+            .toBe("running");
+        }
         const unique = world.unique(name);
         await owner.api.agents.update.mutate({ id, name: unique });
         const wanted = new Map<string, string | null>([

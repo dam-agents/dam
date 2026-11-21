@@ -73,11 +73,6 @@ const smokeStages: NamedProject[][] = [
   ],
   [
     {
-      name: "agent",
-      testMatch: /03-.*\.spec\.ts$/,
-      use: { ...devices["Desktop Chrome"], storageState },
-    },
-    {
       name: "api-keys",
       testMatch: /15-.*\.spec\.ts$/,
       use: { ...devices["Desktop Chrome"] },

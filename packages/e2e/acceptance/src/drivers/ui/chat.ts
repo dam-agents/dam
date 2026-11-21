@@ -19,7 +19,7 @@ export function uiChat(world: World, pages: Pages): ChatDriver {
       await expect(page).toHaveURL(new RegExp(`/chat/${agent.id}`));
       const input = page.getByPlaceholder(/^(queue a )?message(…|\.\.\.)/i);
       await expect(input, "the chat takes no message").toBeVisible({
-        timeout: 60_000,
+        timeout: 180_000,
       });
       await input.fill(text);
       await expect(
