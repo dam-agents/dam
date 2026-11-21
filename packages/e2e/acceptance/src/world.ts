@@ -1,3 +1,4 @@
+import type { HeldKey, Outcome } from "./keys.js";
 import type { Persona } from "./people.js";
 
 export interface ConnectionRecord {
@@ -65,6 +66,8 @@ export class World {
     agentId?: string;
   }[] = [];
   readonly closers: (() => void)[] = [];
+  readonly keys = new Map<string, HeldKey>();
+  outcome: Outcome | undefined;
   /** UNIT_BOUNDARY_DESCRIPTION: the requests an agent holds for its owner's verdict, by agent: the approval that waits and what each request got back once answered. */
   readonly held = new Map<
     string,

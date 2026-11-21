@@ -95,6 +95,9 @@ It accepts either a Keycloak access token or a Platform **API key** (`pk_…` pr
 There is no `--token` flag, to keep tokens out of shell history and `ps`.
 
 **API keys** (`dam auth token`) mint, list, and revoke long-lived keys scoped to a set of capabilities and optionally bound to specific agents.
+Any agent scope reads the owner's Agents; `agents:operate` also runs a live Agent — its approvals, workspace files, chat and terminal; `agents:manage` also makes, changes and deletes Agents.
+`credentials:read` lists Connections and secrets, `credentials:manage` also changes them, and neither reads an Agent.
+A key that only reads or operates may be bound to some Agents and reaches no other; one that manages covers every Agent, so binding it is refused.
 A created key's plaintext is returned once and printed to stderr (so a `>` redirect doesn't silently capture it) unless `--json` requests it on stdout.
 API-key principals cannot mint further keys — the server enforces that, so the constraint holds regardless of how the CLI is driven.
 Concurrent writes to the credential store are not coordinated in v1 (a solo, single-terminal assumption): overlapping processes can each persist their own merged snapshot, at worst forcing one re-login.
