@@ -70,6 +70,30 @@ export interface ChatDriver {
   ): Promise<void>;
 }
 
+export interface SessionsDriver {
+  expectListed(
+    person: Person,
+    agentName: string,
+    text: string,
+    listed: boolean,
+  ): Promise<void>;
+  remove(person: Person, agentName: string, text: string): Promise<void>;
+  expectStillOpen(
+    person: Person,
+    agentName: string,
+    text: string,
+  ): Promise<void>;
+}
+
+export interface LiveDriver {
+  watchAgents(person: Person): Promise<void>;
+  expectAgentChanged(
+    person: Person,
+    agentName: string,
+    listed: boolean,
+  ): Promise<void>;
+}
+
 export interface ArtifactsDriver {
   expectInLibrary(person: Person, title: string): Promise<void>;
   expectPublishedBy(
@@ -80,7 +104,7 @@ export interface ArtifactsDriver {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability (session, agents, chat, artifacts, connections), independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
+ * UNIT_BOUNDARY_DESCRIPTION: what a person does and observes in the When and Then steps of examples and journeys, by capability (session, agents, chat, sessions, live views, artifacts, connections), independent of the surface they use. Each surface implements every capability its tagged scenarios reach, and the same feature file runs through each surface as its own Playwright project.
  */
 export interface Driver {
   readonly surface: Surface;
@@ -89,4 +113,6 @@ export interface Driver {
   readonly chat: ChatDriver;
   readonly artifacts: ArtifactsDriver;
   readonly connections: ConnectionsDriver;
+  readonly sessions: SessionsDriver;
+  readonly live: LiveDriver;
 }

@@ -10,7 +10,7 @@ import {
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
 import { harnessName } from "../../lib/fixtures.js";
 
-// TEST_OVERVIEW: The events.owner subscription end to end, against the real
+// TEST_OVERVIEW: The events.owner subscription against the real install: it opens with a sync event, and it refuses an API key bound to agents. An open view following an agent made or deleted elsewhere is an Example of the acceptance suite (features/live-updates/).
 
 const AGENT_NAME = "e2e-live-events";
 
@@ -86,30 +86,13 @@ test.describe("events.owner live stream", () => {
     }
   });
 
-  test("a create over HTTP surfaces as an agents hint on the socket", async () => {
-    test.setTimeout(120_000);
-
-    const stream = openOwnerStream(token);
-    try {
-      expect(await stream.nextEvent()).toEqual({ topic: "sync" });
-
-      const created = await api.agents.create.mutate({
+  test("refuses an agent-bound API key", async () => {
+    agentId = (
+      await api.agents.create.mutate({
         name: AGENT_NAME,
         templateId: harnessName,
-      });
-      agentId = created.id;
-
-      for (;;) {
-        const event = await stream.nextEvent(30_000);
-        if (event.topic === "agents" && event.agentId === agentId) break;
-      }
-    } finally {
-      stream.close();
-    }
-  });
-
-  test("refuses an agent-bound API key", async () => {
-    expect(agentId, "needs the agent from the previous test").toBeTruthy();
+      })
+    ).id;
     const { key, plaintext } = await api.apiKeys.create.mutate({
       name: "e2e-live-events-bound",
       scopes: ["agents:read"],

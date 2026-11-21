@@ -6,7 +6,7 @@ Feature: An agent's settings from its chat
     @ui
     Example: Ada opens the settings of helper from its answer
       Given Ada has a running agent called "helper" that answers "Hello Ada"
-      And Ada has an answer from "helper" in the chat
+      And Ada has an answer from "helper" to "hello" in the chat
       When Ada opens the settings of "helper" from its answer
       Then Ada sees the settings of "helper" over its chat
 

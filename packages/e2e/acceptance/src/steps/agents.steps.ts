@@ -28,9 +28,9 @@ Given("{string} has gone to sleep", async ({ setup }, name: string) =>
 );
 
 Given(
-  "{word} has an answer from {string} in the chat",
-  async ({ driver, person }, persona: Persona, name: string) =>
-    driver.chat.send(await person(persona), name, "hello"),
+  "{word} has an answer from {string} to {string} in the chat",
+  async ({ driver, person }, persona: Persona, name: string, text: string) =>
+    driver.chat.send(await person(persona), name, text),
 );
 
 When(

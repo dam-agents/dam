@@ -21,7 +21,7 @@ export function uiChat(world: World, pages: Pages): ChatDriver {
       await expect(input, "the chat takes no message").toBeVisible({
         timeout: 180_000,
       });
-      await input.fill(text);
+      await input.fill(world.unique(text));
       await expect(
         page
           .getByTestId("chat-composer")
@@ -38,6 +38,11 @@ export function uiChat(world: World, pages: Pages): ChatDriver {
           message: `${agent.name} never answered "${text}"`,
         })
         .toBeGreaterThan(before);
+      await expect(page).toHaveURL(new RegExp(`/chat/${agent.id}/[^/?#]+`));
+      const sessionId = decodeURIComponent(
+        new URL(page.url()).pathname.split("/")[3] ?? "",
+      );
+      world.opened(person.persona, name, text, sessionId);
     },
     async expectAnswer(person, _name, text) {
       const page = await pages.of(person);

@@ -30,6 +30,13 @@ export function customHeader(
   };
 }
 
+export interface SessionRecord {
+  owner: Persona;
+  agent: string;
+  title: string;
+  id: string;
+}
+
 export interface AgentRecord {
   owner: Persona;
   name: string;
@@ -43,11 +50,14 @@ export class World {
   readonly run = `r${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
   readonly agents = new Map<string, AgentRecord>();
   readonly connections = new Map<string, ConnectionRecord>();
+  readonly sessions = new Map<string, SessionRecord>();
   readonly made: {
-    kind: "agent" | "connection";
+    kind: "agent" | "connection" | "session";
     owner: Persona;
     id: string;
+    agentId?: string;
   }[] = [];
+  readonly closers: (() => void)[] = [];
   readonly evidence: Record<string, unknown>[] = [];
 
   unique(text: string): string {
@@ -66,6 +76,26 @@ export class World {
     if (record === undefined)
       throw new Error(`no Given step made a connection called "${name}"`);
     return record;
+  }
+
+  session(text: string): SessionRecord {
+    const record = this.sessions.get(text);
+    if (record === undefined)
+      throw new Error(`no step opened a session with "${text}"`);
+    return record;
+  }
+
+  /** UNIT_BOUNDARY_DESCRIPTION: records a Session a person opened with a first message, so the example deletes it when it ends. */
+  opened(owner: Persona, agent: string, text: string, id: string): void {
+    const record = { owner, agent, title: this.unique(text), id };
+    this.sessions.set(text, record);
+    this.made.push({
+      kind: "session",
+      owner,
+      id,
+      agentId: this.agent(agent).id,
+    });
+    this.note({ step: "session opened", ...record });
   }
 
   nameOf(name: string): string {

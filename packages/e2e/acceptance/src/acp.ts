@@ -16,6 +16,7 @@ interface Frame {
 export interface Turn {
   reply: string;
   stopReason: string;
+  sessionId: string;
   frames: Frame[];
 }
 
@@ -53,6 +54,7 @@ export async function promptOnce(
         reject(new Error(`${message}: ${JSON.stringify(frames)}`));
       };
       let reply = "";
+      let sessionId = "";
       ws.onopen = () =>
         send("initialize", { protocolVersion: 1, clientCapabilities: {} });
       ws.onerror = () => fail("the ACP relay failed the connection");
@@ -77,6 +79,7 @@ export async function promptOnce(
           return fail(`request ${frame.id} failed`);
         if (frame.id === 1)
           send("session/new", { cwd: "/home/agent/work", mcpServers: [] });
+        if (frame.id === 2) sessionId = frame.result?.sessionId ?? "";
         if (frame.id === 2)
           send("session/prompt", {
             sessionId: frame.result?.sessionId,
@@ -88,8 +91,57 @@ export async function promptOnce(
           resolve({
             reply,
             stopReason: frame.result?.stopReason ?? "",
+            sessionId,
             frames,
           });
+        }
+      };
+    });
+  } finally {
+    ws.close();
+  }
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: one ACP request to an Agent through its relay, after `initialize`, as the web UI sends its session list and delete: the request's result, or its error as a thrown Error.
+ */
+export async function acpRequest(
+  agentId: string,
+  token: string,
+  method: string,
+  params: object,
+): Promise<Record<string, unknown>> {
+  const url = `${baseUrl.replace(/^http/, "ws")}/api/agents/${agentId}/acp?token=${encodeURIComponent(token)}`;
+  const ws = new WebSocket(url);
+  try {
+    return await new Promise((resolve, reject) => {
+      const timer = setTimeout(
+        () =>
+          reject(
+            new Error(`${method} got no answer within ${turnTimeoutMs}ms`),
+          ),
+        turnTimeoutMs,
+      );
+      const send = (id: number, m: string, p: object) =>
+        ws.send(JSON.stringify({ jsonrpc: "2.0", id, method: m, params: p }));
+      ws.onopen = () =>
+        send(1, "initialize", { protocolVersion: 1, clientCapabilities: {} });
+      ws.onerror = () => reject(new Error(`${method}: the ACP relay failed`));
+      ws.onmessage = (event) => {
+        const frame = JSON.parse(String(event.data)) as {
+          id?: number;
+          method?: string;
+          result?: Record<string, unknown>;
+          error?: unknown;
+        };
+        if (frame.id === undefined || frame.method !== undefined) return;
+        if (frame.error !== undefined) {
+          clearTimeout(timer);
+          reject(new Error(`${method}: ${JSON.stringify(frame.error)}`));
+        } else if (frame.id === 1) send(2, method, params);
+        else if (frame.id === 2) {
+          clearTimeout(timer);
+          resolve(frame.result ?? {});
         }
       };
     });
