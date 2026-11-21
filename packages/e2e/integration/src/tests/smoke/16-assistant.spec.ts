@@ -1,8 +1,9 @@
 // TEST_OVERVIEW: The assistant is on for everyone by default, and landing in its
 // TEST_OVERVIEW: chat is the first open: an account whose only Agent is the
-// TEST_OVERVIEW: assistant meets it in a chat that greets it and offers five
-// TEST_OVERVIEW: labelled ideas, while an account that already owns an Agent keeps
-// TEST_OVERVIEW: the landing it had and meets the assistant in the list instead.
+// TEST_OVERVIEW: assistant lands in its chat, while an account that already owns
+// TEST_OVERVIEW: an Agent keeps the landing it had and meets the assistant in the
+// TEST_OVERVIEW: list instead. The greeting, its ideas and the switch are Examples
+// TEST_OVERVIEW: of the acceptance suite (features/assistant/).
 // TEST_OVERVIEW: The spec signs in as two accounts of its own, which store no
 // TEST_OVERVIEW: switch, since the suite's shared account declines the assistant.
 import { expect, type Page, test } from "@playwright/test";
@@ -24,7 +25,6 @@ import { harnessName } from "../../lib/fixtures.js";
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 1100 } });
 
-const IDEAS = ["Artifact", "Schedule", "Knowledge base", "Skill", "DAM"];
 const OWN_AGENT = "e2e-assistant-owner-agent";
 
 async function signIn(user: {
@@ -64,26 +64,6 @@ test("a first-time user lands in the assistant's chat", async ({ page }) => {
     await expect(page.getByTestId("assistant-greeting")).toBeVisible({
       timeout: 60_000,
     });
-  });
-
-  await test.step("it greets the person by name, in the install's brand", async () => {
-    const greeting = page.getByTestId("assistant-greeting");
-    await expect(greeting).toContainText("Hi First!");
-    await expect(greeting).toContainText("your personal");
-  });
-
-  await test.step("and offers the five labelled ideas", async () => {
-    const greeting = page.getByTestId("assistant-greeting");
-    for (const idea of IDEAS) {
-      await expect(
-        greeting.getByRole("button", { name: new RegExp(`^${idea}:`) }),
-      ).toBeVisible();
-    }
-    // TEST_SCENARIO: the account holds no provider, so the composer names what it is missing instead of hinting the greeting's message — the state a person meets here, which clears once they connect one.
-    await expect(
-      page.getByRole("textbox", { name: "Connect an LLM provider to start." }),
-    ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Send" })).toBeDisabled();
   });
 });
 
