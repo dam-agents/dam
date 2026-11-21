@@ -67,6 +67,7 @@ interface Setup {
     behaviour?: {
       answer?: string;
       publishes?: string;
+      calls?: { name: string; arguments: Record<string, unknown> };
       requiresNaming?: boolean;
     },
   ): Promise<void>;
@@ -538,7 +539,7 @@ export const test = base.extend<
       runningAgent: async (
         persona,
         name,
-        { answer, publishes, requiresNaming } = {},
+        { answer, publishes, calls, requiresNaming } = {},
       ) => {
         const index = allocated.get(persona) ?? 0;
         allocated.set(persona, index + 1);
@@ -566,7 +567,9 @@ export const test = base.extend<
           [
             mockToolEnv,
             publishes === undefined
-              ? null
+              ? calls === undefined
+                ? null
+                : JSON.stringify(calls)
               : JSON.stringify({
                   name: "create_artifact",
                   arguments: {

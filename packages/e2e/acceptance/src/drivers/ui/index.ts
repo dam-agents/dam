@@ -6,6 +6,7 @@ import { uiAgents } from "./agents.js";
 import { uiChat } from "./chat.js";
 import type { Pages } from "./pages.js";
 import { uiAssistant } from "./assistant.js";
+import { uiSatellites } from "./satellites.js";
 import { uiEgress } from "./egress.js";
 import { uiEnvironment } from "./environment.js";
 import { uiLive } from "./live.js";
@@ -28,5 +29,6 @@ export function uiDriver(world: World, pages: Pages): Driver {
     environment: uiEnvironment(world, pages),
     egress: uiEgress(world, pages),
     assistant: uiAssistant(world, pages),
+    satellites: uiSatellites(world, pages),
   };
 }
