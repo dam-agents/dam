@@ -127,3 +127,22 @@ export async function warmMockAgent(
     .toBe("running");
   return created.id;
 }
+
+/** UNIT_BOUNDARY_DESCRIPTION: the knowledge base a persona's slot keeps booted across examples, which shares its folder "wiki": a knowledge base's share roots are fixed when it is made, so one made per example would boot a machine each time. */
+export async function warmKnowledgeBase(person: Person): Promise<string> {
+  const marker = `${warmPrefix(person.persona)}kb`;
+  const kept = (await person.api.agents.list.query()).find(
+    (a) => a.description === marker,
+  );
+  const id =
+    kept?.id ??
+    (
+      await person.api.agents.create.mutate({
+        name: `kb-${person.account.username}`,
+        description: marker,
+        templateId: mockTemplateId,
+        kbShareRoots: ["wiki"],
+      })
+    ).id;
+  return id;
+}

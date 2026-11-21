@@ -15,6 +15,7 @@ export interface HeldKey {
 export interface Outcome {
   value?: unknown;
   refused?: string;
+  message?: string;
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: makes a key of the person's, through the browser-only procedure a signed-in person uses, and revokes it when the example ends. */
@@ -48,6 +49,7 @@ export async function attempt(call: () => Promise<unknown>): Promise<Outcome> {
         refused: String(
           error.data?.code ?? (status === 401 ? "UNAUTHORIZED" : error.message),
         ),
+        message: error.message,
       };
     }
     throw error;
