@@ -65,6 +65,11 @@ export class World {
     agentId?: string;
   }[] = [];
   readonly closers: (() => void)[] = [];
+  /** UNIT_BOUNDARY_DESCRIPTION: the requests an agent holds for its owner's verdict, by agent: the approval that waits and what each request got back once answered. */
+  readonly held = new Map<
+    string,
+    { approvalId: string; url: string; results: Promise<number>[] }
+  >();
   /** UNIT_BOUNDARY_DESCRIPTION: what puts a warm agent back as the example found it, run newest first when the example ends. */
   readonly undo: (() => Promise<unknown>)[] = [];
   readonly evidence: Record<string, unknown>[] = [];
