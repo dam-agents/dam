@@ -1786,6 +1786,7 @@ export const spendDaily = pgTable(
     webSearches: integer("web_searches").notNull().default(0),
     calls: integer("calls").notNull().default(0),
     estimatedCalls: integer("estimated_calls").notNull().default(0),
+    awaitingCalls: integer("awaiting_calls").notNull().default(0),
     refusedCalls: integer("refused_calls").notNull().default(0),
     durationMs: bigint("duration_ms", { mode: "number" }).notNull().default(0),
     maxCallCostMicros: bigint("max_call_cost_micros", { mode: "number" })

@@ -2,6 +2,7 @@ import {
   connectionLimitRule,
   providerTypeForTemplateId,
   type SpendAmount,
+  type SpendAwaiting,
   type SpendBreakdown,
 } from "api-server-api";
 
@@ -9,7 +10,7 @@ import { DELETED_AGENT_NAME, moreSubAgents } from "./copy.js";
 import { amountsBy, unitTotals } from "./measured-spend.js";
 import type { RowSource } from "./spend-rows.js";
 
-interface Counted extends SpendAmount {
+interface Counted extends SpendAmount, SpendAwaiting {
   calls: number;
 }
 
@@ -25,6 +26,20 @@ function freeCallsBy<T extends Counted>(
   return calls;
 }
 
+function awaitingCallsBy<T extends SpendAwaiting>(
+  rows: readonly T[],
+  keyOf: (row: T) => string,
+): Map<string, number> {
+  const calls = new Map<string, number>();
+  for (const row of rows)
+    calls.set(keyOf(row), (calls.get(keyOf(row)) ?? 0) + row.awaitingCalls);
+  return calls;
+}
+
+function awaitingCallsIn(rows: readonly SpendAwaiting[]): number {
+  return rows.reduce((sum, row) => sum + row.awaitingCalls, 0);
+}
+
 function sourcesBy<T extends Counted>(
   rows: readonly T[],
   keyOf: (row: T) => string,
@@ -35,10 +50,12 @@ function sourcesBy<T extends Counted>(
   },
 ): RowSource[] {
   const freeCalls = freeCallsBy(rows, keyOf);
+  const awaitingCalls = awaitingCallsBy(rows, keyOf);
   return [...amountsBy(rows, keyOf)].map(([key, amounts]) => ({
     key,
     amounts,
     freeCalls: freeCalls.get(key) ?? 0,
+    awaitingCalls: awaitingCalls.get(key) ?? 0,
     ...describe(key),
   }));
 }
@@ -93,6 +110,7 @@ export function moreSubAgentsSource(
     freeCalls: other.amounts
       .filter((amount) => amount.unit === "free")
       .reduce((sum, amount) => sum + amount.calls, 0),
+    awaitingCalls: awaitingCallsIn(other.amounts),
     notPriced: false,
   };
 }
@@ -110,11 +128,13 @@ export function sessionTypeSources(
   bySessionType: SpendBreakdown["bySessionType"],
   describe: (category: SessionType) => { label: string; help?: string },
 ): RowSource[] {
+  const awaitingCalls = awaitingCallsBy(bySessionType, (row) => row.category);
   return [...amountsBy(bySessionType, (row) => row.category)].map(
     ([category, amounts]) => ({
       key: category,
       amounts,
       freeCalls: 0,
+      awaitingCalls: awaitingCalls.get(category) ?? 0,
       notPriced: false,
       ...describe(category),
     }),
@@ -175,6 +195,7 @@ export function connectionSources(
       label: connection.name,
       amounts: { usd: 0, usd_list: 0, bobcoin: 0, free: 0 },
       freeCalls: 0,
+      awaitingCalls: 0,
       notPriced: true,
     }));
   return [...measured, ...unmetered];

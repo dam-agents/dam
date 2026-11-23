@@ -1840,6 +1840,14 @@ export async function bootstrap() {
         "spend.first_price_read_failed",
       ),
     );
+  void spend
+    .repriceDeployPriced()
+    .catch((err: unknown) =>
+      getLogger().error(
+        { reason: formatError(err) },
+        "spend.start_reprice_failed",
+      ),
+    );
   await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>
     spend.ingest.settleUnrecordedCalls(),
   );

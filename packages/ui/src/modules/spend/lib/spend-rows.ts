@@ -5,7 +5,8 @@ export type RowAmount =
   | { kind: "plan-only"; micros: number }
   | { kind: "bobcoin"; micros: number }
   | { kind: "no-cost" }
-  | { kind: "not-priced" };
+  | { kind: "not-priced" }
+  | { kind: "no-price-yet" };
 
 export interface RowSource {
   key: string;
@@ -14,6 +15,7 @@ export interface RowSource {
   help?: string;
   amounts: UnitAmounts;
   freeCalls: number;
+  awaitingCalls: number;
   notPriced: boolean;
 }
 
@@ -40,9 +42,14 @@ function amountOf(source: RowSource, showPlanUse: boolean): RowAmount | null {
   }
   if (plan) return { kind: "plan-only", micros: amounts.usd_list };
   if (amounts.bobcoin > 0) return { kind: "bobcoin", micros: amounts.bobcoin };
+  if (source.awaitingCalls > 0) return { kind: "no-price-yet" };
   if (source.notPriced) return { kind: "not-priced" };
   if (source.freeCalls > 0) return { kind: "no-cost" };
   return null;
+}
+
+function showsDollars(amount: RowAmount): boolean {
+  return amount.kind === "paid" || amount.kind === "plan-only";
 }
 
 export function spendRows(
@@ -55,8 +62,14 @@ export function spendRows(
     const amount = amountOf(source, showPlanUse);
     return amount ? [{ source, amount }] : [];
   });
-  const top = Math.max(0, ...shown.map(({ source }) => size(source)));
-  const pct = (micros: number) => (top > 0 ? (micros / top) * 100 : 0);
+  const top = Math.max(
+    0,
+    ...shown.map(({ source, amount }) =>
+      showsDollars(amount) ? size(source) : 0,
+    ),
+  );
+  const pct = (amount: RowAmount, micros: number) =>
+    top > 0 && showsDollars(amount) ? (micros / top) * 100 : 0;
   return shown
     .sort(
       (a, b) =>
@@ -71,7 +84,7 @@ export function spendRows(
       ...(source.hint && { hint: source.hint }),
       ...(source.help && { help: source.help }),
       amount,
-      paidPct: pct(source.amounts.usd),
-      planPct: showPlanUse ? pct(source.amounts.usd_list) : 0,
+      paidPct: pct(amount, source.amounts.usd),
+      planPct: showPlanUse ? pct(amount, source.amounts.usd_list) : 0,
     }));
 }

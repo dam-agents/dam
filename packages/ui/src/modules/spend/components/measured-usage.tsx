@@ -5,9 +5,14 @@ import { cn } from "@/lib/utils";
 import { CHART_HEIGHT_CLASS } from "../../metrics/components/spend-by-day-chart.js";
 import { useSpendBreakdown, useSpendMetering } from "../api/queries.js";
 import { useShowPlanUse } from "../hooks/use-spend-preferences.js";
-import { estimatedCallsNote, SPEND_LOAD_ERROR } from "../lib/copy.js";
+import {
+  estimatedCallsNote,
+  noPriceYetHelp,
+  SPEND_LOAD_ERROR,
+} from "../lib/copy.js";
 import { rangeOf, type SpendPeriod } from "../lib/spend-period.js";
 import { utcDayOf } from "../lib/utc-day.js";
+import { HelpTip } from "./help-tip.js";
 import { MeasuredBreakdownCards } from "./measured-breakdown-cards.js";
 import { MeasuredSpendCard } from "./measured-spend-card.js";
 import { MeasuredStatCards } from "./measured-stat-cards.js";
@@ -31,6 +36,8 @@ export function MeasuredUsage({ agentId, period, onPeriodChange }: Props) {
   const breakdown = query.data;
   const estimatedCalls =
     breakdown?.totals.reduce((sum, row) => sum + row.estimatedCalls, 0) ?? 0;
+  const awaitingCalls =
+    breakdown?.totals.reduce((sum, row) => sum + row.awaitingCalls, 0) ?? 0;
 
   if (query.isError || meteringFailed) {
     return <p className="text-sm text-muted-foreground">{SPEND_LOAD_ERROR}</p>;
@@ -60,8 +67,9 @@ export function MeasuredUsage({ agentId, period, onPeriodChange }: Props) {
         modelTimeMs={breakdown.modelTimeMs}
       />
       {estimatedCalls > 0 && (
-        <p className="text-sm text-muted-foreground">
-          {estimatedCallsNote(estimatedCalls)}
+        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          {estimatedCallsNote(estimatedCalls, awaitingCalls)}
+          {awaitingCalls > 0 && <HelpTip content={noPriceYetHelp()} />}
         </p>
       )}
       <MeasuredBreakdownCards

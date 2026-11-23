@@ -1135,6 +1135,13 @@
       "when": 1795412431573,
       "tag": "0161_assistant_schedule_level",
       "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1795437269972,
+      "tag": "0162_spend_daily_awaiting_calls",
+      "breakpoints": true
     }
   ]
 }

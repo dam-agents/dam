@@ -32,7 +32,7 @@ export type SpendSetLimitInput = z.infer<typeof spendSetLimitInputSchema>;
 export type SpendCeilingUser = z.infer<typeof spendCeilingUserSchema>;
 export type SpendCeilingSetInput = z.infer<typeof spendCeilingSetInputSchema>;
 
-export interface SpendDailyRow {
+export interface SpendDailyRow extends SpendAwaiting {
   day: string;
   agentId: string;
   unit: SpendUnit;
@@ -84,7 +84,7 @@ export interface SpendCeilingView {
   source: SpendCeilingSource;
 }
 
-export interface SpendTotal {
+export interface SpendTotal extends SpendAwaiting {
   unit: SpendUnit;
   costMicros: number;
   estimatedCalls: number;
@@ -110,6 +110,10 @@ export interface SpendAmount {
   costMicros: number;
 }
 
+export interface SpendAwaiting {
+  awaitingCalls: number;
+}
+
 export interface SpendCounts {
   calls: number;
   estimatedCalls: number;
@@ -121,7 +125,7 @@ export interface SpendCounts {
   webSearches: number;
 }
 
-interface SpendAgentRow {
+interface SpendAgentRow extends SpendAwaiting {
   agentId: string;
   agentName: string | null;
   calls: number;
@@ -131,25 +135,27 @@ export interface SpendBreakdown {
   from: string;
   to: string;
   window?: SpendReadWindow;
-  totals: (SpendAmount & SpendCounts)[];
+  totals: (SpendAmount & SpendCounts & SpendAwaiting)[];
   byDay: (SpendAmount & { day: string })[];
   byAgent: (SpendAmount & SpendAgentRow)[];
-  byModel: (SpendAmount & SpendCounts & { model: string })[];
+  byModel: (SpendAmount & SpendCounts & SpendAwaiting & { model: string })[];
   byConnection: (SpendAmount &
-    SpendCounts & {
+    SpendCounts &
+    SpendAwaiting & {
       connectionId: string;
       providerTemplate: string;
       connectionName: string | null;
     })[];
   modelTimeMs: number;
-  bySessionType: (SpendAmount & {
-    category: SessionCategory | "subagents" | "none";
-  })[];
+  bySessionType: (SpendAmount &
+    SpendAwaiting & {
+      category: SessionCategory | "subagents" | "none";
+    })[];
   byCallingAgent: (SpendAmount &
     SpendAgentRow & { agentTask: string | null })[];
   otherSubAgents: {
     count: number;
-    amounts: (SpendAmount & { calls: number })[];
+    amounts: (SpendAmount & SpendAwaiting & { calls: number })[];
   };
 }
 
