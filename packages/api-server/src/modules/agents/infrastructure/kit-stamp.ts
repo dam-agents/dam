@@ -12,7 +12,9 @@ import {
  * Version, the Seed Stamp a Kit Update follows, and the knowledge-base share
  * roots the kit declares.
  */
-export function createKitStamp(repo: Pick<AgentsRepository, "patchAnnotations">) {
+export function createKitStamp(
+  repo: Pick<AgentsRepository, "patchAnnotations">,
+) {
   return (
     agentId: string,
     stamp: { starterKit: string; seed?: SeedStamp; kbShareRoots?: string[] },

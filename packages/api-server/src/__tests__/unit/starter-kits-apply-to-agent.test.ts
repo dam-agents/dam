@@ -367,7 +367,11 @@ describe("starter kits: apply to an existing agent", () => {
           defaultModel: "claude-opus-5",
         }),
       ),
-      { agent: existingAgent({ spec: { name: "helper", image: "x", harness: "codex" } }) },
+      {
+        agent: existingAgent({
+          spec: { name: "helper", image: "x", harness: "codex" },
+        }),
+      },
     );
     const result = await service.applyToAgent(input());
     expect(result.kept).toEqual([
@@ -403,9 +407,7 @@ describe("starter kits: apply to an existing agent", () => {
       {
         why: "the kit brings its own image",
         harness: () =>
-          makeHarness(
-            loaded(kit({ image: { ref: "quay.io/acme/reviewer" } })),
-          ),
+          makeHarness(loaded(kit({ image: { ref: "quay.io/acme/reviewer" } }))),
         code: "CONFLICT",
         message: /runs on its own image \(quay\.io\/acme\/reviewer\)/,
       },
@@ -447,7 +449,10 @@ describe("starter kits: apply to an existing agent", () => {
       const { service, calls, changed } = c.harness();
       await expect(
         service.applyToAgent(input(c.input ?? {})),
-      ).rejects.toMatchObject({ code: c.code, message: expect.stringMatching(c.message) });
+      ).rejects.toMatchObject({
+        code: c.code,
+        message: expect.stringMatching(c.message),
+      });
       expect(changed()).toBe(0);
       expect(calls.slack).toEqual([]);
     });

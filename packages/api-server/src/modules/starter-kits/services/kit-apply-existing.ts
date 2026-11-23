@@ -81,7 +81,7 @@ export interface KitApplyToAgentDeps {
     ConnectionsService,
     "getAgentConnections" | "updateAgentConnections"
   >;
-  runtimeMutator: Pick<RuntimeMutator, "bump">;
+  runtimeMutator: Pick<RuntimeMutator, "bump" | "enqueueAfterCommit">;
   stampKit: (agentId: string, stamp: KitStamp) => Promise<void>;
   wakeAgent: (agentId: string) => Promise<void>;
 }
@@ -157,8 +157,7 @@ export function createKitApplyToAgent(deps: KitApplyToAgentDeps) {
         { quiet: true },
       );
       if (!connected.ok) {
-        for (const id of added)
-          await deps.agents.disconnectSlack(agent.id, id);
+        for (const id of added) await deps.agents.disconnectSlack(agent.id, id);
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message: `The kit was not applied: ${steps.slackRefusal(connected.error.type, slackChannelId)}`,
@@ -233,6 +232,24 @@ export function createKitApplyToAgent(deps: KitApplyToAgentDeps) {
           ? { requireConnectionAddress: kit.requireConnectionAddress }
           : {}),
       });
+    if (kit.seed) {
+      await deps.runtimeMutator.bump(agent.id, [
+        workspaceSeedEvent(
+          "workspace-seed",
+          agent.id,
+          seedGitRepo(kit.seed),
+          new Date(),
+        ),
+      ]);
+      await deps.runtimeMutator.enqueueAfterCommit(agent.id);
+    }
+    await steps.queueKitWork(agent.id, loaded);
+    await steps.seedSchedules(
+      agent.id,
+      loaded,
+      input.skipSchedules,
+      input.scheduleOverrides,
+    );
     const seedStamp = kit.seed ? seedStampAtApply(kit.seed) : undefined;
     const shareRoots = kit.knowledgeBase?.shareRoots ?? [];
     await deps.stampKit(agent.id, {
@@ -246,22 +263,6 @@ export function createKitApplyToAgent(deps: KitApplyToAgentDeps) {
           }
         : {}),
     });
-    if (kit.seed)
-      await deps.runtimeMutator.bump(agent.id, [
-        workspaceSeedEvent(
-          "workspace-seed",
-          agent.id,
-          seedGitRepo(kit.seed),
-          new Date(),
-        ),
-      ]);
-    await steps.queueKitWork(agent.id, loaded);
-    await steps.seedSchedules(
-      agent.id,
-      loaded,
-      input.skipSchedules,
-      input.scheduleOverrides,
-    );
     await steps.onboard(
       agent,
       loaded,
