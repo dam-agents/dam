@@ -902,6 +902,9 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         disable: async () => {
           if (personRequest) await securityChecks.disable();
         },
+        setLevel: async (level) => {
+          if (personRequest) await securityChecks.setLevel(level);
+        },
       },
       egressRules,
       webSearch,

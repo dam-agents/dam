@@ -40,6 +40,12 @@ vi.mock(
   }),
 );
 vi.mock(
+  "../../modules/security-checks/components/security-check-level-setting.js",
+  () => ({
+    SecurityCheckLevelSetting: () => null,
+  }),
+);
+vi.mock(
   "../../modules/sandboxes/components/sandbox-providers-section.js",
   () => ({
     SandboxProvidersSection: () => createElement("p", null, "PROVIDERS-BODY"),

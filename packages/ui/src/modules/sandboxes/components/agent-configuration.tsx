@@ -21,6 +21,7 @@ import type { SandboxSection } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
 import { useApplyPendingRestartWithConfirm } from "../../processes/components/pending-restart-banner.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
+import { SecurityCheckLevelSetting } from "../../security-checks/components/security-check-level-setting.js";
 import { WebSearchControlCard } from "../../web-search/components/web-search-control-card.js";
 import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 import {
@@ -175,6 +176,7 @@ function SectionBody({
         <AgentDescriptionSection agent={agent} />
         {holds(agent.access, "sessions") && <AgentUsageActions agent={agent} />}
         <AgentModelSettingsSection agentId={agent.id} />
+        <SecurityCheckLevelSetting agentId={agent.id} />
         <AgentManagementActions agent={agent} display={display} />
       </>
     ))
