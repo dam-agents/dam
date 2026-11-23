@@ -121,19 +121,19 @@ On the Anthropic API, fast mode and US-only inference multiply the token prices 
 Costs are whole micro-units of the Connection's unit, rounded up.
 
 **When a cost is fixed.** DAM prices a call when its record arrives and stores that cost, so a later price change alters neither the history nor a limit.
-Some calls are priced again from their stored token counts, at the standard tier, because a call row keeps no tier:
+Some calls inside the 30 days of call rows are priced again from their stored token counts, at the standard tier, because a call row keeps no tier:
 
 - **A call that waited for its price** is priced again as soon as its model has a price.
   An IBM LiteLLM call is priced again after each read that brings a price for its model.
   A call on a provider priced by the Anthropic table or by operator prices is priced again at each api-server start, because these prices change only with a deploy.
   It stays an estimate only when another reason remains, such as a cut stream.
-- **An IBM LiteLLM estimate written before calls recorded where their price came from** is priced again after each full read, while it is inside the 30 days of call rows, has input tokens and names a model with a price.
+- **An IBM LiteLLM estimate written before calls recorded where their price came from** is priced again after each full read when it has input tokens and names a model with a price.
   It stays marked as an estimate, because its row does not say why it was estimated.
-- **A guess written before DAM stopped guessing**, a call priced by the highest prices of its model's family, is priced again at each api-server start, on a provider priced by the Anthropic table or by operator prices, while it is inside the 30 days of call rows and has input tokens.
+- **A guess written before DAM stopped guessing**, a call priced by the highest prices of its model's family, is priced again at each api-server start, on a provider priced by the Anthropic table or by operator prices, when it has input tokens.
   It takes its cost from the list when its model has a price now, and else costs nothing and waits for its price.
   An estimate from before calls recorded where their price came from may be a guess or a real price, for example a cut stream priced from the Anthropic table in fast mode.
   It keeps its cost when its model's price, with or without the price's fast-mode and region factors, gives that cost, because a guess never had a factor and no Anthropic price changed while such rows were written; else it is a guess.
-  It stays marked as an estimate, because its row does not say why it was estimated, until it waits for a price and then gets one.
+  It stays marked as an estimate until it waits for a price and then gets one.
 
 A call that had a real price never changes.
 A call without input tokens never changes either, because its cost came from the payer's most expensive call or from nothing, not from a price.
@@ -262,6 +262,7 @@ It counts high, except for a call that got no answer and a call that waits for i
   Only a call with usage waits; a call without usage follows the rules above, whatever its model.
   It writes one `spend.call_awaiting_price` log line with the call, the Connection and the model, and the counter `platform.spend.awaiting_price` counts it by provider and model.
   Until the price arrives, a spend limit does not see the call; when it arrives, DAM prices the call again ([When a cost is fixed](#prices)).
+  A call that still waits after 30 days keeps costing nothing, and the screens stop counting it as waiting.
   For an IBM LiteLLM call, the api-server reads the call's Connection at once, without making the call wait, one read at a time and at most once in five minutes per Connection, so the price normally arrives within seconds.
   For the Anthropic table and operator prices, the price arrives with the next deploy that has it.
   An operator price in the chart prices a new model at once, and the restart prices its waiting calls again.
