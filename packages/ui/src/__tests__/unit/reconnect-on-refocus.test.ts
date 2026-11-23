@@ -36,7 +36,7 @@ vi.mock("../../modules/acp/acp.js", () => ({
       },
     });
     h.sockets.push(ws);
-    // A reconnect's socket never finishes opening, so the test sees the attempt and nothing after it.
+    // UNIT_BOUNDARY_DESCRIPTION: a reconnect's socket never finishes opening, so the test sees the attempt and nothing after it.
     if (h.sockets.length > 1) await new Promise(() => {});
     return {
       connection: { agent: { request: async () => ({}) } },

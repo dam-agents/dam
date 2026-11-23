@@ -47,7 +47,6 @@ export interface ChatInputProps {
   onStop: () => void;
   onTakeBack?: (() => void) | null;
   blockedReason?: string | null;
-  /** Holds the send alone: the textarea stays editable and keeps the draft. */
   sendBlockedReason?: string | null;
   onBlockedClick?: () => void;
   stopBlockedReason?: string | null;
@@ -290,7 +289,14 @@ export function ChatInput({
     )
       return;
     send();
-  }, [heldSendFor, loadingSession, blockedReason, sendBlockedReason, key, send]);
+  }, [
+    heldSendFor,
+    loadingSession,
+    blockedReason,
+    sendBlockedReason,
+    key,
+    send,
+  ]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (commandMenu.onKeyDown(e)) {
@@ -423,10 +429,7 @@ export function ChatInput({
                 className={`shrink-0 mb-[9px] ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
                 disabled={
-                  sendDisabled ||
-                  !key ||
-                  !!blockedReason ||
-                  !!sendBlockedReason
+                  sendDisabled || !key || !!blockedReason || !!sendBlockedReason
                 }
                 aria-label={isComputing ? "Queue" : "Send"}
                 tooltip={sendBlockedReason ?? (isComputing ? "Queue" : "Send")}
