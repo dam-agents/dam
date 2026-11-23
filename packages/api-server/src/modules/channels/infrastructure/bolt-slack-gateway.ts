@@ -4,6 +4,8 @@ import { formatError } from "../../../core/format-error.js";
 import { agentActionOf } from "../domain/channel-blocks.js";
 import { FileTooLargeError } from "./slack-gateway.js";
 import { keepSocketModeConnected } from "./socket-mode-reconnect.js";
+import { fetchWithCurrentAppToken } from "./slack-app-token-fetch.js";
+import type { SlackAppTokenSource } from "../services/slack-app-token-source.js";
 import { renderSlackPostText } from "./slack-post-text.js";
 import { classifySlackEdit, type SlackMessageChanged } from "./slack-edit.js";
 import { slackPostOrigin } from "./slack-post-origin.js";
@@ -45,7 +47,7 @@ export interface BoltSlackGatewayDeps {
   renewTokens: () => Promise<void>;
   forgetBotToken: (teamId: string) => void;
   helmBotToken: string | null;
-  appToken: string;
+  appToken: SlackAppTokenSource;
   commandName: string;
   onCredentialRejected: (teamId: string) => Promise<void>;
   companionAppIds: ReadonlySet<string>;
@@ -61,6 +63,7 @@ interface WorkspaceAuth {
 
 const CHANNEL_HISTORY_PAGE_SIZE = 200;
 const NO_WORKSPACE: SlackWorkspace = "";
+const APP_TOKEN_SET_PER_REQUEST = "xapp-set-per-request";
 const INSTALL_TOKEN_MISSING = "slack workspace is not installed";
 const DEAD_CREDENTIAL = new Set([
   "invalid_auth",
@@ -69,6 +72,16 @@ const DEAD_CREDENTIAL = new Set([
   "token_revoked",
   "token_expired",
 ]);
+
+function socketModeAuth(source: SlackAppTokenSource) {
+  if (source.kind === "static") return { appToken: source.token };
+  return {
+    appToken: APP_TOKEN_SET_PER_REQUEST,
+    installerOptions: {
+      clientOptions: { fetch: fetchWithCurrentAppToken(source.resolve) },
+    },
+  };
+}
 
 function slackRefusal(err: unknown): string | null {
   const data = (err as { data?: { error?: unknown } } | null)?.data;
@@ -358,7 +371,7 @@ export function createBoltSlackGateway(
       if (app) return true;
 
       const receiver = new SocketModeReceiver({
-        appToken: deps.appToken,
+        ...socketModeAuth(deps.appToken),
         logLevel: LogLevel.INFO,
         autoReconnectEnabled: false,
       });

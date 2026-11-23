@@ -291,6 +291,10 @@ spec:
             - name: SLACK_TOKEN_ROTATION
               value: "true"
             {{- end }}
+            {{- if .Values.apiServer.slackAppTokenRotation }}
+            - name: SLACK_APP_TOKEN_ROTATION
+              value: "true"
+            {{- end }}
             {{- if .Values.apiServer.slackEnterpriseId }}
             - name: SLACK_ENTERPRISE_ID
               value: {{ .Values.apiServer.slackEnterpriseId | quote }}

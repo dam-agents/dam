@@ -4,7 +4,10 @@
  * `apps.connections.open` answering `invalid_auth`, is logged and tried again
  * with a growing delay. It never becomes an unhandled rejection, which would
  * end the api-server process. Once Slack accepts the app token again, the
- * socket is back without a restart. These tests run the real Bolt App and
+ * socket is back without a restart. With app-level token rotation on, every
+ * connect asks for the app-level token again, because a rotating one is
+ * replaced every hour and expires after twelve; with it off, every connect
+ * sends the Helm value. These tests run the real Bolt App and
  * Socket Mode client against a local WebSocket server, with Slack's Web API
  * answered by a stubbed fetch.
  */
@@ -13,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
 import { createBoltSlackGateway } from "../../modules/channels/infrastructure/bolt-slack-gateway.js";
 import type { SlackGatewayHandlers } from "../../modules/channels/infrastructure/slack-gateway.js";
+import type { SlackAppTokenSource } from "../../modules/channels/services/slack-app-token-source.js";
 
 type OpenAnswer = "url" | "invalid_auth";
 
@@ -21,6 +25,8 @@ let socketUrl: string;
 let connections: number;
 let openAnswers: OpenAnswer[];
 let openCalls: number;
+let openTokens: (string | undefined)[];
+let appToken: string | null;
 let unhandled: unknown[];
 let logged: string[];
 const onUnhandled = (reason: unknown) => unhandled.push(reason);
@@ -36,14 +42,19 @@ function nextConnection(): Promise<void> {
   return new Promise((resolve) => server.once("connection", () => resolve()));
 }
 
-function createGateway() {
+function createGateway(
+  source: SlackAppTokenSource = {
+    kind: "rotating",
+    resolve: async () => appToken,
+  },
+) {
   return createBoltSlackGateway({
     resolveBotToken: async () => "xoxb-test",
     importHelmToken: async () => {},
     renewTokens: async () => {},
     forgetBotToken: () => {},
     helmBotToken: null,
-    appToken: "xapp-test",
+    appToken: source,
     commandName: "/platform",
     onCredentialRejected: async () => {},
     companionAppIds: new Set<string>(),
@@ -79,6 +90,8 @@ async function advanceUntil(done: () => boolean): Promise<number> {
 beforeEach(async () => {
   connections = 0;
   openCalls = 0;
+  openTokens = [];
+  appToken = "xapp-test";
   openAnswers = [];
   unhandled = [];
   logged = [];
@@ -96,8 +109,9 @@ beforeEach(async () => {
   });
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => {
+    vi.fn(async (_url: string, init?: { headers?: Record<string, string> }) => {
       openCalls += 1;
+      openTokens.push(init?.headers?.["Authorization"]);
       const answer = openAnswers.shift() ?? "url";
       return answer === "url"
         ? slackAnswer({ ok: true, url: socketUrl })
@@ -185,5 +199,74 @@ describe("Slack Socket Mode reconnect", () => {
     expect(openCalls).toBe(2);
     expect(connections).toBe(1);
     expect(unhandled).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: The app-level token is renewed while the socket is open,
+   * as rotation does every hour. The next connect must use the new token, not
+   * the one the socket was first opened with, or Slack refuses it once the old
+   * one expires.
+   */
+  it("opens a reconnect with the app-level token current at that time", async () => {
+    const gateway = createGateway();
+    await gateway.start({} as SlackGatewayHandlers);
+
+    appToken = "xoxe.xapp-renewed";
+    const reconnected = nextConnection();
+    await dropAndAwaitReconnectTimer();
+    await advanceUntil(() => openCalls === 2);
+    await reconnected;
+
+    expect(openTokens).toEqual([
+      "Bearer xapp-test",
+      "Bearer xoxe.xapp-renewed",
+    ]);
+    await gateway.stop();
+  });
+
+  /**
+   * TEST_SCENARIO: There is no app-level token to connect with, as when a
+   * renewal failed and the token expired. Slack is not called, the reconnect
+   * fails like a refused one and is tried again, and the socket comes back
+   * once there is a token again.
+   */
+  it("retries a reconnect while there is no app-level token", async () => {
+    const gateway = createGateway();
+    await gateway.start({} as SlackGatewayHandlers);
+
+    appToken = null;
+    await dropAndAwaitReconnectTimer();
+    await advanceUntil(() =>
+      logged.some((line) => line.includes("Socket Mode reconnect failed")),
+    );
+    expect(openCalls).toBe(1);
+    expect(unhandled).toEqual([]);
+
+    appToken = "xapp-new";
+    const reconnected = nextConnection();
+    await advanceUntil(() => openCalls === 2);
+    await reconnected;
+
+    expect(openTokens.at(-1)).toBe("Bearer xapp-new");
+    expect(connections).toBe(2);
+    await gateway.stop();
+  });
+
+  /**
+   * TEST_SCENARIO: App-level token rotation is off, as on an install that
+   * rotates only bot tokens. The socket opens and reopens with the Helm
+   * value itself, as before app-level rotation existed.
+   */
+  it("connects with the static Helm token when app-level rotation is off", async () => {
+    const gateway = createGateway({ kind: "static", token: "xapp-static" });
+    await gateway.start({} as SlackGatewayHandlers);
+
+    const reconnected = nextConnection();
+    await dropAndAwaitReconnectTimer();
+    await advanceUntil(() => openCalls === 2);
+    await reconnected;
+
+    expect(openTokens).toEqual(["Bearer xapp-static", "Bearer xapp-static"]);
+    await gateway.stop();
   });
 });
