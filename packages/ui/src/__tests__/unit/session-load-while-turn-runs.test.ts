@@ -25,7 +25,8 @@ const h = vi.hoisted(() => {
     setLastOutputAt: () => {},
     setAttribution: () => {},
     setContinuedFrom: () => {},
-    setSessionError: (e: typeof state.sessionError) => (state.sessionError = e),
+    setSessionError: (e: { sessionId: string; kind: string } | null) =>
+      (state.sessionError = e),
     setSessionMode: () => {},
   };
   return {

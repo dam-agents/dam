@@ -17,7 +17,8 @@ const h = vi.hoisted(() => {
     pendingPermissions: [],
     setMessages: (m: unknown[] | ((prev: unknown[]) => unknown[])) =>
       (state.messages = typeof m === "function" ? m(state.messages) : m),
-    setSessionError: (e: typeof state.sessionError) => (state.sessionError = e),
+    setSessionError: (e: { sessionId: string; kind: string } | null) =>
+      (state.sessionError = e),
     setLastOutputAt: () => {},
     setQueuedPrompts: () => {},
     setTurnSender: () => {},
