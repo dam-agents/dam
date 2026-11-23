@@ -1,17 +1,17 @@
 # Slack token rotation
 
-Last verified: 2026-11-20
+Last verified: 2026-11-23
 
 How the Slack credentials renew themselves where the Slack app has token rotation turned on: each workspace's bot token, and the one App-Level Token that opens the Socket Mode connection.
 Where each token comes from, and what the Slack worker does with it, lives on [channels](channels.md).
 
-## One switch, two kinds of token
+## One Slack switch, two install settings
 
 Token rotation is one switch on the Slack app, and Slack cannot turn it off again.
 With it on, a token lives twelve hours and comes with a single-use refresh token, which buys the next pair.
 A token minted before the switch was on keeps not expiring until it is exchanged for a rotating pair, one call per token.
-The install's own rotation setting tells the api-server that the switch is on, and it covers both kinds of token.
-The setting only starts exchanges: renewing depends on what a Secret holds, so turning the setting back off changes nothing for a token already exchanged.
+The install has one setting per kind of token, so the two roll out on their own: an install already rotating bot tokens sees no change to its App-Level Token until that token's own setting is turned on.
+For bot tokens the setting only starts exchanges: renewing depends on what a Secret holds, so turning it back off changes nothing for a bot token already exchanged.
 
 ## Bot tokens
 
@@ -28,9 +28,9 @@ A failed exchange keeps serving the old token and tries again later.
 ## The App-Level Token
 
 The App-Level Token comes from Helm values, and the Helm value alone decides whether the Slack worker runs.
-With rotation on, the value is a one-time import: on the first connect it is exchanged for a rotating pair, which goes into one install-wide Secret with a fingerprint of the Helm value, and the Secret answers from then on.
+With app-level rotation off, the Helm value is the token: nothing is exchanged, stored or renewed, and every connect sends it as it is.
+With it on, the value is a one-time import: on the first connect it is exchanged for a rotating pair, which goes into one install-wide Secret with a fingerprint of the Helm value, and the Secret answers from then on.
 A restart, or another replica, reads the pair from the Secret and never exchanges the Helm value again.
-With rotation off and nothing stored, the Helm value is served as it is.
 
 The pair is renewed at the bot tokens' pace — once the token is an hour old, by the same ten-minute sweep or by the next connect — under one install-wide lock with the Secret re-read inside it.
 Slack retires the Helm token after the first renewal, so a copy of the Helm value is useless within hours.

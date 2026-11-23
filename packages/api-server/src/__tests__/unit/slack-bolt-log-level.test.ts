@@ -39,7 +39,7 @@ describe("Slack Bolt logging", () => {
       renewTokens: async () => {},
       forgetBotToken: () => {},
       helmBotToken: null,
-      resolveAppToken: async () => "xapp-test",
+      appToken: { kind: "static", token: "xapp-test" },
       commandName: "/platform",
       onCredentialRejected: async () => {},
       companionAppIds: new Set<string>(),

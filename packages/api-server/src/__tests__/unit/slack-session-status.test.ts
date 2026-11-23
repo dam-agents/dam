@@ -46,7 +46,7 @@ async function startedGateway() {
     renewTokens: async () => {},
     forgetBotToken: () => {},
     helmBotToken: null,
-    resolveAppToken: async () => "xapp-test",
+    appToken: { kind: "static", token: "xapp-test" },
     commandName: "/platform",
     onCredentialRejected: async () => {},
     companionAppIds: new Set<string>(),

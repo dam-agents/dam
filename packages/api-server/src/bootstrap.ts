@@ -191,6 +191,7 @@ import {
 import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
 import { createSlackAppTokenService } from "./modules/channels/services/slack-app-token-service.js";
+import { slackAppTokenSource } from "./modules/channels/services/slack-app-token-source.js";
 import { createRedisSpentRefreshTokens } from "./modules/channels/infrastructure/slack-spent-refresh-tokens.js";
 import { createChannelProfiles } from "./modules/channels/infrastructure/channel-profile.js";
 import { createChannelProviderOutage } from "./modules/channels/infrastructure/provider-outage-copy.js";
@@ -1908,14 +1909,19 @@ export async function bootstrap() {
     resolveSlackChannelsByInstance: findSlackChannelsByAgent(db),
   };
 
-  const slackAppTokens = config.slackAppToken
-    ? createSlackAppTokenService({
-        helmToken: config.slackAppToken,
-        secrets: secretStore,
-        lock: createXactLock(db),
-        rotation: slackTokenRotation,
-        exchangeLongLivedToken: config.slackTokenRotation,
-        spentRefreshTokens: createRedisSpentRefreshTokens(sharedRedis),
+  const helmAppToken = config.slackAppToken;
+  const slackAppTokens = helmAppToken
+    ? slackAppTokenSource({
+        helmToken: helmAppToken,
+        rotation: config.slackAppTokenRotation,
+        createRotating: () =>
+          createSlackAppTokenService({
+            helmToken: helmAppToken,
+            secrets: secretStore,
+            lock: createXactLock(db),
+            rotation: slackTokenRotation,
+            spentRefreshTokens: createRedisSpentRefreshTokens(sharedRedis),
+          }),
       })
     : null;
 
@@ -1927,7 +1933,7 @@ export async function bootstrap() {
           renewTokens: slackInstalls.renewAll,
           forgetBotToken: slackInstalls.forgetBotToken,
           helmBotToken: config.slackBotToken,
-          resolveAppToken: slackAppTokens.resolveAppToken,
+          appToken: slackAppTokens.source,
           commandName: `/${config.brand.short}`,
           onCredentialRejected: slackInstalls.markRejected,
           companionAppIds: new Set(config.slackCompanionAppIds),
@@ -2346,8 +2352,9 @@ export async function bootstrap() {
       : [],
   });
   if (slackAppTokens) {
+    const renewAppToken = slackAppTokens.renew;
     await periodicJobs.register("slack-token-renew", 10 * 60_000, () =>
-      Promise.all([slackInstalls.renewAll(), slackAppTokens.renew()]),
+      Promise.all([slackInstalls.renewAll(), renewAppToken?.()]),
     );
   }
   await periodicJobs.register("approvals-delivery-sweep", 30_000, () =>

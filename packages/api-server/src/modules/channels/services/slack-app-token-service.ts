@@ -30,7 +30,6 @@ export interface SlackAppTokenServiceDeps {
   secrets: SecretStore;
   lock: XactLock;
   rotation: SlackTokenRotation;
-  exchangeLongLivedToken: boolean;
   spentRefreshTokens: SpentRefreshTokens;
 }
 
@@ -71,8 +70,9 @@ function logAppToken(
  * UNIT_BOUNDARY_DESCRIPTION: Which app-level token opens the Slack Socket Mode
  * connection.
  *
- * The app-level token from Helm values is an import, not the token served.
- * With token rotation on, it is exchanged once with `oauth.v2.exchange` for a
+ * The service exists only where the install turned app-level token rotation
+ * on. The app-level token from Helm values is then an import, not the token
+ * served: it is exchanged once with `oauth.v2.exchange` for a
  * token that expires after twelve hours and a single-use refresh token, and
  * the pair goes into one install-wide Secret together with a fingerprint of
  * the Helm value it came from. From then on the Secret answers, and the pair
@@ -99,8 +99,7 @@ function logAppToken(
  * refusing the refresh token as dead marks the Secret refused, and nothing is
  * served until a person sets a new app-level token in Helm values: a Helm
  * value whose fingerprint differs from the stored one is imported again, so a
- * regenerated token is how an operator recovers. With rotation off and nothing
- * stored, the Helm token is served as it is, as before rotation existed.
+ * regenerated token is how an operator recovers.
  */
 export function createSlackAppTokenService(
   deps: SlackAppTokenServiceDeps,
@@ -143,7 +142,7 @@ export function createSlackAppTokenService(
   }
 
   function exchangeDue(): boolean {
-    return deps.exchangeLongLivedToken && exchangeRetryAt <= now();
+    return exchangeRetryAt <= now();
   }
 
   function renewalDue(stored: StoredAppToken | null): boolean {

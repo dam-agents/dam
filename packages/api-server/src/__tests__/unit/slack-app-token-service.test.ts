@@ -11,11 +11,11 @@ import type {
 
 /**
  * TEST_OVERVIEW: Which app-level token opens the Slack Socket Mode
- * connection. The Helm value is imported once: with token rotation on it is
- * exchanged for a rotating pair kept in one install-wide Secret, and the pair
- * is renewed an hour after it was minted, under one lock, so two replicas
- * never spend the same refresh token. Without rotation and with nothing
- * stored, the Helm value is served as it is. A pair Slack refused after it
+ * connection where app-level token rotation is on. The Helm value is
+ * imported once: it is exchanged for a rotating pair kept in one
+ * install-wide Secret, and the pair is renewed an hour after it was minted,
+ * under one lock, so two replicas never spend the same refresh token. A pair
+ * Slack refused after it
  * expired serves nothing until a new Helm value is set, which is imported
  * again.
  */
@@ -42,7 +42,6 @@ function grant(
 
 function setup(opts?: {
   helmToken?: string;
-  rotationOn?: boolean;
   exchange?: SlackTokenGrant;
   refresh?: SlackTokenGrant;
   stored?: Record<string, string>;
@@ -93,7 +92,6 @@ function setup(opts?: {
       },
       now: () => clock,
     },
-    exchangeLongLivedToken: opts?.rotationOn ?? true,
     spentRefreshTokens,
   };
   return {
@@ -117,18 +115,6 @@ async function exchanged() {
 }
 
 describe("Slack app-level token", () => {
-  /**
-   * TEST_SCENARIO: An install without token rotation. The Helm value is the
-   * token, as before rotation existed, and nothing is written.
-   */
-  it("serves the Helm token as it is when rotation is off", async () => {
-    const env = setup({ rotationOn: false });
-
-    expect(await env.svc.resolveAppToken()).toBe(HELM);
-    expect(env.calls.exchange).toEqual([]);
-    expect(env.secret()).toBeUndefined();
-  });
-
   /**
    * TEST_SCENARIO: Rotation is turned on. The Helm token is exchanged once
    * for a rotating pair, the pair is stored with the Helm value's
@@ -409,38 +395,5 @@ describe("Slack app-level token", () => {
     );
     expect(env.calls.exchange).toEqual(["xapp-1-regenerated"]);
     expect(env.secret()?.["refused"]).toBeUndefined();
-  });
-
-  /**
-   * TEST_SCENARIO: The rotation setting is turned off after the exchange.
-   * Slack's switch is one-way and the Helm token is already retired, so the
-   * stored pair keeps being renewed.
-   */
-  it("keeps renewing a stored pair with the rotation setting off", async () => {
-    const env = await exchanged();
-    const off = createSlackAppTokenService({
-      helmToken: HELM,
-      secrets: {
-        storeId: "k8s",
-        get: async () => ({ ...env.secret() }),
-        put: async (_ref: unknown, fields: Record<string, string>) => {
-          Object.assign(env.secret()!, fields);
-        },
-      } as unknown as SecretStore,
-      lock: mutex(),
-      rotation: {
-        exchange: async () => {
-          throw new Error("no exchange expected");
-        },
-        refresh: async () =>
-          grant("xoxe.xapp-3", "xoxe-1-r3", env.now() + 14 * HOUR),
-        now: () => env.now(),
-      },
-      exchangeLongLivedToken: false,
-      spentRefreshTokens: { mark: async () => {}, isSpent: async () => false },
-    });
-    env.advance(2 * HOUR);
-
-    expect(await off.resolveAppToken()).toBe("xoxe.xapp-3");
   });
 });

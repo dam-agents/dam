@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-11-20
+Last verified: 2026-11-23
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -128,7 +128,7 @@ One cross-cutting concern is owned elsewhere and only summarized here:
 
 Both adapters share the same shape inside the api-server — a worker that owns the messenger socket, the channel manager that supervises lifecycle, the ACP relay for inbound, and the per-Agent MCP endpoint for outbound.
 The interesting parts are where the two diverge: Slack hangs off a workspace-wide identity link table; Telegram hangs off its own binding table (chat → Agent).
-Telegram's token comes from Helm values; Slack's app-level token does too — imported into a K8s Secret where token rotation is on — but a Slack bot token is per workspace and comes from the install handshake.
+Telegram's token comes from Helm values; Slack's app-level token does too — imported into a K8s Secret where its own rotation is on — but a Slack bot token is per workspace and comes from the install handshake.
 
 ### Slack — platform channel
 
@@ -164,7 +164,7 @@ flowchart LR
   MCP --> CM
 ```
 
-The App-Level Token comes from Helm values and lives in api-server env, or, with token rotation on, in the K8s Secret it is exchanged into; a Bot Token is per workspace, comes from the install handshake and lives in a K8s Secret — neither is per-Agent.
+The App-Level Token comes from Helm values and lives in api-server env, or, with app-level token rotation on, in the K8s Secret it is exchanged into; a Bot Token is per workspace, comes from the install handshake and lives in a K8s Secret — neither is per-Agent.
 Resolving the channel's binding yields the Agent and the binding owner; the relay is single-track to the main agent.
 The workspace-wide identity-link table backs the `/platform login` flow, which authorizes the in-chat bind, unbind, ambient, whisper on/off and default commands — never who may drive a turn.
 
@@ -218,7 +218,7 @@ The differences are transport, identity model, and where the bot token comes fro
 - **Token provenance.** The App-Level Token (`xapp-…`) is app-scoped: it comes from Helm values and stays singular, so one Socket Mode connection serves every installed workspace, and its Helm value alone decides whether the Slack worker runs.
   A **Bot Token is per workspace**, because Slack scopes one to one workspace, and every workspace gets its token the same way: by completing Slack's install handshake, the token that mints landing in a K8s Secret with a row pointing at it — no credential in Postgres, and none served from api-server env.
   Neither token is per-Agent.
-- **Token rotation.** Where the Slack app has token rotation turned on, every bot token and the App-Level Token expire after twelve hours and are renewed before then; how, and how the Helm value becomes a one-time import, is on [slack-tokens](slack-tokens.md).
+- **Token rotation.** Where the Slack app has token rotation turned on, bot tokens and, with its own install setting, the App-Level Token expire after twelve hours and are renewed before then; how, and how the Helm value becomes a one-time import, is on [slack-tokens](slack-tokens.md).
 - **Connecting a workspace is an operator act, and an invitation rather than open enrollment.** A new workspace is install-wide reach, not one Agent's config, so starting the handshake sits behind its own realm role (`platform-slack-installer`) — the chart creates it and a group mapped to it, the same shape the inspector role uses ([usage-tracking](usage-tracking.md)) — and an install that configured no Slack client credentials mounts no install surface at all.
   What the operator issues is a one-time invitation; the consent itself belongs to an admin of the workspace being added, who needs no platform account.
   Both sides therefore agree before a workspace is served.
@@ -401,7 +401,7 @@ Channels touch these stores; the substrate details live on [persistence](persist
   An identity link ties a messenger user to a platform identity, populated by Slack's `/platform login` — which is what authorizes the in-chat bind/unbind/ambient/default commands.
   Table shapes and indexes: [persistence](persistence.md).
   Telegram's token and Slack's app-level token live in api-server env from Helm values; a Slack workspace's bot token is a K8s Secret, which its install row points at.
-  With token rotation on, the app-level token's rotating pair lives in one install-wide K8s Secret ([slack-tokens](slack-tokens.md)).
+  With app-level token rotation on, its rotating pair lives in one install-wide K8s Secret ([slack-tokens](slack-tokens.md)).
 
 - **Loop guard drops (Postgres).** One row per Slack conversation where the bot-post limit dropped a post, written by the leader and read with the Agent's channels; a drop more than a day after the last starts the count again.
 

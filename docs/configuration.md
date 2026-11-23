@@ -232,13 +232,27 @@ Slack will not let you turn this off again once it is on, so try it on a dev app
    Rotation is one switch on the app, but every workspace's existing token keeps not expiring until it is exchanged, one call per token.
    As soon as the Slack worker starts, the api-server exchanges each of them for a rotating one — every connected workspace, an imported Helm token included.
    Slack retires the old token as it answers, so from then on only the rotating pair in the workspace's Secret works.
-   The app-level token rotates too: on the first Socket Mode connect, `apiServer.slackAppToken` is exchanged for a rotating pair, kept in the `platform-secret-slack-app-token` Secret and renewed every hour.
-   Slack retires the original token after the first renewal; keep the value in Helm anyway, since it is what turns Slack on.
+
+This setting covers bot tokens only.
+The app-level token keeps the Helm value as it is until you turn on its own switch, below.
 
 Rotating tokens are renewed whether or not the flag is set, so setting it back to `false` has no effect on tokens already exchanged.
 Do not paste a rotating token (`xoxe.xoxb-…`) from Slack's settings page into `slackBotToken`: it arrives without its refresh token, so the platform cannot renew it and it expires in twelve hours.
 Connect the workspace through the install flow instead.
-In the same way, do not paste a rotating app-level token (`xoxe.xapp-…`) into `slackAppToken`; set the long-lived `xapp-…` token and let the platform exchange it.
+
+#### App-level token rotation
+
+The app-level token that opens the Socket Mode connection can rotate too, with its own switch, `apiServer.slackAppTokenRotation`, off by default.
+It is separate from `slackTokenRotation` so that an install already rotating bot tokens sees no change until you turn it on.
+
+1. Token rotation must already be on in the Slack app (step 2 above), with `slackClientId` and `slackClientSecret` set.
+2. Turn it on in a dev install first: `--set=apiServer.slackAppTokenRotation=true`.
+   On the first Socket Mode connect, `apiServer.slackAppToken` is exchanged for a rotating pair, kept in the `platform-secret-slack-app-token` Secret and renewed every hour.
+   Slack retires the original token after the first renewal; keep the value in Helm anyway, since it is what turns Slack on.
+3. Watch the api-server log for `slack.app_token.refresh.failed` across more than one renewal cycle — a few hours — before you turn it on in staging and production.
+
+Do not paste a rotating app-level token (`xoxe.xapp-…`) into `slackAppToken`; set the long-lived `xapp-…` token and let the platform exchange it.
+Turning the switch off again puts Socket Mode back on the Helm value, which Slack retired at the first renewal: set a newly generated app-level token in the same change.
 
 If the api-server could not renew the app-level token before it expired, and Slack refuses its refresh token, Slack stays down and the api-server logs `slack.app_token.refresh.failed`.
 To recover, generate a new app-level token in the Slack app (Basic Information → App-Level Tokens) and set it as `apiServer.slackAppToken`: a value other than the one imported before is exchanged again.
