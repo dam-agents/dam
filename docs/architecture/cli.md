@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-11-19
+Last verified: 2026-11-23
 
 ## Overview
 
@@ -204,6 +204,7 @@ A connection's credential, new or rotated, the agent never sees: it runs `connec
 Since the agent cannot check that secret itself, the outcome carries the server's [credential check](connections.md#connection) where the template has one, and `dam connection test` runs it again on the stored credential, so the agent can tell a broken token from a working one.
 The CLI warns when a checked token expires within a day, and `dam connection list` shows each checked credential's expiry.
 A GitHub App connection's check names the bot it acts as and the repositories it reaches, and `dam connection scope` reports the check of the new scope.
+A Slack Account connection is read only unless it has full access ([connections](connections.md#connection)): `connect slack` makes it read only unless `--full-access` is passed, `list` marks it `read only` or `FULL ACCESS`, and `scope` switches it with `--full-access` or `--read-only`.
 A GitHub sign-in or App installation is a parent no agent holds ([github-connections](github-connections.md)), and the CLI follows the UI there: `connect` ends in a connection made from it only with a scope or an explicit full access, and otherwise keeps the parent alone and shows what it reaches; `connect --from` adds another connection beside those it has; `list` shows each parent with its connections underneath and marks full access; and removing a parent first names its connections and the agents that lose them.
 A name a parent shares with its first connection means the connection, so the agent's usual references keep naming what it holds.
 An agent that holds several GitHub accounts on one host, or several Object Storage connections, acts as its [default account](connections.md#addressing-a-connection) among them, as the web app's Connections panel shows: `dam connection list <agent>` marks it in a DEFAULT column and in `--json`, and `dam connection default` makes another granted account the default.
@@ -211,7 +212,7 @@ The masked terminal prompt stays the fallback, for a user who prefers it or a se
 Approvals and Terms acceptance stay the user's decisions, which the agent relays rather than makes.
 The agent never sees the web UI's warning that a connection is shared with an Agent's editors or with the chats it is bound to, so the skill's security advisory carries that rule to it: whoever can steer an Agent uses every connection and satellite it holds.
 The advisory has the agent check who can steer an Agent before it binds a chat or grants a connection or satellite, choose a connection with an identity of its own over one that acts as the user when others steer the Agent, and tell the user what each change shares.
-For an Agent others steer it also has the agent ask that Agent what its instructions say, since they decide what a message from any of those people may change in it.
+For an Agent others steer it also has the agent check that Agent's instructions, since they decide what a message from any of those people may change in it: first by reading its instruction files, which calls no model on it, and by asking the Agent only for what the files left open, which runs a turn and so waits for the user's approval.
 The CLI gives the web UI's warning itself as well: a command that binds a shared chat, or grants a connection or satellite to an Agent that editors or shared chats steer, names on stderr who can now use what, with the UI's rule for which chats are shared and model providers left out as there.
 It warns and never asks, since an agent usually drives it, and a read it cannot make says so in a note instead of leaving the warning out unseen.
 

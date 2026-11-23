@@ -190,6 +190,9 @@ import {
 } from "./modules/channels/infrastructure/slack-installs-repository.js";
 import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
+import { createSlackAppTokenService } from "./modules/channels/services/slack-app-token-service.js";
+import { slackAppTokenSource } from "./modules/channels/services/slack-app-token-source.js";
+import { createRedisSpentRefreshTokens } from "./modules/channels/infrastructure/slack-spent-refresh-tokens.js";
 import { createChannelProfiles } from "./modules/channels/infrastructure/channel-profile.js";
 import { createChannelProviderOutage } from "./modules/channels/infrastructure/provider-outage-copy.js";
 import {
@@ -406,6 +409,7 @@ import {
   createGrantedConnectionTemplates,
   createPricedConnections,
   createProviderEgressScopes,
+  createReadOnlyConnections,
   listConnectionGrantAgentIds,
   listConnectionTemplateIds,
   listManagedConnectionOwners,
@@ -1913,9 +1917,24 @@ export async function bootstrap() {
     resolveSlackChannelsByInstance: findSlackChannelsByAgent(db),
   };
 
-  const slackAppToken = config.slackAppToken;
+  const helmAppToken = config.slackAppToken;
+  const slackAppTokens = helmAppToken
+    ? slackAppTokenSource({
+        helmToken: helmAppToken,
+        rotation: config.slackAppTokenRotation,
+        createRotating: () =>
+          createSlackAppTokenService({
+            helmToken: helmAppToken,
+            helmRefreshToken: config.slackAppRefreshToken,
+            secrets: secretStore,
+            lock: createXactLock(db),
+            rotation: slackTokenRotation,
+            spentRefreshTokens: createRedisSpentRefreshTokens(sharedRedis),
+          }),
+      })
+    : null;
 
-  const slackGatewayFactory = slackAppToken
+  const slackGatewayFactory = slackAppTokens
     ? () =>
         createBoltSlackGateway({
           resolveBotToken: slackInstalls.resolveBotToken,
@@ -1923,7 +1942,7 @@ export async function bootstrap() {
           renewTokens: slackInstalls.renewAll,
           forgetBotToken: slackInstalls.forgetBotToken,
           helmBotToken: config.slackBotToken,
-          appToken: slackAppToken,
+          appToken: slackAppTokens.source,
           commandName: `/${config.brand.short}`,
           onCredentialRejected: slackInstalls.markRejected,
           companionAppIds: new Set(config.slackCompanionAppIds),
@@ -2314,6 +2333,10 @@ export async function bootstrap() {
     ruleMatcher: createEgressRuleMatchAdapter(db),
     waitingRuleSpeaksFor: ruleSpeaksFor,
     providerScopes: createProviderEgressScopes(db),
+    readOnlyConnections: createReadOnlyConnections(
+      db,
+      connectionsBoot.templates,
+    ),
     attendance: turnAttendance,
     spend: spend.check,
     webSearch: {
@@ -2337,9 +2360,10 @@ export async function bootstrap() {
         ]
       : [],
   });
-  if (config.slackAppToken) {
+  if (slackAppTokens) {
+    const renewAppToken = slackAppTokens.renew;
     await periodicJobs.register("slack-token-renew", 10 * 60_000, () =>
-      slackInstalls.renewAll(),
+      Promise.all([slackInstalls.renewAll(), renewAppToken?.()]),
     );
   }
   await periodicJobs.register("approvals-delivery-sweep", 30_000, () =>
@@ -2376,15 +2400,6 @@ export async function bootstrap() {
     wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
     ensureDefault: (agentId) => defaultConverter.ensureForFire(agentId),
     scheduleModelFor,
-    defaultPendingAfterMove: async (agentId) => {
-      if (!(await defaultConverter.pendingAfterMove(agentId))) return false;
-      void defaultConverter
-        .ensureForFire(agentId)
-        .catch((err: unknown) =>
-          getLogger().warn({ err, agentId }, "default conversion failed"),
-        );
-      return true;
-    },
     restoreActivity: (agentId, stamp) =>
       agentsRepo.restoreActivityIfUnchanged(agentId, stamp),
     redis: sharedRedis,
@@ -2738,8 +2753,12 @@ export async function bootstrap() {
   const wakeAgentFor = async (agentId: string) => {
     await agentsRepo.wakeIfHibernated(agentId);
   };
-  const harnessAgentsServiceFor = (owner: string) =>
+  const harnessAgentsServiceFor = (
+    owner: string,
+    as?: { actor: string; actorKind: "user" | "system" },
+  ) =>
     composeAgentsModule({
+      ...as,
       api,
       readSlackLoopGuardDrops: (ids) => loopGuardDrops.readMany(ids),
       storageGate: composeStorageGate({ k8s: k8sClient, owner }),

@@ -701,6 +701,21 @@ fn the_mount_serves_the_granted_satellites_over_a_real_fuse_session() {
     let (ok, listed) = shell(format!("ls {mnt}"));
     assert!(ok, "ls {mnt}: {listed}");
     assert_eq!(listed.lines().collect::<Vec<_>>(), vec!["lab", "ro"]);
+    // TEST_SCENARIO: two lookups of one directory are in flight at the same time. The fake platform holds an operation whose path begins `gate/` until a second one arrives, so this passes only if the kernel hands the mount both requests at once — which it does only when the mount asks for parallel directory operations.
+    let first = mnt.clone();
+    let second = mnt.clone();
+    let (a, b) = std::thread::scope(|scope| {
+        let a = scope.spawn(|| shell(format!("stat -c %s {first}/lab/gate/a.txt")));
+        let b = scope.spawn(|| shell(format!("stat -c %s {second}/lab/gate/b.txt")));
+        (a.join().expect("a stat"), b.join().expect("a stat"))
+    });
+    assert!(a.0, "stat gate/a.txt: {}", a.1);
+    assert!(b.0, "stat gate/b.txt: {}", b.1);
+    assert!(
+        tree.joined(),
+        "two lookups of one directory never arrived together"
+    );
+
     // TEST_SCENARIO: one entry the platform can only call "other" must not fail the listing of its directory.
     let (ok, lab) = shell(format!("ls {mnt}/lab"));
     assert!(ok, "ls {mnt}/lab: {lab}");
@@ -723,12 +738,62 @@ fn the_mount_serves_the_granted_satellites_over_a_real_fuse_session() {
     assert!(ok, "find: {found}");
     assert_eq!(found.trim(), format!("{mnt}/lab/docs/notes.md"));
 
+    // TEST_SCENARIO: a listing carries its entries' attributes, so an entry it listed is never asked about again while the kernel's window holds: `ls -l` of a directory is one listing and nothing per entry, and reading a file it listed is the read alone.
+    let (ok, _) = shell(format!("ls {mnt}/lab"));
+    assert!(ok, "priming the parent listing");
+    tree.trace();
+    let (ok, detailed) = shell(format!("ls -l {mnt}/lab/docs"));
+    assert!(ok, "ls -l: {detailed}");
+    assert!(detailed.contains("notes.md"), "ls -l listed {detailed}");
+    let listed = tree.trace();
+    assert!(
+        listed
+            .iter()
+            .any(|op| op.contains("op=\"readdir\"") && op.contains("path=\"docs\"")),
+        "the listing of docs was not one operation: {listed:?}"
+    );
+    assert!(
+        !listed.iter().any(|op| op.contains("docs/notes.md")),
+        "an entry the listing carried was asked about again: {listed:?}"
+    );
+
+    // TEST_SCENARIO: and the read of that entry is the read alone, with no lookup and no getattr in front of it.
+    tree.trace();
+    let (ok, read) = shell(format!("cat {mnt}/lab/docs/notes.md"));
+    assert!(ok, "cat the listed file: {read}");
+    assert_eq!(read, "# notes\n");
+    let reading = tree.trace();
+    assert_eq!(
+        reading
+            .iter()
+            .filter(|op| op.contains("docs/notes.md"))
+            .count(),
+        1,
+        "reading a listed file is more than one operation: {reading:?}"
+    );
+    assert!(
+        reading
+            .iter()
+            .filter(|op| op.contains("docs/notes.md"))
+            .all(|op| op.contains("op=\"read\"")),
+        "the read was preceded by another operation: {reading:?}"
+    );
+
     let (ok, walked) = shell(format!("ls {mnt}/lab/many | wc -l"));
     assert!(ok, "listing 600 entries: {walked}");
     assert_eq!(walked.trim(), "600", "a directory longer than one reply");
+    tree.trace();
     let (ok, walked) = shell(format!("find {mnt}/lab/many -type f | wc -l"));
     assert!(ok, "walking 600 entries: {walked}");
     assert_eq!(walked.trim(), "600");
+    // TEST_SCENARIO: walking a directory larger than one reply asks for its listings and no per-entry lookup, which is the operation a plain readdir would cost 600 times.
+    let walking = tree.trace();
+    assert!(
+        !walking
+            .iter()
+            .any(|op| op.contains("op=\"lookup\"") && op.contains("many/")),
+        "an entry of the walk was looked up: {walking:?}"
+    );
 
     let (ok, linked) = shell(format!("ln -s ../a.txt {mnt}/ro/out"));
     assert!(!ok, "a link was created on a read-only Satellite");
@@ -1111,13 +1176,17 @@ struct Platform {
 }
 
 impl Platform {
-    fn start(handler: impl Fn(&str, &serde_json::Value) -> (u16, String) + Send + 'static) -> Self {
+    fn start(
+        handler: impl Fn(&str, &serde_json::Value) -> (u16, String) + Clone + Send + 'static,
+    ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a listener");
         let url = format!("http://{}", listener.local_addr().expect("an address"));
         std::thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(stream) = stream else { continue };
-                answer(stream, &handler);
+                // UNIT_BOUNDARY_DESCRIPTION: one thread per connection, as a real platform serves: a fake that answered one at a time could not show whether the mount had two requests in flight at once.
+                let handler = handler.clone();
+                std::thread::spawn(move || answer(stream, &handler));
             }
         });
         Self { url }
@@ -1164,6 +1233,15 @@ struct Tree {
     reads: AtomicUsize,
     writes: AtomicUsize,
     trace: Mutex<Vec<String>>,
+    gate: Mutex<Gate>,
+    gate_cv: std::sync::Condvar,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the hold that proves two requests were in flight at the same moment. An operation whose path begins `gate/` waits here until `expected` of them have arrived, or three seconds pass: a mount that answers one request at a time never gets the second one in, so the wait times out and the caller reads `joined` as false.
+struct Gate {
+    expected: usize,
+    arrived: usize,
+    joined: bool,
 }
 
 struct InMemory {
@@ -1182,12 +1260,23 @@ impl Tree {
             reads: AtomicUsize::new(0),
             writes: AtomicUsize::new(0),
             trace: Mutex::new(Vec::new()),
+            gate: Mutex::new(Gate {
+                expected: 2,
+                arrived: 0,
+                joined: false,
+            }),
+            gate_cv: std::sync::Condvar::new(),
         };
         for satellite in ["lab", "ro"] {
-            for directory in ["", "docs", "docs/notes"] {
+            for directory in ["", "docs", "docs/notes", "gate"] {
                 tree.add(satellite, directory, "dir", String::new(), 0o755);
             }
-            for (path, contents) in [("a.txt", "hello\n"), ("docs/notes.md", "# notes\n")] {
+            for (path, contents) in [
+                ("a.txt", "hello\n"),
+                ("docs/notes.md", "# notes\n"),
+                ("gate/a.txt", "gate a\n"),
+                ("gate/b.txt", "gate b\n"),
+            ] {
                 tree.add(satellite, path, "file", contents.to_string(), 0o644);
             }
         }
@@ -1286,7 +1375,35 @@ impl Tree {
         if rest != "op" || !matches!(satellite, "lab" | "ro") {
             return (404, String::new());
         }
+        self.hold(body["path"].as_str().unwrap_or_default());
         (200, self.operate(satellite_id(satellite), body).to_string())
+    }
+
+    fn joined(&self) -> bool {
+        self.gate
+            .lock()
+            .unwrap_or_else(|held| held.into_inner())
+            .joined
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: holds an operation that names `gate/` until another one arrives, so the caller learns whether two were ever in flight together.
+    fn hold(&self, path: &str) {
+        if !path.starts_with("gate/") {
+            return;
+        }
+        let mut gate = self.gate.lock().unwrap_or_else(|held| held.into_inner());
+        gate.arrived += 1;
+        if gate.arrived >= gate.expected {
+            gate.joined = true;
+            self.gate_cv.notify_all();
+            return;
+        }
+        let (held, _) = self
+            .gate_cv
+            .wait_timeout(gate, std::time::Duration::from_secs(3))
+            .unwrap_or_else(|held| held.into_inner());
+        gate = held;
+        drop(gate);
     }
 
     fn trace(&self) -> Vec<String> {

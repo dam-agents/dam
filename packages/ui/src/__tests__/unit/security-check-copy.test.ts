@@ -1,11 +1,16 @@
 // TEST_OVERVIEW: The words of the security check. Its Experimental features row
-// TEST_OVERVIEW: names the install's assistant from the brand and says that each
-// TEST_OVERVIEW: check spends the person's model budget, which is why it waits for
-// TEST_OVERVIEW: the switch. The alert's headline counts the problems the check found.
+// TEST_OVERVIEW: names the install's assistant from the brand and says where the
+// TEST_OVERVIEW: person chooses how much a check does. The levels say what each
+// TEST_OVERVIEW: one runs, and only the top one says that it runs turns on the
+// TEST_OVERVIEW: person's other agents. The alert's headline counts the problems.
 import { describe, expect, it } from "vitest";
 
 import { securityCheckFeatureRow } from "../../modules/features/lib/security-check-feature-row.js";
 import { securityCheckHeadline } from "../../modules/security-checks/lib/security-check-copy.js";
+import {
+  securityCheckLevelIntro,
+  securityCheckLevelOptions,
+} from "../../modules/security-checks/lib/security-check-levels.js";
 
 const brand = {
   name: "DAM",
@@ -24,15 +29,16 @@ const brand = {
 };
 
 describe("the security check's row in Experimental features", () => {
-  // TEST_SCENARIO: the row is the `security-check` feature and tells the person the check spends their model budget before they turn it on.
-  it("says who runs the check and that it spends the model budget", () => {
+  // TEST_SCENARIO: the row is the `security-check` feature. It tells the person that a check runs no turn on their other agents unless they choose so, and that the level is in the assistant's own settings.
+  it("says who runs the check and where its level is chosen", () => {
     const row = securityCheckFeatureRow(brand);
     expect(row).toMatchObject({
       id: "security-check",
-      label: "Security check",
+      label: "Security advisory",
     });
     expect(row.description).toContain("Dambledore checks your setup");
-    expect(row.description).toContain("spends your model budget");
+    expect(row.description).toContain("no turn on your other agents");
+    expect(row.description).toContain("Dambledore's settings, under General");
   });
 
   // TEST_SCENARIO: a branded install shows its own assistant's name, so nothing is hardcoded.
@@ -40,6 +46,38 @@ describe("the security check's row in Experimental features", () => {
     const row = securityCheckFeatureRow({ ...brand, assistantName: "Ada" });
     expect(row.description).toContain("Ada checks your setup");
     expect(row.description).not.toContain("Dambledore");
+  });
+});
+
+describe("the levels of the security check", () => {
+  const described = (value: string): string =>
+    securityCheckLevelOptions(brand).find((option) => option.value === value)
+      ?.description ?? "";
+
+  // TEST_SCENARIO: a person reads three levels, from none to the most, in that order, before they choose.
+  it("lists the levels from off to deep", () => {
+    expect(
+      securityCheckLevelOptions(brand).map((option) => option.label),
+    ).toEqual(["Off", "Standard", "Deep"]);
+  });
+
+  // TEST_SCENARIO: the standard level is one run of the assistant and says that it runs no turn on another agent. The effort is not a level, so the words send the person to the schedule for it.
+  it("says that the standard check runs no turn on other agents", () => {
+    expect(described("standard")).toBe(
+      "One run of Dambledore a week. It runs no turn on your other agents.",
+    );
+    expect(securityCheckLevelIntro(brand)).toContain(
+      "the model and effort of its schedule",
+    );
+  });
+
+  // TEST_SCENARIO: the top level is the only one that runs turns on the person's other agents, so its words say that each question runs a turn there and costs one.
+  it("says that only the top level runs a turn on other agents", () => {
+    expect(described("deep")).toContain("runs one turn on that agent");
+    expect(securityCheckLevelIntro(brand)).toContain(
+      "Only Deep runs a turn on your other agents",
+    );
+    expect(securityCheckLevelIntro(brand)).toContain("calls no model");
   });
 });
 

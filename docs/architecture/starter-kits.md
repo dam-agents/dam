@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-11-16
+Last verified: 2026-11-18
 
 ## Overview
 
@@ -288,6 +288,8 @@ The platform also reminds the agent once: when the update session's turn ends wi
 A turn whose reply holds a [chat form](chat-forms.md) waits on the user's answer, so its end sends nothing: a notice would start a newer reply, which locks the form; a later turn end reminds instead.
 The reminder is recorded as `nudgedAt` on the pending mark, so one update is reminded once even across a Continue, and a second turn end never repeats it.
 While the update is pending, the session lists badge its session — the initialization session opened since the update started — the way an onboarding session is badged.
+The agent's tile on Home turns its "Kit update" offer badge into "Kit updating" for as long as the update is pending; the offer wins over a pending mark.
+That badge opens a panel with the versions the update moves between, when it started, "Continue update" into its session (or into the agent when that session is not among its recent chats), and the compare page of the update bar's card.
 An abandoned update stays pending; the button then reopens its session or starts again against the current head.
 
 ## Invariants

@@ -57,8 +57,10 @@ export function buildConnectionSdsFields(
   return out;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the annotations of a per-Connection Secret, which tell the gateway how to build each host's chain. An entry of a host in `checkBodyHosts` carries `checkBody`, so the gateway sends every request's whole body to that host with its ext_authz check, where a read-only Connection's tool calls are refused.
 export function connectionSecretAnnotations(
   contributions: Contribution[],
+  checkBodyHosts: readonly string[],
 ): Record<string, string> {
   const injectionHosts = contributions
     .filter(
@@ -78,6 +80,7 @@ export function connectionSecretAnnotations(
       ...(c.upgrades ? { upgrades: c.upgrades } : {}),
       ...(c.upstreamCa ? { caKey: UPSTREAM_CA_SECRET_FIELD } : {}),
       sdsKey: sdsFileKeyForInjection(c),
+      ...(checkBodyHosts.includes(c.host) ? { checkBody: true } : {}),
     }));
 
   const signingHosts = contributions

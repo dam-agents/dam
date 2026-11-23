@@ -24,6 +24,7 @@ import {
   run,
   signIn,
   slack,
+  view,
 } from "./connection-commands.js";
 
 captureOutput();
@@ -395,11 +396,16 @@ describe("dam connection scope", () => {
     expect(JSON.parse(json)).toMatchObject({ kind: "github-app", check });
   });
 
-  /** TEST_SCENARIO: only GitHub sign-ins and GitHub App connections can be limited; any other is refused. */
+  /** TEST_SCENARIO: only GitHub sign-ins, GitHub App connections and Slack Accounts can be limited; any other is refused. */
   it("refuses a connection that can't be limited", async () => {
+    const linear = view({
+      id: "conn-linear",
+      name: "linear",
+      templateId: "linear",
+    });
     await run(
-      scope({ list: async () => ok([slack]) }),
-      ["slack", "--repositories", "api"],
+      scope({ list: async () => ok([linear]) }),
+      ["linear", "--repositories", "api"],
       EXIT_INVALID_INPUT,
     );
     expect(output.stderr).toContain("only those can be limited");

@@ -607,6 +607,8 @@ export function createAgentsService(deps: {
   agentIdleTimeoutMinutes: number;
   owner: string | undefined;
   actor: string | undefined;
+  /** UNIT_BOUNDARY_DESCRIPTION: who the actor is for the security log: a person, or the platform's own sweep acting for the owner, so a delete the platform made never reads as one the owner made. */
+  actorKind?: "user" | "system";
   readTemplateSpec: ReadTemplateSpec;
   lastHelloAt?: (agentId: string) => Promise<Date | null>;
   presetSeeder?: PresetSeeder;
@@ -1946,7 +1948,7 @@ export function createAgentsService(deps: {
           securityLog("warn", "agent.delete.cleanup_failed", {
             category: "resource",
             actor: deps.actor ?? null,
-            actorKind: "user",
+            actorKind: deps.actorKind ?? "user",
             agentId: id,
             result: "failure",
             reason: err instanceof Error ? err.message : "unknown",
@@ -1956,7 +1958,7 @@ export function createAgentsService(deps: {
       securityLog("info", "agent.delete", {
         category: "resource",
         actor: deps.actor ?? null,
-        actorKind: "user",
+        actorKind: deps.actorKind ?? "user",
         agentId: id,
         result: "success",
       });

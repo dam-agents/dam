@@ -362,6 +362,18 @@ export function createInvocationsService(deps: {
   questions: OwnerQuestions;
   skills?: Pick<SkillsService, "applyEntries">;
   pinDriver?: (driverAgentId: string) => Promise<void>;
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: pins a target whose run waits to start, so the
+   * idle checker does not put it to sleep for the Agent Sweep to delete: a
+   * target waiting for room, or booted with its task not yet delivered, has
+   * no turn running and reads idle. A spawn sets it before it queues the
+   * task, and a failed write fails the spawn like the driver's pin; a run of
+   * a kept target sets it once the run is begun, where a failed write is
+   * logged and the run goes on, since the run is already recorded. The pin
+   * reconciler releases it once the run starts or ends, and the run's
+   * deadline bounds the wait.
+   */
+  pinTarget?: (targetAgentId: string) => Promise<void>;
   readStartWait?: (agentId: string) => Promise<string | null>;
   keepMaxMs?: number;
   idleTimeoutMaxMin?: number;
@@ -701,6 +713,7 @@ export function createInvocationsService(deps: {
     });
 
     try {
+      if (runId) await deps.pinTarget?.(agent.id);
       for (const event of work.ahead(agent.id, at, tasksExpireAt)) {
         await deps.runtimeMutator.bump(agent.id, [event]);
       }
@@ -913,6 +926,12 @@ export function createInvocationsService(deps: {
         );
       if (begun !== "begun")
         throw new RunError(`${invocationId} cannot take a run right now`);
+      await deps.pinTarget?.(invocationId).catch((err: unknown) => {
+        getLogger().warn(
+          { agentId: invocationId, err },
+          "invocations: the target was not pinned for its run; it may sleep before the run starts",
+        );
+      });
       await deps.runtimeMutator.bump(invocationId, [
         "script" in run
           ? scriptEvent(runId, run.script, startAt, tasksExpireAt)

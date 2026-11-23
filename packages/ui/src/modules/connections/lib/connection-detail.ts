@@ -1,6 +1,7 @@
 import type { ConnectionView } from "api-server-api";
 
 import { getBrand } from "../../../brand.js";
+import { accessReach } from "./access-choice.js";
 import { damActsAsYou, isDamConnection } from "./dam-connection.js";
 import { connectionScopeSummary, fullAccessReach } from "./github-access.js";
 
@@ -16,6 +17,7 @@ type DetailedConnection = Pick<
   | "accountLabel"
   | "isParent"
   | "fullAccess"
+  | "accessChoice"
   | "githubUserToken"
   | "githubAppScope"
   | "check"
@@ -33,6 +35,8 @@ export function connectionDetail(
   connection: DetailedConnection,
 ): ConnectionDetail {
   const account = accountLine(connection);
+  const access = accessReach(connection);
+  if (access) return { account, reach: { text: access } };
   if (connection.fullAccess)
     return { account, reach: { text: fullAccessReach(connection) } };
   const scope = connectionScopeSummary(connection);

@@ -1122,3 +1122,61 @@ describe("outbound MCP tools — artifact links (#5965)", () => {
     );
   });
 });
+
+describe("outbound MCP tools — why a send failed is on record (#6780)", () => {
+  beforeEach(() => {
+    auditLines.length = 0;
+  });
+
+  /**
+   * TEST_SCENARIO: A post Slack refused said only "failure" in the audit
+   * trail, so the cause of a post that did not reach a bound channel could not
+   * be seen afterwards. A failed post or reply now records the error the agent
+   * got and Slack's own error code; a plain error, which carries no code,
+   * records the error alone.
+   */
+  it("records Slack's error code and the agent's error on a failed post and reply", async () => {
+    const { client } = await mcpHarness({
+      postResult: {
+        error: "An API error occurred: not_in_channel",
+        refused: "not_in_channel",
+      },
+      replyResult: { error: "socket hang up" },
+    });
+
+    await client.callTool({
+      name: "post",
+      arguments: { channel: "slack", text: "digest", chatId: "C-BOUND" },
+    });
+    await client.callTool({
+      name: "reply",
+      arguments: { text: "answer", threadTs: "1.1" },
+    });
+
+    const outbound = auditLines.filter((l) => l.event === "channel.outbound");
+    expect(outbound).toHaveLength(2);
+    expect(outbound[0]!.detail).toMatchObject({
+      conversationId: "C-BOUND",
+      error: "An API error occurred: not_in_channel",
+      slackError: "not_in_channel",
+    });
+    expect(outbound[1]!.detail).toMatchObject({
+      action: "reply",
+      error: "socket hang up",
+    });
+    expect(outbound[1]!.detail).not.toHaveProperty("slackError");
+  });
+
+  it("records neither on a post that went out", async () => {
+    const { client } = await mcpHarness();
+
+    await client.callTool({
+      name: "post",
+      arguments: { channel: "slack", text: "digest" },
+    });
+
+    const [line] = auditLines.filter((l) => l.event === "channel.outbound");
+    expect(line!.detail).not.toHaveProperty("error");
+    expect(line!.detail).not.toHaveProperty("slackError");
+  });
+});

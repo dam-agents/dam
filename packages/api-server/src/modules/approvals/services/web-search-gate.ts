@@ -19,6 +19,7 @@ import {
   type WebSearchRefusal,
   type WebSearchRefusalReason,
 } from "../domain/web-search-refusal.js";
+import { decodedUtf8 } from "../domain/check-body.js";
 import { waitForVerdict } from "./held-verdict.js";
 import type {
   AgentIdentityResolver,
@@ -81,16 +82,6 @@ export interface CreateWebSearchGateDeps {
 
 const PASS: WebSearchGateOutcome = { pass: true };
 
-const decoder = new TextDecoder("utf-8", { fatal: true });
-
-function decoded(bytes: Uint8Array): string | null {
-  try {
-    return decoder.decode(bytes);
-  } catch {
-    return null;
-  }
-}
-
 function sha256(data: string | Uint8Array): string {
   return createHash("sha256").update(data).digest("hex");
 }
@@ -143,7 +134,7 @@ export function createWebSearchGate(
         return { pass: false, response: bodyNotReadRefusal() };
       }
       const endpoint = messagesEndpointOf(input.path);
-      const text = body.partial ? null : decoded(body.bytes);
+      const text = body.partial ? null : decodedUtf8(body.bytes);
       const request =
         text === null
           ? { kind: "unreadable" as const }

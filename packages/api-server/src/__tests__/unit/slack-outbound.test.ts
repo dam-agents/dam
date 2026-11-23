@@ -246,33 +246,25 @@ describe("slack outbound — cross-workspace reach", () => {
     expect(h.messages()).toMatchObject([{ channel: BOUND }]);
   });
 
-  it("posts into another channel the bot is a member of", async () => {
+  /**
+   * TEST_SCENARIO: A chatId that is not a bound conversation is refused before
+   * Slack is asked anything, whether the bot is in that channel, is not, or
+   * cannot see it at all (#6780). The refusal tells the agent not to post the
+   * message somewhere else instead, and nothing goes out.
+   */
+  it("refuses every channel it is not bound to — bot a member or not, known or not", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
-    expect(
-      await h.post("update", { conversationId: "C-GENERAL" }),
-    ).toMatchObject({
-      ok: true,
-    });
-    expect(h.messages()).toMatchObject([{ channel: "C-GENERAL" }]);
-  });
-
-  it("refuses a channel the bot is not a member of, pointing at /invite", async () => {
-    const h = harness({ boundChannelId: BOUND, channels: workspace });
-    const result = await h.post("nope", { conversationId: "C-STAFF" });
-    expect(result).toMatchObject({
-      error: expect.stringContaining("not a member"),
-    });
-    expect((result as { error: string }).error).toContain("/invite");
-    expect(h.gw.readOutbound()).toHaveLength(0);
-  });
-
-  it("refuses an unknown or invisible (private) conversation", async () => {
-    const h = harness({ boundChannelId: BOUND, channels: workspace });
-    const result = await h.post("nope", { conversationId: "C-NOWHERE" });
-    expect(result).toMatchObject({
-      error: expect.stringContaining("conversation C-NOWHERE not found"),
-    });
-    expect((result as { error: string }).error).toContain("/invite");
+    for (const conversationId of ["C-GENERAL", "C-STAFF", "C-NOWHERE"]) {
+      const result = await h.post("update", { conversationId });
+      expect(result).toMatchObject({
+        error: expect.stringContaining(
+          `${conversationId} is not a conversation you are connected to`,
+        ),
+      });
+      expect((result as { error: string }).error).toContain(
+        "Do not post into another conversation instead",
+      );
+    }
     expect(h.gw.readOutbound()).toHaveLength(0);
   });
 
@@ -293,7 +285,7 @@ describe("slack outbound — cross-workspace reach", () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
     const result = await h.post("psst", { conversationId: "UAAA,UBBB" });
     expect(result).toMatchObject({
-      error: expect.stringContaining("not found"),
+      error: expect.stringContaining("not a conversation you are connected to"),
     });
     expect(h.gw.readOutbound()).toHaveLength(0);
   });
@@ -327,7 +319,11 @@ describe("slack outbound — cross-workspace reach", () => {
    * a reader saw a bare file next to the text it belonged to.
    */
   it("attachments follow the resolved target, on the post itself", async () => {
-    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    const h = harness({
+      boundChannelId: BOUND,
+      extraBoundChannelIds: ["C-ALERTS"],
+      channels: workspace,
+    });
     const result = await h.post("report attached", {
       conversationId: "C-ALERTS",
       attachment: { filename: "report.md", data: Buffer.from("x") },
@@ -377,7 +373,11 @@ describe("slack outbound — cross-workspace reach", () => {
    * completes an upload only once, so the fallback uploads the file again.
    */
   it("a file share Slack refuses with the text falls back to the text, then the file", async () => {
-    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    const h = harness({
+      boundChannelId: BOUND,
+      extraBoundChannelIds: ["C-ALERTS"],
+      channels: workspace,
+    });
     const share = h.gw.shareFile.bind(h.gw);
     const shared: string[] = [];
     h.gw.shareFile = async (args) => {
@@ -413,7 +413,11 @@ describe("slack outbound — cross-workspace reach", () => {
    * switch holds, and the file after it.
    */
   it("a message that turns link previews off keeps them off, beside its file", async () => {
-    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    const h = harness({
+      boundChannelId: BOUND,
+      extraBoundChannelIds: ["C-ALERTS"],
+      channels: workspace,
+    });
     await h.post("see https://example.com", {
       conversationId: "C-ALERTS",
       unfurlLinks: false,
@@ -433,7 +437,11 @@ describe("slack outbound — cross-workspace reach", () => {
    * been sent, and the agent would send the whole message a second time.
    */
   it("a failed upload after a delivered text message says the text landed", async () => {
-    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    const h = harness({
+      boundChannelId: BOUND,
+      extraBoundChannelIds: ["C-ALERTS"],
+      channels: workspace,
+    });
     h.gw.shareFile = async () => {
       throw new Error("upload_error");
     };
@@ -448,13 +456,9 @@ describe("slack outbound — cross-workspace reach", () => {
     expect(h.messages()).toMatchObject([{ channel: "C-ALERTS" }]);
   });
 
-  it("listConversations: bound channel first with its #name, then member channels by name", async () => {
+  it("listConversations: the bound channel with its #name, and no channel it is not bound to", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
-    expect(await h.list()).toEqual([
-      { id: BOUND, title: "#agent-home" },
-      { id: "C-ALERTS", title: "#alerts" },
-      { id: "C-GENERAL", title: "#general" },
-    ]);
+    expect(await h.list()).toEqual([{ id: BOUND, title: "#agent-home" }]);
   });
 
   it("listConversations degrades to the bound channel when discovery fails", async () => {
@@ -651,13 +655,11 @@ describe("slack outbound — an agent bound to several conversations (#3086)", (
     expect(h.messages()).toMatchObject([{ channel: SECOND }]);
   });
 
-  it("listConversations leads with every bound conversation, then the rest", async () => {
+  it("listConversations lists every bound conversation, and only those", async () => {
     const h = multi();
     expect(await h.list()).toEqual([
       { id: BOUND, title: "#agent-home" },
       { id: SECOND, title: "#second-home" },
-      { id: "C-ALERTS", title: "#alerts" },
-      { id: "C-GENERAL", title: "#general" },
     ]);
   });
 });
@@ -719,35 +721,37 @@ describe("slack outbound — which workspace a post goes out under", () => {
   });
 });
 
-describe("slack outbound — reach follows the owner (#4165)", () => {
-  const channels: FakeSlackChannel[] = [
-    ...workspace,
-    {
-      id: "C-THEIRS",
-      name: "their-team",
-      botIsMember: true,
-      members: ["U-SOMEONE"],
-    },
-  ];
+describe("slack outbound — reach is the bound conversations (#6780)", () => {
+  const groupDm: FakeSlackChannel = {
+    id: "G-GROUP",
+    name: "mpdm-owner--someone-1",
+    botIsMember: true,
+    isGroupDirectMessage: true,
+    members: [OWNER_SLACK, "U-SOMEONE"],
+  };
+  const channels: FakeSlackChannel[] = [...workspace, groupDm];
 
   /**
-   * TEST_SCENARIO: The shared bot sits in channels of many teams. An agent
-   * may list and post into only the channels its owner is a member of,
-   * whoever supplied the chatId.
+   * TEST_SCENARIO: The incident behind #6780. The bot and the agent's owner
+   * are both in a channel nobody connected the agent to. The agent must
+   * neither be offered that channel nor be able to post into it — a group DM
+   * it is not bound to likewise — while its bound channel still works.
    */
-  it("lists and posts into a channel only when the owner is in it", async () => {
+  it("neither lists nor posts into a channel the owner is in but nobody bound", async () => {
     const h = harness({ boundChannelId: BOUND, channels });
-    const listed = (await h.list()).map((c) => c.id);
-    expect(listed).toContain("C-GENERAL");
-    expect(listed).not.toContain("C-THEIRS");
+    expect((await h.list()).map((c) => c.id)).toEqual([BOUND]);
 
-    expect(await h.post("hi", { conversationId: "C-GENERAL" })).toMatchObject({
+    for (const conversationId of ["C-GENERAL", groupDm.id]) {
+      expect(await h.post("digest", { conversationId })).toMatchObject({
+        error: expect.stringContaining(
+          "not a conversation you are connected to",
+        ),
+      });
+    }
+    expect(await h.post("digest", { conversationId: BOUND })).toMatchObject({
       ok: true,
     });
-    expect(await h.post("leak", { conversationId: "C-THEIRS" })).toMatchObject({
-      error: expect.stringContaining("owner is not a member"),
-    });
-    expect(h.messages()).toMatchObject([{ channel: "C-GENERAL" }]);
+    expect(h.messages()).toMatchObject([{ channel: BOUND }]);
   });
 });
 

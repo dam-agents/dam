@@ -88,7 +88,7 @@ export function AgentRow({
               {kindBadge.label}
             </Badge>
           )}
-          <KitUpdateTag agentId={agent.id} />
+          <KitUpdateTag agentId={agent.id} onOpenAgent={onSelect} />
           <ContributionFailuresBadge failures={agentFailures(agent)} />
           <GatewayFailureBadge agent={agent} />
           <UnsupportedContributionsBadge agent={agent} />

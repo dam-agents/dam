@@ -65,6 +65,8 @@ function buildUncheckedPayload(
         clientId: submitted("clientId"),
         clientSecret: submitted("clientSecret"),
         appSlug: submitted("appSlug"),
+        fullAccess:
+          template.accessChoice && access === "full" ? true : undefined,
       });
     case "client-credentials":
       return compact({

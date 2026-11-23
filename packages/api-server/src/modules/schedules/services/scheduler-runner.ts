@@ -25,6 +25,7 @@ import type { TtlStore } from "../../../core/ttl-store.js";
 import type { SpendHoldGate, SpendHoldReason } from "../../spend/index.js";
 import {
   isNoDefaultModelError,
+  NoDefaultModelError,
   type FirePair,
   type RunBoundary,
   type SessionChoicesValidator,
@@ -33,6 +34,8 @@ import { emit, EventType } from "../../../events.js";
 import { annotateSpan } from "../../../core/background-span.js";
 
 const TRIGGER_TTL_SECONDS = 3600;
+/* UNIT_BOUNDARY_DESCRIPTION: Run Now waits for an asleep Agent moved to a new image to wake onto it, as a fire does, but only this long, since a person is waiting on the button; a wake slower than that goes on, and Run Now says the Agent is still setting up. */
+const RUN_NOW_WAKE_CAP_MS = 100_000;
 
 export type ActivityStamp = AgentActivityStamp;
 
@@ -80,7 +83,7 @@ export interface SchedulerRunnerDeps {
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<ActivityStamp | null>;
   ensureDefault: (agentId: string) => Promise<ActivityStamp | null>;
-  defaultPendingAfterMove: (agentId: string) => Promise<boolean>;
+  runNowWakeCapMs?: number;
   scheduleModelFor: (
     agentId: string,
     model: string,
@@ -198,10 +201,36 @@ export function createSchedulerRunner(
     if (!oldest.done) firedHarness.delete(oldest.value);
   }
 
+  async function withinCap<T>(
+    work: Promise<T>,
+    capMs: number,
+    agentId: string,
+  ): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const cap = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        log(
+          `run-now: agent ${agentId} is still waking after ${capMs} ms; the wake goes on`,
+        );
+        work.catch((err: unknown) =>
+          log(
+            `run-now: agent ${agentId} wake after the cap failed: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+        reject(new NoDefaultModelError({ pending: true }));
+      }, capMs);
+    });
+    try {
+      return await Promise.race([work, cap]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async function triggerPayload(
     sched: Schedule,
     fireAt: Date,
-    opts: { wakeFirst: boolean },
+    opts: { wakeFirst: boolean; wakeCapMs?: number },
   ): Promise<Record<string, unknown>> {
     const payload: Record<string, unknown> = {
       scheduleId: sched.id,
@@ -214,7 +243,11 @@ export function createSchedulerRunner(
     const continues =
       sched.spec.type === "once" && sched.spec.origin?.mode === "continue";
     if (!continues && opts.wakeFirst) {
-      const stamp = await deps.ensureDefault(sched.agentId);
+      const woken = deps.ensureDefault(sched.agentId);
+      const stamp =
+        opts.wakeCapMs === undefined
+          ? await woken
+          : await withinCap(woken, opts.wakeCapMs, sched.agentId);
       if (stamp) earlyWake.set(sched, stamp);
     }
     const model = sched.spec.model
@@ -587,13 +620,6 @@ export function createSchedulerRunner(
         );
         return "onboarding-pending";
       }
-      if (await deps.defaultPendingAfterMove(sched.agentId)) {
-        log(
-          `run-now: agent ${sched.agentId} is setting up its default model; refusing`,
-        );
-        return "default-pending";
-      }
-
       const firedAt = now();
       const eventId = `run:${scheduleId}:${firedAt.getTime()}`;
       const expiresAt = new Date(
@@ -602,7 +628,8 @@ export function createSchedulerRunner(
 
       try {
         const payload = await triggerPayload(sched, firedAt, {
-          wakeFirst: false,
+          wakeFirst: true,
+          wakeCapMs: deps.runNowWakeCapMs ?? RUN_NOW_WAKE_CAP_MS,
         });
         const held = await spendHeld(sched, payload, "run-now");
         if (held) {
@@ -614,7 +641,7 @@ export function createSchedulerRunner(
         log(
           `run-now: schedule ${scheduleId} commit failed: ${(err as Error).message}`,
         );
-        /* UNIT_BOUNDARY_DESCRIPTION: a provider still on its way is under way rather than missing, so Run Now says it is still setting up and leaves the schedule's record alone, as it does while a moved Agent's default is converted. */
+        /* UNIT_BOUNDARY_DESCRIPTION: a provider still on its way, or a wake onto a new image slower than Run Now waits, is under way rather than missing, so Run Now says it is still setting up and leaves the schedule's record alone. */
         if (isNoDefaultModelError(err) && err.pending) return "default-pending";
         await emitFired(sched, "failure");
         if (isNoDefaultModelError(err)) {

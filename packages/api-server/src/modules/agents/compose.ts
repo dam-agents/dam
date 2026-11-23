@@ -115,6 +115,7 @@ export function composeAgentsModule(deps: {
   startPair?: AgentsServiceDeps["startPair"];
   editorEmail: string | null;
   actor?: string;
+  actorKind?: "user" | "system";
   resolveUserEmail: (sub: string) => Promise<string | null>;
 }): {
   agents: AgentsService;
@@ -142,6 +143,7 @@ export function composeAgentsModule(deps: {
       storageGate: deps.storageGate,
       owner: deps.owner,
       actor: deps.actor ?? deps.owner,
+      ...(deps.actorKind ? { actorKind: deps.actorKind } : {}),
       readTemplateSpec: deps.readTemplateSpec,
       lastHelloAt: async (agentId) =>
         (await agentsRuntimeRepo.get(agentId))?.runtimeLastHelloAt ?? null,

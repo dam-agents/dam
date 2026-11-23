@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-11-12
+Last verified: 2026-11-20
 
 ## Overview
 
@@ -244,14 +244,17 @@ Only the Driver's own children are scoped; a grandchild shows under its child.
 A Driver usually waits on its sub-agents from a script, and the signals that keep an Agent awake see sessions, connections and background work its harness reports — not a detached loop, and not a harness that reports nothing.
 Hibernating a waiting Driver kills the loop, and the results then have nobody to collect them.
 So while an Agent drives at least one running Invocation it carries a pin the controller's idle checker and early reclaim both honour ([agent-lifecycle](agent-lifecycle.md#hibernate)).
+A target whose run waits to start carries the same pin: waiting for room in its owner's memory, or booted before its task is delivered, it runs no turn and its busy probe answers idle, so without the pin it would sleep and the Agent Sweep would delete it, failing the run as a deleted target instead of one that did not start.
+A spawn with a task pins its target before it queues the task, and a failed write fails the spawn like the Driver's; a run of a kept target pins it once the run is begun, and a failed write there is logged, since the run is already recorded.
+The run's deadline bounds the wait: a run that never starts fails with the "did not start" reason, and its target is reaped.
 
-**Only a spawn sets the pin**, as part of the spawn itself.
+**Only a spawn or a run sets the pin**, as part of the spawn or the run itself; the rules below are written for the Driver's pin, and a target's pin follows them too.
 The write is conditional on the Driver it read, and a Driver changes under it for ordinary reasons, a sibling spawn's pin or a controller status update, so a write that loses is read again and retried a few times; a Driver a sibling already pinned is written again all the same, since the release below relies on every spawn changing the Driver.
 A write that still fails fails the spawn and leaves no Invocation behind.
-**A periodic reconcile only releases it**, for each pinned Driver it finds with no running Invocation, reading that Driver first and only then checking its Invocations; the release is conditional on that read, so a spawn landing in between, which must change the Driver to pin it, fails the release and the next tick decides again.
+**A periodic reconcile only releases it**, for each pinned Agent it finds with no running Invocation it drives and no run of its own waiting to start, reading that Agent first and only then checking its Invocations; the release is conditional on that read, so a spawn landing in between, which must change the Driver to pin it, fails the release and the next tick decides again.
 No terminal path has to remember to release it, whichever of them ended the last Invocation.
-**Sleep wins**: it clears the pin, and since the reconcile never sets one, a sleeping Driver stays down while its sub-agents finish; a spawn made while the stop stamp still stands (inside a sleep's settle window) leaves the Driver unpinned, and the spawn's write is conditional on the Driver being unchanged, so a sleep landing mid-spawn fails it rather than being undone.
-It is pinned again only by a spawn after it is awake.
+**Sleep wins**: it clears the pin, and since the reconcile never sets one, a sleeping Agent stays down while its sub-agents finish; a spawn made while the stop stamp still stands (inside a sleep's settle window) leaves the Driver unpinned, and the spawn's write is conditional on the Driver being unchanged, so a sleep landing mid-spawn fails it rather than being undone.
+A Driver is pinned again only by a spawn after it is awake, and a target only by its next run.
 A release bumps the Driver's activity, so its ordinary idle window starts from the last result and a chained spawn never finds it asleep; the bump and the cleared pin are one write under that same condition, so a sleep that cleared the pin meanwhile keeps its stale clock.
 A Driver that crashed mid-fan-out stays up until its targets' deadlines end their Invocations.
 

@@ -22,6 +22,13 @@ export interface ConnectionFamily {
   title: string;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a Template's declaration that its Connection is read only unless the owner gives it full access. `host` is the MCP server the gateway inspects, `readTools` are the only tools a read-only Connection may call there, and `fullAccessLabel` is the Template's own name for full access. A tool the server adds later is not in the list, so a read-only Connection cannot call it.
+export interface TemplateToolAccess {
+  host: string;
+  readTools: readonly string[];
+  fullAccessLabel: string;
+}
+
 interface TemplateCommon {
   id: string;
   name: string;
@@ -31,6 +38,7 @@ interface TemplateCommon {
   description?: string;
   iconSlug?: string;
   contributions: Contribution[];
+  toolAccess?: TemplateToolAccess;
   extras?: Record<string, unknown>;
   hostChoices?: readonly string[];
   retiredHosts?: readonly string[];
@@ -207,6 +215,9 @@ export function templateToView(
     authKind: t.authKind,
     inputs: inputsFor(t, familyPreset),
     ...(Object.keys(extras).length > 0 ? { extras } : {}),
+    ...(t.toolAccess
+      ? { accessChoice: { fullAccessLabel: t.toolAccess.fullAccessLabel } }
+      : {}),
   };
 }
 

@@ -509,6 +509,13 @@ export function createConnectionsService(deps: {
       conn.auth.fullAccess
         ? { fullAccess: true as const }
         : {}),
+      ...(template?.toolAccess
+        ? {
+            accessChoice: {
+              fullAccessLabel: template.toolAccess.fullAccessLabel,
+            },
+          }
+        : {}),
       ...(provider
         ? { provider: { ...provider, preferred: conn.id === preferredId } }
         : {}),
@@ -643,8 +650,34 @@ export function createConnectionsService(deps: {
           "agent-platform.ai/secret-type": "connection",
           "agent-platform.ai/connection": connectionId,
         },
-        extraAnnotations: connectionSecretAnnotations(contributions),
+        extraAnnotations: connectionSecretAnnotations(
+          contributions,
+          checkBodyHostsOf(templateId),
+        ),
       },
+    );
+  }
+
+  function checkBodyHostsOf(templateId: string): string[] {
+    const host = deps.templates.get(templateId)?.toolAccess?.host;
+    return host ? [host] : [];
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: writes a Connection's Secret again with the annotations its Template asks for today. A Secret written before its Template declared read tools has no `checkBody`, so its gateway sends no body to the check, and a read-only Connection would have every call refused. */
+  async function restampConnectionSecret(conn: Connection): Promise<void> {
+    const path = connectionSecretPath(conn.auth);
+    if (!path) return;
+    const fields = await deps.secretStore.get({
+      storeId: deps.secretStore.storeId,
+      path,
+    });
+    if (!fields) return;
+    await putConnectionSecret(
+      conn.id,
+      conn.templateId,
+      path,
+      fields,
+      conn.isParent ? [] : conn.contributions,
     );
   }
 
@@ -2531,6 +2564,16 @@ export function createConnectionsService(deps: {
         (built.auth.kind === "oauth" || built.auth.kind === "github-app")
           ? withoutScope(built.auth)
           : built.auth;
+      if (effectiveInput.authKind === "oauth" && effectiveInput.fullAccess) {
+        if (!template.toolAccess || auth.kind !== "oauth") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "This connection has no read-only mode, so full access cannot be set on it.",
+          });
+        }
+        auth = { ...auth, fullAccess: true };
+      }
       const mintFirstToken = async (
         current: TokenAuth,
         credential: {
@@ -2721,7 +2764,7 @@ export function createConnectionsService(deps: {
         templateId: template.id,
         name: connectionName,
         inputs: {
-          ...(isParent
+          ...(isParent || template.toolAccess
             ? withoutScopeInputs(stripSecretsFromInputs(input))
             : stripSecretsFromInputs(input)),
           ...sharedKbInputs,
@@ -3186,6 +3229,41 @@ export function createConnectionsService(deps: {
       return rejectIfInvalid(() =>
         deps.githubAppEngine.listUserInstallationAccounts(opts),
       );
+    },
+
+    async setFullAccess(input) {
+      const conn = await deps.repo.get(input.id, deps.ownerId);
+      if (!conn) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "connection not found",
+        });
+      }
+      const template = deps.templates.get(conn.templateId);
+      if (!template?.toolAccess || conn.auth.kind !== "oauth") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "This connection has no read-only mode, so its access cannot be changed.",
+        });
+      }
+      await deps.connectionLock(connectionRefreshLockKey(conn.id), async () => {
+        const fresh = await deps.repo.get(conn.id, deps.ownerId);
+        if (!fresh || fresh.auth.kind !== "oauth") return;
+        const nextAuth: OAuthAuth = { ...fresh.auth };
+        delete nextAuth.fullAccess;
+        if (input.fullAccess) nextAuth.fullAccess = true;
+        if (!input.fullAccess) await restampConnectionSecret(fresh);
+        await deps.repo.updateAuth(conn.id, nextAuth);
+      });
+      securityLog("info", "connection.access_update", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: conn.id,
+        result: "success",
+        detail: { templateId: conn.templateId, fullAccess: input.fullAccess },
+      });
     },
 
     async updateGitHubUserTokenScope(input) {

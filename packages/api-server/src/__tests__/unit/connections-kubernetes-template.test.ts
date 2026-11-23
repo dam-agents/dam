@@ -263,7 +263,7 @@ describe("injection-hosts annotation", () => {
       host: "api.cluster.example:6443",
       caData: CA_PEM,
     });
-    const raw = connectionSecretAnnotations(built.contributions)[
+    const raw = connectionSecretAnnotations(built.contributions, [])[
       "agent-platform.ai/injection-hosts"
     ];
     const entries = JSON.parse(raw) as Record<string, unknown>[];

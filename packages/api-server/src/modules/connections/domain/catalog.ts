@@ -619,6 +619,23 @@ const SLACK_SCOPES = [
   "users:read.email",
 ];
 
+const SLACK_MCP_HOST = "mcp.slack.com";
+
+const SLACK_READ_TOOLS = [
+  "slack_search_public",
+  "slack_search_public_and_private",
+  "slack_search_channels",
+  "slack_search_users",
+  "slack_search_emojis",
+  "slack_read_channel",
+  "slack_read_thread",
+  "slack_read_canvas",
+  "slack_read_file",
+  "slack_read_user_profile",
+  "slack_list_channel_members",
+  "slack_get_reactions",
+];
+
 function slack(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
   return {
     id: "slack",
@@ -626,7 +643,12 @@ function slack(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
     category: "app",
     isCustom: false,
     description:
-      "Search, read, and post in Slack on your behalf — backed by Slack's MCP server.",
+      "Search and read Slack as you, backed by Slack's MCP server. Read only unless you let it post as you.",
+    toolAccess: {
+      host: SLACK_MCP_HOST,
+      readTools: SLACK_READ_TOOLS,
+      fullAccessLabel: "Can post as me",
+    },
     iconSlug: "slack",
     authKind: "oauth",
     setupUrl: "https://api.slack.com/apps",
@@ -638,14 +660,14 @@ function slack(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
     contributions: [
       {
         kind: "egress-inject",
-        host: "mcp.slack.com",
+        host: SLACK_MCP_HOST,
         headerName: "Authorization",
         valueFormat: "Bearer {value}",
       },
       {
         kind: "mcp-entry",
         name: "slack",
-        url: "https://mcp.slack.com/mcp",
+        url: `https://${SLACK_MCP_HOST}/mcp`,
         headers: { Authorization: "Bearer dummy-placeholder" },
       },
     ],

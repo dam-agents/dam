@@ -12,7 +12,10 @@ import {
   sharedChannelsTitle,
 } from "../../sandboxes/lib/shared-channels.js";
 import { BindSharingText } from "../components/bind/bind-sharing-text.js";
-import { useAgentSharedAccess } from "./use-agent-shared-access.js";
+import {
+  useAgentAccessChoices,
+  useAgentSharedAccess,
+} from "./use-agent-shared-access.js";
 import { useHoldsDamConnection } from "./use-holds-dam-connection.js";
 
 const DISMISSED_STORAGE_KEY =
@@ -32,6 +35,7 @@ export function useBindSharingConfirm(
   agent: AgentView | null,
 ): BindSharingConfirm {
   const names = useAgentSharedAccess(agent);
+  const accessChoices = useAgentAccessChoices(agent);
   const dam = damHoldWarns(useHoldsDamConnection(agent))
     ? damAudienceSentence(getBrand().name, "anyone in this chat")
     : null;
@@ -49,6 +53,7 @@ export function useBindSharingConfirm(
             <BindSharingText
               agentName={agent.name}
               connectionNames={names}
+              accessChoices={accessChoices ?? []}
               audience={audience}
               whisper={whisper}
             />
@@ -61,7 +66,7 @@ export function useBindSharingConfirm(
         </>
       );
     },
-    [agent, names, dam],
+    [agent, names, accessChoices, dam],
   );
   const confirm = useCallback(
     async (

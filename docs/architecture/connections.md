@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-11-16
+Last verified: 2026-11-20
 
 ## Overview
 
@@ -125,6 +125,21 @@ The same background loop that refreshes OAuth tokens re-mints it before expiry u
 One per-Connection Secret holds the client secret, the current access token, and the SDS files baked from it; only the minted access token is ever injected on the wire.
 
 A **GitHub App** installation and a **GitHub sign-in** made through a GitHub App are *parents*: they hold the credential and no Agent holds them; an Agent holds a Connection made from one, with its own scope, or full access named on purpose, and its own token ([github-connections](github-connections.md)).
+
+A Template may declare **read tools** for its MCP server, as the Slack Account does.
+Its Connection is then **read only** unless its owner gives it full access, at connect or later; the choice lives on the Connection, so every Agent that holds it gets the same one.
+Without full access the gateway lets only those tools pass, and a tool the server adds later is in no list, so it is refused until the list names it.
+The Agent still sees every tool the server lists, and a refused call is answered with an error it can read.
+The limit is a step of the ext_authz gate ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)), after the spend and web search steps and before any rule is read, so no egress rule lets a refused call through.
+On the Template's host, named by the request's TLS server name or its Host header, the gate reads the request's whole body, which that host's chain sends with every check ([credential-gateway](credential-gateway.md#envoy-credential-injection)), and refuses a tool call outside the list, also inside a batch, with JSON keys read in any letter case.
+It reads the Connection's choice from the database on every request.
+A request that names a Connection the Agent holds gets that Connection's choice; any other request to that host gets the strictest choice among the Agent's Connections there, because the gateway adds a credential to a request that names none where nothing contests the host.
+The refusal is a JSON-RPC error on a successful reply that says the gateway refused the call, which Connection is read only and who can change it, so the Agent can explain it and its session goes on.
+A POST whose body did not come with the check, was read in part, or is not one strict JSON document with unique keys is refused rather than passed, and so is a method an MCP client does not need.
+While the Agent holds a read-only Connection, a TLS request that can carry a body and comes without a server name is refused with a retry: its gateway has not restarted onto the check yet, and there the Host header alone could hide the Template's host.
+That window opens only when a Connection made before the choice existed is first made read only, because its Secret then starts to ask for the body.
+A change holds from the Agent's next request, and whoever acts with the owner's rights can make it, an Agent that holds the owner's [DAM Connection](connection-presets.md#platform-preset-this-install-itself) included.
+The Slack Account Connections made before the choice existed keep full access, so none was narrowed silently.
 
 A Connection that acts as a person rather than as the Agent records **whose account** it acts as, so the product can name that person wherever the Connection is listed.
 The platform asks the provider with the Connection's own credential (Slack, GitHub and the Google services today) when the credential first works: at the OAuth callback, at create for a token, and again on every re-consent or rotation, since a new credential may belong to someone else.

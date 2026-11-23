@@ -681,6 +681,7 @@ export {
   connectionEgressPathPrefix,
   connectionEgressPlaceholder,
   stripConnectionEgressPrefix,
+  CONNECTION_EGRESS_ADDRESS_HEADER,
   applyConnectionEgressAddressing,
   carriesCredentialPlaceholder,
   unaddressableRivalHost,
@@ -782,6 +783,7 @@ export type {
   Connection,
   ConnectionStatus,
   ConnectionView,
+  ConnectionAccessChoice,
   ConnectionProviderView,
   ConnectionTemplateView,
   ProviderBalance,
@@ -864,6 +866,7 @@ export type {
 } from "./modules/cost-reviews/types.js";
 export { COST_REVIEW_LATER_DAYS } from "./modules/cost-reviews/types.js";
 export type {
+  SecurityCheckLevel,
   SecurityCheckNotice,
   SecurityCheckReport,
   SecurityCheckReportInput,
@@ -872,6 +875,7 @@ export type {
 export {
   SECURITY_CHECK_MAX_PROBLEMS,
   SECURITY_CHECK_PROBLEM_MAX_LENGTH,
+  securityCheckLevelSchema,
   securityCheckReportInputSchema,
 } from "./modules/security-checks/schemas.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";
@@ -1265,24 +1269,20 @@ export {
   MAX_JOB_OUTPUT_BYTES,
   PAYLOAD_ENVELOPE_BYTES,
   SATELLITE_FILE_ERRNOS,
-  SATELLITE_FILE_MAX_BYTES,
   SATELLITE_FILE_MAX_DATA_CHARS,
   SATELLITE_FILE_MAX_PATH,
   SATELLITE_FILE_MAX_READDIR,
   SATELLITE_FILE_MAX_READ_BYTES,
   SATELLITE_FILE_MAX_RESULT_BYTES,
   SATELLITE_IMAGE_MIME_TYPES,
-  SATELLITE_TRANSFER_CLAIM_HEADER,
   escapedTextBytes,
   fileResultInputSchema,
   formatJobRef,
   isBase64,
   reportInputSchema,
-  satelliteFileNameSchema,
   satelliteFileErrnoSchema,
   satelliteFileOpMutates,
   satelliteFileOpSchema,
-  satelliteFileWrittenSchema,
   satelliteFilesSchema,
   satelliteImageOf,
   satelliteKindSchema,
@@ -1290,7 +1290,6 @@ export {
   satelliteImageSchema,
   satelliteImagesSchema,
   satelliteNameSchema,
-  satelliteTransferTokenSchema,
   storedPayloadBytes,
   RESERVED_TOOL_NAMES,
   satelliteToolNameSchema,
@@ -1300,7 +1299,6 @@ export {
 export type {
   SatelliteFileErrno,
   SatelliteFileOp,
-  SatelliteFileWritten,
 } from "./modules/satellites/schemas.js";
 export type {
   CallWorkItem,

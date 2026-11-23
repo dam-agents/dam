@@ -8,7 +8,10 @@ import type { Db } from "db";
 
 import { createXactLock } from "../../core/xact-lock.js";
 
-import { securityCheckSchedule } from "./domain/security-check.js";
+import {
+  securityCheckRunLevel,
+  securityCheckSchedule,
+} from "./domain/security-check.js";
 import { createAssistantSchedulesRepository } from "./infrastructure/assistant-schedules-repository.js";
 import {
   createAssistantSchedule,
@@ -39,7 +42,9 @@ const refreshedOwners = new Set<string>();
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the security check for one owner: the shared
  * assistant Schedule service bound to the security check's definition, with
- * its alert read as the report of problems the contract names.
+ * its alert read as the report of problems the contract names. A level is
+ * read and chosen only by a person the feature is on for; for anyone else
+ * the check is off and a choice makes nothing.
  */
 export function composeSecurityChecksForOwner(deps: {
   db: Db;
@@ -75,6 +80,16 @@ export function composeSecurityChecksForOwner(deps: {
       refreshedOwners.add(deps.owner);
     },
     disable: () => schedule.disable(),
+    level: async () => {
+      if (!(await deps.enabled())) return "off";
+      const level = await schedule.level();
+      return level === null ? "off" : securityCheckRunLevel(level);
+    },
+    setLevel: async (level) => {
+      if (!(await deps.enabled())) return;
+      if (level === "off") await schedule.stop();
+      else await schedule.enable(level);
+    },
     report: async (input) =>
       toReport(await schedule.report(input.problems, { update: input.update })),
     current: async () => toReport(await schedule.current()),

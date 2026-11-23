@@ -122,6 +122,7 @@ export function composeInvocationsForOwner(opts: {
   spendHold?: SpendHoldGate;
   skills?: Pick<SkillsService, "applyEntries">;
   pinDriver?: (driverAgentId: string) => Promise<void>;
+  pinTarget?: (targetAgentId: string) => Promise<void>;
   readStartWait?: (agentId: string) => Promise<string | null>;
   // UNIT_BOUNDARY_DESCRIPTION: makes a sub-agent that asked its owner a question one that sleeps and stays until the answer, instead of one the Agent Sweep removes asleep.
   parkTarget: (agentId: string) => Promise<void>;
@@ -168,6 +169,7 @@ export function composeInvocationsForOwner(opts: {
     ...(opts.spendHold ? { spendHold: opts.spendHold } : {}),
     ...(opts.skills ? { skills: opts.skills } : {}),
     ...(opts.pinDriver ? { pinDriver: opts.pinDriver } : {}),
+    ...(opts.pinTarget ? { pinTarget: opts.pinTarget } : {}),
     ...(opts.readStartWait ? { readStartWait: opts.readStartWait } : {}),
     keepMaxMs: opts.keepMaxMs,
     idleTimeoutMaxMin: opts.idleTimeoutMaxMin,
@@ -434,6 +436,10 @@ export function composeInvocationPinReconciler(opts: {
     readPin: opts.readPin,
     hasRunningInvocation: async (driverAgentId) =>
       (await repo.listRunningByDriver(driverAgentId)).length > 0,
+    runWaitsToStart: async (targetAgentId) => {
+      const own = await repo.get(targetAgentId);
+      return own?.status === "running" && own.startedAt === null;
+    },
     release: opts.release,
   });
 }

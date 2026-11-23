@@ -15,7 +15,7 @@ DAM runs the user's AI agents in isolated sandboxes on a server.
 The `dam` CLI on this machine is how you drive it: everything the DAM web app does has a `dam` command.
 You act as the user, with the user's own rights, so treat every command as if the user typed it.
 
-This page describes `dam` CLI 0.3.2.
+This page describes `dam` CLI 0.3.3.
 Before you rely on it, compare that with the CLI you have: see [Match this skill to the CLI](#match-this-skill-to-the-cli).
 
 ## Hard rules
@@ -446,6 +446,10 @@ Without a scope, `dam connection connect github` keeps the sign-in alone and sho
 `--full-access` gives a connection everything its sign-in or installation reaches: every account, repository and permission.
 Pass it only when the user asks for that, and tell them what it reaches.
 `dam connection list` marks such a connection `FULL ACCESS`, and in `--json` its `scope` is `{ "restricted": false, "fullAccess": true }`.
+
+A Slack Account connection (`dam connection connect slack`) is read only unless it has full access: the agent searches and reads Slack as the user, and the platform refuses every tool that posts or changes something, whatever the harness.
+`dam connection scope <connection> --full-access` lets the agent post and change things as the user, and `--read-only` takes that away; `dam connection scope <connection>` shows which it is.
+Pass `--full-access` only when the user asks for it, and tell them that anyone who can talk to the agent can then post as them.
 
 `dam connection scope <connection>` with no flags changes nothing: it shows the current scope and, under `available`, the accounts, repositories and permissions you can choose from.
 A flag you leave out keeps that part of the scope.

@@ -86,8 +86,9 @@ Builds published before these accounts were added have only `qa-owner`; there an
   Nothing in your account is deleted.* — and one button, the only onboarding reset there is: it asks first, locks every avatar again and starts the Get started checklist over, the assistant's own create task counting as done once its celebration has been dismissed — wait for it and click *Nice* before asserting the checklist, since until then the task is unlocked but unseen.
   For an account the assistant is on for it also gives them a first open in it: the greeting comes back, a Dammy the platform made is reused with its use forgotten, one that is gone is made again when the name is free, and the account is taken to the entry route.
   For an account it is off for the card does the checklist alone and leaves the account where it is.
-  The assistant can also run a weekly **security check** of the account's whole setup: the experimental feature `security-check`, off by default, whose row under Settings → Experimental features is labelled *Security check* and says each check spends the model budget.
-  Switching it on adds an ordinary schedule named *Security check* to the assistant's schedules, and switching it off removes that schedule; an account with no assistant gets an error and the switch stays off.
+  The assistant can also run a weekly **security check** of the account's whole setup: the experimental feature `security-check`, off by default, whose row under Settings → Experimental features is labelled *Security advisory* and says that a check runs no turn on the other agents unless the person chooses so.
+  Switching it on adds an ordinary schedule named *Security advisory* to the assistant's schedules, and switching it off removes that schedule; an account with no assistant gets an error and the switch stays off.
+  With the feature on, the General section of the assistant's settings, and of no other agent's, shows a *Security advisory* choice: *Off*, *Standard* and *Deep*, each with a line that says what it runs; it starts at *Standard*, *Off* removes the schedule, and only *Deep* lets the check run a turn on other agents.
   When a check found something, the approvals bell shows one card under the assistant's name, headed *Your setup has N security problem(s)*, with one line per problem and a *Review in chat* button that opens the session of that check.
   *Dismiss* hides that card until the next check reports; nothing in the setup changes until the person agrees in that chat, and deleting the schedule takes the card away.
 
@@ -123,6 +124,11 @@ Builds published before these accounts were added have only `qa-owner`; there an
     So each request goes in a thread of its own: a root without a mention (`personSays(text)`), then the mention in that thread (`personSays(text, root)`), then `botReplies(root)`.
     A task that should post in Slack gets a thread of its own the same way: the root, then its link (`threadLink(root)`) in the task's prompt, then `botReplies(root)` for the agent's post — a post at the channel's top level would share one count with every other run's posts there and could be dropped.
     A Mock agent answers a Slack mention in the thread with its scripted reply, without a model.
+  - **The Slack Account connection** is not a channel: it gives an agent its owner's own Slack, through Slack's sign-in (Settings → Connections → Slack Account).
+    Its form asks what agents can do with it: **Read only**, the default, or **Can post as me**.
+    Every row of the connection, also under an agent's **Connections**, says which in the line under its name (*Read only: …* or *Searches, reads and posts as you*), and one that can post also carries the red mark *Can post as me*; *Change access* in the row's menu switches between them.
+    With *Read only* the platform refuses every Slack tool that posts or changes something, and the agent says so in its reply.
+    A test never drives Slack's own sign-in pages, so a criterion that needs the connection signed in is `blocked — Slack sign-in`, never failed; one that checks only the form, the marks or the dialog stays testable.
   - **Testability limit — Slack account linking.**
     A user links their Slack account only inside Slack: `/dam login` (then a DAM sign-in page), or `/dam bind` typed in the channel itself.
     The test person writes through Slack's API, which cannot send a slash command, and a test never drives Slack's own app.

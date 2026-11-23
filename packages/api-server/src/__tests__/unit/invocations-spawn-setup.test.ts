@@ -15,6 +15,7 @@ import { inheritProvider } from "../../modules/invocations/domain/provider-inher
 import {
   fakeInvocationsRepo,
   fakeOwnerQuestions,
+  invocationRow,
 } from "../helpers/invocations-repo.js";
 
 // TEST_OVERVIEW: A spawn sets up its sub-agent the way a starter kit sets up an agent. The endpoint resolves the harness to its Template, or runs a given image instead, and collects the driver's provider grants; the service turns the Agent Setup into the create, queues the install ahead of the task, and gives the target the driver's provider. A failed seed or install fails the Invocation at once.
@@ -31,26 +32,37 @@ function repoStub(overrides: Partial<InvocationsRepository> = {}) {
   return { repo, failed };
 }
 
-function makeService(opts: { failPin?: boolean } = {}) {
+function makeService(
+  opts: {
+    failPin?: boolean;
+    failTargetPin?: boolean;
+    repo?: Partial<InvocationsRepository>;
+  } = {},
+) {
   const created: Array<Record<string, unknown>> = [];
   const deletedRows: string[] = [];
   const bumped: Array<Array<{ id: string; kind: string; payload: unknown }>> =
     [];
   const skillsApplied: unknown[] = [];
   const pinned: string[] = [];
+  const pinnedTargets: string[] = [];
+  const deletedAgents: string[] = [];
   const service = createInvocationsService({
     owner: "owner-1",
     repo: repoStub({
       delete: async (id) => {
         deletedRows.push(id);
       },
+      ...opts.repo,
     }).repo,
     agents: {
       create: async (input: Record<string, unknown>) => {
         created.push(input);
         return { id: input.id as string };
       },
-      delete: async () => {},
+      delete: async (id: string) => {
+        deletedAgents.push(id);
+      },
     } as never,
     driverResolution: { resolveRoot: async () => "root-1" },
     runtimeMutator: {
@@ -81,8 +93,21 @@ function makeService(opts: { failPin?: boolean } = {}) {
       if (opts.failPin) throw new Error("conflict");
       pinned.push(id);
     },
+    pinTarget: async (id) => {
+      if (opts.failTargetPin) throw new Error("conflict");
+      pinnedTargets.push(id);
+    },
   });
-  return { service, created, bumped, skillsApplied, pinned, deletedRows };
+  return {
+    service,
+    created,
+    bumped,
+    skillsApplied,
+    pinned,
+    pinnedTargets,
+    deletedRows,
+    deletedAgents,
+  };
 }
 
 const baseInput: SpawnInput = {
@@ -318,6 +343,69 @@ describe("spawn pins its driver", () => {
       }),
     ).rejects.toBeInstanceOf(ProviderMismatchError);
     expect(pinned).toEqual([]);
+  });
+});
+
+describe("spawn pins its target until the run starts", () => {
+  // TEST_SCENARIO: a target waiting for room, or booted before its task is delivered, runs no turn and reads idle; the spawn pins it before it queues the task, so the idle checker does not put it to sleep for the Agent Sweep to delete.
+  test("the target is pinned before its task is queued", async () => {
+    const { service, pinnedTargets, created, bumped } = makeService();
+
+    const { id } = await service.spawn(baseInput);
+
+    expect(created).toHaveLength(1);
+    expect(pinnedTargets).toEqual([id]);
+    expect(bumped.length).toBeGreaterThan(0);
+  });
+
+  // TEST_SCENARIO: an unpinned target is the bug this pin closes, so a failed write rolls the spawn back like the driver's pin: the target and its row are removed and nothing is queued.
+  test("a failed target pin fails the spawn and removes the target", async () => {
+    const { service, bumped, deletedRows, deletedAgents } = makeService({
+      failTargetPin: true,
+    });
+
+    await expect(service.spawn(baseInput)).rejects.toThrow("conflict");
+    expect(bumped).toEqual([]);
+    expect(deletedAgents).toHaveLength(1);
+    expect(deletedRows).toEqual(deletedAgents);
+  });
+
+  // TEST_SCENARIO: a new run in a kept target that sleeps between runs waits to start like a first one, so the run pins the target once it is begun; a pin write that fails is logged and the run goes on, since it is already recorded.
+  test("a run of a kept target pins it once the run is begun", async () => {
+    const kept = invocationRow({
+      id: "kept-1",
+      status: "idle",
+      runId: null,
+      keepUntil: new Date(Date.now() + 3_600_000),
+    });
+    for (const failTargetPin of [false, true]) {
+      const { service, pinnedTargets } = makeService({
+        failTargetPin,
+        repo: { get: async () => kept, beginRun: async () => "begun" },
+      });
+
+      const { run } = await service.runSubagent(
+        "kept-1",
+        "driver-1",
+        { script: "true" } as never,
+        { origin: "tool", driverSessionId: null } as never,
+      );
+
+      expect(run).toMatch(/kept-1/);
+      expect(pinnedTargets).toEqual(failTargetPin ? [] : ["kept-1"]);
+    }
+  });
+
+  // TEST_SCENARIO: a target spawned with no task has no run to wait for, so nothing holds it awake.
+  test("an idle spawn does not pin its target", async () => {
+    const { service, pinnedTargets } = makeService();
+
+    await service.spawnIdle({
+      ...baseInput,
+      keep: true,
+    });
+
+    expect(pinnedTargets).toEqual([]);
   });
 });
 

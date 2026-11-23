@@ -177,6 +177,12 @@ export interface ProviderKeyRecheck {
   check: ProviderKeyCheck | null;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: marks a Connection, or its Template, whose owner chooses between read only and full access. Without full access the gateway lets only the Template's read tools pass. `fullAccessLabel` is the Template's own name for full access, such as "Can post as me".
+export const connectionAccessChoice = z.object({
+  fullAccessLabel: z.string(),
+});
+export type ConnectionAccessChoice = z.infer<typeof connectionAccessChoice>;
+
 export const connectionProviderView = z.object({
   alias: z.string(),
   harnesses: z.array(z.string()),
@@ -214,6 +220,7 @@ export const connectionView = z.object({
   parentId: z.string().optional(),
   isParent: z.literal(true).optional(),
   fullAccess: z.literal(true).optional(),
+  accessChoice: connectionAccessChoice.optional(),
   provider: connectionProviderView
     .extend({ preferred: z.boolean() })
     .optional(),
@@ -257,6 +264,7 @@ export const connectionTemplateView = z.object({
   authKind: authKind,
   inputs: z.array(templateInput),
   extras: z.record(z.string(), z.unknown()).optional(),
+  accessChoice: connectionAccessChoice.optional(),
   provider: connectionProviderView.optional(),
 });
 export type ConnectionTemplateView = z.infer<typeof connectionTemplateView>;
@@ -413,6 +421,9 @@ export interface ConnectionsService {
     permissions?: string;
     fullAccess?: boolean;
   }): Promise<void>;
+
+  /** UNIT_BOUNDARY_DESCRIPTION: sets a Connection that offers the choice to read only or to full access. The gateway reads the choice on every tool call, so it holds from the next call with no restart. */
+  setFullAccess(input: { id: string; fullAccess: boolean }): Promise<void>;
 
   /** UNIT_BOUNDARY_DESCRIPTION: points a GitHub Enterprise sign-in, and every connection made from it, at another host the install offers. Names, grants and scopes stay; the tokens of the old host are dropped, so the sign-in reads expired until its owner authorizes it on the new host. */
   moveToHost(input: { id: string; host: string }): Promise<void>;

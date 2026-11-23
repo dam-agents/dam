@@ -626,21 +626,63 @@ func TestIdleChecker_VMBootInProgressIsNotIdle(t *testing.T) {
 	}
 }
 
-// TEST_SCENARIO: an Invocation target parked for room past its idle timeout is not hibernated, so the Agent Sweep does not delete it before its deadline; a parked Agent that is not sweepable is hibernated as before.
+// TEST_SCENARIO: an Invocation target parked for room past its idle timeout is not hibernated, so the Agent Sweep does not delete it before its deadline, whether the wait reads on Ready or, for a boot the runner admitted and the node has not granted memory for, only on the machine's condition beside a plain PodsNotReady; a parked Agent that is not sweepable is hibernated as before.
 func TestIdleChecker_HoldsASweepableAgentParkedForRoom(t *testing.T) {
 	stale := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	parkedOnReady := []metav1.Condition{{Type: apiv1.ConditionReady, Status: metav1.ConditionFalse, Reason: apiv1.ReasonAwaitingMemory}}
+	awaitingTheNode := []metav1.Condition{
+		{Type: apiv1.ConditionAgentPodReady, Status: metav1.ConditionFalse, Reason: vmrunner.ReasonAwaitingAllocation},
+		{Type: apiv1.ConditionReady, Status: metav1.ConditionFalse, Reason: "PodsNotReady"},
+	}
+	refusedForRoom := []metav1.Condition{
+		{Type: apiv1.ConditionAgentPodReady, Status: metav1.ConditionFalse, Reason: vmrunner.ReasonOutOfCapacity},
+		{Type: apiv1.ConditionReady, Status: metav1.ConditionFalse, Reason: "PodsNotReady"},
+	}
 	for _, tt := range []struct {
 		name       string
 		sweepable  string
+		conds      []metav1.Condition
 		hibernated bool
 	}{
-		{"sweepable", "true", false},
-		{"not sweepable", "", true},
+		{"sweepable, parked on Ready", "true", parkedOnReady, false},
+		{"sweepable, a boot awaiting the node's grant", "true", awaitingTheNode, false},
+		{"sweepable, a start the runner refused for room", "true", refusedForRoom, false},
+		{"not sweepable, parked on Ready", "", parkedOnReady, true},
+		{"not sweepable, a boot awaiting the node's grant", "", awaitingTheNode, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			agent := idleAgentCR("vm-agent", stale, map[string]string{annSweepable: tt.sweepable})
-			agent.Status.Conditions = []metav1.Condition{{Type: apiv1.ConditionReady, Status: metav1.ConditionFalse, Reason: apiv1.ReasonAwaitingMemory}}
+			agent.Status.Conditions = tt.conds
 			checker, _ := newIdleChecker(t, time.Minute, []*apiv1.Agent{agent}, agentStatefulSet("vm-agent", 0))
+			probed := false
+			checker.idleProbe = func(context.Context, string) (bool, bool) { probed = true; return true, true }
+
+			checker.check(context.Background())
+
+			assert.Equal(t, tt.hibernated, probed)
+		})
+	}
+}
+
+// TEST_SCENARIO: a booted Invocation target whose run has not started answers the busy probe idle, since no turn runs yet; the api-server pins it while its run waits to start, so it is not hibernated however long it waits, and once the pin is released it is hibernated as any idle agent.
+func TestIdleChecker_HoldsAPinnedTargetThatAnswersIdle(t *testing.T) {
+	stale := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	booted := []metav1.Condition{
+		{Type: apiv1.ConditionAgentPodReady, Status: metav1.ConditionTrue, Reason: "PodReady", LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour))},
+		{Type: apiv1.ConditionReady, Status: metav1.ConditionTrue, Reason: "AllPodsReady", LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour))},
+	}
+	for _, tt := range []struct {
+		name       string
+		pin        string
+		hibernated bool
+	}{
+		{"its run waits to start", "true", false},
+		{"its pin released", "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			agent := idleAgentCR("vm-agent", stale, map[string]string{annSweepable: "true", annInvocationsActive: tt.pin})
+			agent.Status.Conditions = booted
+			checker, _ := newIdleChecker(t, time.Minute, []*apiv1.Agent{agent}, agentStatefulSet("vm-agent", 1))
 			probed := false
 			checker.idleProbe = func(context.Context, string) (bool, bool) { probed = true; return true, true }
 

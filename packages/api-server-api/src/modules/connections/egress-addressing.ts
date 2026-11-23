@@ -4,6 +4,7 @@ import { DEFAULT_ENV_PLACEHOLDER } from "./providers.js";
 
 export const CONNECTION_EGRESS_PATH_SEGMENT = "__platform_conn";
 export const CONNECTION_EGRESS_PLACEHOLDER_PREFIX = "platform:conn:";
+export const CONNECTION_EGRESS_ADDRESS_HEADER = "x-platform-conn";
 
 export function connectionEgressPathPrefix(connectionId: string): string {
   return `/${CONNECTION_EGRESS_PATH_SEGMENT}/${connectionId}`;

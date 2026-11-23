@@ -202,6 +202,19 @@ export function useUpdateGitHubUserTokenScope() {
   });
 }
 
+export function useSetConnectionFullAccess() {
+  return useMutation({
+    ...trpc.connections.setFullAccess.mutationOptions(),
+    meta: {
+      invalidates: [
+        trpc.connections.list.queryKey(),
+        trpc.connections.getAgentConnections.queryKey(),
+      ],
+      suppressErrorToast: true,
+    },
+  });
+}
+
 export function useMoveConnectionToHost() {
   return useMutation({
     ...trpc.connections.moveToHost.mutationOptions(),

@@ -1,6 +1,6 @@
 # Assistant
 
-Last verified: 2026-11-18
+Last verified: 2026-11-23
 
 ## Overview
 
@@ -146,14 +146,29 @@ The greeting rests on that mark alone, not on how many sessions the assistant ho
 ## The security check
 
 A person can have their assistant check their whole setup once a week against the [security advisory](cli.md#agent-skill) of the `dam` skill, the same page that guides any agent that drives the platform through the CLI.
-Each check is a scheduled run on the owner's budget, so it is the `security-check` [feature](features.md), off until the person turns it on.
+It is the `security-check` [feature](features.md), off until the person turns it on.
 
 **The switch is the trigger.**
-Turning it on gives the assistant an ordinary weekly [Schedule](schedules.md) named "Security check", in a fresh Session each time, and a record names that Schedule.
+Turning it on gives the assistant an ordinary weekly [Schedule](schedules.md) named "Security advisory", in a fresh Session each time, and a record names that Schedule.
+A person reads the check under that name everywhere it has one: the feature's row, the choice of its level, the Schedule and its Sessions.
+A Schedule that still carries the name an earlier release gave it, "Security check", is renamed by the refresh below, and one its owner named keeps their name.
 The record is one row per person and kind of the Schedules the platform gave their assistant, so another default Schedule is a new kind with its own name, recurrence and task, not a new table.
 Its minute of the week is derived from the owner, so one person's check keeps its time while an install's checks do not all wake their Agents together.
 A person with no assistant gets nothing, and the switch says so and stays off.
 The Schedule is the owner's from then on: they change its time, pause it, or delete it, with the controls every Schedule has; its task stays the platform's.
+
+**The level is the person's.**
+A person the feature is on for chooses how much a check does, in the General section of the assistant's own settings; no other Agent's settings carry the choice, and it is not a feature switch, so it outlives the feature's time as an experiment.
+The levels are off, standard and deep, and the record keeps the one chosen.
+Standard is one run of the assistant that runs no turn on another Agent.
+Deep is that run with leave to also ask other Agents, as below, and it is the only level that runs a turn on an Agent other than the assistant.
+The model and the effort of a run are no part of the level: they are the Schedule's own, which the owner sets as on any Schedule.
+The advisory calls that question the deep check and has any agent get its user's approval first; choosing the Deep level is that approval for the scheduled run, which has no person in its chat to ask.
+The switch gives the standard check, and a record from before the choice existed runs as standard; so does one that holds an effort level, which an earlier release offered.
+Choosing a level puts its task on the Schedule that stands and changes nothing else there.
+Off deletes the Schedule and keeps the record with none, so an install that pins the feature on gives nothing back, and choosing a level again makes a Schedule.
+The level a person is shown is the one their standing Schedule runs at, and off once they deleted it.
+Only a person in the browser chooses it: an API key or an Agent cannot raise what a check spends.
 Turning the switch on again makes a Schedule only when the one the record names is gone.
 Turning it off deletes that Schedule and the record, and the alert goes with them.
 An install that pins the feature on has no switch, so it gives each person the Schedule once, after their assistant exists; one they delete stays deleted, and a flag written off takes nothing away.
@@ -162,10 +177,11 @@ The check follows the assistant: when the platform makes a person's assistant ag
 Giving and taking away run one at a time per person, so two requests never make two Schedules.
 
 **The platform checks nothing itself.**
-The Schedule's task holds the whole procedure, since only this run needs it: read the advisory, list every agent's editors, channels, connections, network rules and satellites through the CLI, ask each agent that others steer what its instructions say, and change nothing.
+The Schedule's task holds the whole procedure, since only this run needs it: read the advisory, list every agent's editors, channels, connections, network rules and satellites through the CLI, read the instructions of each agent that others steer, and change nothing.
+The level decides one step of it: the task of the deep level has the assistant ask those agents what their files left open, and the task of every other level tells it to send no prompt to another agent.
 The skill is not changed for it; what counts as a problem stays in the advisory, which the task points to.
 The task is the platform's text and not the owner's, because a release can change the procedure and a Schedule made before it would keep the old one.
-So a person's first request to a replica puts the current text over whatever their Schedule holds, an edit of their own included, and sends its name, its time and its session mode back as they are.
+So a person's first request to a replica puts the current text for their level over whatever their Schedule holds, an edit of their own included, and sends its name, its time and its session mode back as they are.
 A Schedule whose task is current is not written, and a replica looks once per person, so later requests pay nothing.
 The editor of a Schedule does not lock the task, so an owner who edits it loses the edit at the next release.
 The assistant describes each problem in that Session, as what in the setup goes against the advisory and what the safer setup is, and offers to fix it.
@@ -178,11 +194,13 @@ There the assistant fixes only what the owner agrees to, and reports what is lef
 The report is shown only while its Schedule stands: once the owner deletes the Schedule no run can clear it, so the alert goes with it.
 A problem the owner calls fine goes into the assistant's memory file, and later checks leave it out until that setup changes; the platform keeps no list of accepted problems.
 
-The check sees what the CLI lists and what an Agent says about itself.
-It asks each Agent that anyone besides the owner steers, in one prompt, what it is for and what a message may change in it; an Agent only the owner steers is not asked.
-The question wakes that Agent and runs a turn on the owner's budget, so a check costs more the more Agents the owner shares.
-The answer is the Agent's own word and not a test: the check sends nothing that tries to break an Agent's rules, so a weakness the Agent does not describe stays unseen.
-It does not read agents' files or their earlier sessions, so a secret left in a file is found only by the agent that works with that file.
+The check sees what the CLI lists, what an Agent's instruction files say, and at the deep level what the Agent says about itself.
+For each Agent that anyone besides the owner steers it reads the instruction files through the CLI, with the skills and memory they point to; an Agent only the owner steers is left alone.
+A read wakes that Agent and calls no model, so it spends compute and nothing of a model budget.
+At the deep level it also asks such an Agent, in one prompt, what its files left open: what it is for and what a message may change in it.
+The question runs a turn on that Agent, on that Agent's model, so a deep check costs more the more Agents the owner shares, and the assistant names in the check's Session each Agent it asked.
+The answer is the Agent's own word and not a test: the check sends nothing that tries to break an Agent's rules, so a weakness that neither the files nor the Agent describe stays unseen.
+It reads no other file of an agent and none of its earlier sessions, so a secret left in a file is found only by the agent that works with that file.
 It uses the access the assistant already has: there is no narrower read-only grant, and the task is what keeps a check from changing anything.
 
 ## Questions about the platform

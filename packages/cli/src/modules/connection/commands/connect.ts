@@ -27,6 +27,7 @@ import {
   type ConfigFlagError,
   resolveConfigInputFlags,
 } from "../domain/config-inputs.js";
+import { accessNote } from "../domain/access-choice.js";
 import { credentialCheckWarning } from "../domain/credential-check.js";
 import {
   connectFromHint,
@@ -179,7 +180,8 @@ export function buildConnectCommand(deps: {
     .option(
       "--full-access",
       "let the connection reach everything the GitHub sign-in or installation reaches: " +
-        "every account, repository and permission (GitHub, GitHub App installation)",
+        "every account, repository and permission (GitHub, GitHub App installation); " +
+        "for a Slack Account, let the agent also post and change things as you, where the default is read only",
     )
     .option("--header-name <name>", "input: header name")
     .option("--value-format <format>", "input: header value format")
@@ -274,6 +276,8 @@ export function buildConnectCommand(deps: {
         "  dam connection connect github --account acme --repositories api,web \\\n" +
         "      --permissions contents:read,pull_requests:write\n" +
         "  dam connection connect github --full-access --no-browser\n" +
+        "  dam connection connect slack   # read only: the agent reads Slack as you\n" +
+        "  dam connection connect slack --full-access   # it can also post as you\n" +
         "  dam connection connect github-enterprise --host research.ghe.example.com\n" +
         "  dam connection connect --from github --account acme --repositories docs --name github-docs\n" +
         "  dam connection connect github-pat   # the token is entered on a DAM web page\n" +
@@ -615,16 +619,25 @@ async function resolveSlugTemplate(args: {
     process.exit(EXIT_INVALID_INPUT);
   }
 
-  if (opts.fullAccess && !splitsIntoParent(template)) {
+  if (
+    opts.fullAccess &&
+    !splitsIntoParent(template) &&
+    !template.accessChoice
+  ) {
     process.stderr.write(
-      "error: --full-access applies only to a GitHub sign-in or GitHub App installation " +
-        `(github, github-enterprise, github-app, github-enterprise-app), not '${template.id}'\n`,
+      "error: --full-access applies only to a GitHub sign-in, a GitHub App installation or a Slack Account " +
+        `(github, github-enterprise, github-app, github-enterprise-app, slack), not '${template.id}'\n`,
     );
     process.exit(EXIT_INVALID_INPUT);
   }
 
   const name = (opts.name ?? slugifyTemplateName(template.name)).trim();
   validateName(name);
+  if (template.accessChoice && !json) {
+    process.stderr.write(
+      accessNote(name, template.accessChoice, opts.fullAccess === true),
+    );
+  }
   const host = await chooseOfferedHost(template, opts, json);
   const collected = await collectInputs(
     template,
@@ -910,6 +923,7 @@ function buildPayload(
         ...(v("clientId") ? { clientId: v("clientId")! } : {}),
         ...(v("clientSecret") ? { clientSecret: v("clientSecret")! } : {}),
         ...(v("appSlug") ? { appSlug: v("appSlug")! } : {}),
+        ...(fullAccess && template.accessChoice ? { fullAccess: true } : {}),
       };
     case "client-credentials":
       return {

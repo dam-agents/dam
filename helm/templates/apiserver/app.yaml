@@ -276,6 +276,13 @@ spec:
                   name: {{ include "platform.apiserver.secrets.fullname" . }}
                   key: SLACK_APP_TOKEN
             {{- end }}
+            {{- if .Values.apiServer.slackAppRefreshToken }}
+            - name: SLACK_APP_REFRESH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" . }}
+                  key: SLACK_APP_REFRESH_TOKEN
+            {{- end }}
             {{- if .Values.apiServer.slackClientId }}
             - name: SLACK_CLIENT_ID
               value: {{ .Values.apiServer.slackClientId | quote }}
@@ -289,6 +296,10 @@ spec:
             {{- end }}
             {{- if .Values.apiServer.slackTokenRotation }}
             - name: SLACK_TOKEN_ROTATION
+              value: "true"
+            {{- end }}
+            {{- if .Values.apiServer.slackAppTokenRotation }}
+            - name: SLACK_APP_TOKEN_ROTATION
               value: "true"
             {{- end }}
             {{- if .Values.apiServer.slackEnterpriseId }}

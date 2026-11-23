@@ -2,11 +2,12 @@ import { describe, expect, test } from "vitest";
 
 import { createInvocationPinReconciler } from "../../modules/invocations/services/invocation-pin.js";
 
-// TEST_OVERVIEW: the Invocation Pin keeps a Driver awake while it has a running Invocation. A spawn sets it; each reconcile releases the pin of every pinned Driver that no longer has a running Invocation, reading the Driver before it checks and releasing only that version, and never sets one, so a sleep that cleared a pin stays in force.
+// TEST_OVERVIEW: the Invocation Pin keeps a Driver awake while it has a running Invocation, and a target awake while its own run waits to start. A spawn or a run sets it; each reconcile releases the pin of every pinned Driver that no longer has a running Invocation, reading the Driver before it checks and releasing only that version, and never sets one, so a sleep that cleared a pin stays in force.
 
 function makeReconciler(opts: {
   pinned: string[];
   running: string[];
+  waiting?: string[];
   failRelease?: string;
   unpinnedOnRead?: string[];
 }) {
@@ -24,6 +25,7 @@ function makeReconciler(opts: {
       steps.push(`check:${id}`);
       return opts.running.includes(id);
     },
+    runWaitsToStart: async (id) => opts.waiting?.includes(id) ?? false,
     release: async (id, version) => {
       if (id === opts.failRelease) throw new Error("gone");
       steps.push(`release:${id}@${version}`);
@@ -96,6 +98,20 @@ describe("the Invocation Pin reconciler", () => {
     expect(await reconciler.tick()).toEqual({ released: 0 });
     expect(released).toEqual([]);
     expect(checked).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a target waiting for room, or booted with its task not yet delivered, has no turn running and would read idle; it keeps its pin until its run starts, and the tick after the start releases it.
+  test("keeps a target's pin while its run waits to start", async () => {
+    const waiting = makeReconciler({
+      pinned: ["target-1"],
+      running: [],
+      waiting: ["target-1"],
+    });
+    expect(await waiting.reconciler.tick()).toEqual({ released: 0 });
+
+    const started = makeReconciler({ pinned: ["target-1"], running: [] });
+    expect(await started.reconciler.tick()).toEqual({ released: 1 });
+    expect(started.released).toEqual(["target-1"]);
   });
 
   // TEST_SCENARIO: a pin that cannot be released for one Driver (it was deleted meanwhile) must not stop the others from being released.

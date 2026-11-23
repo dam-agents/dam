@@ -144,35 +144,26 @@ describe("slack message reactions", () => {
     expect(result).toEqual({ error: "message not found" });
   });
 
-  it("resolves reactions in another channel the bot is a member of", async () => {
+  /**
+   * TEST_SCENARIO: Reactions are read only in a conversation the agent is
+   * connected to (#6780): a channel the bot is in, and one it is not, are both
+   * refused when nobody bound them, and Slack is never asked.
+   */
+  it("refuses a channel it is not bound to, bot a member or not", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
     h.gw.setMessageReactions("C-GENERAL", "2.2", [
       { name: "tada", count: 1, users: ["U9"] },
     ]);
 
-    const result = await h.describeReactions({
-      conversationId: "C-GENERAL",
-      messageTs: "2.2",
-    });
-
-    expect(result).toEqual({
-      reactions: [{ name: "tada", count: 1, users: ["U9"] }],
-      conversationId: "C-GENERAL",
-      messageTs: "2.2",
-    });
-  });
-
-  it("refuses a channel the bot is not a member of, pointing at /invite", async () => {
-    const h = harness({ boundChannelId: BOUND, channels: workspace });
-
-    const result = await h.describeReactions({
-      conversationId: "C-STAFF",
-      messageTs: "1.1",
-    });
-
-    expect(result).toMatchObject({
-      error: expect.stringContaining("/invite"),
-    });
+    for (const conversationId of ["C-GENERAL", "C-STAFF"]) {
+      expect(
+        await h.describeReactions({ conversationId, messageTs: "2.2" }),
+      ).toMatchObject({
+        error: expect.stringContaining(
+          `${conversationId} is not a conversation you are connected to`,
+        ),
+      });
+    }
   });
 
   it("surfaces a gateway error (e.g. a missing scope) as a value", async () => {

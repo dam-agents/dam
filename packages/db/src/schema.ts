@@ -689,7 +689,9 @@ export const agentCostReviews = pgTable("agent_cost_reviews", {
  * assistant, one row per person and kind: the Agent, the Schedule, and the
  * last alert a run of it raised. A new kind of default Schedule adds rows
  * here, not a table. A row with no `reported_at` has not reported yet, and
- * empty `items` say the last run found nothing to tell. */
+ * empty `items` say the last run found nothing to tell. `level` is how much
+ * the person chose a run to do, in the kind's own words; a row from before
+ * the choice existed has none and runs at the kind's default. */
 export const assistantSchedules = pgTable(
   "assistant_schedules",
   {
@@ -697,6 +699,7 @@ export const assistantSchedules = pgTable(
     kind: text("kind").notNull(),
     agentId: text("agent_id").notNull(),
     scheduleId: text("schedule_id"),
+    level: text("level"),
     items: jsonb("items")
       .$type<string[]>()
       .notNull()
@@ -1065,6 +1068,9 @@ export const satelliteJobs = pgTable(
     reason: text("reason"),
     cancelRequested: boolean("cancel_requested").notNull().default(false),
     cancelSentAt: timestamp("cancel_sent_at", { withTimezone: true }),
+    /* UNIT_BOUNDARY_DESCRIPTION: Retired with the per-Job satellite file
+     * transfer, and kept because a released api-server still selects them, so a
+     * drop would break an image rollback. Drop them in a later release. */
     transferTokenHash: text("transfer_token_hash"),
     transferDirection: text("transfer_direction"),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
