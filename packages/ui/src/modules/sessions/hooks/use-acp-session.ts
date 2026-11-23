@@ -31,6 +31,7 @@ import {
   finalizeAllStreaming,
   hasStreamingAssistant,
   hasWorkingReply,
+  mergeLocalFailures,
 } from "../../acp/session-projection.js";
 import {
   untilAgentOperable,
@@ -89,6 +90,32 @@ async function retryWhileGoneAway<T>(
   return load();
 }
 
+const RUNNING_LOAD_RETRY_DELAYS_MS = [1_000, 2_000, 3_000, 4_000];
+
+async function retryWhileSessionRuns<T>(
+  load: () => Promise<T>,
+  running: () => boolean,
+  wanted: () => boolean,
+): Promise<T> {
+  for (const delay of RUNNING_LOAD_RETRY_DELAYS_MS) {
+    try {
+      return await load();
+    } catch (e) {
+      if (!running() || retryCannotHelp(e)) throw e;
+      await new Promise((r) => setTimeout(r, delay));
+      if (!wanted()) throw e;
+    }
+  }
+  return load();
+}
+
+function retryCannotHelp(e: unknown): boolean {
+  return (
+    unstoredSessionPrompts(e) !== null ||
+    classifyResumeError(e) === "connection"
+  );
+}
+
 export function useAcpSession(
   selectedAgent: string | null,
   textareaRef: React.RefObject<HTMLTextAreaElement | null>,
@@ -138,7 +165,15 @@ export function useAcpSession(
     (sid: string) => reloadAfterResetRef.current(sid),
     [],
   );
-  const makeUpdateHandler = useAcpUpdateHandler(onSessionReset);
+  const reloadAfterLoadErrorRef = useRef<(sessionId: string) => void>(() => {});
+  const onLoadErrorCleared = useCallback(
+    (sid: string) => reloadAfterLoadErrorRef.current(sid),
+    [],
+  );
+  const makeUpdateHandler = useAcpUpdateHandler(
+    onSessionReset,
+    onLoadErrorCleared,
+  );
 
   const {
     ensureLive,
@@ -238,9 +273,11 @@ export function useAcpSession(
       }
 
       try {
-        const fresh = await retryWhileGoneAway(
-          () => loadSessionHistory(sid),
-          () => useStore.getState().sessionId === sid,
+        const wanted = () => useStore.getState().sessionId === sid;
+        const fresh = await retryWhileSessionRuns(
+          () => retryWhileGoneAway(() => loadSessionHistory(sid), wanted),
+          () => listedSessionRunning(selectedAgent, sid),
+          wanted,
         ).finally(() => {
           loaded = true;
         });
@@ -455,6 +492,15 @@ export function useAcpSession(
 
   reloadAfterResetRef.current = (sid: string) => {
     if (useStore.getState().sessionId === sid) void resumeSession(sid);
+  };
+  reloadAfterLoadErrorRef.current = (sid: string) => {
+    loadSessionHistory(sid)
+      .then((fresh) => {
+        const shown = useStore.getState();
+        if (shown.sessionId !== sid || shown.sessionError) return;
+        setMessages((prev) => mergeLocalFailures(fresh, prev));
+      })
+      .catch(() => {});
   };
 
   const takeBackPrompt = useTakeBackPrompt({

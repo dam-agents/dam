@@ -11,6 +11,7 @@ import { reportedCommandsOf } from "../lib/skill-commands.js";
 
 export function useAcpUpdateHandler(
   onSessionReset: (sessionId: string) => void,
+  onLoadErrorCleared: (sessionId: string) => void,
 ): () => UpdateHandler {
   const setMessages = useStore((s) => s.setMessages);
 
@@ -86,7 +87,11 @@ export function useAcpUpdateHandler(
       }
       if (inFlight?.takeBack) return;
 
+      if (useStore.getState().sessionError?.sessionId === sessionId) {
+        useStore.getState().setSessionError(null);
+        onLoadErrorCleared(sessionId);
+      }
       setMessages((prev) => applyUpdate(prev, update, frame));
     };
-  }, [dismissStalePermission, setMessages, onSessionReset]);
+  }, [dismissStalePermission, setMessages, onSessionReset, onLoadErrorCleared]);
 }
