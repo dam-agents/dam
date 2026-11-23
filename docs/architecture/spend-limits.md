@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-11-20
+Last verified: 2026-11-23
 
 ## Overview
 
@@ -255,6 +255,7 @@ It counts high, except for a call that got no answer and a call that waits for i
 - **A call whose record never arrived.**
   The gate notes each metered call when it starts.
   Sixty minutes later, a periodic sweep finishes a call that has only periodic records from its last counts, and counts a call with no record as the payer's most expensive call on that Connection that day, else in the last seven days, else at nothing with a warning.
+  A call whose last counts waited for a price keeps waiting for it.
   A real record that arrives later corrects the estimate.
 - **A call that waits for its price** counts nothing and is marked estimated with the reason `awaiting-price`.
   Its model has no price yet in its provider's price sources: the IBM list, the Anthropic table or operator prices ([Prices](#prices)).
@@ -431,7 +432,7 @@ The spend ceiling shows only when the operator has set one.
 The screens:
 
 - **The agent's settings:** the Usage section starts with the card for the agent limit, which counts the paid calls of the agent and its sub-agents.
-  The card also gives today's spend in the other units and how many calls are estimates.
+  The card also gives today's spend in the other units, how many calls are estimates and how many have no price yet.
   Its "Also counted by" list holds, by provider, the agent's Connection limits and the Connection limits for all agents on its Connections, then the total daily limit and the ceiling.
   An agent with only the Claude subscription or Bob gets no button: its card gives today's spend in that unit and points to its Providers section.
   The agent's summary shows today's spend in each unit and the limit.
@@ -452,6 +453,7 @@ The screens:
   Under the total, a line gives the subscription value when the checkbox is on, and a line tells when the subscriptions covered more than the user paid.
   Bobcoins get their own line, which says that they are not in the total.
   A provider without a price shows "Not priced", and a free provider shows "No cost".
+  Under the counts, a line says how many calls are estimates and how many have no price yet; a row with nothing else to show but waiting calls shows "No price yet".
   For 30 days after T, and only when the telemetry store is on, a link opens the earlier estimates: the old view of the spend that each agent reported about itself.
 - **Settings, Operator tab:** only platform operators see this tab.
   Its Spend ceilings section gives the default ceiling, then each user with a ceiling of their own: the amount, the operator who set it last, and when.

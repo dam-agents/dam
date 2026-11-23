@@ -48,8 +48,10 @@ export interface CallStates {
   rebook(callId: string, sessionId: string): Promise<void>;
   reprice(
     callId: string,
-    costMicros: number,
-    estimatedCalls: number,
+    amounts: Pick<
+      CallAmounts,
+      "costMicros" | "estimatedCalls" | "awaitingCalls"
+    >,
   ): Promise<void>;
   heard(callId: string): Promise<void>;
   openCount(agentId: string): Promise<number>;
@@ -130,7 +132,7 @@ return 0
 
 const REPRICE_SCRIPT = `
 if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
-redis.call('HSET', KEYS[1], 'a_costMicros', ARGV[1], 'a_estimatedCalls', ARGV[2])
+redis.call('HSET', KEYS[1], 'a_costMicros', ARGV[1], 'a_estimatedCalls', ARGV[2], 'a_awaitingCalls', ARGV[3])
 return 1
 `;
 
@@ -260,13 +262,14 @@ export function createRedisCallStates(redis: Redis): CallStates {
       await redis.eval(REBOOK_SCRIPT, 1, callKey(callId), sessionId);
     },
 
-    async reprice(callId, costMicros, estimatedCalls) {
+    async reprice(callId, amounts) {
       await redis.eval(
         REPRICE_SCRIPT,
         1,
         callKey(callId),
-        String(costMicros),
-        String(estimatedCalls),
+        String(amounts.costMicros),
+        String(amounts.estimatedCalls),
+        String(amounts.awaitingCalls),
       );
     },
 

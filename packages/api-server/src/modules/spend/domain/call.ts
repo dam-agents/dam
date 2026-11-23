@@ -104,7 +104,7 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
       priceModel,
       needsReferenceCost: false,
       estimateReasons: [],
-      amounts: callAmounts(usage, 0, false, record.durationMs),
+      amounts: callAmounts(usage, 0, false, false, record.durationMs),
     };
   const outputShort =
     record.final &&
@@ -154,7 +154,13 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
     priceModel,
     needsReferenceCost,
     estimateReasons,
-    amounts: callAmounts(metered, cost ?? 0, estimated, record.durationMs),
+    amounts: callAmounts(
+      metered,
+      cost ?? 0,
+      estimated,
+      awaiting,
+      record.durationMs,
+    ),
   };
 }
 
@@ -162,6 +168,7 @@ function callAmounts(
   usage: NormalizedUsage,
   costMicros: number,
   estimated: boolean,
+  awaiting: boolean,
   durationMs: number,
 ): CallAmounts {
   return {
@@ -175,6 +182,7 @@ function callAmounts(
     webSearches: usage.webSearches,
     calls: 1,
     estimatedCalls: estimated ? 1 : 0,
+    awaitingCalls: awaiting ? 1 : 0,
     durationMs,
   };
 }

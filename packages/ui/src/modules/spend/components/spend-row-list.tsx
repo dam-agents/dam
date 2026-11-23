@@ -12,7 +12,9 @@ import { SpendBarTrack } from "../../metrics/components/spend-bar.js";
 import {
   COVERED_VALUE_HELP,
   NO_COST,
+  NO_PRICE_YET,
   NO_SPEND_IN_PERIOD,
+  noPriceYetHelp,
   NOT_PRICED,
   notPricedHelp,
   paidWithPlanUse,
@@ -37,16 +39,25 @@ function AmountText({ amount }: { amount: RowAmount }) {
     .with({ kind: "bobcoin" }, ({ micros }) => formatSpend(micros, "bobcoin"))
     .with({ kind: "no-cost" }, () => NO_COST)
     .with({ kind: "not-priced" }, () => (
-      <Tooltip content={notPricedHelp()}>
-        <span
-          tabIndex={0}
-          className="cursor-help underline decoration-dotted underline-offset-2"
-        >
-          {NOT_PRICED}
-        </span>
-      </Tooltip>
+      <ExplainedText text={NOT_PRICED} help={notPricedHelp()} />
+    ))
+    .with({ kind: "no-price-yet" }, () => (
+      <ExplainedText text={NO_PRICE_YET} help={noPriceYetHelp()} />
     ))
     .exhaustive();
+}
+
+function ExplainedText({ text, help }: { text: string; help: string }) {
+  return (
+    <Tooltip content={help}>
+      <span
+        tabIndex={0}
+        className="cursor-help underline decoration-dotted underline-offset-2"
+      >
+        {text}
+      </span>
+    </Tooltip>
+  );
 }
 
 function SpendRowItem({

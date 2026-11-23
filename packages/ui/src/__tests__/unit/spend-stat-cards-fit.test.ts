@@ -17,6 +17,7 @@ const html = renderToStaticMarkup(
           costMicros: 12_340_000,
           calls: 1234,
           estimatedCalls: 0,
+          awaitingCalls: 0,
           uncachedInputTokens: 2_300_000,
           outputTokens: 456_700,
           cacheReadTokens: 10_000_000,

@@ -65,7 +65,11 @@ export function createRepricer(deps: {
         if (call.row.day === today && call.costDelta !== 0)
           await deps.countDay(call.row, call.costDelta);
         await deps.calls
-          .reprice(call.callId, call.costMicros, call.estimated ? 1 : 0)
+          .reprice(call.callId, {
+            costMicros: call.costMicros,
+            estimatedCalls: call.estimated ? 1 : 0,
+            awaitingCalls: call.awaiting ? 1 : 0,
+          })
           .catch((err: unknown) =>
             log().warn(
               { callId: call.callId, reason: formatError(err) },

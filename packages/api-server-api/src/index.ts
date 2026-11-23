@@ -355,6 +355,7 @@ export type {
   SpendCallsInput,
   SpendCeilingSource,
   SpendCeilingView,
+  SpendAwaiting,
   SpendCounts,
   SpendBinding,
   SpendBindingCandidate,

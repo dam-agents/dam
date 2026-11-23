@@ -31,6 +31,7 @@ import {
   type SpendRow,
 } from "../domain/ledger.js";
 import {
+  AWAITING_SOURCE,
   GUESS_REASON,
   GUESS_SOURCE,
   UNRECORDED_SOURCE,
@@ -48,6 +49,7 @@ export interface RepricedCall {
   readonly costMicros: number;
   readonly costDelta: number;
   readonly estimated: boolean;
+  readonly awaiting: boolean;
 }
 
 export interface SpendLedger {
@@ -142,6 +144,7 @@ type Counted =
   | "webSearches"
   | "calls"
   | "estimatedCalls"
+  | "awaitingCalls"
   | "refusedCalls"
   | "durationMs";
 
@@ -180,6 +183,10 @@ export function createSpendLedger(db: Db): SpendLedger {
         estimatedCalls: sql<number>`(${spendCalls.estimated})::int`.as(
           "estimated_calls",
         ),
+        awaitingCalls:
+          sql<number>`(${spendCalls.priceSource} = ${AWAITING_SOURCE})::int`.as(
+            "awaiting_calls",
+          ),
         uncachedInputTokens: spendCalls.uncachedInputTokens,
         outputTokens: spendCalls.outputTokens,
         cacheReadTokens: spendCalls.cacheReadTokens,
@@ -280,6 +287,7 @@ export function createSpendLedger(db: Db): SpendLedger {
           webSearches: delta.webSearches,
           calls: delta.calls,
           estimatedCalls: delta.estimatedCalls,
+          awaitingCalls: delta.awaitingCalls,
           durationMs: delta.durationMs,
           maxCallCostMicros: callCostMicros,
         })
@@ -295,6 +303,7 @@ export function createSpendLedger(db: Db): SpendLedger {
             webSearches: added("webSearches"),
             calls: added("calls"),
             estimatedCalls: added("estimatedCalls"),
+            awaitingCalls: added("awaitingCalls"),
             durationMs: added("durationMs"),
             maxCallCostMicros: sql`greatest(${spendDaily.maxCallCostMicros}, excluded.max_call_cost_micros)`,
             updatedAt: sql`now()`,
@@ -390,6 +399,7 @@ export function createSpendLedger(db: Db): SpendLedger {
           costMicros: sumOf("costMicros"),
           calls: sumOf("calls"),
           estimatedCalls: sumOf("estimatedCalls"),
+          awaitingCalls: sumOf("awaitingCalls"),
           refusedCalls: sumOf("refusedCalls"),
           uncachedInputTokens: sumOf("uncachedInputTokens"),
           outputTokens: sumOf("outputTokens"),
@@ -422,6 +432,7 @@ export function createSpendLedger(db: Db): SpendLedger {
         costMicros: Number(r.costMicros),
         calls: Number(r.calls),
         estimatedCalls: Number(r.estimatedCalls),
+        awaitingCalls: Number(r.awaitingCalls),
         refusedCalls: Number(r.refusedCalls),
         uncachedInputTokens: Number(r.uncachedInputTokens),
         outputTokens: Number(r.outputTokens),
@@ -439,6 +450,7 @@ export function createSpendLedger(db: Db): SpendLedger {
           unit: spendDaily.unit,
           costMicros: sumOf("costMicros"),
           estimatedCalls: sumOf("estimatedCalls"),
+          awaitingCalls: sumOf("awaitingCalls"),
         })
         .from(spendDaily)
         .where(
@@ -455,6 +467,7 @@ export function createSpendLedger(db: Db): SpendLedger {
         unit: r.unit as SpendUnit,
         costMicros: Number(r.costMicros),
         estimatedCalls: Number(r.estimatedCalls),
+        awaitingCalls: Number(r.awaitingCalls),
       }));
     },
 
@@ -473,6 +486,7 @@ export function createSpendLedger(db: Db): SpendLedger {
           costMicros: sumIn(t, "costMicros"),
           calls: sumIn(t, "calls"),
           estimatedCalls: sumIn(t, "estimatedCalls"),
+          awaitingCalls: sumIn(t, "awaitingCalls"),
           uncachedInputTokens: sumIn(t, "uncachedInputTokens"),
           outputTokens: sumIn(t, "outputTokens"),
           cacheReadTokens: sumIn(t, "cacheReadTokens"),
@@ -515,6 +529,7 @@ export function createSpendLedger(db: Db): SpendLedger {
         costMicros: Number(r.costMicros),
         calls: Number(r.calls),
         estimatedCalls: Number(r.estimatedCalls),
+        awaitingCalls: Number(r.awaitingCalls),
         uncachedInputTokens: Number(r.uncachedInputTokens),
         outputTokens: Number(r.outputTokens),
         cacheReadTokens: Number(r.cacheReadTokens),
@@ -770,6 +785,28 @@ export function createSpendLedger(db: Db): SpendLedger {
         WITH gone AS (
           DELETE FROM ${spendCalls}
           WHERE ${spendCalls.startedAt} < ${before.toISOString()}::timestamptz
+          RETURNING started_at, payer_agent_id, connection_id, model,
+            session_id, calling_agent_id, price_source
+        ),
+        waiting AS (
+          SELECT (started_at at time zone 'UTC')::date AS day,
+            payer_agent_id, connection_id, model, session_id, calling_agent_id,
+            count(*)::int AS calls
+          FROM gone
+          WHERE price_source = ${AWAITING_SOURCE}
+          GROUP BY 1, 2, 3, 4, 5, 6
+        ),
+        unmarked AS (
+          UPDATE ${spendDaily} d SET
+            awaiting_calls = d.awaiting_calls - w.calls,
+            updated_at = now()
+          FROM waiting w
+          WHERE d.day = w.day
+            AND d.payer_agent_id = w.payer_agent_id
+            AND d.connection_id = w.connection_id
+            AND d.model = w.model
+            AND d.session_id = w.session_id
+            AND d.calling_agent_id = w.calling_agent_id
           RETURNING 1
         )
         SELECT count(*)::int AS deleted FROM gone`);
@@ -826,6 +863,8 @@ export function createSpendLedger(db: Db): SpendLedger {
               sum(web_searches)::int AS web_searches,
               count(*)::int AS calls,
               (count(*) FILTER (WHERE estimated))::int AS estimated_calls,
+              (count(*) FILTER (WHERE price_source = ${AWAITING_SOURCE}))::int
+                AS awaiting_calls,
               sum(duration_ms) AS duration_ms,
               max(cost_micros) AS max_call_cost_micros
             FROM moved
@@ -842,6 +881,7 @@ export function createSpendLedger(db: Db): SpendLedger {
               web_searches = d.web_searches - p.web_searches,
               calls = d.calls - p.calls,
               estimated_calls = d.estimated_calls - p.estimated_calls,
+              awaiting_calls = d.awaiting_calls - p.awaiting_calls,
               duration_ms = d.duration_ms - p.duration_ms,
               updated_at = now()
             FROM per_row p
@@ -859,7 +899,7 @@ export function createSpendLedger(db: Db): SpendLedger {
               calling_agent_id, owner_sub, provider_template, unit,
               cost_micros, uncached_input_tokens, output_tokens,
               cache_read_tokens, cache_write_5m_tokens, cache_write_1h_tokens,
-              web_searches, calls, estimated_calls, duration_ms,
+              web_searches, calls, estimated_calls, awaiting_calls, duration_ms,
               max_call_cost_micros
             )
             SELECT
@@ -867,7 +907,7 @@ export function createSpendLedger(db: Db): SpendLedger {
               ${callingAgentId}, owner_sub, provider_template, unit,
               cost_micros, uncached_input_tokens, output_tokens,
               cache_read_tokens, cache_write_5m_tokens, cache_write_1h_tokens,
-              web_searches, calls, estimated_calls, duration_ms,
+              web_searches, calls, estimated_calls, awaiting_calls, duration_ms,
               max_call_cost_micros
             FROM per_row
             ON CONFLICT (day, payer_agent_id, connection_id, model, session_id, calling_agent_id)
@@ -881,6 +921,7 @@ export function createSpendLedger(db: Db): SpendLedger {
               web_searches = ${spendDaily}.web_searches + excluded.web_searches,
               calls = ${spendDaily}.calls + excluded.calls,
               estimated_calls = ${spendDaily}.estimated_calls + excluded.estimated_calls,
+              awaiting_calls = ${spendDaily}.awaiting_calls + excluded.awaiting_calls,
               duration_ms = ${spendDaily}.duration_ms + excluded.duration_ms,
               max_call_cost_micros = greatest(${spendDaily}.max_call_cost_micros, excluded.max_call_cost_micros),
               updated_at = now()
@@ -901,7 +942,7 @@ export function createSpendLedger(db: Db): SpendLedger {
         AND uncached_input_tokens + cache_read_tokens
           + cache_write_5m_tokens + cache_write_1h_tokens > 0`;
       const rowsOfKind = match(kind)
-        .with("awaiting", () => sql`price_source = 'awaiting'`)
+        .with("awaiting", () => sql`price_source = ${AWAITING_SOURCE}`)
         .with(
           "backfill",
           () =>
@@ -989,13 +1030,15 @@ export function createSpendLedger(db: Db): SpendLedger {
           cost_delta: string;
           estimated: boolean;
           estimated_delta: number;
+          awaiting: boolean;
+          awaiting_delta: number;
         }>(sql`
           WITH input(calling_agent_id, call_id, expected, cost, src, pmodel, est, reasons) AS (
             VALUES ${input}
           ),
           locked AS (
             SELECT s.calling_agent_id, s.call_id, s.cost_micros AS old_cost,
-              s.estimated AS old_est
+              s.estimated AS old_est, s.price_source AS old_src
             FROM ${spendCalls} s
             JOIN input i
               ON s.calling_agent_id = i.calling_agent_id AND s.call_id = i.call_id
@@ -1018,7 +1061,10 @@ export function createSpendLedger(db: Db): SpendLedger {
             c.payer_agent_id, c.owner_sub, c.connection_id, c.model, c.session_id,
             c.provider_template, c.unit, c.cost_micros::text AS cost_micros,
             (c.cost_micros - l.old_cost)::text AS cost_delta, c.estimated,
-            (c.estimated::int - l.old_est::int) AS estimated_delta`);
+            (c.estimated::int - l.old_est::int) AS estimated_delta,
+            c.price_source = ${AWAITING_SOURCE} AS awaiting,
+            ((c.price_source = ${AWAITING_SOURCE})::int
+              - (l.old_src = ${AWAITING_SOURCE})::int) AS awaiting_delta`);
         const repriced = changed.map((r) => ({
           callId: r.call_id,
           row: {
@@ -1036,10 +1082,17 @@ export function createSpendLedger(db: Db): SpendLedger {
           costDelta: Number(r.cost_delta),
           estimated: r.estimated,
           estimatedDelta: r.estimated_delta,
+          awaiting: r.awaiting,
+          awaitingDelta: r.awaiting_delta,
         }));
         const groups = new Map<
           string,
-          { row: SpendRow; costDelta: number; estimatedDelta: number }
+          {
+            row: SpendRow;
+            costDelta: number;
+            estimatedDelta: number;
+            awaitingDelta: number;
+          }
         >();
         for (const call of repriced) {
           const key = JSON.stringify([
@@ -1054,16 +1107,18 @@ export function createSpendLedger(db: Db): SpendLedger {
             row: call.row,
             costDelta: 0,
             estimatedDelta: 0,
+            awaitingDelta: 0,
           };
           group.costDelta += call.costDelta;
           group.estimatedDelta += call.estimatedDelta;
+          group.awaitingDelta += call.awaitingDelta;
           groups.set(key, group);
         }
         if (groups.size > 0) {
           const deltas = sql.join(
             [...groups.values()].map(
-              ({ row, costDelta, estimatedDelta }) =>
-                sql`(${row.day}::date, ${row.payer}::text, ${row.connectionId}::text, ${row.model}::text, ${row.sessionId}::text, ${row.callingAgentId}::text, ${costDelta}::bigint, ${estimatedDelta}::int)`,
+              ({ row, costDelta, estimatedDelta, awaitingDelta }) =>
+                sql`(${row.day}::date, ${row.payer}::text, ${row.connectionId}::text, ${row.model}::text, ${row.sessionId}::text, ${row.callingAgentId}::text, ${costDelta}::bigint, ${estimatedDelta}::int, ${awaitingDelta}::int)`,
             ),
             sql`, `,
           );
@@ -1071,6 +1126,7 @@ export function createSpendLedger(db: Db): SpendLedger {
             UPDATE ${spendDaily} d SET
               cost_micros = d.cost_micros + v.cost_delta,
               estimated_calls = d.estimated_calls + v.estimated_delta,
+              awaiting_calls = d.awaiting_calls + v.awaiting_delta,
               max_call_cost_micros = coalesce((
                 SELECT max(s.cost_micros) FROM ${spendCalls} s
                 WHERE s.calling_agent_id = d.calling_agent_id
@@ -1083,7 +1139,8 @@ export function createSpendLedger(db: Db): SpendLedger {
               ), 0),
               updated_at = now()
             FROM (VALUES ${deltas}) AS v(day, payer_agent_id, connection_id,
-              model, session_id, calling_agent_id, cost_delta, estimated_delta)
+              model, session_id, calling_agent_id, cost_delta, estimated_delta,
+              awaiting_delta)
             WHERE d.day = v.day
               AND d.payer_agent_id = v.payer_agent_id
               AND d.connection_id = v.connection_id
@@ -1097,6 +1154,7 @@ export function createSpendLedger(db: Db): SpendLedger {
           costMicros: call.costMicros,
           costDelta: call.costDelta,
           estimated: call.estimated,
+          awaiting: call.awaiting,
         }));
       });
     },

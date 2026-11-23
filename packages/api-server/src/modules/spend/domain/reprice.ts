@@ -34,6 +34,7 @@ export interface CallReprice {
 }
 
 export const UNRECORDED_SOURCE = "";
+export const AWAITING_SOURCE = "awaiting";
 export const GUESS_SOURCE = "estimate";
 export const GUESS_REASON = "model-unpriced";
 const AWAITING_REASON = "awaiting-price";
