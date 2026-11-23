@@ -159,12 +159,13 @@ The Schedule is the owner's from then on: they change its time, pause it, or del
 
 **The level is the person's.**
 A person the feature is on for chooses how much a check does, in the General section of the assistant's own settings; no other Agent's settings carry the choice, and it is not a feature switch, so it outlives the feature's time as an experiment.
-The levels are off, low, medium, high and deep, and the record keeps the one chosen.
-Low, medium and high are one run of the assistant, and the level is the effort the Schedule asks the assistant's harness for; a harness that takes no effort setting refuses it at save, so the Schedule is saved without it and the three run alike.
-Deep is the high run that may also ask other Agents, as below, and it is the only level that runs a turn on an Agent other than the assistant.
+The levels are off, standard and deep, and the record keeps the one chosen.
+Standard is one run of the assistant that runs no turn on another Agent.
+Deep is that run with leave to also ask other Agents, as below, and it is the only level that runs a turn on an Agent other than the assistant.
+The model and the effort of a run are no part of the level: they are the Schedule's own, which the owner sets as on any Schedule.
 The advisory calls that question the deep check and has any agent get its user's approval first; choosing the Deep level is that approval for the scheduled run, which has no person in its chat to ask.
-The switch gives the check at medium, and so does a record from before the choice existed.
-Choosing a level puts its task and its effort on the Schedule that stands, over the effort the owner set there and beside every other setting of theirs; a Schedule they put on a [profile](profiles.md) keeps the profile and takes only the task.
+The switch gives the standard check, and a record from before the choice existed runs as standard; so does one that holds an effort level, which an earlier release offered.
+Choosing a level puts its task on the Schedule that stands and changes nothing else there.
 Off deletes the Schedule and keeps the record with none, so an install that pins the feature on gives nothing back, and choosing a level again makes a Schedule.
 The level a person is shown is the one their standing Schedule runs at, and off once they deleted it.
 Only a person in the browser chooses it: an API key or an Agent cannot raise what a check spends.

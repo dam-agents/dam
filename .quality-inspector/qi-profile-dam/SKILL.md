@@ -88,7 +88,7 @@ Builds published before these accounts were added have only `qa-owner`; there an
   For an account it is off for the card does the checklist alone and leaves the account where it is.
   The assistant can also run a weekly **security check** of the account's whole setup: the experimental feature `security-check`, off by default, whose row under Settings → Experimental features is labelled *Security advisory* and says that a check runs no turn on the other agents unless the person chooses so.
   Switching it on adds an ordinary schedule named *Security advisory* to the assistant's schedules, and switching it off removes that schedule; an account with no assistant gets an error and the switch stays off.
-  With the feature on, the General section of the assistant's settings, and of no other agent's, shows a *Security advisory* choice: *Off*, *Low*, *Medium*, *High* and *Deep*, each with a line that says what it runs; it starts at *Medium*, *Off* removes the schedule, and only *Deep* lets the check run a turn on other agents.
+  With the feature on, the General section of the assistant's settings, and of no other agent's, shows a *Security advisory* choice: *Off*, *Standard* and *Deep*, each with a line that says what it runs; it starts at *Standard*, *Off* removes the schedule, and only *Deep* lets the check run a turn on other agents.
   When a check found something, the approvals bell shows one card under the assistant's name, headed *Your setup has N security problem(s)*, with one line per problem and a *Review in chat* button that opens the session of that check.
   *Dismiss* hides that card until the next check reports; nothing in the setup changes until the person agrees in that chat, and deleting the schedule takes the card away.
 

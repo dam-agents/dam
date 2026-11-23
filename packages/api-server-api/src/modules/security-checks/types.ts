@@ -11,11 +11,12 @@ export type SecurityCheckReportInput = z.infer<
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: how much a person lets each check do. `off` runs
- * none. `low`, `medium` and `high` are one run of their assistant at that
- * effort, which reads the setup and the instruction files of the Agents
- * other people steer, and runs no turn on another Agent. `deep` is the
- * `high` run that may also ask each such Agent what its files left open,
- * and each question is a turn on that Agent.
+ * none. `standard` is one run of their assistant, which reads the setup and
+ * the instruction files of the Agents other people steer, and runs no turn
+ * on another Agent. `deep` is that run with leave to also ask each such
+ * Agent what its files left open, and each question is a turn on that Agent.
+ * The model and the effort of a run are not part of the level: they are the
+ * Schedule's own.
  */
 export type SecurityCheckLevel = z.infer<typeof securityCheckLevelSchema>;
 
@@ -69,7 +70,7 @@ export interface SecurityChecksService {
    * UNIT_BOUNDARY_DESCRIPTION: the person's own choice of level. `off` takes
    * the Schedule away and keeps the record, so nothing gives it back unasked.
    * Any other level makes the Schedule when none stands, or puts that
-   * level's task and effort on the one that does.
+   * level's task on the one that does.
    */
   setLevel(level: SecurityCheckLevel): Promise<void>;
   /**

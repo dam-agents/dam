@@ -3,9 +3,8 @@
  * person's assistant: what the person reads it as, when it recurs for one
  * owner, and the task of each run. A new default Schedule is a new
  * definition; the service and the table that keep it are shared. The person
- * chooses a level, which decides the task of a run and the settings its
- * Session asks its harness for; a kind with one level names it as the
- * default and ignores the argument. `formerNames` are the names an earlier
+ * chooses a level, which decides the task of a run; a kind with one level
+ * names it as the default and ignores the argument. `formerNames` are the names an earlier
  * release gave the Schedule and its Sessions, so a Schedule still under one
  * gets the current name, and one its owner named keeps theirs.
  */
@@ -19,7 +18,6 @@ export interface AssistantScheduleDefinition {
   rule: (owner: string) => string;
   defaultLevel: string;
   task: (level: string) => string;
-  settings: (level: string) => Record<string, string>;
 }
 
 const DAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const;

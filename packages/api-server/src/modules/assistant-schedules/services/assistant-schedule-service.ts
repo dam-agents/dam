@@ -68,8 +68,8 @@ const toAlert = (
  * task stays the platform's: `refresh` puts the definition's current text
  * over whatever the Schedule holds, so a later release's procedure reaches a
  * Schedule made before it. The owner chooses a level, which the record
- * keeps: it decides the task and the settings the Schedule asks for, and a
- * record from before the choice runs at the definition's default. An owner
+ * keeps: it decides the task of a run, and a record from before the choice
+ * runs at the definition's default. An owner
  * who wants no run keeps the record with no Schedule, so nothing gives one
  * back unasked. Giving, refreshing and taking away run one at a time per
  * owner, so two requests never make two Schedules.
@@ -106,35 +106,16 @@ export function createAssistantSchedule(
       : null;
   }
 
-  /* UNIT_BOUNDARY_DESCRIPTION: a level's settings are asked for, not required. The Schedules service refuses at save a setting the Agent's harness does not take, and a check on such a harness still has to run, so the write is made again without them. */
-  async function withSettings<T>(
-    settings: Record<string, string>,
-    write: (settings: Record<string, string> | undefined) => Promise<T>,
-  ): Promise<T> {
-    if (Object.keys(settings).length === 0) return write(undefined);
-    try {
-      return await write(settings);
-    } catch (err) {
-      if (!(err instanceof TRPCError) || err.code !== "BAD_REQUEST") throw err;
-      return write(undefined);
-    }
-  }
-
   async function give(agentId: string, level: string): Promise<void> {
-    const schedule = await withSettings(
-      definition.settings(level),
-      (settings) =>
-        deps.schedules.createRRule({
-          name: definition.name,
-          agentId,
-          rrule: definition.rule(owner),
-          timezone: definition.timezone,
-          task: definition.task(level),
-          sessionMode: "fresh",
-          sessionTitle: definition.sessionTitle,
-          ...(settings ? { settings } : {}),
-        }),
-    );
+    const schedule = await deps.schedules.createRRule({
+      name: definition.name,
+      agentId,
+      rrule: definition.rule(owner),
+      timezone: definition.timezone,
+      task: definition.task(level),
+      sessionMode: "fresh",
+      sessionTitle: definition.sessionTitle,
+    });
     try {
       await deps.repo.save(owner, definition.kind, {
         agentId,
@@ -210,23 +191,18 @@ export function createAssistantSchedule(
     });
   }
 
-  /* UNIT_BOUNDARY_DESCRIPTION: the owner's new level on the Schedule that stands: that level's task, and its settings laid over the settings the Schedule holds. A Schedule the owner put on a profile keeps the profile, since naming a setting would take it off. */
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner's new level on the Schedule that stands: that level's task, and nothing else. The model, the effort and every other choice of the Schedule stay the owner's. */
   async function applyLevel(schedule: Schedule, level: string): Promise<void> {
     const { spec } = schedule;
     if (spec.type !== "rrule") return;
-    await withSettings(
-      spec.profile === undefined ? definition.settings(level) : {},
-      (settings) =>
-        deps.schedules.updateRRule({
-          id: schedule.id,
-          ...namesOf(schedule),
-          rrule: spec.rrule,
-          timezone: spec.timezone,
-          task: definition.task(level),
-          sessionMode: spec.sessionMode,
-          ...(settings ? { settings: { ...spec.settings, ...settings } } : {}),
-        }),
-    );
+    await deps.schedules.updateRRule({
+      id: schedule.id,
+      ...namesOf(schedule),
+      rrule: spec.rrule,
+      timezone: spec.timezone,
+      task: definition.task(level),
+      sessionMode: spec.sessionMode,
+    });
     await deps.repo.setLevel(owner, definition.kind, level);
     securityLog("info", "assistant_schedule.level_set", {
       category: "resource",
