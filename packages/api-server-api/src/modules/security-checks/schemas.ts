@@ -10,13 +10,7 @@ export const securityCheckReportInputSchema = z.object({
   update: z.boolean().optional(),
 });
 
-export const securityCheckLevelSchema = z.enum([
-  "off",
-  "low",
-  "medium",
-  "high",
-  "deep",
-]);
+export const securityCheckLevelSchema = z.enum(["off", "standard", "deep"]);
 
 export const securityCheckSetLevelInputSchema = z.object({
   level: securityCheckLevelSchema,

@@ -9,21 +9,11 @@ const KIND = "security-check";
 
 export type SecurityCheckRunLevel = Exclude<SecurityCheckLevel, "off">;
 
-const EFFORT: Record<SecurityCheckRunLevel, string> = {
-  low: "low",
-  medium: "medium",
-  high: "high",
-  deep: "high",
-};
+export const SECURITY_CHECK_DEFAULT_LEVEL: SecurityCheckRunLevel = "standard";
 
-export const SECURITY_CHECK_DEFAULT_LEVEL: SecurityCheckRunLevel = "medium";
-
-const isRunLevel = (level: string): level is SecurityCheckRunLevel =>
-  Object.hasOwn(EFFORT, level);
-
-/* UNIT_BOUNDARY_DESCRIPTION: the level a stored word names. A word no release knows runs as the default, which asks no Agent, so a row written by a later release never widens what a check does. */
+/* UNIT_BOUNDARY_DESCRIPTION: the level a stored word names. Only the top level's own word names it. Every other word runs as the default, which asks no Agent: the effort levels an earlier release stored, and a word a later release may write, so neither widens what a check does. */
 export const securityCheckRunLevel = (level: string): SecurityCheckRunLevel =>
-  isRunLevel(level) ? level : SECURITY_CHECK_DEFAULT_LEVEL;
+  level === "deep" ? "deep" : SECURITY_CHECK_DEFAULT_LEVEL;
 
 const READ_ADVISORY =
   "Read the security advisory of your dam skill first (references/security-advisory.md). It alone says what a problem is: its rule, its table of set-ups, and what it calls a problem in an agent's instructions. Report nothing that it does not call bad or to avoid.";
@@ -73,9 +63,10 @@ function composeSecurityCheckTask(level: string): string {
  * problem stays in the skill's security advisory, which the task points to.
  * At every level the assistant reads the instruction files of the Agents
  * other people steer, which calls no model on them. The owner's level
- * decides the effort the run asks for and whether the task also lets the
- * assistant ask those Agents: only the top level does, since each question
- * is a turn on that Agent, and every other level tells it to send none.
+ * decides whether the task also lets the assistant ask those Agents: only
+ * the top level does, since each question is a turn on that Agent, and the
+ * standard level tells it to send none. The model and the effort of a run
+ * are the Schedule's own, which the owner sets as on any Schedule.
  * A person reads the check as "Security advisory", the name of its level in
  * the assistant's settings, so the Schedule and its Sessions carry it too.
  */
@@ -89,5 +80,4 @@ export const securityCheckSchedule: AssistantScheduleDefinition = {
   rule: (owner) => weeklyRuleFor(owner, KIND),
   defaultLevel: SECURITY_CHECK_DEFAULT_LEVEL,
   task: composeSecurityCheckTask,
-  settings: (level) => ({ effort: EFFORT[securityCheckRunLevel(level)] }),
 };

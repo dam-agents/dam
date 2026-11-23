@@ -54,20 +54,21 @@ describe("the levels of the security check", () => {
     securityCheckLevelOptions(brand).find((option) => option.value === value)
       ?.description ?? "";
 
-  // TEST_SCENARIO: a person reads the levels from none to the most, in that order, before they choose.
+  // TEST_SCENARIO: a person reads three levels, from none to the most, in that order, before they choose.
   it("lists the levels from off to deep", () => {
     expect(
       securityCheckLevelOptions(brand).map((option) => option.label),
-    ).toEqual(["Off", "Low", "Medium", "High", "Deep"]);
+    ).toEqual(["Off", "Standard", "Deep"]);
   });
 
-  // TEST_SCENARIO: the three middle levels are one run of the assistant, each at its own effort, and say nothing of a turn on another agent.
-  it("names the effort of each run of the assistant", () => {
-    for (const effort of ["low", "medium", "high"]) {
-      expect(described(effort)).toBe(
-        `One run of Dambledore a week, at ${effort} effort.`,
-      );
-    }
+  // TEST_SCENARIO: the standard level is one run of the assistant and says that it runs no turn on another agent. The effort is not a level, so the words send the person to the schedule for it.
+  it("says that the standard check runs no turn on other agents", () => {
+    expect(described("standard")).toBe(
+      "One run of Dambledore a week. It runs no turn on your other agents.",
+    );
+    expect(securityCheckLevelIntro(brand)).toContain(
+      "the model and effort of its schedule",
+    );
   });
 
   // TEST_SCENARIO: the top level is the only one that runs turns on the person's other agents, so its words say that each question runs a turn there and costs one.
