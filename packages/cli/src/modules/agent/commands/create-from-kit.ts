@@ -15,15 +15,8 @@ import {
 } from "../../kit/index.js";
 import { parseOrExit } from "../../shared/parse-or-exit.js";
 import { printable } from "../../shared/printable.js";
-import {
-  exitOnServiceError,
-  printServiceError,
-} from "../../shared/trpc/print.js";
-import {
-  EXIT_INVALID_INPUT,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
+import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import {
   defaultProviderLine,
   startsOnLines,
