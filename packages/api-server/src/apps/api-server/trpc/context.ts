@@ -22,7 +22,10 @@ import { createAgentTargetResolver } from "./agent-target.js";
 import { createActOnAgent } from "./act-on-agent.js";
 import { ANN_STARTER_KIT_ONBOARDED } from "../../../modules/agents/infrastructure/labels.js";
 import { createKitUpdateMarks } from "../../../modules/agents/infrastructure/kit-update-marks.js";
-import { createKitStamp } from "../../../modules/agents/infrastructure/kit-stamp.js";
+import {
+  createKitClaim,
+  createKitStamp,
+} from "../../../modules/agents/infrastructure/kit-stamp.js";
 import { TRPCError } from "@trpc/server";
 import {
   composeHarnessConfigModule,
@@ -572,6 +575,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
       stampKit: createKitStamp(agentsRepo),
+      kitClaim: createKitClaim(agentsRepo),
       linkedKits,
       chatFormPreferences: (agentId) =>
         readChatFormPreferences(

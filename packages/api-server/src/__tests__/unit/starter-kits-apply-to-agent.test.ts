@@ -2,7 +2,8 @@
 apply runs the steps of a create from a kit on that Agent: it grants the
 connections it is given, adds the kit's env, records the Kit Version and Seed
 Stamp, queues the seed and the install, creates the schedules, binds the Slack
-channels and wakes the Agent. It refuses before it changes anything when the
+channels and wakes the Agent. It first claims the Agent's Kit Version, so
+two applies cannot both go on. It refuses before it changes anything when the
 Agent already has a kit, the kit brings its own image, a required connection
 is missing, or a schedule or env variable clashes. It names what only a create
 sets, and a Kit Update then works on the Agent. */
@@ -111,6 +112,8 @@ function makeHarness(
     schedules?: string[];
     refuseSlack?: string;
     upstreamHead?: string;
+    beforeClaim?: () => Promise<void>;
+    failSchedules?: boolean;
   } = {},
 ) {
   let agent = opts.agent === undefined ? existingAgent() : opts.agent;
@@ -126,6 +129,8 @@ function makeHarness(
     disconnected: [] as string[],
     announced: [] as string[],
     woken: [] as string[],
+    claims: [] as string[],
+    released: [] as string[],
   };
   const changed = () =>
     calls.granted.length +
@@ -177,6 +182,7 @@ function makeHarness(
     },
     schedules: {
       createCron: async (input) => {
+        if (opts.failSchedules) throw new Error("schedules down");
         calls.schedules.push(input.name);
         return { id: `s-${input.name}`, name: input.name } as Schedule;
       },
@@ -235,6 +241,22 @@ function makeHarness(
       skip: async () => {},
       nudge: async () => false,
     },
+    kitClaim: {
+      claim: async (_id, ref) => {
+        await opts.beforeClaim?.();
+        if (!agent || agent.starterKit) return false;
+        agent = { ...agent, starterKit: ref };
+        calls.claims.push(ref);
+        return true;
+      },
+      release: async (_id, ref) => {
+        if (agent?.starterKit === ref) {
+          const { starterKit: _released, ...rest } = agent;
+          agent = rest;
+        }
+        calls.released.push(ref);
+      },
+    },
     stampKit: async (_id, stamp) => {
       calls.stamps.push(stamp);
       if (agent)
@@ -259,7 +281,7 @@ function makeHarness(
       enqueueAfterCommit: async () => {},
     },
   });
-  return { service, calls, changed };
+  return { service, calls, changed, agentNow: () => agent };
 }
 
 function input(
@@ -446,7 +468,8 @@ describe("starter kits: apply to an existing agent", () => {
         message: /NOT_FOUND/,
       },
     ])("when $why", async (c) => {
-      const { service, calls, changed } = c.harness();
+      const { service, calls, changed, agentNow } = c.harness();
+      const kitBefore = agentNow()?.starterKit;
       await expect(
         service.applyToAgent(input(c.input ?? {})),
       ).rejects.toMatchObject({
@@ -455,6 +478,7 @@ describe("starter kits: apply to an existing agent", () => {
       });
       expect(changed()).toBe(0);
       expect(calls.slack).toEqual([]);
+      expect(agentNow()?.starterKit).toBe(kitBefore);
     });
 
     it("lets a skipped schedule through when its name is taken", async () => {
@@ -495,6 +519,49 @@ describe("starter kits: apply to an existing agent", () => {
       expect(calls.slack).toEqual(["C1"]);
       expect(calls.disconnected).toEqual(["C1"]);
       expect(changed()).toBe(0);
+      expect(calls.released).toEqual(["platform/code-reviewer@abc123"]);
+    });
+
+    /* TEST_SCENARIO: two applies on one Agent read it before either changes
+    it. The claim is a compare-and-set on the Kit Version, so only one of them
+    goes on; the other is refused before it reads the Agent again or changes
+    anything, and the Agent ends with one kit and one set of changes. */
+    it("refuses the second of two applies racing on one agent", async () => {
+      const other = loaded(kit({ id: "code-reviewer" }));
+      const { service, calls, agentNow } = makeHarness(other);
+      const [first, second] = await Promise.allSettled([
+        service.applyToAgent(input()),
+        service.applyToAgent(input()),
+      ]);
+      expect(first.status).toBe("fulfilled");
+      expect(second).toMatchObject({
+        status: "rejected",
+        reason: {
+          code: "CONFLICT",
+          message: expect.stringMatching(
+            /another starter kit is being applied/,
+          ),
+        },
+      });
+      expect(calls.claims).toEqual(["platform/code-reviewer@abc123"]);
+      expect(calls.granted).toEqual([["c-gh"]]);
+      expect(calls.schedules).toEqual(["review"]);
+      expect(agentNow()?.starterKit).toBe("platform/code-reviewer@abc123");
+    });
+
+    /* TEST_SCENARIO: a failure after the claim and before the kit is recorded
+    gives the claim back, so the Agent is not left looking set up from a kit
+    and the user can apply it again. */
+    it("releases its claim when a later step fails", async () => {
+      const { service, calls, agentNow } = makeHarness(loaded(), {
+        failSchedules: true,
+      });
+      await expect(service.applyToAgent(input())).rejects.toThrow(
+        "schedules down",
+      );
+      expect(calls.released).toEqual(["platform/code-reviewer@abc123"]);
+      expect(agentNow()?.starterKit).toBeUndefined();
+      expect(calls.stamps).toEqual([]);
     });
 
     it("does not bind again a channel the agent is already in", async () => {

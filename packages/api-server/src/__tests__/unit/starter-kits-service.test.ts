@@ -268,6 +268,7 @@ function makeHarness(
     kitUpstream: NO_UPSTREAM,
     kitUpdateMarks: NO_MARKS,
     stampKit: async () => {},
+    kitClaim: { claim: async () => true, release: async () => {} },
     linkedKits,
     sessionPair: async () => undefined,
     runtimeMutator: {
@@ -738,6 +739,7 @@ describe("starter kits: apply", () => {
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
       stampKit: async () => {},
+      kitClaim: { claim: async () => true, release: async () => {} },
       linkedKits: NO_LINKS,
       sessionPair: async () => undefined,
       runtimeMutator: {
@@ -863,6 +865,7 @@ describe("starter kits: apply", () => {
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
       stampKit: async () => {},
+      kitClaim: { claim: async () => true, release: async () => {} },
       linkedKits: NO_LINKS,
       sessionPair: async () => undefined,
       runtimeMutator: {
@@ -971,6 +974,7 @@ describe("starter kits: onboarding turn", () => {
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
       stampKit: async () => {},
+      kitClaim: { claim: async () => true, release: async () => {} },
       linkedKits: NO_LINKS,
       sessionPair: async () => undefined,
       runtimeMutator: {

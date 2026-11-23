@@ -29,3 +29,20 @@ export function createKitStamp(
         : {}),
     });
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: holds an existing Agent for one kit apply. The
+ * claim writes the Kit Version only while the Agent has none, as one
+ * compare-and-set on the store, so of two applies racing on one Agent the
+ * second is refused before it reads or changes anything. The release clears
+ * the Kit Version only while it is still the one this apply claimed.
+ */
+export function createKitClaim(repo: Pick<AgentsRepository, "swapStarterKit">) {
+  return {
+    claim: (agentId: string, starterKit: string) =>
+      repo.swapStarterKit(agentId, null, starterKit),
+    release: async (agentId: string, starterKit: string) => {
+      await repo.swapStarterKit(agentId, starterKit, null);
+    },
+  };
+}

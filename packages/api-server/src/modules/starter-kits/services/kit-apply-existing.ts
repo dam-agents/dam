@@ -16,6 +16,7 @@ import type {
 } from "api-server-api";
 
 import { ChannelType } from "api-server-api";
+import { getLogger } from "../../../core/logger.js";
 import { seedGitRepo } from "../../agents/index.js";
 import {
   type RuntimeMutator,
@@ -36,6 +37,11 @@ export interface KitStamp {
   starterKit: string;
   seed?: SeedStamp;
   kbShareRoots?: string[];
+}
+
+export interface KitClaim {
+  claim: (agentId: string, starterKit: string) => Promise<boolean>;
+  release: (agentId: string, starterKit: string) => Promise<void>;
 }
 
 export interface KitApplySteps {
@@ -83,6 +89,7 @@ export interface KitApplyToAgentDeps {
   >;
   runtimeMutator: Pick<RuntimeMutator, "bump" | "enqueueAfterCommit">;
   stampKit: (agentId: string, stamp: KitStamp) => Promise<void>;
+  kitClaim: KitClaim;
   wakeAgent: (agentId: string) => Promise<void>;
 }
 
@@ -131,8 +138,11 @@ function mergedEnv(
  * already has a kit, the kit brings its own image, a required connection is
  * missing, or a kit schedule or env variable clashes with one the Agent has.
  * A Slack channel that cannot be bound undoes the bindings this apply made,
- * so a refusal leaves the Agent as it was. What only a create sets, the Agent
- * keeps, and the result names it.
+ * so a refusal leaves the Agent as it was. The apply first claims the Agent's
+ * Kit Version as a compare-and-set, so a second apply racing on the same
+ * Agent is refused before it reads or changes anything, and a refusal or
+ * failure before the kit is recorded releases the claim. What only a create
+ * sets, the Agent keeps, and the result names it.
  */
 export function createKitApplyToAgent(deps: KitApplyToAgentDeps) {
   const { steps } = deps;
@@ -171,11 +181,11 @@ export function createKitApplyToAgent(deps: KitApplyToAgentDeps) {
   return async function applyToAgent(
     input: StarterKitApplyToAgentInput,
   ): Promise<StarterKitApplyToAgentResult> {
-    const agent = await deps.agents.get(input.agentId);
-    if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-    if (agent.starterKit)
+    const found = await deps.agents.get(input.agentId);
+    if (!found) throw new TRPCError({ code: "NOT_FOUND" });
+    if (found.starterKit)
       conflict(
-        `the agent is already set up from the starter kit ${agent.starterKit}; take its newer versions with \`dam kit update\``,
+        `the agent is already set up from the starter kit ${found.starterKit}; take its newer versions with \`dam kit update\``,
       );
     const loaded = await steps.requireKit(input);
     const { kit, version } = loaded;
@@ -184,6 +194,37 @@ export function createKitApplyToAgent(deps: KitApplyToAgentDeps) {
         `the starter kit runs on its own image (${kit.image.ref}), and an existing agent keeps the image it was created with; create a new agent from the kit instead`,
       );
 
+    const ref = kitRef(loaded.catalog, kit.id, version);
+    if (!(await deps.kitClaim.claim(found.id, ref)))
+      conflict(
+        "another starter kit is being applied to the agent, or it was just set up from one; check it with `dam agent get`",
+      );
+    let recorded = false;
+    try {
+      const agent = (await deps.agents.get(found.id)) ?? found;
+      const result = await applyClaimed(agent, loaded, input, () => {
+        recorded = true;
+      });
+      return result;
+    } catch (err) {
+      if (!recorded)
+        await deps.kitClaim.release(found.id, ref).catch((cause: unknown) => {
+          getLogger().error(
+            { agentId: found.id, err: cause },
+            "starter kits: an apply to an existing agent failed and its claim could not be released",
+          );
+        });
+      throw err;
+    }
+  };
+
+  async function applyClaimed(
+    agent: Agent,
+    loaded: KitToApply,
+    input: StarterKitApplyToAgentInput,
+    onRecorded: () => void,
+  ): Promise<StarterKitApplyToAgentResult> {
+    const { kit, version } = loaded;
     const granted = (
       await deps.connections.getAgentConnections(agent.id)
     ).connections.map((c) => c.connectionId);
@@ -263,6 +304,7 @@ export function createKitApplyToAgent(deps: KitApplyToAgentDeps) {
           }
         : {}),
     });
+    onRecorded();
     await steps.onboard(
       agent,
       loaded,
@@ -280,5 +322,5 @@ export function createKitApplyToAgent(deps: KitApplyToAgentDeps) {
       skillsError,
       kept: partsKept(kit, agent),
     };
-  };
+  }
 }

@@ -46,7 +46,11 @@ import {
 import type { ReadTemplateSpec } from "../../templates/index.js";
 import { createOnboardingMarker } from "./onboarding-marker.js";
 import { createKitUpdates, type KitUpdateMarks } from "./kit-updates.js";
-import { createKitApplyToAgent, type KitStamp } from "./kit-apply-existing.js";
+import {
+  createKitApplyToAgent,
+  type KitClaim,
+  type KitStamp,
+} from "./kit-apply-existing.js";
 import { seedStampAtApply } from "../domain/seed-stamp.js";
 import type { KitUpstream } from "../infrastructure/kit-upstream.js";
 import type { LinkedKit, LinkedKits } from "../infrastructure/linked-kits.js";
@@ -133,6 +137,7 @@ export interface StarterKitsServiceDeps {
   kitUpstream: KitUpstream;
   kitUpdateMarks: KitUpdateMarks;
   stampKit: (agentId: string, stamp: KitStamp) => Promise<void>;
+  kitClaim: KitClaim;
   linkedKits: LinkedKits;
 }
 
@@ -539,6 +544,7 @@ export function createStarterKitsService(
       connections: deps.connections,
       runtimeMutator: deps.runtimeMutator,
       stampKit: deps.stampKit,
+      kitClaim: deps.kitClaim,
       wakeAgent: deps.wakeAgent,
     }),
 

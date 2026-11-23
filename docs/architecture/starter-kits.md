@@ -217,10 +217,11 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
    This step waits for the Agent to be reachable, like every skill install, so a kit with external skills returns once the Agent is up; its verdicts ride back on the apply result, and a failure here is reported, never compensated by deleting the Agent — the requirements that justify a refusal were all checked before create.
    The apply is recorded in the security log last, once the outcome including the skill verdicts is known, and recorded once more as usage activity naming the kit it applied, so which kits people take up and what they do with the Agent afterwards are answerable from one log ([usage tracking](usage-tracking.md)).
 
-**Apply to an existing Agent** (`applyToAgent`) runs these steps on an Agent the user has, keeping its id, history and files.
-Before any change it refuses an Agent with a kit, a kit with its own image, a missing required connection, and a clashing schedule or env variable; Slack binds run first, and a refused one undoes the others.
-The runtime never seeds over a repository it did not seed or into a non-empty work directory; a home seed replaces the files at its paths.
-What only a create sets — storage, harness, egress preset, default model — stays, and is named; its own schedules wait for onboarding too.
+**Apply to an existing Agent** runs these steps on an Agent, keeping its id.
+It claims the Kit Version by compare-and-set, so a racing one is refused, then refuses a kit image, a missing required connection, or a clashing schedule or env value.
+Slack binds run first; a refused one undoes the others; a later failure stays but frees the claim.
+The runtime seeds neither over a foreign repository nor into a non-empty work directory; a home seed replaces files at its paths.
+Storage, harness, egress preset and default model are create-only: they stay and are named; its schedules wait for onboarding too.
 
 The catalog is one view shown in two places: the **Starter kits** page at `/starter-kits`, which the sidebar's Starter kits entry opens, and the **Browse Kits modal**, which Home's browse button opens.
 Its first card, **The Generalist**, is no kit: it creates a plain agent at once.
