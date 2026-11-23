@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-11-20
+Last verified: 2026-11-23
 
 ## Overview
 
@@ -212,7 +212,7 @@ The masked terminal prompt stays the fallback, for a user who prefers it or a se
 Approvals and Terms acceptance stay the user's decisions, which the agent relays rather than makes.
 The agent never sees the web UI's warning that a connection is shared with an Agent's editors or with the chats it is bound to, so the skill's security advisory carries that rule to it: whoever can steer an Agent uses every connection and satellite it holds.
 The advisory has the agent check who can steer an Agent before it binds a chat or grants a connection or satellite, choose a connection with an identity of its own over one that acts as the user when others steer the Agent, and tell the user what each change shares.
-For an Agent others steer it also has the agent ask that Agent what its instructions say, since they decide what a message from any of those people may change in it.
+For an Agent others steer it also has the agent check that Agent's instructions, since they decide what a message from any of those people may change in it: first by reading its instruction files, which calls no model on it, and by asking the Agent only for what the files left open, which runs a turn.
 The CLI gives the web UI's warning itself as well: a command that binds a shared chat, or grants a connection or satellite to an Agent that editors or shared chats steer, names on stderr who can now use what, with the UI's rule for which chats are shared and model providers left out as there.
 It warns and never asks, since an agent usually drives it, and a read it cannot make says so in a note instead of leaving the warning out unseen.
 

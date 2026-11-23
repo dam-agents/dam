@@ -2,7 +2,10 @@
  * UNIT_BOUNDARY_DESCRIPTION: one kind of Schedule the platform gives a
  * person's assistant: what the person reads it as, when it recurs for one
  * owner, and the task of each run. A new default Schedule is a new
- * definition; the service and the table that keep it are shared.
+ * definition; the service and the table that keep it are shared. The person
+ * chooses a level, which decides the task of a run and the settings its
+ * Session asks its harness for; a kind with one level names it as the
+ * default and ignores the argument.
  */
 export interface AssistantScheduleDefinition {
   kind: string;
@@ -11,7 +14,9 @@ export interface AssistantScheduleDefinition {
   sessionTitle: string;
   timezone: string;
   rule: (owner: string) => string;
-  task: () => string;
+  defaultLevel: string;
+  task: (level: string) => string;
+  settings: (level: string) => Record<string, string>;
 }
 
 const DAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const;

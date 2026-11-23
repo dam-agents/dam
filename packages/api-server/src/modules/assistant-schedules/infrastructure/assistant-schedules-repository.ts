@@ -3,6 +3,7 @@ import { and, assistantSchedules, eq, sql, type Db } from "db";
 export interface AssistantScheduleRow {
   agentId: string;
   scheduleId: string | null;
+  level: string | null;
   items: string[];
   reportedAt: Date | null;
 }
@@ -12,8 +13,13 @@ export interface AssistantSchedulesRepository {
   save(
     owner: string,
     kind: string,
-    schedule: { agentId: string; scheduleId: string },
+    schedule: {
+      agentId: string;
+      scheduleId: string | null;
+      level: string | null;
+    },
   ): Promise<void>;
+  setLevel(owner: string, kind: string, level: string): Promise<void>;
   report(
     owner: string,
     kind: string,
@@ -28,6 +34,7 @@ export interface AssistantSchedulesRepository {
 const toRow = (row: AssistantScheduleRow): AssistantScheduleRow => ({
   agentId: row.agentId,
   scheduleId: row.scheduleId,
+  level: row.level,
   items: row.items,
   reportedAt: row.reportedAt,
 });
@@ -39,7 +46,8 @@ const toRow = (row: AssistantScheduleRow): AssistantScheduleRow => ({
  * alert about an earlier Schedule or Agent never shows beside a new one. An
  * alert only lands on a row that exists, which is what keeps a person the
  * platform gave no such Schedule from getting one. An alert that updates
- * the one before it keeps that one's time, which is what names it.
+ * the one before it keeps that one's time, which is what names it. A row
+ * with no Schedule is a person who chose to have none.
  */
 export function createAssistantSchedulesRepository(
   db: Db,
@@ -64,6 +72,13 @@ export function createAssistantSchedulesRepository(
           target: [assistantSchedules.owner, assistantSchedules.kind],
           set: { ...schedule, items: [], reportedAt: null },
         });
+    },
+
+    async setLevel(owner, kind, level) {
+      await db
+        .update(assistantSchedules)
+        .set({ level })
+        .where(rowOf(owner, kind));
     },
 
     async report(owner, kind, items, when) {

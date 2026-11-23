@@ -9,3 +9,15 @@ export const securityCheckReportInputSchema = z.object({
     .max(SECURITY_CHECK_MAX_PROBLEMS),
   update: z.boolean().optional(),
 });
+
+export const securityCheckLevelSchema = z.enum([
+  "off",
+  "low",
+  "medium",
+  "high",
+  "deep",
+]);
+
+export const securityCheckSetLevelInputSchema = z.object({
+  level: securityCheckLevelSchema,
+});

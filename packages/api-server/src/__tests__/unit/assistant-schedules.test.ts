@@ -1,4 +1,5 @@
-// TEST_OVERVIEW: a Schedule the platform gives one owner's assistant, shown on the security check, its first kind. Turning it on gives their assistant one weekly Schedule and records it; a person with no assistant is refused; a Schedule that still stands is left alone and a deleted one is made again only by the switch. Turning it off deletes the Schedule and the last report. The install's mode wins over a switch. A Schedule made by an earlier release gets the current task, and keeps the time its owner gave it. The assistant's report replaces the one before it, is kept only for a person the feature is on for, and is shown only while it names a problem, its Schedule stands and the owner still has the Agent.
+// TEST_OVERVIEW: a Schedule the platform gives one owner's assistant, shown on the security check, its first kind. Turning it on gives their assistant one weekly Schedule and records it; a person with no assistant is refused; a Schedule that still stands is left alone and a deleted one is made again only by the switch. Turning it off deletes the Schedule and the last report. The install's mode wins over a switch. A Schedule made by an earlier release gets the current task, and keeps the time its owner gave it. The owner's level decides the task and the effort of a run: only the top level lets the assistant ask other Agents, a record from before the choice asks none, and an owner who chose no check keeps none. The assistant's report replaces the one before it, is kept only for a person the feature is on for, and is shown only while it names a problem, its Schedule stands and the owner still has the Agent.
+import { TRPCError } from "@trpc/server";
 import type { FeatureMode, Schedule, SchedulesService } from "api-server-api";
 import { describe, expect, it, vi } from "vitest";
 
@@ -33,6 +34,10 @@ function memoryRepo(): AssistantSchedulesRepository & {
       }
       stored.set(kind, { ...schedule, items: [], reportedAt: null });
     },
+    setLevel: async (_owner, kind, level) => {
+      const row = stored.get(kind);
+      if (row !== undefined) stored.set(kind, { ...row, level });
+    },
     report: async (_owner, kind, items, when) => {
       const row = stored.get(kind);
       if (row === undefined) return null;
@@ -60,6 +65,7 @@ function world(
     enabled?: boolean;
     owned?: boolean;
     mode?: FeatureMode;
+    refusesSettings?: boolean;
   } = {},
 ) {
   const schedules = new Map<string, Schedule>();
@@ -75,8 +81,16 @@ function world(
     return work();
   };
   let made = 0;
+  const refuseSettings = (settings: unknown): void => {
+    if (opts.refusesSettings === true && settings != null)
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "this harness takes no effort setting",
+      });
+  };
   const createRRule = vi.fn(
     async (input: Parameters<SchedulesService["createRRule"]>[0]) => {
+      refuseSettings(input.settings);
       made += 1;
       const schedule: Schedule = {
         id: `schedule-${String(made)}`,
@@ -91,6 +105,7 @@ function world(
           enabled: true,
           createdBy: "user",
           ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
+          ...(input.settings ? { settings: input.settings } : {}),
         },
       };
       schedules.set(schedule.id, schedule);
@@ -99,6 +114,7 @@ function world(
   );
   const updateRRule = vi.fn(
     async (input: Parameters<SchedulesService["updateRRule"]>[0]) => {
+      refuseSettings(input.settings);
       const current = schedules.get(input.id);
       if (current === undefined || current.spec.type !== "rrule") return null;
       const updated: Schedule = {
@@ -109,6 +125,7 @@ function world(
           rrule: input.rrule,
           timezone: input.timezone,
           task: input.task,
+          ...(input.settings ? { settings: input.settings } : {}),
         },
       };
       schedules.set(updated.id, updated);
@@ -174,13 +191,12 @@ describe("turning the security check on", () => {
     });
   });
 
-  // TEST_SCENARIO: the Schedule's task is the assistant's whole instruction for the run, so it must name the advisory to judge by, the command that asks an agent others steer about its instructions, the command that reports, and that nothing changes before the owner agrees.
+  // TEST_SCENARIO: the Schedule's task is the assistant's whole instruction for the run, so it must name the advisory to judge by, the command that reports, and that nothing changes before the owner agrees.
   it("gives the run its procedure in the schedule's task", async () => {
     const w = world();
     await w.checks.enable();
     const task = w.createRRule.mock.calls[0]?.[0].task ?? "";
     expect(task).toContain("references/security-advisory.md");
-    expect(task).toContain("dam run <agent> -p");
     expect(task).toContain("dam security-check report");
     expect(task).toContain("change nothing until your owner agrees");
   });
@@ -334,11 +350,11 @@ describe("a schedule made by an earlier release", () => {
       name: "My Monday check",
       rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=8;BYMINUTE=0",
       timezone: "Europe/Prague",
-      task: securityCheckSchedule.task(),
+      task: securityCheckSchedule.task("medium"),
       sessionMode: "fresh",
     });
     expect(w.schedules.get("schedule-1")?.spec.task).toBe(
-      securityCheckSchedule.task(),
+      securityCheckSchedule.task("medium"),
     );
   });
 
@@ -388,9 +404,138 @@ describe("a schedule made by an earlier release", () => {
     await off.repo.save(OWNER, KIND, {
       agentId: "agent-ada",
       scheduleId: "schedule-1",
+      level: null,
     });
     await off.checks.refresh();
     expect(off.updateRRule).not.toHaveBeenCalled();
+  });
+});
+
+describe("the level of the check", () => {
+  const ASKS_AGENTS = "dam run <agent> -p";
+  const taskOf = (w: ReturnType<typeof world>): string => {
+    const spec = w.schedules.get("schedule-1")?.spec;
+    return spec?.task ?? "";
+  };
+  const effortOf = (w: ReturnType<typeof world>): string | undefined =>
+    w.schedules.get("schedule-1")?.spec.settings?.effort;
+
+  // TEST_SCENARIO: nobody chose a level, so the check the switch gives runs at the middle effort. Its task has the assistant read the instruction files of shared Agents, which calls no model, and tells it to send no prompt to another Agent: a turn on another Agent is never spent unasked.
+  it("asks no agent until the owner chooses the level that does", async () => {
+    const w = world();
+    await w.checks.enable();
+    expect(await w.checks.level()).toBe("medium");
+    expect(effortOf(w)).toBe("medium");
+    expect(taskOf(w)).toContain("dam file get <agent>");
+    expect(taskOf(w)).toContain("Send no prompt to another agent");
+    expect(taskOf(w)).not.toContain(ASKS_AGENTS);
+  });
+
+  // TEST_SCENARIO: the owner raises the check to the top level, so the Schedule that stands gets the task that asks each Agent others steer and the high effort, under the name and time it had; no second Schedule is made.
+  it("lets the check ask agents at the top level", async () => {
+    const w = world();
+    await w.checks.enable();
+    await w.checks.enable("deep");
+    expect(w.createRRule).toHaveBeenCalledTimes(1);
+    expect(await w.checks.level()).toBe("deep");
+    expect(effortOf(w)).toBe("high");
+    expect(taskOf(w)).toContain(ASKS_AGENTS);
+    expect(taskOf(w)).toContain("Name in this chat each agent you asked");
+  });
+
+  // TEST_SCENARIO: the owner lowers the check from the top level, so the next run asks no Agent again and runs at the effort they chose.
+  it("stops asking agents when the level is lowered", async () => {
+    const w = world();
+    await w.checks.enable("deep");
+    await w.checks.enable("low");
+    expect(await w.checks.level()).toBe("low");
+    expect(effortOf(w)).toBe("low");
+    expect(taskOf(w)).not.toContain(ASKS_AGENTS);
+  });
+
+  // TEST_SCENARIO: the owner set another setting on the Schedule themselves, so a new level changes the effort and leaves their setting there.
+  it("keeps the settings the owner put on the schedule", async () => {
+    const w = world();
+    await w.checks.enable();
+    const schedule = w.schedules.get("schedule-1");
+    if (schedule?.spec.type !== "rrule") throw new Error("no schedule made");
+    w.schedules.set(schedule.id, {
+      ...schedule,
+      spec: {
+        ...schedule.spec,
+        settings: { ...schedule.spec.settings, cacheTtl: "1h" },
+      },
+    });
+    await w.checks.enable("high");
+    expect(w.schedules.get("schedule-1")?.spec.settings).toEqual({
+      effort: "high",
+      cacheTtl: "1h",
+    });
+  });
+
+  // TEST_SCENARIO: the assistant runs on a harness that takes no effort setting, so the Schedule is saved without it and the level still decides the task.
+  it("runs on a harness that takes no effort setting", async () => {
+    const w = world({ refusesSettings: true });
+    await w.checks.enable("deep");
+    expect(effortOf(w)).toBeUndefined();
+    expect(await w.checks.level()).toBe("deep");
+    expect(taskOf(w)).toContain(ASKS_AGENTS);
+  });
+
+  // TEST_SCENARIO: the owner chose no check, so its Schedule and last report go and the record stays. An install that pins the feature on then gives nothing back, and choosing a level again is what makes a Schedule.
+  it("keeps an owner who chose no check without one", async () => {
+    const w = world({ mode: "on" });
+    await w.checks.ensure();
+    await w.checks.report(["bot: shared sign-in"]);
+    await w.checks.stop();
+    expect(w.deleteSchedule).toHaveBeenCalledWith("schedule-1");
+    expect(await w.checks.level()).toBeNull();
+    expect(await w.checks.current()).toBeNull();
+    await w.checks.ensure();
+    expect(w.createRRule).toHaveBeenCalledTimes(1);
+    await w.checks.enable("low");
+    expect(w.createRRule).toHaveBeenCalledTimes(2);
+    expect(await w.checks.level()).toBe("low");
+  });
+
+  // TEST_SCENARIO: the owner deleted the Schedule with the controls every Schedule has, so no check runs and the level says so.
+  it("has no level once the owner deleted the schedule", async () => {
+    const w = world();
+    await w.checks.enable("high");
+    w.schedules.delete("schedule-1");
+    expect(await w.checks.level()).toBeNull();
+  });
+
+  // TEST_SCENARIO: a release before the level let every check ask Agents, and its record names no level. The refresh gives that Schedule the task that asks none, since its owner never chose the top level.
+  it("stops a check from before the choice asking agents", async () => {
+    const w = world();
+    await w.checks.enable();
+    const row = w.repo.row();
+    const schedule = w.schedules.get("schedule-1");
+    if (row === null || schedule?.spec.type !== "rrule")
+      throw new Error("no schedule made");
+    await w.repo.save(OWNER, KIND, { ...row, level: null });
+    w.schedules.set(schedule.id, {
+      ...schedule,
+      spec: { ...schedule.spec, task: securityCheckSchedule.task("deep") },
+    });
+    await w.checks.refresh();
+    expect(taskOf(w)).toBe(securityCheckSchedule.task("medium"));
+    expect(taskOf(w)).not.toContain(ASKS_AGENTS);
+  });
+
+  // TEST_SCENARIO: the owner chose the top level, so a refresh after a release keeps the task that asks Agents.
+  it("keeps the top level across a release", async () => {
+    const w = world();
+    await w.checks.enable("deep");
+    const schedule = w.schedules.get("schedule-1");
+    if (schedule?.spec.type !== "rrule") throw new Error("no schedule made");
+    w.schedules.set(schedule.id, {
+      ...schedule,
+      spec: { ...schedule.spec, task: "the procedure of an earlier release" },
+    });
+    await w.checks.refresh();
+    expect(taskOf(w)).toBe(securityCheckSchedule.task("deep"));
   });
 });
 

@@ -866,6 +866,7 @@ export type {
 } from "./modules/cost-reviews/types.js";
 export { COST_REVIEW_LATER_DAYS } from "./modules/cost-reviews/types.js";
 export type {
+  SecurityCheckLevel,
   SecurityCheckNotice,
   SecurityCheckReport,
   SecurityCheckReportInput,
@@ -874,6 +875,7 @@ export type {
 export {
   SECURITY_CHECK_MAX_PROBLEMS,
   SECURITY_CHECK_PROBLEM_MAX_LENGTH,
+  securityCheckLevelSchema,
   securityCheckReportInputSchema,
 } from "./modules/security-checks/schemas.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";
