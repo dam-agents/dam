@@ -245,17 +245,30 @@ Connect the workspace through the install flow instead.
 The app-level token that opens the Socket Mode connection can rotate too, with its own switch, `apiServer.slackAppTokenRotation`, off by default.
 It is separate from `slackTokenRotation` so that an install already rotating bot tokens sees no change until you turn it on.
 
-1. Token rotation must already be on in the Slack app (step 2 above), with `slackClientId` and `slackClientSecret` set.
-2. Turn it on in a dev install first: `--set=apiServer.slackAppTokenRotation=true`.
-   On the first Socket Mode connect, `apiServer.slackAppToken` is exchanged for a rotating pair, kept in the `platform-secret-slack-app-token` Secret and renewed every hour.
-   Slack retires the original token after the first renewal; keep the value in Helm anyway, since it is what turns Slack on.
-3. Watch the api-server log for `slack.app_token.refresh.failed` across more than one renewal cycle — a few hours — before you turn it on in staging and production.
+Slack does not exchange an app-level token made before rotation was on, so the platform starts from the refresh token of a new one.
 
-Do not paste a rotating app-level token (`xoxe.xapp-…`) into `slackAppToken`; set the long-lived `xapp-…` token and let the platform exchange it.
-Turning the switch off again puts Socket Mode back on the Helm value, which Slack retired at the first renewal: set a newly generated app-level token in the same change.
+1. Token rotation must already be on in the Slack app (step 2 above), with `slackClientId` and `slackClientSecret` set.
+2. Generate a new app-level token in the Slack app (Basic Information → App-Level Tokens) with the `connections:write` scope.
+   Slack shows it once, as an access token (`xoxe.xapp-…`) and a refresh token (`xoxe-1-…`).
+   Keep only the refresh token.
+3. Turn it on in a dev install first, with the refresh token as a secret value:
+   `--set=apiServer.slackAppTokenRotation=true --set=apiServer.slackAppRefreshToken=xoxe-1-...`.
+   Keep the long-lived `xapp-…` token in `apiServer.slackAppToken`: Socket Mode uses it until the import succeeds, so the switch-over has no gap.
+   On the first Socket Mode connect, the refresh token is spent for a rotating pair, kept in the `platform-secret-slack-app-token` Secret and renewed every hour.
+4. Check that the Secret exists and that the api-server logs `slack.app_token.imported`.
+   `slack.app_token.import.failed` means Slack refused the refresh token; the api-server stays on `slackAppToken` and tries again every ten minutes.
+5. Watch the api-server log for `slack.app_token.refresh.failed` across more than one renewal cycle — a few hours — before you turn it on in staging and production.
+
+A refresh token works only once.
+After the import the Helm copy is spent; leave it set, because the Secret is matched to it and a different value starts a new import.
+If you refreshed the token by hand, set the refresh token from Slack's newest answer, not an older one.
+With the switch on and `slackAppRefreshToken` empty, the api-server logs `slack.app_token.refresh_token_missing` and stays on `slackAppToken`.
+
+Do not paste a rotating app-level token (`xoxe.xapp-…`) into `slackAppToken`: it comes without its refresh token and expires in twelve hours.
+Turning the switch off again puts Socket Mode back on `slackAppToken`.
 
 If the api-server could not renew the app-level token before it expired, and Slack refuses its refresh token, Slack stays down and the api-server logs `slack.app_token.refresh.failed`.
-To recover, generate a new app-level token in the Slack app (Basic Information → App-Level Tokens) and set it as `apiServer.slackAppToken`: a value other than the one imported before is exchanged again.
+To recover, generate a new app-level token in the Slack app and set its refresh token as `apiServer.slackAppRefreshToken`: a value other than the one imported before is imported again.
 
 The binding is the authorization: anyone in the channel drives the instance under the instance's own credentials, no login required; Slack channel membership is the only per-person gate, and the owner's Terms-of-Use acceptance covers every turn.
 

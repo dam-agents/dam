@@ -17,7 +17,7 @@ const EXPIRES_AT_FIELD = "expiresAt";
 const IMPORTED_FROM_FIELD = "importedFrom";
 const REFUSED_FIELD = "refused";
 const REFRESH_AHEAD_MS = 11 * 60 * 60_000;
-const EXCHANGE_RETRY_MS = 10 * 60_000;
+const IMPORT_RETRY_MS = 10 * 60_000;
 const ROTATING_TOKEN_PREFIX = "xoxe.";
 
 export interface SpentRefreshTokens {
@@ -27,6 +27,7 @@ export interface SpentRefreshTokens {
 
 export interface SlackAppTokenServiceDeps {
   helmToken: string;
+  helmRefreshToken: string | null;
   secrets: SecretStore;
   lock: XactLock;
   rotation: SlackTokenRotation;
@@ -71,19 +72,24 @@ function logAppToken(
  * connection.
  *
  * The service exists only where the install turned app-level token rotation
- * on. The app-level token from Helm values is then an import, not the token
- * served: it is exchanged once with `oauth.v2.exchange` for a
- * token that expires after twelve hours and a single-use refresh token, and
- * the pair goes into one install-wide Secret together with a fingerprint of
- * the Helm value it came from. From then on the Secret answers, and the pair
- * is renewed with `oauth.v2.access` once the token is an hour old, the same
- * pace as a workspace's bot token, so an outage has eleven hours to pass.
- * Slack retires the Helm token after the first renewal, so a copy of the Helm
- * value stops being useful within hours.
+ * on. Slack does not exchange an existing long-lived app-level token for a
+ * rotating one: an operator generates a new app-level token after rotation
+ * is on, and gives its single-use refresh token to the install in Helm
+ * values. That refresh token is the import: it is spent once with
+ * `oauth.v2.access` for a token that expires after twelve hours and a new
+ * refresh token, and the pair goes into one install-wide Secret together
+ * with a fingerprint of the Helm value it came from. Until then the
+ * long-lived app-level token from Helm values keeps the socket up, so the
+ * switch-over has no gap, and with no refresh token in Helm values it stays
+ * on that token. From then on the Secret answers, and the pair is renewed
+ * with `oauth.v2.access` once the token is an hour old, the same pace as a
+ * workspace's bot token, so an outage has eleven hours to pass. The Helm
+ * refresh token is spent by the import, so the same value is never imported
+ * again; only a different one is.
  *
- * Exchange and renewal run under one lock, with the Secret re-read inside it,
- * so two replicas never spend the same refresh token. A failed exchange keeps
- * serving the Helm token and tries again ten minutes later. A pair Slack
+ * Import and renewal run under one lock, with the Secret re-read inside it,
+ * so two replicas never spend the same refresh token. A failed import keeps
+ * serving the long-lived token and tries again ten minutes later. A pair Slack
  * minted but the Secret could not take is the only copy of its single-use
  * refresh token, so it is kept in memory and served, and the next call saves
  * it under the lock before it asks Slack for anything. It is saved only over
@@ -97,16 +103,18 @@ function logAppToken(
  * restarted. A failed renewal
  * keeps serving the token while it is still valid. Once it has expired, Slack
  * refusing the refresh token as dead marks the Secret refused, and nothing is
- * served until a person sets a new app-level token in Helm values: a Helm
- * value whose fingerprint differs from the stored one is imported again, so a
- * regenerated token is how an operator recovers.
+ * served until a person sets a new refresh token in Helm values: a Helm
+ * value whose fingerprint differs from the stored one is imported, so the
+ * refresh token of a newly generated app-level token is how an operator
+ * recovers.
  */
 export function createSlackAppTokenService(
   deps: SlackAppTokenServiceDeps,
 ): SlackAppTokenService {
   const now = () => deps.rotation.now();
-  const helmFingerprint = fingerprint(deps.helmToken);
-  let exchangeRetryAt = 0;
+  const importToken = deps.helmRefreshToken || null;
+  const helmFingerprint = importToken ? fingerprint(importToken) : null;
+  let importRetryAt = 0;
   let unsaved: { pair: StoredAppToken; replaces: string | null } | null = null;
 
   if (deps.helmToken.startsWith(ROTATING_TOKEN_PREFIX)) {
@@ -114,6 +122,13 @@ export function createSlackAppTokenService(
       result: "failure",
       reason:
         "a rotating app-level token in Helm values comes without its refresh token and expires within twelve hours; set the long-lived xapp- token instead",
+    });
+  }
+  if (importToken === null) {
+    logAppToken("warn", "slack.app_token.refresh_token_missing", {
+      result: "failure",
+      reason:
+        "app-level token rotation is on but apiServer.slackAppRefreshToken is empty; Socket Mode stays on the long-lived apiServer.slackAppToken",
     });
   }
 
@@ -138,15 +153,16 @@ export function createSlackAppTokenService(
   }
 
   function current(stored: StoredAppToken | null): StoredAppToken | null {
+    if (helmFingerprint === null) return null;
     return stored?.importedFrom === helmFingerprint ? stored : null;
   }
 
-  function exchangeDue(): boolean {
-    return exchangeRetryAt <= now();
+  function importDue(): boolean {
+    return importToken !== null && importRetryAt <= now();
   }
 
   function renewalDue(stored: StoredAppToken | null): boolean {
-    if (stored === null) return exchangeDue();
+    if (stored === null) return importDue();
     if (stored.refused) return false;
     return stored.expiresAt - now() < REFRESH_AHEAD_MS;
   }
@@ -185,13 +201,14 @@ export function createSlackAppTokenService(
 
   async function keep(
     result: SlackRotatingToken,
+    importedFrom: string,
     replaces: string | null,
   ): Promise<string> {
     const pair: StoredAppToken = {
       token: result.accessToken,
       refreshToken: result.refreshToken,
       expiresAt: result.expiresAt,
-      importedFrom: helmFingerprint,
+      importedFrom,
       refused: false,
     };
     if (await save(pair)) {
@@ -212,25 +229,29 @@ export function createSlackAppTokenService(
     return pair.token;
   }
 
-  async function exchange(): Promise<string> {
-    if (!exchangeDue()) return deps.helmToken;
-    const result = await deps.rotation.exchange(deps.helmToken);
+  async function importPair(): Promise<string> {
+    if (importToken === null || helmFingerprint === null || !importDue()) {
+      return deps.helmToken;
+    }
+    const result = await deps.rotation.refresh(importToken);
     if (!result.ok) {
-      exchangeRetryAt = now() + EXCHANGE_RETRY_MS;
-      logAppToken("warn", "slack.app_token.exchange.failed", {
+      importRetryAt = now() + IMPORT_RETRY_MS;
+      logAppToken("warn", "slack.app_token.import.failed", {
         result: "failure",
-        reason: result.error,
+        reason: result.credentialDead
+          ? `${result.error}; a refresh token works once, so set the refresh token of a newly generated app-level token in apiServer.slackAppRefreshToken`
+          : result.error,
       });
       return deps.helmToken;
     }
-    logAppToken("info", "slack.app_token.exchanged", { result: "success" });
-    return keep(result, null);
+    logAppToken("info", "slack.app_token.imported", { result: "success" });
+    return keep(result, helmFingerprint, null);
   }
 
   async function refresh(stored: StoredAppToken): Promise<string | null> {
     const expired = stored.expiresAt <= now();
     const result = await deps.rotation.refresh(stored.refreshToken);
-    if (result.ok) return keep(result, stored.refreshToken);
+    if (result.ok) return keep(result, stored.importedFrom, stored.refreshToken);
     const refused = expired && result.credentialDead;
     logAppToken(
       "error",
@@ -238,7 +259,7 @@ export function createSlackAppTokenService(
       {
         result: "failure",
         reason: refused
-          ? `${result.error}; Slack stays down until a new app-level token is set in apiServer.slackAppToken`
+          ? `${result.error}; Slack stays down until the refresh token of a newly generated app-level token is set in apiServer.slackAppRefreshToken`
           : result.error,
       },
       { expired },
@@ -271,7 +292,7 @@ export function createSlackAppTokenService(
         }
       }
       if (!renewalDue(stored)) return served(stored);
-      if (stored === null) return exchange();
+      if (stored === null) return importPair();
       if (await spentElsewhere(stored)) return served(stored);
       return refresh(stored);
     });

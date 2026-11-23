@@ -28,20 +28,22 @@ A failed exchange keeps serving the old token and tries again later.
 ## The App-Level Token
 
 The App-Level Token comes from Helm values, and the Helm value alone decides whether the Slack worker runs.
-With app-level rotation off, the Helm value is the token: nothing is exchanged, stored or renewed, and every connect sends it as it is.
-With it on, the value is a one-time import: on the first connect it is exchanged for a rotating pair, which goes into one install-wide Secret with a fingerprint of the Helm value, and the Secret answers from then on.
-A restart, or another replica, reads the pair from the Secret and never exchanges the Helm value again.
+With app-level rotation off, the Helm value is the token: nothing is imported, stored or renewed, and every connect sends it as it is.
+Slack does not exchange an App-Level Token minted before rotation was on: `oauth.v2.exchange` takes bot and user tokens only.
+A rotating App-Level Token is one generated after rotation is on, shown once as an access token and a single-use refresh token.
+With app-level rotation on, that refresh token, from its own Helm value, is a one-time import: on the first connect it is spent with `oauth.v2.access` for a rotating pair, which goes into one install-wide Secret with a fingerprint of the refresh token's Helm value, and the Secret answers from then on.
+A restart, or another replica, reads the pair from the Secret and never spends the Helm refresh token again, which Slack would refuse.
+Until the import succeeds the socket stays on the long-lived Helm token, so the switch-over has no gap; with no refresh token set it stays there, and the api-server warns of it at boot.
 
 The pair is renewed at the bot tokens' pace — once the token is an hour old, by the same ten-minute sweep or by the next connect — under one install-wide lock with the Secret re-read inside it.
-Slack retires the Helm token after the first renewal, so a copy of the Helm value is useless within hours.
 The Socket Mode connection asks for the token again on every connect, so a reconnect always uses the token renewed last, whichever replica renewed it.
 
-A failed exchange keeps the socket on the Helm token and tries again ten minutes later; a failed renewal keeps the current token while it is valid.
+A failed import keeps the socket on the long-lived Helm token and tries again ten minutes later; a failed renewal keeps the current token while it is valid.
 A pair Slack minted that the Secret would not take holds the only copy of its single-use refresh token, so the replica keeps it in memory, serves it, and saves it under the lock before it asks Slack for anything else.
 It saves it only over the pair it replaced: a Secret that moved on means another replica saved a newer pair, and the kept one is dropped.
 Until then, the refresh token it spent is marked spent in Redis, by fingerprint only, so every replica sees it: another replica that reads the old pair serves its still-valid token instead of spending that refresh token again.
 Once the old token has expired, the mark holds no one back — the replica with the kept pair may have restarted — and Slack decides whether the refresh token still works.
 Once the token has expired and Slack refuses its refresh token as dead, the Secret is marked refused, nothing is served and the socket stays down, with an error in the api-server log on each try.
-The way back is an operator act: generate a new App-Level Token in the Slack app and set it in Helm values.
-A Helm value whose fingerprint differs from the stored one is imported again, replacing the refused pair.
+The way back is an operator act: generate a new App-Level Token in the Slack app and set its refresh token in Helm values.
+A Helm refresh token whose fingerprint differs from the stored one is imported, replacing the refused pair.
 A rotating token pasted into Helm values has no refresh token to go with it, so the api-server warns of it at boot.
