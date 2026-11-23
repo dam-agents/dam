@@ -212,6 +212,11 @@ export function createSchedulerRunner(
         log(
           `run-now: agent ${agentId} is still waking after ${capMs} ms; the wake goes on`,
         );
+        work.catch((err: unknown) =>
+          log(
+            `run-now: agent ${agentId} wake after the cap failed: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
         reject(new NoDefaultModelError({ pending: true }));
       }, capMs);
     });
