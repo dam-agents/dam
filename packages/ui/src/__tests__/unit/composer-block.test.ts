@@ -2,7 +2,10 @@
 import { describe, expect, it } from "vitest";
 
 import { COMPOSER_LOCKED_REASON } from "../../modules/a2ui/lib/composer-lock.js";
-import { composerBlock } from "../../modules/sessions/lib/composer-block.js";
+import {
+  composerBlock,
+  holdsSendOnly,
+} from "../../modules/sessions/lib/composer-block.js";
 
 const settled = {
   agentId: "agent-1",
@@ -101,6 +104,16 @@ describe("the composer block", () => {
       kind: "connecting",
       reason: "Connecting to this agent — your message stays in the draft.",
     });
+  });
+
+  // TEST_SCENARIO: a block that waits for the agent's channel holds the send alone, so the person keeps typing; a block the person has to clear holds the whole composer.
+  it("holds only the send while the channel is not live", () => {
+    const connecting = composerBlock({ ...settled, channel: "connecting" });
+    const lost = composerBlock({ ...settled, channel: "lost" });
+    const form = composerBlock({ ...settled, formLocked: true });
+    expect(connecting && holdsSendOnly(connecting)).toBe(true);
+    expect(lost && holdsSendOnly(lost)).toBe(true);
+    expect(form && holdsSendOnly(form)).toBe(false);
   });
 
   // TEST_SCENARIO: a provider problem still wins over the reconnect, because the user can act on it and the reconnect reason would hide that action.

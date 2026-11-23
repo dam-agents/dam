@@ -47,6 +47,8 @@ export interface ChatInputProps {
   onStop: () => void;
   onTakeBack?: (() => void) | null;
   blockedReason?: string | null;
+  /** Holds the send alone: the textarea stays editable and keeps the draft. */
+  sendBlockedReason?: string | null;
   onBlockedClick?: () => void;
   stopBlockedReason?: string | null;
   harness?: string | null;
@@ -63,6 +65,7 @@ export function ChatInput({
   onStop,
   onTakeBack,
   blockedReason,
+  sendBlockedReason = null,
   onBlockedClick,
   stopBlockedReason,
   harness = null,
@@ -196,6 +199,7 @@ export function ChatInput({
     examples ?? NO_EXAMPLES,
     !!key &&
       !blockedReason &&
+      !sendBlockedReason &&
       input === "" &&
       attachments.length === 0 &&
       !isComputing,
@@ -243,7 +247,7 @@ export function ChatInput({
 
   const [heldSendFor, setHeldSendFor] = useState<string | null>(null);
   const send = useCallback(() => {
-    if (!key || blockedReason) return;
+    if (!key || blockedReason || sendBlockedReason) return;
     const current = useStore.getState().drafts[key] ?? EMPTY_DRAFT;
     const text = current.text.trim();
     const files =
@@ -260,6 +264,7 @@ export function ChatInput({
     key,
     loadingSession,
     blockedReason,
+    sendBlockedReason,
     clearDraftContent,
     onSend,
     promptHistory,
@@ -278,10 +283,14 @@ export function ChatInput({
     if (loadingSession) return;
     setHeldSendFor(null);
     const failed = useStore.getState().sessionError;
-    if (blockedReason || failed?.sessionId === useStore.getState().sessionId)
+    if (
+      blockedReason ||
+      sendBlockedReason ||
+      failed?.sessionId === useStore.getState().sessionId
+    )
       return;
     send();
-  }, [heldSendFor, loadingSession, blockedReason, key, send]);
+  }, [heldSendFor, loadingSession, blockedReason, sendBlockedReason, key, send]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (commandMenu.onKeyDown(e)) {
@@ -316,6 +325,7 @@ export function ChatInput({
 
   const placeholder =
     blockedReason ??
+    sendBlockedReason ??
     (isComputing ? "Queue a message…" : (emptyPlaceholder ?? "Message…"));
   useAutoResize(textareaRef, input, placeholder);
 
@@ -412,9 +422,14 @@ export function ChatInput({
                 size="icon"
                 className={`shrink-0 mb-[9px] ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
-                disabled={sendDisabled || !key || !!blockedReason}
+                disabled={
+                  sendDisabled ||
+                  !key ||
+                  !!blockedReason ||
+                  !!sendBlockedReason
+                }
                 aria-label={isComputing ? "Queue" : "Send"}
-                tooltip={isComputing ? "Queue" : "Send"}
+                tooltip={sendBlockedReason ?? (isComputing ? "Queue" : "Send")}
               >
                 <SendAltFilled size={16} />
               </Button>
