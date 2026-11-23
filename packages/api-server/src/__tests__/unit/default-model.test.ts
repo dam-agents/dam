@@ -1172,7 +1172,6 @@ describe("the one-time default conversion", () => {
     const notSet = { harness: "claude-code", provider: "anth", model: null };
     const asleep = converter({ running: false, saved: notSet });
     expect(await asleep.c.ensureForFire("a")).toBeNull();
-    expect(await asleep.c.pendingAfterMove("a")).toBe(false);
     expect(asleep.wakes).toEqual([]);
     expect(asleep.writes).toEqual([]);
   });

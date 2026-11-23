@@ -2391,15 +2391,6 @@ export async function bootstrap() {
     wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
     ensureDefault: (agentId) => defaultConverter.ensureForFire(agentId),
     scheduleModelFor,
-    defaultPendingAfterMove: async (agentId) => {
-      if (!(await defaultConverter.pendingAfterMove(agentId))) return false;
-      void defaultConverter
-        .ensureForFire(agentId)
-        .catch((err: unknown) =>
-          getLogger().warn({ err, agentId }, "default conversion failed"),
-        );
-      return true;
-    },
     restoreActivity: (agentId, stamp) =>
       agentsRepo.restoreActivityIfUnchanged(agentId, stamp),
     redis: sharedRedis,
