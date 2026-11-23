@@ -52,11 +52,12 @@ vi.mock("../../modules/acp/acp.js", () => ({
   sessionForksIn: () => false,
   sessionSteeringIn: () => null,
   openInitializedConnection: async (_agent: string, update: Update) => {
-    const socket = Object.assign(new EventTarget(), {
+    const target = new EventTarget();
+    const socket: FakeSocket = Object.assign(target, {
       readyState: 1,
       close() {
-        this.readyState = 3;
-        this.dispatchEvent(new Event("close"));
+        socket.readyState = 3;
+        target.dispatchEvent(new Event("close"));
       },
     });
     const index = h.sockets.length;
