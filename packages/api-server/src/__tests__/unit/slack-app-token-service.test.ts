@@ -11,17 +11,19 @@ import type {
 
 /**
  * TEST_OVERVIEW: Which app-level token opens the Slack Socket Mode
- * connection where app-level token rotation is on. The Helm value is
- * imported once: it is exchanged for a rotating pair kept in one
- * install-wide Secret, and the pair is renewed an hour after it was minted,
- * under one lock, so two replicas never spend the same refresh token. A pair
- * Slack refused after it
- * expired serves nothing until a new Helm value is set, which is imported
- * again.
+ * connection where app-level token rotation is on. The refresh token of a
+ * newly generated app-level token, from Helm values, is imported once: it is
+ * spent for a rotating pair kept in one install-wide Secret, and the pair is
+ * renewed an hour after it was minted, under one lock, so two replicas never
+ * spend the same refresh token. Until then, or with no refresh token set, the
+ * long-lived Helm token serves, and Slack is never asked to exchange it. A
+ * pair Slack refused after it expired serves nothing until a new refresh
+ * token is set, which is imported.
  */
 
 const HOUR = 60 * 60_000;
 const HELM = "xapp-1-from-helm";
+const HELM_REFRESH = "xoxe-1-from-helm";
 
 function mutex() {
   let tail: Promise<unknown> = Promise.resolve();
@@ -41,15 +43,20 @@ function grant(
 }
 
 function setup(opts?: {
-  helmToken?: string;
-  exchange?: SlackTokenGrant;
+  helmRefreshToken?: string | null;
+  importGrant?: SlackTokenGrant;
   refresh?: SlackTokenGrant;
   stored?: Record<string, string>;
 }) {
   let clock = 1_000_000;
   const secrets: Record<string, Record<string, string>> = {};
   if (opts?.stored) secrets[SLACK_APP_TOKEN_SECRET_PATH] = { ...opts.stored };
-  const calls = { exchange: [] as string[], refresh: [] as string[] };
+  const calls = {
+    exchange: [] as string[],
+    import: [] as string[],
+    refresh: [] as string[],
+  };
+  const imports = new Set<string>();
   const storage = { down: false };
   const spent = new Set<string>();
   const spentRefreshTokens = {
@@ -74,17 +81,25 @@ function setup(opts?: {
     },
   } as unknown as SecretStore;
   const deps = {
-    helmToken: opts?.helmToken ?? HELM,
+    helmToken: HELM,
+    helmRefreshToken:
+      opts?.helmRefreshToken === undefined
+        ? HELM_REFRESH
+        : opts.helmRefreshToken,
     secrets: store,
     lock: mutex(),
     rotation: {
-      exchange: async (token: string) => {
+      exchange: async (token: string): Promise<SlackTokenGrantResult> => {
         calls.exchange.push(token);
-        return opts?.exchange
-          ? opts.exchange(token)
-          : grant("xoxe.xapp-1", "xoxe-1-r1", clock + 12 * HOUR);
+        return { ok: false, credentialDead: true, error: "invalid_auth" };
       },
       refresh: async (token: string) => {
+        if (imports.has(token)) {
+          calls.import.push(token);
+          return opts?.importGrant
+            ? opts.importGrant(token)
+            : grant("xoxe.xapp-1", "xoxe-1-r1", clock + 12 * HOUR);
+        }
         calls.refresh.push(token);
         return opts?.refresh
           ? opts.refresh(token)
@@ -94,10 +109,13 @@ function setup(opts?: {
     },
     spentRefreshTokens,
   };
+  if (deps.helmRefreshToken) imports.add(deps.helmRefreshToken);
   return {
     svc: createSlackAppTokenService(deps),
-    rebuild: (helmToken: string) =>
-      createSlackAppTokenService({ ...deps, helmToken }),
+    rebuild: (helmRefreshToken: string | null = deps.helmRefreshToken) => {
+      if (helmRefreshToken) imports.add(helmRefreshToken);
+      return createSlackAppTokenService({ ...deps, helmRefreshToken });
+    },
     secret: () => secrets[SLACK_APP_TOKEN_SECRET_PATH],
     storage,
     calls,
@@ -108,7 +126,7 @@ function setup(opts?: {
   };
 }
 
-async function exchanged() {
+async function imported() {
   const env = setup();
   await env.svc.resolveAppToken();
   return env;
@@ -116,69 +134,118 @@ async function exchanged() {
 
 describe("Slack app-level token", () => {
   /**
-   * TEST_SCENARIO: Rotation is turned on. The Helm token is exchanged once
+   * TEST_SCENARIO: Rotation is turned on with the refresh token of a newly
+   * generated app-level token in Helm values. The refresh token is spent once
    * for a rotating pair, the pair is stored with the Helm value's
-   * fingerprint, and from then on the stored token answers.
+   * fingerprint, and from then on the stored token answers. The long-lived
+   * Helm token is never offered to `oauth.v2.exchange`, which Slack refuses
+   * for app-level tokens.
    */
-  it("exchanges the Helm token once and serves the stored pair", async () => {
+  it("imports the Helm refresh token once and serves the stored pair", async () => {
     const env = setup();
 
     expect(await env.svc.resolveAppToken()).toBe("xoxe.xapp-1");
     expect(await env.svc.resolveAppToken()).toBe("xoxe.xapp-1");
 
-    expect(env.calls.exchange).toEqual([HELM]);
+    expect(env.calls.import).toEqual([HELM_REFRESH]);
+    expect(env.calls.exchange).toEqual([]);
     expect(env.secret()).toMatchObject({
       appToken: "xoxe.xapp-1",
       refreshToken: "xoxe-1-r1",
       expiresAt: String(env.now() + 12 * HOUR),
     });
     expect(env.secret()?.["importedFrom"]).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(env.secret())).not.toContain(HELM_REFRESH);
     expect(JSON.stringify(env.secret())).not.toContain(HELM);
   });
 
   /**
-   * TEST_SCENARIO: A restart after the exchange. A new process reads the
-   * stored pair and does not exchange the Helm token again, which Slack would
-   * refuse.
+   * TEST_SCENARIO: Rotation is on but no refresh token is set. The
+   * long-lived Helm token keeps serving, Slack is asked for nothing, and no
+   * Secret is written, however long the install runs.
    */
-  it("keeps the stored pair across a restart", async () => {
-    const env = await exchanged();
+  it("stays on the long-lived token when no refresh token is set", async () => {
+    const env = setup({ helmRefreshToken: null });
 
-    expect(await env.rebuild(HELM).resolveAppToken()).toBe("xoxe.xapp-1");
-    expect(env.calls.exchange).toEqual([HELM]);
+    expect(await env.svc.resolveAppToken()).toBe(HELM);
+    env.advance(2 * HOUR);
+    await env.svc.renew();
+    expect(await env.svc.resolveAppToken()).toBe(HELM);
+
+    expect(env.calls).toEqual({ exchange: [], import: [], refresh: [] });
+    expect(env.secret()).toBeUndefined();
   });
 
   /**
-   * TEST_SCENARIO: Slack does not answer the exchange. The Helm token keeps
-   * the socket up, and the exchange is tried again only after ten minutes.
+   * TEST_SCENARIO: A restart after the import. A new process reads the
+   * stored pair and does not spend the Helm refresh token again, which Slack
+   * would refuse.
    */
-  it("serves the Helm token after a failed exchange and retries later", async () => {
+  it("keeps the stored pair across a restart", async () => {
+    const env = await imported();
+
+    expect(await env.rebuild().resolveAppToken()).toBe("xoxe.xapp-1");
+    expect(env.calls.import).toEqual([HELM_REFRESH]);
+  });
+
+  /**
+   * TEST_SCENARIO: The stored pair has been renewed since the import. A
+   * restart with the same, now long spent, Helm refresh token still matches
+   * the renewed pair, so the renewed pair serves and nothing is imported.
+   */
+  it("keeps a renewed pair matched to the Helm refresh token", async () => {
+    const env = await imported();
+    env.advance(2 * HOUR);
+    await env.svc.renew();
+
+    expect(await env.rebuild().resolveAppToken()).toBe("xoxe.xapp-2");
+    expect(env.calls.import).toEqual([HELM_REFRESH]);
+  });
+
+  /**
+   * TEST_SCENARIO: The refresh token is removed from Helm values after the
+   * import. The stored pair no longer matches, so Socket Mode goes back to
+   * the long-lived Helm token.
+   */
+  it("goes back to the long-lived token when the refresh token is removed", async () => {
+    const env = await imported();
+
+    expect(await env.rebuild(null).resolveAppToken()).toBe(HELM);
+    expect(env.calls.import).toEqual([HELM_REFRESH]);
+  });
+
+  /**
+   * TEST_SCENARIO: Slack refuses the import, as it does for a refresh token
+   * that was already spent. The long-lived Helm token keeps the socket up,
+   * and the import is tried again only after ten minutes.
+   */
+  it("serves the long-lived token after a failed import and retries later", async () => {
     const env = setup({
-      exchange: async () => ({
+      importGrant: async () => ({
         ok: false,
-        credentialDead: false,
-        error: "ratelimited",
+        credentialDead: true,
+        error: "invalid_refresh_token",
       }),
     });
 
     expect(await env.svc.resolveAppToken()).toBe(HELM);
     env.advance(5 * 60_000);
     expect(await env.svc.resolveAppToken()).toBe(HELM);
-    expect(env.calls.exchange).toHaveLength(1);
+    expect(env.calls.import).toHaveLength(1);
 
     env.advance(6 * 60_000);
     await env.svc.resolveAppToken();
-    expect(env.calls.exchange).toHaveLength(2);
+    expect(env.calls.import).toHaveLength(2);
     expect(env.secret()).toBeUndefined();
   });
 
   /**
-   * TEST_SCENARIO: Slack exchanged the token, but the Secret could not be
-   * written. Slack exchanges a token only once, so the pair is the only one
-   * there will be: it is served, and the next call saves it instead of
-   * exchanging again.
+   * TEST_SCENARIO: Slack spent the Helm refresh token, but the Secret could
+   * not be written. A refresh token works only once, so the pair is the only
+   * one there will be: it is served, and the next call saves it instead of
+   * importing again.
    */
-  it("keeps an exchanged pair the Secret refused and saves it later", async () => {
+  it("keeps an imported pair the Secret refused and saves it later", async () => {
     const env = setup();
     env.storage.down = true;
 
@@ -188,7 +255,7 @@ describe("Slack app-level token", () => {
 
     env.storage.down = false;
     expect(await env.svc.resolveAppToken()).toBe("xoxe.xapp-1");
-    expect(env.calls.exchange).toEqual([HELM]);
+    expect(env.calls.import).toEqual([HELM_REFRESH]);
     expect(env.secret()).toMatchObject({
       appToken: "xoxe.xapp-1",
       refreshToken: "xoxe-1-r1",
@@ -203,7 +270,7 @@ describe("Slack app-level token", () => {
    * makes the next renewal.
    */
   it("keeps a renewed pair the Secret refused and renews with it once saved", async () => {
-    const env = await exchanged();
+    const env = await imported();
     env.advance(2 * HOUR);
     env.storage.down = true;
 
@@ -232,7 +299,7 @@ describe("Slack app-level token", () => {
    * pair is served.
    */
   it("drops a kept pair once another replica saved a newer one", async () => {
-    const env = await exchanged();
+    const env = await imported();
     env.advance(2 * HOUR);
     env.storage.down = true;
     expect(await env.svc.resolveAppToken()).toBe("xoxe.xapp-2");
@@ -252,7 +319,7 @@ describe("Slack app-level token", () => {
    * spent refresh token is never offered to Slack again.
    */
   it("renews the token an hour after it was minted", async () => {
-    const env = await exchanged();
+    const env = await imported();
 
     env.advance(30 * 60_000);
     await env.svc.renew();
@@ -275,9 +342,9 @@ describe("Slack app-level token", () => {
    * is spent once.
    */
   it("spends a refresh token once when two callers renew together", async () => {
-    const env = await exchanged();
+    const env = await imported();
     env.advance(2 * HOUR);
-    const other = env.rebuild(HELM);
+    const other = env.rebuild();
 
     const [a, b] = await Promise.all([
       env.svc.resolveAppToken(),
@@ -296,12 +363,12 @@ describe("Slack app-level token", () => {
    * holding the new pair saves it once the Secret takes writes again.
    */
   it("keeps another replica off a refresh token spent but not yet saved", async () => {
-    const env = await exchanged();
+    const env = await imported();
     env.advance(2 * HOUR);
     env.storage.down = true;
     expect(await env.svc.resolveAppToken()).toBe("xoxe.xapp-2");
 
-    const other = env.rebuild(HELM);
+    const other = env.rebuild();
     expect(await other.resolveAppToken()).toBe("xoxe.xapp-1");
     await other.renew();
     expect(env.calls.refresh).toEqual(["xoxe-1-r1"]);
@@ -320,14 +387,14 @@ describe("Slack app-level token", () => {
    * operator as a refused Secret.
    */
   it("tries the renewal once the old token expired despite the spent mark", async () => {
-    const env = await exchanged();
+    const env = await imported();
     env.advance(2 * HOUR);
     env.storage.down = true;
     await env.svc.resolveAppToken();
     env.storage.down = false;
 
     env.advance(11 * HOUR);
-    await env.rebuild(HELM).renew();
+    await env.rebuild().renew();
     expect(env.calls.refresh).toEqual(["xoxe-1-r1", "xoxe-1-r1"]);
   });
 
@@ -375,11 +442,11 @@ describe("Slack app-level token", () => {
 
   /**
    * TEST_SCENARIO: The operator recovers a refused install by generating a
-   * new app-level token in Slack and setting it in Helm values. The new value
-   * is not the one the stored pair came from, so it is exchanged and replaces
-   * the refused pair.
+   * new app-level token in Slack and setting its refresh token in Helm
+   * values. The new value is not the one the stored pair came from, so it is
+   * imported and replaces the refused pair.
    */
-  it("imports a new Helm token over a refused pair", async () => {
+  it("imports a new Helm refresh token over a refused pair", async () => {
     const env = setup({
       stored: {
         appToken: "xoxe.xapp-dead",
@@ -390,10 +457,10 @@ describe("Slack app-level token", () => {
       },
     });
 
-    expect(await env.rebuild("xapp-1-regenerated").resolveAppToken()).toBe(
+    expect(await env.rebuild("xoxe-1-regenerated").resolveAppToken()).toBe(
       "xoxe.xapp-1",
     );
-    expect(env.calls.exchange).toEqual(["xapp-1-regenerated"]);
+    expect(env.calls.import).toEqual(["xoxe-1-regenerated"]);
     expect(env.secret()?.["refused"]).toBeUndefined();
   });
 });

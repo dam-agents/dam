@@ -1917,6 +1917,7 @@ export async function bootstrap() {
         createRotating: () =>
           createSlackAppTokenService({
             helmToken: helmAppToken,
+            helmRefreshToken: config.slackAppRefreshToken,
             secrets: secretStore,
             lock: createXactLock(db),
             rotation: slackTokenRotation,
