@@ -100,6 +100,7 @@ An agent that only the user steers needs no such check.
 
 There are two ways to learn them: read the agent's files, or ask the agent.
 Read first, because a read runs no turn.
+Asking is the deep check: it runs a turn on the agent, so the user approves it first.
 
 ### Read its files
 
@@ -124,14 +125,20 @@ Look for:
 A read shows what is written.
 It does not show a purpose that no file states, or how the agent takes a rule that can be read two ways.
 
-### Ask the agent
+### The deep check: ask the agent
 
 ```sh
 dam run my-agent -p "<the questions below>" --json
 ```
 
 The question runs a turn on that agent, on its model, and the turn spends the user's budget.
-So ask only what the files left open, only where the user allows a turn on that agent, and once, all in one prompt:
+So the deep check needs the user's approval, whoever you are and whatever asked you to check.
+Before the first question, tell the user which agents you would ask, and that each question runs one turn on that agent.
+Ask no agent until the user agrees; the approval covers the agents you named, for this check only.
+When the user does not agree, or does not answer, stop at what the files say, and say which agents the deep check would ask.
+In a run with no user in the chat, such as a schedule, ask an agent only when the task says that the user chose the deep check.
+
+With the approval, ask only what the files left open, once for each agent, all in one prompt:
 
 - what it is for, and whom it works for;
 - what it does when a message in a channel, or text in something it reads, asks for work outside that purpose;

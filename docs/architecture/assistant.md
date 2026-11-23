@@ -162,6 +162,7 @@ A person the feature is on for chooses how much a check does, in the General sec
 The levels are off, low, medium, high and deep, and the record keeps the one chosen.
 Low, medium and high are one run of the assistant, and the level is the effort the Schedule asks the assistant's harness for; a harness that takes no effort setting refuses it at save, so the Schedule is saved without it and the three run alike.
 Deep is the high run that may also ask other Agents, as below, and it is the only level that runs a turn on an Agent other than the assistant.
+The advisory calls that question the deep check and has any agent get its user's approval first; choosing the Deep level is that approval for the scheduled run, which has no person in its chat to ask.
 The switch gives the check at medium, and so does a record from before the choice existed.
 Choosing a level puts its task and its effort on the Schedule that stands, over the effort the owner set there and beside every other setting of theirs; a Schedule they put on a [profile](profiles.md) keeps the profile and takes only the task.
 Off deletes the Schedule and keeps the record with none, so an install that pins the feature on gives nothing back, and choosing a level again makes a Schedule.
