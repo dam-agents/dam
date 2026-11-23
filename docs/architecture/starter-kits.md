@@ -218,10 +218,10 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
    The apply is recorded in the security log last, once the outcome including the skill verdicts is known, and recorded once more as usage activity naming the kit it applied, so which kits people take up and what they do with the Agent afterwards are answerable from one log ([usage tracking](usage-tracking.md)).
 
 **Apply to an existing Agent** runs these steps on an Agent, keeping its id.
-It claims the Kit Version by compare-and-set, so a racing one is refused, then refuses a kit image, a missing required connection, or a clashing schedule or env value.
-Slack binds run first; a refused one undoes the others; a later failure stays but frees the claim.
+It claims the Kit Version atomically, refusing a racing one, then refuses a kit image, a missing required connection, or a clashing schedule or env.
+Slack binds run first; a refused one undoes the others; a failure before the kit is recorded frees the claim; later, it stays.
 The runtime seeds neither over a foreign repository nor into a non-empty work directory; a home seed replaces files at its paths.
-Storage, harness, egress preset and default model are create-only: they stay and are named; its schedules wait for onboarding too.
+Storage, harness, egress preset and default model are create-only: they stay, named; its schedules await onboarding too.
 
 The catalog is one view shown in two places: the **Starter kits** page at `/starter-kits`, which the sidebar's Starter kits entry opens, and the **Browse Kits modal**, which Home's browse button opens.
 Its first card, **The Generalist**, is no kit: it creates a plain agent at once.
