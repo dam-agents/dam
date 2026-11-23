@@ -859,6 +859,7 @@ describe("scheduler-runner fire", () => {
       new Date("2026-06-12T10:30:00Z"),
     );
 
+    expect(calls).toContain(`wake:${AGENT_ID}`);
   });
 
   it("commits the trigger event, then pokes the agent awake", async () => {
