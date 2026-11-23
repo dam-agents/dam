@@ -31,7 +31,6 @@ import {
   finalizeAllStreaming,
   hasStreamingAssistant,
   hasWorkingReply,
-  mergeLocalFailures,
 } from "../../acp/session-projection.js";
 import {
   untilAgentOperable,
@@ -185,6 +184,7 @@ export function useAcpSession(
     connectionRef,
     state: connectionState,
     retry: retryChannel,
+    reloadOnFreshChannel,
     reset: resetConnection,
   } = useAcpConnection({
     selectedAgent,
@@ -494,13 +494,7 @@ export function useAcpSession(
     if (useStore.getState().sessionId === sid) void resumeSession(sid);
   };
   reloadAfterLoadErrorRef.current = (sid: string) => {
-    loadSessionHistory(sid)
-      .then((fresh) => {
-        const shown = useStore.getState();
-        if (shown.sessionId !== sid || shown.sessionError) return;
-        setMessages((prev) => mergeLocalFailures(fresh, prev));
-      })
-      .catch(() => {});
+    if (useStore.getState().sessionId === sid) reloadOnFreshChannel();
   };
 
   const takeBackPrompt = useTakeBackPrompt({

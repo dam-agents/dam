@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: A Session whose load failed may still be working, and its live messages reach the chat. The first live message of the shown Session takes its load error away, so the "Can't open this conversation" card does not stay above the messages that prove it opens. A message of another Session, or an update that shows no message, leaves the error as it is.
+// TEST_OVERVIEW: A Session whose load failed may still be working, and its live messages reach the chat. The first live message of the shown Session takes its load error away, so the "Can't open this conversation" card does not stay above the messages that prove it opens. A message of another Session, or an update that adds no message content, leaves the error as it is.
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -23,6 +23,7 @@ const h = vi.hoisted(() => {
     setQueuedPrompts: () => {},
     setTurnSender: () => {},
     setReportedCommands: () => {},
+    addRunStart: () => {},
   };
   return { state };
 });
@@ -75,18 +76,51 @@ describe("a live message of a Session that would not load", () => {
     ).toBe(true);
   });
 
-  // TEST_SCENARIO: an update that is not a message, such as the Session's command list, says nothing about its history, so the card stays.
-  it("keeps the error on an update that shows no message", () => {
+  // TEST_SCENARIO: an update that adds no message content says nothing about the history. A run start, a reply placeholder, an update of a tool call the chat does not show, or the command list leave an empty failed chat with its card, so it never shows an empty page with no error.
+  it.each([
+    { sessionUpdate: "platform_run_started", at: "2026-11-23T15:00:00.000Z" },
+    { sessionUpdate: "platform_prompt_started", promptId: "p1" },
+    {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "t1",
+      status: "completed",
+    },
+    { sessionUpdate: "available_commands_update", availableCommands: [] },
+  ])("keeps the error on $sessionUpdate", (update) => {
+    const cleared = vi.fn();
+    handler(cleared)(update as AcpUpdate, "s1");
+    expect(h.state.sessionError).toEqual({ sessionId: "s1", kind: "other" });
+    expect(cleared).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: a reply's text, its thinking and the person's own message each show in the chat, so each takes the error away.
+  it.each(["user_message_chunk", "agent_message_chunk", "agent_thought_chunk"])(
+    "takes the error away on %s",
+    (sessionUpdate) => {
+      const cleared = vi.fn();
+      handler(cleared)(
+        { sessionUpdate, content: { type: "text", text: "x" } } as AcpUpdate,
+        "s1",
+      );
+      expect(h.state.sessionError).toBeNull();
+      expect(cleared).toHaveBeenCalledWith("s1");
+    },
+  );
+
+  // TEST_SCENARIO: a tool call the agent starts shows as its chip in the chat, so it takes the error away too.
+  it("takes the error away on tool_call", () => {
     const cleared = vi.fn();
     handler(cleared)(
       {
-        sessionUpdate: "available_commands_update",
-        availableCommands: [],
+        sessionUpdate: "tool_call",
+        toolCallId: "t1",
+        title: "Read a file",
+        status: "pending",
       } as AcpUpdate,
       "s1",
     );
-    expect(h.state.sessionError).toEqual({ sessionId: "s1", kind: "other" });
-    expect(cleared).not.toHaveBeenCalled();
+    expect(h.state.sessionError).toBeNull();
+    expect(h.state.messages).not.toEqual([]);
   });
 
   // TEST_SCENARIO: the error belongs to another Session than the one the message is for, so it stays.

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: A Session opened while its turn runs, as the kit update Session the chat opens as soon as it is listed, may fail to load at first although nothing is wrong with it. The chat asks the load again for a short time before it shows an error, and only for a Session the list shows as running. A live message of the shown Session later takes its load error away and reads its history again without the error card.
+// TEST_OVERVIEW: A Session opened while its turn runs, as the kit update Session the chat opens as soon as it is listed, may fail to load at first although nothing is wrong with it. The chat asks the load again for a short time before it shows an error, and only for a Session the list shows as running. A live message of the shown Session later takes its load error away and reads its history again on a fresh channel.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,6 +33,7 @@ const h = vi.hoisted(() => {
     state,
     running: false,
     loadSessionHistory: vi.fn(),
+    reloadOnFreshChannel: vi.fn(),
     onLoadErrorCleared: null as ((sid: string) => void) | null,
   };
 });
@@ -62,6 +63,7 @@ vi.mock("../../modules/sessions/api/acp-session-ops.js", () => ({
 vi.mock("../../modules/sessions/hooks/use-acp-connection.js", () => ({
   useAcpConnection: () => ({
     loadSessionHistory: h.loadSessionHistory,
+    reloadOnFreshChannel: h.reloadOnFreshChannel,
     reset: () => {},
     runtimeIdle: () => false,
     clearRuntimeIdle: () => {},
@@ -146,13 +148,10 @@ describe("opening a Session while its turn runs", () => {
     expect(h.state.sessionError).toEqual({ sessionId: "s1", kind: "other" });
   });
 
-  // TEST_SCENARIO: a live message took the load error away. The chat reads the Session's history again, without a spinner, so the messages before the live one show too.
-  it("reads the history again when a live message clears the error", async () => {
+  // TEST_SCENARIO: a live message took the load error away. The chat reads the Session's history again on a fresh channel, so the messages before the live one show too; a message for a Session no longer shown asks for nothing.
+  it("reads the history again when a live message clears the error", () => {
     h.state.sessionId = "s1";
-    h.state.messages = [
-      { id: "live", role: "assistant", parts: [{ kind: "text", text: "x" }] },
-    ] as Message[];
-    h.loadSessionHistory.mockResolvedValue(loaded);
+    h.reloadOnFreshChannel.mockClear();
     renderToStaticMarkup(
       createElement(() => {
         useAcpSession("agent", { current: null });
@@ -160,8 +159,8 @@ describe("opening a Session while its turn runs", () => {
       }),
     );
     h.onLoadErrorCleared!("s1");
-    await vi.advanceTimersByTimeAsync(0);
-    expect(h.loadSessionHistory).toHaveBeenCalledWith("s1");
-    expect(h.state.messages).toEqual(loaded);
+    expect(h.reloadOnFreshChannel).toHaveBeenCalledOnce();
+    h.onLoadErrorCleared!("s2");
+    expect(h.reloadOnFreshChannel).toHaveBeenCalledOnce();
   });
 });
