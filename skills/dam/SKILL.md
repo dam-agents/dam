@@ -281,6 +281,7 @@ dam kit apply my-agent research --connection github --json
   Tell the user, and offer `dam agent update <agent> --harness <harness>` or `--model <provider>/<model>` where the kit asks for another.
 - A kit's repository checked out into the agent's home replaces files there at the same paths, such as the agent's instructions: say so before you apply one.
   One cloned into the work directory needs it empty; otherwise the clone is refused and `dam agent get <agent>` shows why.
+- A kit that opens a first session holds every schedule of the agent, its own included, until that onboarding finishes: say so, and relay that session first.
 - `dam kit update` then works on the agent as on one created from the kit.
 
 ### Give an agent work

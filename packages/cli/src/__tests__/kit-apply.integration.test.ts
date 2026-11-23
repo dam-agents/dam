@@ -50,6 +50,13 @@ const RESEARCH: StarterKitView = {
   skillsInKit: [],
 };
 
+const { onboarding: _none, ...BRIEFED } = RESEARCH;
+const RESEARCH_ONBOARDING: StarterKitView = {
+  ...BRIEFED,
+  id: "onboarding",
+  name: "Onboarding desk",
+};
+
 const TEMPLATES = [
   { id: "github", name: "GitHub", family: { id: "github", title: "GitHub" } },
 ] as ConnectionTemplateView[];
@@ -112,7 +119,7 @@ describe("dam kit apply (integration)", () => {
         }),
       },
       starterKits: {
-        list: async () => [RESEARCH],
+        list: async () => [RESEARCH, RESEARCH_ONBOARDING],
         applyToAgent: async (input: StarterKitApplyToAgentInput) => {
           if (refusal) throw refusal;
           applied.push(input);
@@ -223,6 +230,21 @@ describe("dam kit apply (integration)", () => {
     expect(out.steps).toEqual([
       expect.objectContaining({ kind: "connection", done: true }),
     ]);
+  });
+
+  /** TEST_SCENARIO: the scheduler holds every schedule of an agent whose kit onboarding is pending, so on an agent that had schedules before, the onboarding step says its own wait too. */
+  it("says the agent's own schedules wait for the kit's onboarding", async () => {
+    const r = await dam("kit", "apply", "helper", "onboarding", "--json");
+    expect(r.exitCode, r.stderr).toBe(0);
+    const out = JSON.parse(r.stdout) as {
+      steps: { kind: string; note?: string }[];
+    };
+    expect(out.steps).toContainEqual(
+      expect.objectContaining({
+        kind: "onboarding",
+        note: "every schedule of the agent, its own included, waits until onboarding finishes",
+      }),
+    );
   });
 
   /** TEST_SCENARIO: a conflict the server finds — here a schedule the agent already has — is an input the user fixes, so it exits 2 with the server's reason. */

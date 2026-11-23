@@ -171,7 +171,20 @@ export function buildApplyCommand(deps: Deps): Command {
         owned === null || !heldRes.ok
           ? null
           : owned.filter((c) => held.includes(c.id) || added.includes(c.id));
-      const steps = remainingSteps(kit, agent, granted, owned ?? [], templates);
+      const steps = remainingSteps(
+        kit,
+        agent,
+        granted,
+        owned ?? [],
+        templates,
+      ).map((step) =>
+        step.kind === "onboarding"
+          ? {
+              ...step,
+              note: "every schedule of the agent, its own included, waits until onboarding finishes",
+            }
+          : step,
+      );
       const ref = kitRefOf(kit, catalogKits);
       const audience = audienceOf(agent, []);
       if (
