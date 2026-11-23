@@ -9,7 +9,7 @@ Where each token comes from, and what the Slack worker does with it, lives on [c
 
 Token rotation is one switch on the Slack app, and Slack cannot turn it off again.
 With it on, a token lives twelve hours and comes with a single-use refresh token, which buys the next pair.
-A token minted before the switch was on keeps not expiring until it is exchanged for a rotating pair, one call per token.
+A bot token minted before the switch was on keeps not expiring until it is exchanged for a rotating pair, one call per token; an App-Level Token minted before it keeps not expiring too, but cannot be exchanged.
 The install has one setting per kind of token, so the two roll out on their own: an install already rotating bot tokens sees no change to its App-Level Token until that token's own setting is turned on.
 For bot tokens the setting only starts exchanges: renewing depends on what a Secret holds, so turning it back off changes nothing for a bot token already exchanged.
 

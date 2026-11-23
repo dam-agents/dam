@@ -251,7 +251,8 @@ export function createSlackAppTokenService(
   async function refresh(stored: StoredAppToken): Promise<string | null> {
     const expired = stored.expiresAt <= now();
     const result = await deps.rotation.refresh(stored.refreshToken);
-    if (result.ok) return keep(result, stored.importedFrom, stored.refreshToken);
+    if (result.ok)
+      return keep(result, stored.importedFrom, stored.refreshToken);
     const refused = expired && result.credentialDead;
     logAppToken(
       "error",
