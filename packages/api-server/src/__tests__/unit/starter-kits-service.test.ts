@@ -185,6 +185,12 @@ function makeHarness(
         return { ok: true, value: fakeAgent(agentId) } as never;
       },
       async announceSlackConnect() {},
+      async update() {
+        return null;
+      },
+      async disconnectSlack() {
+        return null;
+      },
     },
     schedules: {
       async createCron(input) {
@@ -225,6 +231,7 @@ function makeHarness(
       async getAgentConnections(agentId: string) {
         return { agentId, connections: agentGrants };
       },
+      async updateAgentConnections() {},
     },
     skills: {
       async applyEntries(input) {
@@ -260,6 +267,7 @@ function makeHarness(
     },
     kitUpstream: NO_UPSTREAM,
     kitUpdateMarks: NO_MARKS,
+    stampKit: async () => {},
     linkedKits,
     sessionPair: async () => undefined,
     runtimeMutator: {
@@ -698,6 +706,8 @@ describe("starter kits: apply", () => {
           throw new Error("nope");
         },
         announceSlackConnect: async () => {},
+        update: async () => null,
+        disconnectSlack: async () => null,
       },
       schedules: {
         createCron: async () => {
@@ -716,6 +726,7 @@ describe("starter kits: apply", () => {
           agentId,
           connections: [],
         }),
+        updateAgentConnections: async () => {},
       },
       skills: {
         applyEntries: async () => ({ installed: [], added: 0, skipped: [] }),
@@ -726,6 +737,7 @@ describe("starter kits: apply", () => {
       egressRules: { seed: async () => {} },
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
+      stampKit: async () => {},
       linkedKits: NO_LINKS,
       sessionPair: async () => undefined,
       runtimeMutator: {
@@ -819,6 +831,8 @@ describe("starter kits: apply", () => {
         list: async () => [],
         connectSlack: async () => ({}) as never,
         announceSlackConnect: async () => {},
+        update: async () => null,
+        disconnectSlack: async () => null,
       },
       schedules: {
         createCron: async (input) =>
@@ -835,6 +849,7 @@ describe("starter kits: apply", () => {
           agentId,
           connections: [],
         }),
+        updateAgentConnections: async () => {},
       },
       skills: {
         applyEntries: async () => {
@@ -847,6 +862,7 @@ describe("starter kits: apply", () => {
       egressRules: { seed: async () => {} },
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
+      stampKit: async () => {},
       linkedKits: NO_LINKS,
       sessionPair: async () => undefined,
       runtimeMutator: {
@@ -928,6 +944,8 @@ describe("starter kits: onboarding turn", () => {
           throw new Error("unreachable");
         },
         announceSlackConnect: async () => {},
+        update: async () => null,
+        disconnectSlack: async () => null,
       },
       schedules: {
         createCron: async (input) =>
@@ -941,6 +959,7 @@ describe("starter kits: onboarding turn", () => {
         listConnections: async () => [connection("c-gh", "github-pat")],
         listTemplates: async () => TEMPLATES,
         getAgentConnections: async () => ({ connections: [] }) as never,
+        updateAgentConnections: async () => {},
       },
       skills: {
         applyEntries: async () => ({ applied: [], skipped: [] }) as never,
@@ -951,6 +970,7 @@ describe("starter kits: onboarding turn", () => {
       egressRules: { seed: async () => {} },
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
+      stampKit: async () => {},
       linkedKits: NO_LINKS,
       sessionPair: async () => undefined,
       runtimeMutator: {

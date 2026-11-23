@@ -59,7 +59,7 @@ export {
   type PodRestartState,
 } from "./domain/out-of-memory.js";
 export type { AgentsInstallSettings } from "./compose.js";
-export { createInputFromSetup } from "./domain/agent-setup.js";
+export { createInputFromSetup, seedGitRepo } from "./domain/agent-setup.js";
 export {
   environmentCreateInput,
   subAgentCreateInput,
