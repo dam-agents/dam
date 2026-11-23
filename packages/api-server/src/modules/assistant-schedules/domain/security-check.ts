@@ -76,12 +76,15 @@ function composeSecurityCheckTask(level: string): string {
  * decides the effort the run asks for and whether the task also lets the
  * assistant ask those Agents: only the top level does, since each question
  * is a turn on that Agent, and every other level tells it to send none.
+ * A person reads the check as "Security advisory", the name of its level in
+ * the assistant's settings, so the Schedule and its Sessions carry it too.
  */
 export const securityCheckSchedule: AssistantScheduleDefinition = {
   kind: KIND,
-  subject: "security check",
-  name: "Security check",
-  sessionTitle: "Security check",
+  subject: "security advisory",
+  name: "Security advisory",
+  formerNames: ["Security check"],
+  sessionTitle: "Security advisory",
   timezone: "UTC",
   rule: (owner) => weeklyRuleFor(owner, KIND),
   defaultLevel: SECURITY_CHECK_DEFAULT_LEVEL,

@@ -85,6 +85,19 @@ export function createAssistantSchedule(
   const levelOf = (row: AssistantScheduleRow | null): string =>
     row?.level ?? definition.defaultLevel;
 
+  const former = (name: string | undefined): boolean =>
+    name !== undefined && definition.formerNames.includes(name);
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the name and the Session title a rewrite sends back. Each stays as the Schedule holds it, since the owner may have changed it, unless it is still a name an earlier release gave, which becomes the current one. An omitted Session title is kept by the update. */
+  const namesOf = (
+    schedule: Schedule,
+  ): { name: string; sessionTitle?: string } => ({
+    name: former(schedule.name) ? definition.name : schedule.name,
+    ...(former(schedule.spec.sessionTitle)
+      ? { sessionTitle: definition.sessionTitle }
+      : {}),
+  });
+
   async function standing(row: AssistantScheduleRow): Promise<Schedule | null> {
     if (row.scheduleId === null) return null;
     const schedule = await deps.schedules.get(row.scheduleId);
@@ -156,7 +169,7 @@ export function createAssistantSchedule(
       : { row, agentId };
   }
 
-  /* UNIT_BOUNDARY_DESCRIPTION: the Schedule on record when its task is not the definition's current text, read without the lock as `owed` is. The platform gives a recurrence rule and no edit turns one into another kind, so a Schedule of another kind is not the one it gave and is left alone. */
+  /* UNIT_BOUNDARY_DESCRIPTION: the Schedule on record when its task is not the definition's current text or it still carries a name an earlier release gave, read without the lock as `owed` is. The platform gives a recurrence rule and no edit turns one into another kind, so a Schedule of another kind is not the one it gave and is left alone. */
   async function stale(): Promise<{
     schedule: Schedule;
     level: string;
@@ -165,19 +178,21 @@ export function createAssistantSchedule(
     if (row === null) return null;
     const schedule = await standing(row);
     if (schedule === null) return null;
-    return schedule.spec.type !== "rrule" ||
-      schedule.spec.task === definition.task(levelOf(row))
-      ? null
-      : { schedule, level: levelOf(row) };
+    if (schedule.spec.type !== "rrule") return null;
+    const current =
+      schedule.spec.task === definition.task(levelOf(row)) &&
+      !former(schedule.name) &&
+      !former(schedule.spec.sessionTitle);
+    return current ? null : { schedule, level: levelOf(row) };
   }
 
-  /* UNIT_BOUNDARY_DESCRIPTION: the task alone is replaced. The name, the recurrence, the timezone and the session mode go back as the Schedule holds them, since the owner may have changed them, and every choice the update leaves out is kept. */
+  /* UNIT_BOUNDARY_DESCRIPTION: the task is replaced, and a name an earlier release gave. The recurrence, the timezone, the session mode and a name of the owner's go back as the Schedule holds them, since the owner may have changed them, and every choice the update leaves out is kept. */
   async function rewriteTask(schedule: Schedule, level: string): Promise<void> {
     const { spec } = schedule;
     if (spec.type !== "rrule") return;
     const updated = await deps.schedules.updateRRule({
       id: schedule.id,
-      name: schedule.name,
+      ...namesOf(schedule),
       rrule: spec.rrule,
       timezone: spec.timezone,
       task: definition.task(level),
@@ -204,7 +219,7 @@ export function createAssistantSchedule(
       (settings) =>
         deps.schedules.updateRRule({
           id: schedule.id,
-          name: schedule.name,
+          ...namesOf(schedule),
           rrule: spec.rrule,
           timezone: spec.timezone,
           task: definition.task(level),

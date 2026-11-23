@@ -5,7 +5,7 @@ import { trpc } from "../../../trpc.js";
 export function useSecurityCheckLevel(enabled: boolean) {
   return useQuery({
     ...trpc.securityChecks.level.queryOptions(enabled ? undefined : skipToken),
-    meta: { errorToast: "Couldn't load the security check's level" },
+    meta: { errorToast: "Couldn't load the security advisory's level" },
   });
 }
 
@@ -19,7 +19,7 @@ export function useSetSecurityCheckLevel() {
         trpc.schedules.listForOwner.pathKey(),
         trpc.attention.listForOwner.queryKey(),
       ],
-      errorToast: "Couldn't change the security check",
+      errorToast: "Couldn't change the security advisory",
     },
   });
 }

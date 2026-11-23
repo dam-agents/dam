@@ -5,12 +5,15 @@
  * definition; the service and the table that keep it are shared. The person
  * chooses a level, which decides the task of a run and the settings its
  * Session asks its harness for; a kind with one level names it as the
- * default and ignores the argument.
+ * default and ignores the argument. `formerNames` are the names an earlier
+ * release gave the Schedule and its Sessions, so a Schedule still under one
+ * gets the current name, and one its owner named keeps theirs.
  */
 export interface AssistantScheduleDefinition {
   kind: string;
   subject: string;
   name: string;
+  formerNames: readonly string[];
   sessionTitle: string;
   timezone: string;
   rule: (owner: string) => string;

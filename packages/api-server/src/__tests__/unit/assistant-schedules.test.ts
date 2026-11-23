@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a Schedule the platform gives one owner's assistant, shown on the security check, its first kind. Turning it on gives their assistant one weekly Schedule and records it; a person with no assistant is refused; a Schedule that still stands is left alone and a deleted one is made again only by the switch. Turning it off deletes the Schedule and the last report. The install's mode wins over a switch. A Schedule made by an earlier release gets the current task, and keeps the time its owner gave it. The owner's level decides the task and the effort of a run: only the top level lets the assistant ask other Agents, a record from before the choice asks none, and an owner who chose no check keeps none. The assistant's report replaces the one before it, is kept only for a person the feature is on for, and is shown only while it names a problem, its Schedule stands and the owner still has the Agent.
+// TEST_OVERVIEW: a Schedule the platform gives one owner's assistant, shown on the security check, its first kind. Turning it on gives their assistant one weekly Schedule and records it; a person with no assistant is refused; a Schedule that still stands is left alone and a deleted one is made again only by the switch. Turning it off deletes the Schedule and the last report. The install's mode wins over a switch. A Schedule made by an earlier release gets the current task and the current name where it still has that release's, and keeps the time and a name its owner gave it. The owner's level decides the task and the effort of a run: only the top level lets the assistant ask other Agents, a record from before the choice asks none, and an owner who chose no check keeps none. The assistant's report replaces the one before it, is kept only for a person the feature is on for, and is shown only while it names a problem, its Schedule stands and the owner still has the Agent.
 import { TRPCError } from "@trpc/server";
 import type { FeatureMode, Schedule, SchedulesService } from "api-server-api";
 import { describe, expect, it, vi } from "vitest";
@@ -106,6 +106,7 @@ function world(
           createdBy: "user",
           ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
           ...(input.settings ? { settings: input.settings } : {}),
+          ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
         },
       };
       schedules.set(schedule.id, schedule);
@@ -126,6 +127,7 @@ function world(
           timezone: input.timezone,
           task: input.task,
           ...(input.settings ? { settings: input.settings } : {}),
+          ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
         },
       };
       schedules.set(updated.id, updated);
@@ -178,12 +180,12 @@ describe("turning the security check on", () => {
     await w.checks.enable();
     expect(w.createRRule).toHaveBeenCalledTimes(1);
     expect(w.createRRule.mock.calls[0]?.[0]).toMatchObject({
-      name: "Security check",
+      name: "Security advisory",
       agentId: "agent-ada",
       rrule: securityCheckSchedule.rule(OWNER),
       timezone: "UTC",
       sessionMode: "fresh",
-      sessionTitle: "Security check",
+      sessionTitle: "Security advisory",
     });
     expect(w.repo.row()).toMatchObject({
       agentId: "agent-ada",
@@ -356,6 +358,24 @@ describe("a schedule made by an earlier release", () => {
     expect(w.schedules.get("schedule-1")?.spec.task).toBe(
       securityCheckSchedule.task("medium"),
     );
+  });
+
+  // TEST_SCENARIO: an earlier release named the Schedule and its Sessions "Security check", and the owner left both as they were, so a refresh gives them the current name though the task is current.
+  it("gets the current name when it still has an earlier release's", async () => {
+    const w = world();
+    await w.checks.enable();
+    const schedule = w.schedules.get("schedule-1");
+    if (schedule?.spec.type !== "rrule") throw new Error("no schedule made");
+    w.schedules.set(schedule.id, {
+      ...schedule,
+      name: "Security check",
+      spec: { ...schedule.spec, sessionTitle: "Security check" },
+    });
+    await w.checks.refresh();
+    expect(w.schedules.get("schedule-1")).toMatchObject({
+      name: "Security advisory",
+      spec: { sessionTitle: "Security advisory" },
+    });
   });
 
   // TEST_SCENARIO: the Schedule already holds the current task, so a refresh writes nothing and takes no lock.

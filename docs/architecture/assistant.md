@@ -149,7 +149,9 @@ A person can have their assistant check their whole setup once a week against th
 It is the `security-check` [feature](features.md), off until the person turns it on.
 
 **The switch is the trigger.**
-Turning it on gives the assistant an ordinary weekly [Schedule](schedules.md) named "Security check", in a fresh Session each time, and a record names that Schedule.
+Turning it on gives the assistant an ordinary weekly [Schedule](schedules.md) named "Security advisory", in a fresh Session each time, and a record names that Schedule.
+A person reads the check under that name everywhere it has one: the feature's row, the choice of its level, the Schedule and its Sessions.
+A Schedule that still carries the name an earlier release gave it, "Security check", is renamed by the refresh below, and one its owner named keeps their name.
 The record is one row per person and kind of the Schedules the platform gave their assistant, so another default Schedule is a new kind with its own name, recurrence and task, not a new table.
 Its minute of the week is derived from the owner, so one person's check keeps its time while an install's checks do not all wake their Agents together.
 A person with no assistant gets nothing, and the switch says so and stays off.

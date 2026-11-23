@@ -34,7 +34,7 @@ describe("the security check's row in Experimental features", () => {
     const row = securityCheckFeatureRow(brand);
     expect(row).toMatchObject({
       id: "security-check",
-      label: "Security check",
+      label: "Security advisory",
     });
     expect(row.description).toContain("Dambledore checks your setup");
     expect(row.description).toContain("no turn on your other agents");

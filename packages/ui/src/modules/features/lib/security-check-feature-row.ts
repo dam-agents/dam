@@ -13,7 +13,7 @@ export function securityCheckFeatureRow(brand: Brand): {
 } {
   return {
     id: "security-check",
-    label: "Security check",
+    label: "Security advisory",
     description: `${brand.assistantName} checks your setup once a week against the security advisory, and alerts you when something puts your accounts at risk. A check runs no turn on your other agents unless you choose that. You choose how much a check does in ${brand.assistantName}'s settings, under General, and its time in ${brand.assistantName}'s schedules.`,
   };
 }
