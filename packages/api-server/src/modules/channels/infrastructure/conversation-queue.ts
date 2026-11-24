@@ -33,8 +33,14 @@ export async function steerChannelTurn(
 ): Promise<SteerResult> {
   const outcome = await acp.steer(sessionId, frame, request);
   if (outcome === "injected") return "injected";
-  getLogger().debug(
-    { ...log.fields, outcome },
+  getLogger().info(
+    {
+      ...log.fields,
+      sessionId,
+      promptId: request.promptId,
+      targetPromptId: request.targetPromptId,
+      outcome,
+    },
     `${log.surface}.turn.steer_declined`,
   );
   return match(outcome)
@@ -80,7 +86,8 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  *  steered into it — the agent reads it before it calls its reply tool, so the
  *  conversation still gets one answer — and where the harness refuses steering
  *  the message waits and becomes the next turn instead of a second one racing
- *  the first. A steer names the turn it may join by the prompt id of that
+ *  the first; a refusal holds for that turn only, so the next turn, which may
+ *  run on a harness that has started since, is asked again. A steer names the turn it may join by the prompt id of that
  *  turn's prompt, and the agent-runtime holds it until the agent's next steer
  *  point, which can take as long as a command runs, so it has no deadline. A
  *  steer claims its batch out of the queue before it goes out, and puts it
@@ -232,6 +239,7 @@ export function createConversationQueue<T>(
             (id, promptId) => {
               sessionId = id;
               targetPromptId = promptId ?? null;
+              steeringUnsupported = false;
             },
             steersSettled,
           );
