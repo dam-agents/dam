@@ -281,6 +281,10 @@ const BUILTIN_DRIVERS: Record<
     binding: { impl: "startup-items" },
     defaultOn: true,
   },
+  "kit-seed": {
+    binding: { impl: "kit-seed" },
+    defaultOn: true,
+  },
 };
 
 const KNOWN_KINDS = new Set<string>([

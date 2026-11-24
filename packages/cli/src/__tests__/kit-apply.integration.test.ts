@@ -201,7 +201,7 @@ describe("dam kit apply (integration)", () => {
       `✓ Applied the starter kit Research desk (research) to agent "helper" (${HELPER.id}).`,
     );
     expect(r.stdout).toContain(
-      "The kit's repository https://github.com/acme/research is checked out into the agent's home",
+      "The kit's repository https://github.com/acme/research is in the agent's home: checked out, or kept as it was where a checkout of it was already there.",
     );
     expect(r.stdout).toContain("Nothing is left to set up.");
     expect(r.stderr).toContain(

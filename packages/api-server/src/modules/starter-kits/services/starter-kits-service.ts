@@ -49,6 +49,8 @@ import { createKitUpdates, type KitUpdateMarks } from "./kit-updates.js";
 import {
   createKitApplyToAgent,
   type KitClaim,
+  type KitSeedDelivery,
+  type KitSeedWait,
   type KitStamp,
 } from "./kit-apply-existing.js";
 import { seedStampAtApply } from "../domain/seed-stamp.js";
@@ -105,6 +107,7 @@ export interface StarterKitsServiceDeps {
     | "connectSlack"
     | "disconnectSlack"
     | "announceSlackConnect"
+    | "ensureReady"
   >;
   schedules: Pick<
     SchedulesService,
@@ -138,6 +141,8 @@ export interface StarterKitsServiceDeps {
   kitUpdateMarks: KitUpdateMarks;
   stampKit: (agentId: string, stamp: KitStamp) => Promise<void>;
   kitClaim: KitClaim;
+  kitSeed: KitSeedDelivery;
+  kitSeedWait?: KitSeedWait;
   linkedKits: LinkedKits;
 }
 
@@ -542,7 +547,8 @@ export function createStarterKitsService(
       agents: deps.agents,
       schedules: deps.schedules,
       connections: deps.connections,
-      runtimeMutator: deps.runtimeMutator,
+      kitSeed: deps.kitSeed,
+      ...(deps.kitSeedWait ? { seedWait: deps.kitSeedWait } : {}),
       stampKit: deps.stampKit,
       kitClaim: deps.kitClaim,
       wakeAgent: deps.wakeAgent,

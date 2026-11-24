@@ -48,3 +48,5 @@ export {
   createKitUpdateNudge,
   type KitUpdateNudge,
 } from "./services/kit-update-nudge.js";
+export { createKitSeedDelivery } from "./infrastructure/kit-seed-delivery.js";
+export { createKitSeedOutcome } from "./services/kit-seed-outcome.js";

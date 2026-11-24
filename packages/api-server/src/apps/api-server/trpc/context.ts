@@ -69,7 +69,10 @@ import {
   composeInvocationsControlForOwner,
   isInvocationTargetName,
 } from "../../../modules/invocations/index.js";
-import { composeStarterKitsForOwner } from "../../../modules/starter-kits/index.js";
+import {
+  composeStarterKitsForOwner,
+  createKitSeedDelivery,
+} from "../../../modules/starter-kits/index.js";
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
 import {
@@ -576,6 +579,12 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
       stampKit: createKitStamp(agentsRepo),
       kitClaim: createKitClaim(agentsRepo),
+      kitSeed: createKitSeedDelivery({
+        capabilities: getAgentCapabilities,
+        runtimeMutator,
+        readEventReport: (agentId, eventId) =>
+          outboxRepo.readEventReport(agentId, eventId),
+      }),
       linkedKits,
       chatFormPreferences: (agentId) =>
         readChatFormPreferences(

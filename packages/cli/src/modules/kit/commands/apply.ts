@@ -55,14 +55,9 @@ function keptLine(kept: StarterKitPartKept, agent: string): string {
   }
 }
 
-function seedLine(
-  seed: NonNullable<StarterKitView["seed"]>,
-  agent: string,
-): string {
-  const url = printable(seed.url);
-  return seed.into === "home"
-    ? `The kit's repository ${url} is checked out into the agent's home before its next session; a file there at a path the repository also has, such as the agent's instructions, takes the repository's content.\n`
-    : `The kit's repository ${url} is cloned into the agent's work directory before its next session; the clone is refused when that directory is not empty, and \`dam agent get ${agent}\` then shows why.\n`;
+function seedLine(seed: NonNullable<StarterKitView["seed"]>): string {
+  const where = seed.into === "home" ? "home" : "work directory";
+  return `The kit's repository ${printable(seed.url)} is in the agent's ${where}: checked out, or kept as it was where a checkout of it was already there.\n`;
 }
 
 /**
@@ -114,6 +109,7 @@ export function buildApplyCommand(deps: Deps): Command {
     .addHelpText(
       "after",
       "\nA kit that runs on its own image applies only at create, and an agent set up from a kit takes its newer versions with `dam kit update`; both are refused.\n" +
+        "The kit's repository never overwrites anything: a checkout of it already on the agent is kept as it is, and a home holding one of its files, a work directory that is not empty, or a checkout of another repository refuses the apply, which then changes nothing.\n" +
         "\nExamples:\n" +
         "  dam kit show research\n" +
         "  dam kit apply my-agent research --connection github\n" +
@@ -214,7 +210,7 @@ export function buildApplyCommand(deps: Deps): Command {
       process.stdout.write(
         `✓ Applied the starter kit ${printable(kit.name)} (${ref}) to agent "${name}" (${agent.id}). It keeps its id, history, files, artifacts and connections.\n`,
       );
-      if (kit.seed) process.stdout.write(seedLine(kit.seed, word));
+      if (kit.seed) process.stdout.write(seedLine(kit.seed));
       for (const part of kept)
         process.stderr.write(`warning: ${keptLine(part, word)}\n`);
       if (skillsError)

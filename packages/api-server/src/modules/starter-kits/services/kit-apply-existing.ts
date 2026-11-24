@@ -1,11 +1,11 @@
 import { TRPCError } from "@trpc/server";
+import type { KitSeedEventPayload } from "agent-runtime-api";
 import type {
   Agent,
   AgentsService,
   ConnectionsService,
   EnvVar,
   SchedulesService,
-  SeedStamp,
   ConnectSlackError,
   StarterKitApplyResult,
   StarterKitApplyToAgentInput,
@@ -17,27 +17,46 @@ import type {
 
 import { ChannelType } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
-import { seedGitRepo } from "../../agents/index.js";
-import {
-  type RuntimeMutator,
-  workspaceSeedEvent,
-} from "../../runtime-delivery/index.js";
 import { describeAccepts } from "../domain/onboarding-prompt.js";
 import {
   type GrantedTemplate,
   kitRef,
   unmetRequiredConnections,
 } from "../domain/requirements.js";
-import { seedStampAtApply } from "../domain/seed-stamp.js";
 import type { LoadedKit } from "./starter-kits-service.js";
 
 type KitToApply = Omit<LoadedKit, "publisher">;
 
 export interface KitStamp {
   starterKit: string;
-  seed?: SeedStamp;
   kbShareRoots?: string[];
 }
+
+export type KitSeedAnswer =
+  | { state: "pending" }
+  | { state: "seeded" }
+  | { state: "refused"; reason: string };
+
+export interface KitSeedDelivery {
+  supports: (agentId: string) => Promise<boolean | null>;
+  send: (agentId: string, seed: KitSeedEventPayload) => Promise<string>;
+  answer: (agentId: string, eventId: string) => Promise<KitSeedAnswer>;
+  abandon: (agentId: string) => Promise<void>;
+}
+
+export interface KitSeedWait {
+  timeoutMs: number;
+  pollMs: number;
+  sleep: (ms: number) => Promise<void>;
+}
+
+const COMMIT_SHA = /^[0-9a-f]{40}$/i;
+
+export const KIT_SEED_WAIT: KitSeedWait = {
+  timeoutMs: 180_000,
+  pollMs: 1_000,
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
 
 export interface KitClaim {
   claim: (agentId: string, starterKit: string) => Promise<boolean>;
@@ -81,13 +100,15 @@ export interface KitApplyToAgentDeps {
     | "connectSlack"
     | "disconnectSlack"
     | "announceSlackConnect"
+    | "ensureReady"
   >;
   schedules: Pick<SchedulesService, "list">;
   connections: Pick<
     ConnectionsService,
     "getAgentConnections" | "updateAgentConnections"
   >;
-  runtimeMutator: Pick<RuntimeMutator, "bump" | "enqueueAfterCommit">;
+  kitSeed: KitSeedDelivery;
+  seedWait?: KitSeedWait;
   stampKit: (agentId: string, stamp: KitStamp) => Promise<void>;
   kitClaim: KitClaim;
   wakeAgent: (agentId: string) => Promise<void>;
@@ -115,6 +136,26 @@ function partsKept(kit: KitToApply["kit"], agent: Agent): StarterKitPartKept[] {
   return kept;
 }
 
+function refused(reason: string): never {
+  throw new TRPCError({
+    code: "PRECONDITION_FAILED",
+    message: `The kit was not applied: ${reason}`,
+  });
+}
+
+function kitSeedPayload(
+  seed: NonNullable<KitToApply["kit"]["seed"]>,
+): KitSeedEventPayload {
+  const pinned = seed.ref && COMMIT_SHA.test(seed.ref) ? seed.ref : undefined;
+  const commit = seed.commit ?? pinned;
+  return {
+    url: seed.url,
+    into: seed.into ?? "work",
+    ...(seed.ref && !pinned ? { branch: seed.ref } : {}),
+    ...(commit ? { commit } : {}),
+  };
+}
+
 function mergedEnv(
   current: readonly EnvVar[],
   kitEnv: readonly EnvVar[],
@@ -137,8 +178,12 @@ function mergedEnv(
  * refuses before it changes anything when the kit cannot apply: the Agent
  * already has a kit, the kit brings its own image, a required connection is
  * missing, or a kit schedule or env variable clashes with one the Agent has.
- * A Slack channel that cannot be bound undoes the bindings this apply made,
- * so a refusal leaves the Agent as it was. The apply first claims the Agent's
+ * The kit's repository goes to the Agent as a `kit-seed` event, which never
+ * overwrites and adopts a checkout of the kit's own repository, and the
+ * apply waits for the runtime's answer before it changes anything else, so
+ * a seed the runtime refuses refuses the apply. The Slack channels bound
+ * before it are unbound again on any refusal, so a refusal leaves the Agent
+ * as it was. The apply first claims the Agent's
  * Kit Version as a compare-and-set, so a second apply racing on the same
  * Agent is refused before it reads or changes anything, and a refusal or
  * failure before the kit is recorded releases the claim. What only a create
@@ -147,16 +192,18 @@ function mergedEnv(
 export function createKitApplyToAgent(deps: KitApplyToAgentDeps) {
   const { steps } = deps;
 
+  const wait = deps.seedWait ?? KIT_SEED_WAIT;
+
   async function bindSlackChannels(
     agent: Agent,
     slackChannelIds: readonly string[],
-  ): Promise<string[]> {
+    added: string[],
+  ): Promise<void> {
     const bound = new Set(
       agent.channels.flatMap((c) =>
         c.type === ChannelType.Slack ? [c.slackChannelId] : [],
       ),
     );
-    const added: string[] = [];
     for (const slackChannelId of slackChannelIds) {
       if (bound.has(slackChannelId)) continue;
       const connected = await deps.agents.connectSlack(
@@ -166,16 +213,52 @@ export function createKitApplyToAgent(deps: KitApplyToAgentDeps) {
         undefined,
         { quiet: true },
       );
-      if (!connected.ok) {
-        for (const id of added) await deps.agents.disconnectSlack(agent.id, id);
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: `The kit was not applied: ${steps.slackRefusal(connected.error.type, slackChannelId)}`,
-        });
-      }
+      if (!connected.ok)
+        refused(steps.slackRefusal(connected.error.type, slackChannelId));
       added.push(slackChannelId);
     }
-    return added;
+  }
+
+  async function seedOrRefuse(
+    agent: Agent,
+    seed: KitSeedEventPayload,
+  ): Promise<void> {
+    const deadline = Date.now() + wait.timeoutMs;
+    await deps.agents.ensureReady(agent.id);
+    let supports = await deps.kitSeed.supports(agent.id);
+    while (supports === null && Date.now() < deadline) {
+      await wait.sleep(wait.pollMs);
+      supports = await deps.kitSeed.supports(agent.id);
+    }
+    if (!supports)
+      refused(
+        supports === null
+          ? "the agent's runtime has not started yet; try again once it runs"
+          : "the agent runs an older runtime, which cannot take a kit's repository without overwriting files; update the agent to the newest image, then apply the kit again",
+      );
+    const eventId = await deps.kitSeed.send(agent.id, seed);
+    for (;;) {
+      const answer = await deps.kitSeed.answer(agent.id, eventId);
+      if (answer.state === "refused") refused(answer.reason);
+      if (answer.state === "seeded") break;
+      if (Date.now() >= deadline) {
+        await deps.kitSeed.abandon(agent.id);
+        refused(
+          `the agent did not take the kit's repository within ${Math.round(wait.timeoutMs / 1000)} s; try again`,
+        );
+      }
+      await wait.sleep(wait.pollMs);
+    }
+    if (!seed.branch) return;
+    for (let left = 10; left > 0; left--) {
+      const stamped = await deps.agents.get(agent.id);
+      if (stamped?.starterKitSeed?.url === seed.url) return;
+      await wait.sleep(wait.pollMs);
+    }
+    getLogger().warn(
+      { agentId: agent.id },
+      "starter kits: the kit's repository is on the agent, but its Seed Stamp was not seen yet",
+    );
   }
 
   return async function applyToAgent(
@@ -200,13 +283,31 @@ export function createKitApplyToAgent(deps: KitApplyToAgentDeps) {
         "another starter kit is being applied to the agent, or it was just set up from one; check it with `dam agent get`",
       );
     let recorded = false;
+    const slackAdded: string[] = [];
     try {
       const agent = (await deps.agents.get(found.id)) ?? found;
-      const result = await applyClaimed(agent, loaded, input, () => {
-        recorded = true;
-      });
+      const result = await applyClaimed(
+        agent,
+        loaded,
+        input,
+        slackAdded,
+        () => {
+          recorded = true;
+        },
+      );
       return result;
     } catch (err) {
+      if (!recorded) {
+        for (const id of slackAdded)
+          await deps.agents
+            .disconnectSlack(found.id, id)
+            .catch((cause: unknown) => {
+              getLogger().error(
+                { agentId: found.id, err: cause },
+                "starter kits: an apply to an existing agent failed and a Slack channel it bound could not be unbound",
+              );
+            });
+      }
       if (!recorded)
         await deps.kitClaim.release(found.id, ref).catch((cause: unknown) => {
           getLogger().error(
@@ -222,6 +323,7 @@ export function createKitApplyToAgent(deps: KitApplyToAgentDeps) {
     agent: Agent,
     loaded: KitToApply,
     input: StarterKitApplyToAgentInput,
+    slackAdded: string[],
     onRecorded: () => void,
   ): Promise<StarterKitApplyToAgentResult> {
     const { kit, version } = loaded;
@@ -255,10 +357,8 @@ export function createKitApplyToAgent(deps: KitApplyToAgentDeps) {
       );
     const env = mergedEnv(agent.spec.env ?? [], kit.env);
 
-    const slackAdded = await bindSlackChannels(
-      agent,
-      input.slackChannelIds ?? [],
-    );
+    await bindSlackChannels(agent, input.slackChannelIds ?? [], slackAdded);
+    if (kit.seed) await seedOrRefuse(agent, kitSeedPayload(kit.seed));
 
     if (grants.length > 0)
       await deps.connections.updateAgentConnections(agent.id, {
@@ -273,17 +373,6 @@ export function createKitApplyToAgent(deps: KitApplyToAgentDeps) {
           ? { requireConnectionAddress: kit.requireConnectionAddress }
           : {}),
       });
-    if (kit.seed) {
-      await deps.runtimeMutator.bump(agent.id, [
-        workspaceSeedEvent(
-          "workspace-seed",
-          agent.id,
-          seedGitRepo(kit.seed),
-          new Date(),
-        ),
-      ]);
-      await deps.runtimeMutator.enqueueAfterCommit(agent.id);
-    }
     await steps.queueKitWork(agent.id, loaded);
     await steps.seedSchedules(
       agent.id,
@@ -291,11 +380,9 @@ export function createKitApplyToAgent(deps: KitApplyToAgentDeps) {
       input.skipSchedules,
       input.scheduleOverrides,
     );
-    const seedStamp = kit.seed ? seedStampAtApply(kit.seed) : undefined;
     const shareRoots = kit.knowledgeBase?.shareRoots ?? [];
     await deps.stampKit(agent.id, {
       starterKit: kitRef(loaded.catalog, kit.id, version),
-      ...(seedStamp ? { seed: seedStamp } : {}),
       ...(shareRoots.length > 0
         ? {
             kbShareRoots: [

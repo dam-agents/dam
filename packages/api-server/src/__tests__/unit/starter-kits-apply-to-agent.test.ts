@@ -21,7 +21,11 @@ import {
   createStarterKitsService,
   type LoadedKit,
 } from "../../modules/starter-kits/services/starter-kits-service.js";
-import type { KitStamp } from "../../modules/starter-kits/services/kit-apply-existing.js";
+import type {
+  KitSeedAnswer,
+  KitStamp,
+} from "../../modules/starter-kits/services/kit-apply-existing.js";
+import type { KitSeedEventPayload } from "agent-runtime-api";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 
 type BumpedEvent = Parameters<RuntimeMutator["bump"]>[1][number];
@@ -114,6 +118,8 @@ function makeHarness(
     upstreamHead?: string;
     beforeClaim?: () => Promise<void>;
     failSchedules?: boolean;
+    runtimeSupports?: boolean | null;
+    seedAnswer?: KitSeedAnswer;
   } = {},
 ) {
   let agent = opts.agent === undefined ? existingAgent() : opts.agent;
@@ -131,6 +137,8 @@ function makeHarness(
     woken: [] as string[],
     claims: [] as string[],
     released: [] as string[],
+    seeds: [] as KitSeedEventPayload[],
+    abandoned: 0,
   };
   const changed = () =>
     calls.granted.length +
@@ -179,7 +187,34 @@ function makeHarness(
       announceSlackConnect: async (_id, channel) => {
         calls.announced.push(channel);
       },
+      ensureReady: async () => {},
     },
+    kitSeed: {
+      supports: async () =>
+        opts.runtimeSupports === undefined ? true : opts.runtimeSupports,
+      send: async (_id, seed) => {
+        calls.seeds.push(seed);
+        return `kit-seed:agent-1:${calls.seeds.length}`;
+      },
+      answer: async () => {
+        const answer = opts.seedAnswer ?? { state: "seeded" };
+        const seed = calls.seeds.at(-1);
+        if (answer.state === "seeded" && agent && seed?.branch)
+          agent = {
+            ...agent,
+            starterKitSeed: {
+              url: seed.url,
+              branch: seed.branch,
+              commit: SEED_COMMIT,
+            },
+          };
+        return answer;
+      },
+      abandon: async () => {
+        calls.abandoned++;
+      },
+    },
+    kitSeedWait: { timeoutMs: 20, pollMs: 1, sleep: async () => {} },
     schedules: {
       createCron: async (input) => {
         if (opts.failSchedules) throw new Error("schedules down");
@@ -263,7 +298,6 @@ function makeHarness(
         agent = {
           ...agent,
           starterKit: stamp.starterKit,
-          ...(stamp.seed ? { starterKitSeed: stamp.seed } : {}),
           ...(stamp.kbShareRoots ? { kbShareRoots: stamp.kbShareRoots } : {}),
         };
     },
@@ -300,8 +334,9 @@ function input(
 
 describe("starter kits: apply to an existing agent", () => {
   /* TEST_SCENARIO: the main path. The Agent is not created again, so it keeps
-  its id; its own env stays and the kit's is added; the Kit Version and Seed
-  Stamp are recorded; the seed is queued before the install that runs in it. */
+  its id; its own env stays and the kit's is added; the kit's repository goes
+  as a kit-seed event, answered before anything else changes; the Kit Version
+  is recorded, and the Seed Stamp is the commit the runtime answered. */
   it("sets the kit up on the agent it is given, and creates no agent", async () => {
     const { service, calls } = makeHarness(loaded());
     const result = await service.applyToAgent(
@@ -322,27 +357,21 @@ describe("starter kits: apply to an existing agent", () => {
         ],
       },
     ]);
-    expect(calls.stamps).toEqual([
+    expect(calls.seeds).toEqual([
       {
-        starterKit: "platform/code-reviewer@abc123",
-        seed: {
-          url: "https://github.com/acme/code-guardian",
-          branch: "main",
-          commit: SEED_COMMIT,
-        },
+        url: "https://github.com/acme/code-guardian",
+        into: "home",
+        branch: "main",
+        commit: SEED_COMMIT,
       },
     ]);
+    expect(calls.stamps).toEqual([
+      { starterKit: "platform/code-reviewer@abc123" },
+    ]);
     expect(calls.bumped.map((e) => e.kind)).toEqual([
-      "workspace-seed",
       "workspace-command",
       "initialization",
     ]);
-    expect(calls.bumped[0]!.payload).toMatchObject({
-      url: "https://github.com/acme/code-guardian",
-      into: "home",
-      commit: SEED_COMMIT,
-      branch: "main",
-    });
     expect(calls.schedules).toEqual(["review"]);
     expect(calls.slack).toEqual(["C1"]);
     expect(calls.announced).toEqual(["C1"]);
@@ -402,6 +431,15 @@ describe("starter kits: apply to an existing agent", () => {
       { part: "egress-preset", kit: "all" },
       { part: "default-model", kit: "claude-opus-5" },
     ]);
+  });
+
+  it("sends no kit-seed for a kit without a repository", async () => {
+    const { service, calls } = makeHarness(
+      loaded(kit({ seed: undefined, onboarding: false })),
+    );
+    await service.applyToAgent(input());
+    expect(calls.seeds).toEqual([]);
+    expect(calls.stamps).toHaveLength(1);
   });
 
   it("adds the kit's knowledge-base share roots to the agent's own", async () => {
@@ -562,6 +600,58 @@ describe("starter kits: apply to an existing agent", () => {
       expect(calls.released).toEqual(["platform/code-reviewer@abc123"]);
       expect(agentNow()?.starterKit).toBeUndefined();
       expect(calls.stamps).toEqual([]);
+    });
+
+    /* TEST_SCENARIO: the review's seed findings, answered by the runtime. A
+    home that already holds one of the kit's files, or a checkout of another
+    repository, makes the runtime decline the kit-seed event; the apply waits
+    for that answer before it changes anything else, so it refuses with the
+    runtime's reason, unbinds the Slack channels it bound, and gives its claim
+    back. */
+    it("refuses with the runtime's reason when the kit's repository is declined", async () => {
+      const { service, calls, changed, agentNow } = makeHarness(loaded(), {
+        seedAnswer: {
+          state: "refused",
+          reason:
+            "the kit's repository has files the agent already has in /home/agent: CLAUDE.md",
+        },
+      });
+      await expect(
+        service.applyToAgent(input({ slackChannelIds: ["C1"] })),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "The kit was not applied: the kit's repository has files the agent already has in /home/agent: CLAUDE.md",
+      });
+      expect(calls.seeds).toHaveLength(1);
+      expect(changed()).toBe(0);
+      expect(calls.disconnected).toEqual(["C1"]);
+      expect(agentNow()?.starterKit).toBeUndefined();
+    });
+
+    /* TEST_SCENARIO: a runtime from before the kit-seed event would ignore it, or overwrite with the create's seed, so the apply refuses before it sends anything and says to update the agent's image. */
+    it("refuses an agent whose runtime cannot take a kit's repository", async () => {
+      const { service, calls, changed } = makeHarness(loaded(), {
+        runtimeSupports: false,
+      });
+      await expect(service.applyToAgent(input())).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: expect.stringMatching(/older runtime.*newest image/),
+      });
+      expect(calls.seeds).toEqual([]);
+      expect(changed()).toBe(0);
+    });
+
+    it("gives up on a runtime that does not answer, and withdraws the seed", async () => {
+      const { service, calls, changed } = makeHarness(loaded(), {
+        seedAnswer: { state: "pending" },
+      });
+      await expect(service.applyToAgent(input())).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: expect.stringMatching(/did not take the kit's repository/),
+      });
+      expect(calls.abandoned).toBe(1);
+      expect(changed()).toBe(0);
     });
 
     it("does not bind again a channel the agent is already in", async () => {

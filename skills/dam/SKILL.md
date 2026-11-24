@@ -279,8 +279,9 @@ dam kit apply my-agent research --connection github --json
   Nothing changes on a refusal.
 - `kept` (and a `warning:` line each) names what only a create sets and the agent keeps: its storage size, harness, egress preset or default model.
   Tell the user, and offer `dam agent update <agent> --harness <harness>` or `--model <provider>/<model>` where the kit asks for another.
-- A kit's repository checked out into the agent's home replaces files there at the same paths, such as the agent's instructions: say so before you apply one.
-  One cloned into the work directory needs it empty; otherwise the clone is refused and `dam agent get <agent>` shows why.
+- The kit's repository never overwrites the agent's files.
+  An agent that already runs the kit's definition, a checkout of the kit's repository, keeps it as it is, and `dam kit update` then brings it up to date.
+  A home that already holds one of the repository's files, a work directory that is not empty, or a checkout of another repository refuses the apply with the paths or repository it found: tell the user, and apply again once they moved those aside.
 - A kit that opens a first session holds every schedule of the agent, its own included, until that onboarding finishes: say so, and relay that session first.
 - `dam kit update` then works on the agent as on one created from the kit.
 

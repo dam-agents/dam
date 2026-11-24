@@ -42,6 +42,12 @@ const NO_MARKS = {
   skip: async () => {},
   nudge: async () => false,
 };
+const NO_KIT_SEED = {
+  supports: async () => true,
+  send: async () => "kit-seed:none",
+  answer: async () => ({ state: "seeded" as const }),
+  abandon: async () => {},
+};
 const NO_LINKS: LinkedKits = {
   read: async () => {
     throw new Error("no linked kit in this test");
@@ -191,6 +197,7 @@ function makeHarness(
       async disconnectSlack() {
         return null;
       },
+      async ensureReady() {},
     },
     schedules: {
       async createCron(input) {
@@ -269,6 +276,7 @@ function makeHarness(
     kitUpdateMarks: NO_MARKS,
     stampKit: async () => {},
     kitClaim: { claim: async () => true, release: async () => {} },
+    kitSeed: NO_KIT_SEED,
     linkedKits,
     sessionPair: async () => undefined,
     runtimeMutator: {
@@ -709,6 +717,7 @@ describe("starter kits: apply", () => {
         announceSlackConnect: async () => {},
         update: async () => null,
         disconnectSlack: async () => null,
+        ensureReady: async () => {},
       },
       schedules: {
         createCron: async () => {
@@ -740,6 +749,7 @@ describe("starter kits: apply", () => {
       kitUpdateMarks: NO_MARKS,
       stampKit: async () => {},
       kitClaim: { claim: async () => true, release: async () => {} },
+      kitSeed: NO_KIT_SEED,
       linkedKits: NO_LINKS,
       sessionPair: async () => undefined,
       runtimeMutator: {
@@ -835,6 +845,7 @@ describe("starter kits: apply", () => {
         announceSlackConnect: async () => {},
         update: async () => null,
         disconnectSlack: async () => null,
+        ensureReady: async () => {},
       },
       schedules: {
         createCron: async (input) =>
@@ -866,6 +877,7 @@ describe("starter kits: apply", () => {
       kitUpdateMarks: NO_MARKS,
       stampKit: async () => {},
       kitClaim: { claim: async () => true, release: async () => {} },
+      kitSeed: NO_KIT_SEED,
       linkedKits: NO_LINKS,
       sessionPair: async () => undefined,
       runtimeMutator: {
@@ -949,6 +961,7 @@ describe("starter kits: onboarding turn", () => {
         announceSlackConnect: async () => {},
         update: async () => null,
         disconnectSlack: async () => null,
+        ensureReady: async () => {},
       },
       schedules: {
         createCron: async (input) =>
@@ -975,6 +988,7 @@ describe("starter kits: onboarding turn", () => {
       kitUpdateMarks: NO_MARKS,
       stampKit: async () => {},
       kitClaim: { claim: async () => true, release: async () => {} },
+      kitSeed: NO_KIT_SEED,
       linkedKits: NO_LINKS,
       sessionPair: async () => undefined,
       runtimeMutator: {
