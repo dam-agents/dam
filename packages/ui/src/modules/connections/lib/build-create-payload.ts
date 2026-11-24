@@ -2,6 +2,7 @@ import {
   type ConnectionCreateInput,
   connectionCreateInputSchema,
   type ConnectionTemplateView,
+  type ToolMode,
 } from "api-server-api";
 
 import { validateConnectionName } from "./connection-name.js";
@@ -21,6 +22,7 @@ export interface CreateFormValues {
   fields: Record<string, string>;
   overrideDefaults: boolean;
   access?: FirstConnectionAccess;
+  toolMode?: ToolMode;
 }
 
 export function buildCreatePayload(
@@ -37,7 +39,7 @@ export function buildCreatePayload(
 
 function buildUncheckedPayload(
   template: ConnectionTemplateView,
-  { name, fields, overrideDefaults, access }: CreateFormValues,
+  { name, fields, overrideDefaults, access, toolMode }: CreateFormValues,
 ): ConnectionCreateInput | { error: string } {
   const inputsByName = new Map(template.inputs.map((i) => [i.name, i]));
   const submitted = (k: string): string | undefined => {
@@ -54,6 +56,7 @@ function buildUncheckedPayload(
   const common = {
     templateId: template.id,
     name: trimmed,
+    ...(toolMode ? { toolMode } : {}),
   };
   switch (template.authKind) {
     case "oauth":
@@ -65,8 +68,6 @@ function buildUncheckedPayload(
         clientId: submitted("clientId"),
         clientSecret: submitted("clientSecret"),
         appSlug: submitted("appSlug"),
-        fullAccess:
-          template.accessChoice && access === "full" ? true : undefined,
       });
     case "client-credentials":
       return compact({

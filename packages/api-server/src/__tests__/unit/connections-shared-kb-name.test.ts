@@ -12,6 +12,10 @@ import type { OAuthFlowService } from "../../modules/connections/services/oauth-
 import type { SecretStore } from "../../modules/secret-store/index.js";
 import { configureLogger } from "../../core/logger.js";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
+import {
+  fakeMcpToolLister,
+  noConnectionsParent,
+} from "../helpers/connections-service.js";
 
 /**
  * TEST_OVERVIEW: the consumer side of a shared knowledge base outliving the
@@ -78,6 +82,7 @@ function makeRepoFake() {
       const c = rows.get(id);
       if (c) rows.set(id, { ...c, auth });
     },
+    updateToolAccess: async () => {},
     adoptDamKey: async () => {},
     mergeInputs: async (id, patch) => {
       const c = rows.get(id);
@@ -92,6 +97,9 @@ function makeRepoFake() {
     setPreferred: async () => {},
     listAgentGrants: async () => [],
     listConnectionsForAgent: async () => [],
+    setGrantToolAccess: async () => false,
+    clearGrantToolAccess: async () => {},
+    listGrantedConnections: async () => [],
     listAgentsForConnection: async () => [],
     revokeAllForAgent: async () => {},
     listDistinctGrantAgentIds: async () => [],
@@ -148,7 +156,10 @@ function makeService(
     },
   };
   const svc = createConnectionsService({
+    parentOf: noConnectionsParent,
     damConnectionOffered: async () => true,
+    toolApprovalOffered: async () => true,
+    mcpToolLister: fakeMcpToolLister(),
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: OWNER,

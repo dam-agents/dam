@@ -8,9 +8,10 @@ export const approvalChannelOf = (id: string) => `approval:${id}`;
 export type SettledVerdict =
   | { verdict: "allow" | "deny"; reason: "hold-resolved" }
   | { verdict: "deny"; reason: "hold-withdrawn" }
+  | { verdict: "deny"; reason: "hold-abandoned" }
   | { verdict: "deny"; reason: "hold-expired"; flipped: boolean };
 
-// UNIT_BOUNDARY_DESCRIPTION: waits on a held request's approval until a verdict resolves it or the hold expires. A verdict wakes it on the approval's channel; a poll every fifteen seconds covers a missed wake. A call that owns its request (one the gate filed for it) expires the request when the hold runs out, so a late verdict finds it expired. A call that waits on a request it does not own (a child's rule its driver asked for) leaves the request open for the owner, and gives up when the request is withdrawn or gone.
+// UNIT_BOUNDARY_DESCRIPTION: waits on a held request's approval until a verdict resolves it or the hold expires. A verdict wakes it on the approval's channel; a poll every fifteen seconds covers a missed wake. The wait lasts the hold window, and ends sooner at `expiresAt` when given, so a call that joins an approval filed earlier waits only until that approval's window ends. A call that owns its request (one the gate filed for it) expires the request when the hold runs out, so a late verdict finds it expired. A call that waits on a request it does not own (a child's rule its driver asked for) leaves the request open for the owner, and gives up when the request is withdrawn or gone. When `signal` aborts, the client that sent the held request has gone away: the wait ends at once and leaves the request as it is, pending for the owner and for an identical retry to join.
 export async function waitForVerdict(
   deps: {
     repo: Pick<ApprovalsRepository, "getPending" | "expirePending">;
@@ -18,8 +19,16 @@ export async function waitForVerdict(
     holdSeconds: number;
   },
   id: string,
-  { ownsRequest }: { ownsRequest: boolean } = { ownsRequest: true },
+  {
+    ownsRequest = true,
+    signal,
+    expiresAt,
+  }: { ownsRequest?: boolean; signal?: AbortSignal; expiresAt?: Date } = {},
 ): Promise<SettledVerdict> {
+  const holdMs = deps.holdSeconds * 1000;
+  const waitMs = expiresAt
+    ? Math.min(holdMs, Math.max(0, expiresAt.getTime() - Date.now()))
+    : holdMs;
   return new Promise<SettledVerdict>((resolve) => {
     let settled = false;
     const settle = (s: SettledVerdict) => {
@@ -67,10 +76,15 @@ export async function waitForVerdict(
         return false;
       });
       settle({ verdict: "deny", reason: "hold-expired", flipped });
-    }, deps.holdSeconds * 1000);
+    }, waitMs);
     timeout.unref();
 
+    const abandon = () => settle({ verdict: "deny", reason: "hold-abandoned" });
+    if (signal?.aborted) abandon();
+    else signal?.addEventListener("abort", abandon, { once: true });
+
     function cleanup() {
+      signal?.removeEventListener("abort", abandon);
       unsubscribe();
       clearInterval(poll);
       clearTimeout(timeout);

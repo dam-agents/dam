@@ -202,14 +202,37 @@ export function useUpdateGitHubUserTokenScope() {
   });
 }
 
-export function useSetConnectionFullAccess() {
+export function useRefreshConnectionTools() {
   return useMutation({
-    ...trpc.connections.setFullAccess.mutationOptions(),
+    ...trpc.connections.refreshTools.mutationOptions(),
     meta: {
       invalidates: [
         trpc.connections.list.queryKey(),
         trpc.connections.getAgentConnections.queryKey(),
       ],
+      suppressErrorToast: true,
+    },
+  });
+}
+
+export function useSetConnectionToolMode() {
+  return useMutation({
+    ...trpc.connections.setToolMode.mutationOptions(),
+    meta: {
+      invalidates: [
+        trpc.connections.list.queryKey(),
+        trpc.connections.getAgentConnections.queryKey(),
+      ],
+      suppressErrorToast: true,
+    },
+  });
+}
+
+export function useSetGrantToolAccess() {
+  return useMutation({
+    ...trpc.connections.setGrantToolAccess.mutationOptions(),
+    meta: {
+      invalidates: [trpc.connections.getAgentConnections.queryKey()],
       suppressErrorToast: true,
     },
   });

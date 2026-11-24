@@ -85,7 +85,11 @@ export function useAgentConnectionGrants(
       new Map(
         (agentConnectionsQ.data?.connections ?? []).map((c) => [
           c.connectionId,
-          { grantedAt: c.grantedAt, preferred: c.preferred },
+          {
+            grantedAt: c.grantedAt,
+            preferred: c.preferred,
+            ...(c.toolAccess && { toolAccess: c.toolAccess }),
+          },
         ]),
       ),
     [agentConnectionsQ.data],

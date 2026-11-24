@@ -30,6 +30,7 @@ import { createS3CredentialProbe } from "./infrastructure/s3-credential-probe.js
 import { createAcceptingS3CredentialProbe } from "./infrastructure/accepting-s3-credential-probe.js";
 import type { S3CredentialProbe } from "./domain/s3-credential-probe.js";
 import { createProviderKeyProbe } from "./infrastructure/provider-key-probe.js";
+import { createMcpToolLister } from "./infrastructure/mcp-tool-lister.js";
 import { createAcceptingProviderKeyProbe } from "./infrastructure/accepting-provider-key-probe.js";
 import type { ProviderKeyProbe } from "./domain/provider-key-probe.js";
 import { createCredentialProbe } from "./infrastructure/credential-probe.js";
@@ -38,9 +39,12 @@ import {
   type ConnectionTemplateRegistry,
 } from "./domain/connection-template.js";
 import {
-  readOnlyAccessFor,
-  type ReadOnlyAccess,
-} from "./domain/read-only-access.js";
+  heldToolAccess,
+  toolAccessFor,
+  type LimitingConnection,
+  type McpToolLister,
+  type ToolAccessLimit,
+} from "./domain/tool-access.js";
 import { buildCatalog, type OperatorCredentials } from "./domain/catalog.js";
 import {
   createConnectionsService,
@@ -57,6 +61,10 @@ import {
   type FanOutPort,
 } from "./services/contribution-fanout.js";
 import { createOAuthFlowService } from "./services/oauth-flow.js";
+import {
+  createToolCallLabels as createToolCallLabelsService,
+  type ToolCallLabels,
+} from "./services/tool-call-labels.js";
 import { createSecretRequestsService } from "./services/secret-requests.js";
 import {
   createAgentSecretRequests,
@@ -97,6 +105,7 @@ export interface ConnectionsBootCompose {
   githubAppEngine: GitHubAppEngine;
   s3CredentialProbe: S3CredentialProbe;
   providerKeyProbe: ProviderKeyProbe;
+  mcpToolLister: McpToolLister;
   refreshLoop: OAuthRefreshLoop;
   accountLabelBackfill: AccountLabelBackfill;
   providerModelCatalog: ProviderModelCatalog;
@@ -161,6 +170,7 @@ export function composeConnectionsAtBoot(
     githubAppEngine,
     s3CredentialProbe,
     providerKeyProbe,
+    mcpToolLister: createMcpToolLister(),
     refreshLoop,
     accountLabelBackfill,
     providerModelCatalog: createProviderModelCatalog({
@@ -286,46 +296,40 @@ export function createProviderEgressScopes(db: Db): {
   };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: answers the egress gate which read-only Connection limits a request of an Agent to a host. It reads the Agent's grants on every call to a host that a Template declares read tools for, so the owner's choice holds from the next request, and reads nothing for any other host. It also answers whether the Agent holds a read-only Connection on any host, for a request whose real host the gateway did not say.
-export function createReadOnlyConnections(
+// UNIT_BOUNDARY_DESCRIPTION: answers the egress gate which grant limits the tool calls of a request of an Agent to a host, and the rule of each tool. Any MCP Connection with a Secret can limit its own MCP host, so it reads the Agent's granted Connections with each grant's tool access once for each request, with no cache, and the owner's change holds from the next request. The one read answers every host the check looks up, and whether the Agent holds a limiting grant on any host, for a request whose real host the gateway did not say.
+export function createToolAccessConnections(
   db: Db,
-  templates: Pick<ConnectionTemplateRegistry, "get" | "list">,
+  templates: Pick<ConnectionTemplateRegistry, "get">,
 ): {
-  limiting(
-    agentId: string,
-    request: { host: string; connectionId: string | null },
-  ): Promise<ReadOnlyAccess | null>;
-  held(agentId: string): Promise<ReadOnlyAccess | null>;
+  forAgent(agentId: string): Promise<{
+    limiting(request: {
+      host: string;
+      connectionId: string | null;
+    }): ToolAccessLimit | null;
+    held(): LimitingConnection | null;
+  }>;
 } {
   const repo = createConnectionsRepository(db);
-  const limitedHosts = () => [
-    ...new Set(templates.list().flatMap((t) => t.toolAccess?.host ?? [])),
-  ];
-  const toolAccessOf = (templateId: string) =>
-    templates.get(templateId)?.toolAccess;
+  const templateOf = (templateId: string) => templates.get(templateId);
   return {
-    async limiting(agentId, request) {
-      if (!limitedHosts().includes(request.host)) return null;
-      return readOnlyAccessFor(
-        await repo.listConnectionsForAgent(agentId),
-        toolAccessOf,
-        request,
-      );
-    },
-    async held(agentId) {
-      const hosts = limitedHosts();
-      if (hosts.length === 0) return null;
-      const granted = await repo.listConnectionsForAgent(agentId);
-      for (const host of hosts) {
-        const limit = readOnlyAccessFor(granted, toolAccessOf, {
-          host,
-          connectionId: null,
-        });
-        if (limit) return limit;
-      }
-      return null;
+    async forAgent(agentId) {
+      const granted = await repo.listGrantedConnections(agentId);
+      return {
+        limiting: (request) => toolAccessFor(granted, templateOf, request),
+        held: () => heldToolAccess(granted, templateOf),
+      };
     },
   };
+}
+
+export function createToolCallLabels(deps: {
+  db: Db;
+  secretStore: SecretStore;
+}): ToolCallLabels {
+  return createToolCallLabelsService({
+    repo: createConnectionsRepository(deps.db),
+    secretStore: deps.secretStore,
+  });
 }
 
 export function createConnectionNames(db: Db): {
@@ -358,6 +362,8 @@ export function composeConnectionsForOwner(opts: {
   maxSharedKbConnections?: number;
   damKey: DamKeyPort;
   damConnectionOffered: () => Promise<boolean>;
+  toolApprovalOffered: () => Promise<boolean>;
+  mcpToolLister: McpToolLister;
   curveBenderDeploymentKey: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
   providerModelCatalog: ProviderModelCatalog;
@@ -366,6 +372,7 @@ export function composeConnectionsForOwner(opts: {
     harness: string;
   } | null>;
   mirroredChildren?: (agentId: string) => Promise<string[]>;
+  parentOf: (agentId: string) => Promise<string | null>;
 }): ConnectionsService & ManagedProviderConnections {
   const repo = createConnectionsRepository(opts.db);
   const connectionLock = createXactLock(opts.db);
@@ -396,6 +403,7 @@ export function composeConnectionsForOwner(opts: {
     ownerId: opts.ownerId,
     callbackUrl: opts.oauthCallbackUrl,
     connectionLock,
+    mcpToolLister: opts.mcpToolLister,
   });
 
   return createConnectionsService({
@@ -403,6 +411,7 @@ export function composeConnectionsForOwner(opts: {
     ...(opts.mirroredChildren
       ? { mirroredChildren: opts.mirroredChildren }
       : {}),
+    parentOf: opts.parentOf,
     templates: opts.templates,
     repo,
     secretStore: opts.secretStore,
@@ -418,6 +427,8 @@ export function composeConnectionsForOwner(opts: {
     brandName: opts.brandName,
     damKey: opts.damKey,
     damConnectionOffered: opts.damConnectionOffered,
+    toolApprovalOffered: opts.toolApprovalOffered,
+    mcpToolLister: opts.mcpToolLister,
     connectionLock,
     isOwnedAgent: (agentId) => opts.agentsRepo.isOwnedBy(agentId, opts.ownerId),
     resolveKbShare: createKbShareResolver(opts.db),

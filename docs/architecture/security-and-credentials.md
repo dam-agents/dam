@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-11-20
+Last verified: 2026-11-24
 
 ## Overview
 
@@ -271,10 +271,8 @@ The mechanics — chains, injection and signing, addressing, and how a bad Secre
 
 ## HITL ext_authz
 
-Each credentialed request goes through an ext_authz Check call against the api-server.
-Identity is the **per-Agent ext-authz Service** the controller configures the gateway's Envoy to dial (`<release>-extauthz-<id>`), and the mesh does not prove it.
-No waypoint serves that Service, so its AuthorizationPolicy is not enforced, and any in-mesh caller from the agent namespace could name any Agent; today the gateways, trusted platform code, are the only such callers.
-The handler parses the Agent ID from the gRPC `:authority`, looks up the matching egress rule, and allows the request, denies it, or holds it while the user decides on Home.
+Each credentialed request goes through an ext_authz Check call against the api-server, which names the Agent by the per-Agent Service the gateway dials ([intra-cluster identity](#intra-cluster-identity-and-admission)).
+The handler looks up the matching egress rule, and allows the request, denies it, or holds it while the user decides on Home.
 Whose rules decide a sub-agent's or an [Environment](environments.md#network-access)'s request is set out under Egress Aliasing below.
 
 A held request is one pending approval, and identical requests — same host, port, method and path, as a retrying client sends — join it rather than filing their own.
@@ -285,7 +283,7 @@ The web chat does not read it: a held request belongs to the agent, not to a ses
 The list is the api-server's own state, refreshed by the approvals live hint, so a conversation opened after the hold — or a retry that joined it — still shows the prompt, and a verdict given in one place clears it from every conversation, from Home and from its toast.
 Requests that arrive together, as a browser's parallel connections to one host do, can each file their own approval before any of them is there to join, so the UI shows an Agent's waiting approvals of one host, port, method and path as one approval with a count, and a verdict answers them all.
 
-An Agent can also **propose** a rule before it needs one (the `egress_proposal` tool on its platform MCP server): a host, optionally a port, a method and a path, and one sentence of reason.
+An Agent can also **propose** a rule before it needs one (a tool on its platform MCP server): a host, optionally a port, a method and a path, and one sentence of reason.
 A held request waits only as long as the hold, so a job that runs while nobody watches would fail on a host its owner never saw; a proposal waits seven days instead.
 It is an approval of its own type that holds no request: the owner sees the rule and the Agent's reason where waiting network approvals show, and allows it, allows the whole host, or declines.
 Only the owner's verdict writes a rule, the same rule a verdict on a held request writes; the Agent never writes one.
@@ -294,7 +292,7 @@ The Agent reads back the verdict of its own proposals only.
 
 At most three rules speak for a host — itself, its `*.parent` wildcard, and the bare `*` — most specific first; a wildcard covers the one label its SNI chain and SAN do.
 Host names compare in any letter case, as DNS does: the agent writes the Host header and SNI, and a deny for `api.github.com` must also stop `API.GitHub.com`, which the gateway would resolve and forward all the same.
-`failure_mode_allow: false` — a blocked Check fails closed: agent gets 403, no approval prompt.
+A Check that fails, fails closed: the agent gets 403 and no approval prompt.
 A request a deny rule refuses on a TLS-terminated chain gets a 403 whose body names the rule and says the egress gateway refused it, not the upstream, so a harness shows the cause instead of a bare 403; the SNI-only catch-all can only close the connection.
 
 **Model provider hosts.** A model provider Connection granted to the Agent passes the gate on its own hosts, ports and paths even where a rule denies them, logged with basis *provider*.
@@ -307,10 +305,12 @@ At a limit it refuses at once, with a response shaped for the call's API path in
 
 **Web search.** With web search control on, the gate then holds a model call that declares a web search tool, under its own rule ([web-search-control](web-search-control.md)).
 
+**Tool calls.** The [tool access step](connections.md#connection) holds an MCP call of a tool whose rule for the Agent is ask as a tool-call approval, before any egress rule; it takes approve once and deny once only.
+
 The HTTP filter on TLS-terminated chains sees method/path; the network filter on the catch-all chain sees SNI only.
 
 **Paths.** A rule's path pattern matches the path as the agent sent it, query included, and the gateway forwards that path unchanged.
-An upstream may resolve `.` and `..` segments before it serves the path — the GitHub Contents API does, also for `%2e` and for `..;` — so an allowed prefix would reach any file through them; the gate denies a path with such a segment before any rule and without a hold.
+An upstream may resolve `.` and `..` segments before it serves the path — the GitHub Contents API does, also in encoded forms — so an allowed prefix would reach any file through them; the gate denies a path with such a segment before any rule and without a hold.
 GitHub's hosts resolve owner and repository in any letter case, so there a deny rule matches the path in any case; an allow keeps exact case, because file paths are case-sensitive and a case-blind allow for one directory would open its namesakes in other cases.
 
 **Ports.** The gateway dials whatever port a request names, so the Check carries the requested port and whether the request is TLS (a CONNECT or SNI) or plain HTTP.
@@ -336,7 +336,7 @@ An attached browser or CLI session means someone can decide, so a channel turn r
 
 **Egress Aliasing.** An Invocation target without detached egress has no egress identity: before any decision, the gate resolves the calling agent to its driver — recursively for chained Invocations, up to the root non-target agent — and runs rule match, hold, and approval against the driver.
 **Detached egress.** A driver may instead launch a child with egress of its own, open or scoped ([invocations](invocations.md#spawning)); the gate decides under the nearest such child up the chain, the caller first; only the owner widens a child past what its driver may give it.
-Two checks read the caller's own grants, as the target's gateway injects its own credentials: the [read-only check](connections.md#connection) and the provider-host check, so a target's model calls pass over the driver's deny rules for its provider's hosts.
+Two checks read the caller's own grants, as the target's gateway injects its own credentials: the [tool access step](connections.md#connection) and the provider-host check, so a target's model calls pass over the driver's deny rules for its provider's hosts.
 The link is live: rules are matched per request, so tightening or loosening the driver applies to its running targets immediately.
 Approval prompts raised by an aliased target's traffic surface as the driver's, stamped with the originating target, and approving permanently updates the driver's rules.
 The aliasing is application-layer only — the target's gateway still mounts and injects credentials for the target's own connection grants, so the target gains the driver's network *reach*, and only its own grants' credentials.
@@ -374,10 +374,10 @@ The machine and the gateway are gated by different mechanisms — they live on o
   The machine API and the range the runner publishes machines on admit ingress only from api-server pods (ACP/tRPC relay — the api-server has verified the user JWT and agent ownership before forwarding) and controller pods (idle-checker busy-probe).
   Everything else, gateway pods included, is dropped; the agent's Service selects the runner, so the api-server dials a machine exactly as it dials any other agent.
 - **Gateway → api-server harness.** All agent egress (including the harness call) flows through the paired gateway pod's Envoy, so what reaches the mesh is gateway → harness.
-  The harness Service is `<rel>-apiserver-harness`, carrying `istio.io/use-waypoint`; Istio synthesises a waypoint Gateway pod in front of it.
+  The harness Service carries `istio.io/use-waypoint`; Istio synthesises a waypoint Gateway pod in front of it.
   A per-Agent AuthorizationPolicy on the waypoint ALLOWs the gateway's SA principal to `/api/agents/<id>/*`; handlers can treat URL `:id` as authenticated.
-- **Gateway → api-server ext-authz** routes through a per-Agent Service `<rel>-extauthz-<id>` rendered by the controller alongside each Agent.
-  The api-server derives the Agent ID from the gRPC `:authority`, which the mesh does not pin to the caller.
+- **Gateway → api-server ext-authz** routes through a per-Agent Service the controller renders alongside each Agent, and the api-server derives the Agent ID from the gRPC `:authority`.
+  The mesh does not pin it to the caller: no waypoint serves that Service, so its AuthorizationPolicy is not enforced, and any in-mesh caller from the agent namespace could name any Agent; today the gateways, trusted platform code, are the only such callers.
 - **Pod-level DENY AuthorizationPolicy** on the api-server pod rejects anything that isn't either the waypoint's SA (harness) or a source in the agent namespace (ext-authz), closing the direct pod-IP bypass of the harness.
 
 The egress allowlist and the runner's NetworkPolicy are the security boundary for the machine's egress; mesh AuthorizationPolicy is the security boundary for the gateway's egress to api-server endpoints.
@@ -385,7 +385,7 @@ Each gate matches its threat model: the machine runs untrusted code and is held 
 
 ### Owner gateway identity
 
-With `virtualization.gateway.perOwner` on, an Agent egresses through its owner's one gateway pod instead of a pod of its own ([credential-gateway](credential-gateway.md#owner-gateway)); the default install keeps the pairing above.
+With owner gateways on, an Agent egresses through its owner's one gateway pod instead of a pod of its own ([credential-gateway](credential-gateway.md#owner-gateway)); the default install keeps the pairing above.
 What changes in the boundaries:
 
 - **Agent identity is a Service port, not a pod.** Each agent keeps its own gateway Service and ClusterIP, the only destination its machine may reach, and that Service declares only the ports that map onto the agent's own listener.
@@ -394,7 +394,7 @@ What changes in the boundaries:
   A dial from inside the pod reaches no sibling's listener either: an agent listener admits only connections from outside the pod.
 - **Kernel gates are per owner.** One ingress policy admits the owner's runner on the agent port range and the controller there for readiness; one egress policy, with the per-agent content above, replaces the per-agent ones; the runner's egress names the owner gateway on that range.
   It also admits the mesh's kubelet-probe source on the health port alone, which istio-cni rewrites a host probe to, or the pod is never ready.
-  The ranges are `istio.hostProbeSNAT` at install, which must match the `HOST_PROBE_SNAT_IP` and `HOST_PROBE_SNAT_IPV6` the cluster's istio-cni is installed with.
+  Its source ranges are set at install and must match the ones the cluster's istio-cni is installed with.
 - **Mesh identity is the owner's.** The owner gateway runs as a ServiceAccount of its own, and each agent's harness and ext-authz policies admit that principal.
   Because that principal is shared, each agent's listener guards harness paths to the agent's own and stamps the agent's name in a header no other route lets through, and the harness policy admits the owner principal only with that header naming the agent.
   The harness boundary between one owner's agents therefore rests on the rendered gateway configuration, not on the mesh alone.

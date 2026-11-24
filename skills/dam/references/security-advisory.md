@@ -57,6 +57,8 @@ Run these checks before a command that lets more people steer an agent, gives it
 - `dam connection grant`, `dam agent create --connection`, and `dam agent create --kit` with a kit that asks for connections;
 - `dam satellite grant`;
 - `--full-access` on `dam connection connect` or `dam connection scope`;
+- `--mode allow-all` on `dam connection connect` or `dam connection scope`;
+- `--write allow`, or `--tool <name>=allow` for a tool that writes, on `dam connection scope --agent`;
 - `dam approval approve` without `--once`.
 
 The user adds editors and shares pages in the web app, not through you; when they tell you they did, or plan to, run the checks and tell them what it shares.
@@ -78,6 +80,7 @@ dam satellite list --json
   So ambient mode is a problem only when you know that an app there posts what outsiders wrote.
   When you do not know, ask the user if they are in the chat with you, and do not call ambient mode a problem by itself.
 - `dam connection list` lists what the agent holds, and whose account each connection acts as.
+  `grantToolAccess` on an MCP connection says what this agent may do with its tools: a `write` of `allow`, or an `allow` in `overrides` for a tool that writes, lets it post and change things as the user without asking.
 - `grantedAgentIds` in `dam satellite list` names the agents that reach each satellite.
 
 When anyone besides the user steers the agent, or will after the change, also [check what the agent's instructions say](#check-what-the-agents-instructions-say).
@@ -185,6 +188,7 @@ Tell the user the sentences that are missing, and offer to have the agent write 
 | Ambient mode on a bound channel or group                                                                                                           | Not a problem by itself        | The agent reads every message there, but the people who write them steer it with a mention already. The verdict is the one the rows above give that binding, with or without ambient mode.                                                       |
 | Ambient mode where an app or a webhook posts what outsiders wrote, such as public issues, support requests or email, on an agent with write access | Bad                            | The agent reads those posts with no mention, so whoever writes them can steer it. Have the user run the in-chat ignore command on one of that app's posts, or turn ambient mode off there, or give the connection read-only permissions.         |
 | A connection with `--full-access`                                                                                                                  | Avoid                          | It reaches every account and repository the sign-in reaches. Scope it to the repositories and permissions the agent needs.                                                                                                                       |
+| An MCP connection that lets an agent others steer write without asking                                                                             | Avoid                          | They can make the agent post and change things as the user. Set that agent's access with `dam connection scope <connection> --agent <agent> --write ask`, or `--write block`, so each write waits for an answer or is refused.                   |
 | A network request approved as a permanent rule                                                                                                     | Avoid unless the user wants it | Every rule is one more host the agent can send data to. Prefer `--once`, and narrow rules to the host, method and path the agent needs.                                                                                                          |
 | A model provider connection on an agent others steer                                                                                               | Good with a limit              | They spend the user's money. Set a spend limit.                                                                                                                                                                                                  |
 | An agent created from a kit in a repository nobody on the server reviewed                                                                          | Review first                   | Its setup runs with everything the agent is granted. Show the user what `dam kit show` prints, as [Starter kits](../SKILL.md#starter-kits) says.                                                                                                 |

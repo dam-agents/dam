@@ -9,6 +9,10 @@ import {
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
 import { configureLogger } from "../../core/logger.js";
+import {
+  fakeMcpToolLister,
+  noConnectionsParent,
+} from "../helpers/connections-service.js";
 
 /**
  * TEST_OVERVIEW: an input the connection builder refuses reaches the user as
@@ -31,7 +35,10 @@ describe("connection create with an invalid input", () => {
   // TEST_SCENARIO: an S3 bucket name with a space and an underscore is refused as BAD_REQUEST with the bucket message.
   it("refuses a bad bucket name as BAD_REQUEST", async () => {
     const svc = createConnectionsService({
+      parentOf: noConnectionsParent,
       damConnectionOffered: async () => true,
+      toolApprovalOffered: async () => true,
+      mcpToolLister: fakeMcpToolLister(),
       harnesses: { default: "claude-code", harnesses: [] },
       ownerId: "owner",
       templates: createConnectionTemplateRegistry(buildCatalog()),

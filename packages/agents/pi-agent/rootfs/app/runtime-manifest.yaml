@@ -55,6 +55,9 @@ drivers:
     extraFields:
       exposure: direct
     sessionRef: "${PLATFORM_SESSION_REF}"
+    # A Connection's entry waits for a request as long as the gateway holds a
+    # tool call for the owner's approval; Pi's own default is 60s.
+    toolTimeout: { key: timeout, unit: seconds }
 
   # Model -> defaultModel, thinking level -> the ACP "mode"
   # (defaultThinkingLevel). Pi's models are connection-dependent, so they're

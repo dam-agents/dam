@@ -3,6 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { Connection } from "api-server-api";
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
+import {
+  fakeMcpToolLister,
+  noConnectionsParent,
+} from "../helpers/connections-service.js";
 
 type ConnectionsDeps = Parameters<typeof createConnectionsService>[0];
 
@@ -44,7 +48,10 @@ function setup(mirrors: Record<string, string[]>) {
     return set;
   };
   const service = createConnectionsService({
+    parentOf: noConnectionsParent,
     damConnectionOffered: async () => true,
+    toolApprovalOffered: async () => true,
+    mcpToolLister: fakeMcpToolLister(),
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: OWNER,
@@ -56,6 +63,7 @@ function setup(mirrors: Record<string, string[]>) {
           connectionId,
           grantedAt: new Date(0),
           preferred: false,
+          toolAccess: null,
         })),
       grant: async (connectionId, agentId) => {
         held(agentId).add(connectionId);

@@ -23,7 +23,7 @@ def _platform_mcp_servers() -> dict:
     except (OSError, ValueError):
         return {}
     return {
-        name: {k: v for k, v in entry.items() if k in ("url", "headers", "command", "args", "env")}
+        name: {k: v for k, v in entry.items() if k in ("url", "headers", "command", "args", "env", "timeout")}
         for name, entry in servers.items()
         if isinstance(entry, dict)
     }

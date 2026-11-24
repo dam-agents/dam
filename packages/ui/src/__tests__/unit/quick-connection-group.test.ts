@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: One provider's Connections in the composer's + menu, as the chat refresh design's ConnectionGroupCard draws them: a card titled with the provider and its count, then a row per Connection with its name, its status, and what kind it is under it, with no host chip; the row's menu, behind the design's horizontal ⋯, shows only for a viewer who may change the Agent's Connections.
+// TEST_OVERVIEW: One provider's Connections in the composer's + menu, as the chat refresh design's ConnectionGroupCard draws them: a card titled with the provider and its count, then a row per Connection with its name, its status, and what kind it is under it, with no host chip; the row's menu, behind the design's horizontal ⋯, shows only for a viewer who may change the Agent's Connections. A Connection whose grant lets this Agent write without asking carries that mark.
 import type { ConnectionView } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -80,5 +80,24 @@ describe("a provider's card in the + menu", () => {
     const html = render(false);
     expect(html).toContain("acme-org GitHub");
     expect(html).not.toContain('data-testid="menu-');
+  });
+
+  // TEST_SCENARIO: the + menu speaks about the chat's Agent, so a Connection whose grant lets this Agent write without asking is marked, and one that asks is not.
+  it("marks a grant that writes without asking", () => {
+    const html = renderToStaticMarkup(
+      createElement(QuickConnectionGroup, {
+        group,
+        templateById: new Map(),
+        toolAccess: (c) => ({
+          summary:
+            c.id === "c-oauth"
+              ? { text: "Allows everything", tone: "writes" }
+              : { text: "Asks before writing", tone: "asks" },
+        }),
+      }),
+    );
+    expect(html).toContain('data-testid="grant-writes-mark-c-oauth"');
+    expect(html).toContain("Writes without asking");
+    expect(html).not.toContain('data-testid="grant-writes-mark-c-pat"');
   });
 });

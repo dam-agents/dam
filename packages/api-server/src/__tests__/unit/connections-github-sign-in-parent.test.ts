@@ -27,6 +27,10 @@ import {
 import type { ConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+import {
+  fakeMcpToolLister,
+  noConnectionsParent,
+} from "../helpers/connections-service.js";
 
 /**
  * TEST_OVERVIEW: a GitHub sign-in made through the GitHub App is a parent: it
@@ -213,6 +217,7 @@ function makeRepo(initial: Connection[]) {
       const c = rows.get(id);
       if (c) rows.set(id, { ...c, auth });
     },
+    updateToolAccess: async () => {},
     updateContributions: async (id, contributions) => {
       const c = rows.get(id);
       if (c) rows.set(id, { ...c, contributions });
@@ -239,11 +244,21 @@ function makeRepo(initial: Connection[]) {
       [...grants].flatMap((g) => {
         const [c, a] = g.split("|");
         return a === agentId
-          ? [{ connectionId: c!, grantedAt: new Date(0), preferred: false }]
+          ? [
+              {
+                connectionId: c!,
+                grantedAt: new Date(0),
+                preferred: false,
+                toolAccess: null,
+              },
+            ]
           : [];
       }),
     listConnectionsForAgent: async (agentId) =>
       [...rows.values()].filter((c) => grants.has(`${c.id}|${agentId}`)),
+    setGrantToolAccess: async () => false,
+    clearGrantToolAccess: async () => {},
+    listGrantedConnections: async () => [],
     listAgentsForConnection: async (id) => agentsOf(id),
     revokeAllForAgent: async () => {},
     listDistinctGrantAgentIds: async () => [],
@@ -272,7 +287,10 @@ function makeService(initial: Connection[] = [signIn()]) {
   const github = makeGitHub();
   const fannedOut: string[] = [];
   const svc = createConnectionsService({
+    parentOf: noConnectionsParent,
     damConnectionOffered: async () => true,
+    toolApprovalOffered: async () => true,
+    mcpToolLister: fakeMcpToolLister(),
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: OWNER,
@@ -765,6 +783,7 @@ describe("GitHub sign-in — signing in again", () => {
       callbackUrl: "https://cb.example/oauth/callback",
       connectionLock: <T>(_key: string, fn: () => Promise<T>): Promise<T> =>
         fn(),
+      mcpToolLister: fakeMcpToolLister(),
     });
     return { flow, rows, ...secrets };
   }

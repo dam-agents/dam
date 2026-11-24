@@ -1142,6 +1142,20 @@
       "when": 1795437269972,
       "tag": "0162_spend_daily_awaiting_calls",
       "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1795513271998,
+      "tag": "0163_connection_tool_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1795513280381,
+      "tag": "0164_grant_tool_access",
+      "breakpoints": true
     }
   ]
 }

@@ -10,12 +10,18 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { credentialCopyFor } from "../forms/field-copy.js";
-import { EDIT_ACCESS_TITLE } from "../lib/access-choice.js";
+import { useToolApprovalOffered } from "../hooks/use-tool-approval-offered.js";
 import { parentNoun } from "../lib/connection-hierarchy.js";
 import { childRepair } from "../lib/github-card.js";
+import {
+  CHANGE_ACCESS_TITLE,
+  shownToolMode,
+  toolModeMark,
+} from "../lib/tool-mode.js";
 import type {
   RowGrantControls,
   RowMaintenanceActions,
+  RowToolAccess,
 } from "./catalog-connection-row.js";
 
 interface Props {
@@ -45,11 +51,18 @@ export function ConnectionRowActions({
   maintenance,
   chooseAccessAgain = false,
   usedBy,
+  toolAccess,
 }: Pick<Props, "connection" | "grant" | "maintenance"> & {
   chooseAccessAgain?: boolean;
   usedBy?: ReactNode;
+  toolAccess?: RowToolAccess;
 }) {
-  const narrow = connection.fullAccess ? maintenance?.onEditScope : undefined;
+  const offered = useToolApprovalOffered();
+  const toolModeShown = shownToolMode(connection, offered) !== null;
+  const narrow =
+    connection.fullAccess || toolModeMark(connection, offered)
+      ? maintenance?.onEditScope
+      : undefined;
   const repair = chooseAccessAgain
     ? childRepair(connection, maintenance)
     : null;
@@ -90,6 +103,17 @@ export function ConnectionRowActions({
         <RowGrantAction rowId={connection.id} grant={grant} />
       )}
       {usedBy}
+      {toolAccess?.onEdit && (
+        <Button
+          variant="outline"
+          size="sm"
+          className={ROW_BUTTON}
+          onClick={toolAccess.onEdit}
+          data-testid={`grant-tool-access-${connection.id}`}
+        >
+          Tool access
+        </Button>
+      )}
       {narrow && (
         <Button
           variant="outline"
@@ -98,7 +122,7 @@ export function ConnectionRowActions({
           onClick={narrow}
           data-testid={`catalog-narrow-${connection.id}`}
         >
-          {connection.accessChoice ? EDIT_ACCESS_TITLE : "Narrow access"}
+          {toolModeShown ? CHANGE_ACCESS_TITLE : "Narrow access"}
         </Button>
       )}
     </div>
@@ -115,6 +139,7 @@ export function ConnectionRowMenu({
   horizontal = false,
 }: Props & { horizontal?: boolean }) {
   const reauthLabel = reauthLabelOf(connection);
+  const offered = useToolApprovalOffered();
   return (
     <RowActionsMenu
       label={`Actions for ${connection.name}`}
@@ -153,8 +178,8 @@ export function ConnectionRowMenu({
           onSelect={maintenance.onEditScope}
           data-testid={`catalog-edit-scope-${connection.id}`}
         >
-          {connection.accessChoice
-            ? EDIT_ACCESS_TITLE
+          {shownToolMode(connection, offered) !== null
+            ? CHANGE_ACCESS_TITLE
             : "Edit repositories & permissions"}
         </DropdownMenuItem>
       )}

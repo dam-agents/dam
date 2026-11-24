@@ -23,14 +23,31 @@ const stateSchema = z.object({
   installed: z.array(z.string()).catch([]).default([]),
 });
 
+const toolTimeoutSchema = z.object({
+  key: z.string().min(1),
+  unit: z.enum(["seconds", "milliseconds"]),
+});
+
 function ownedKeys(
   urlKey: string | undefined,
   headersKey: string | undefined,
+  toolTimeoutKey: string | undefined,
 ): string[] {
   return [
     headersKey ?? DEFAULT_HEADERS_KEY,
     ...(urlKey ? [urlKey] : ["type", "url"]),
+    ...(toolTimeoutKey ? [toolTimeoutKey] : []),
   ];
+}
+
+function toolTimeoutOf(
+  binding: z.infer<typeof toolTimeoutSchema> | undefined,
+  seconds: number | undefined,
+): Record<string, number> {
+  if (!binding || seconds === undefined) return {};
+  return {
+    [binding.key]: binding.unit === "milliseconds" ? seconds * 1000 : seconds,
+  };
 }
 
 const bindingSchema = z
@@ -43,9 +60,12 @@ const bindingSchema = z
     headersKey: z.string().min(1).optional(),
     extraFields: z.record(z.string(), z.string()).optional(),
     sessionRef: z.string().min(1).optional(),
+    toolTimeout: toolTimeoutSchema.optional(),
   })
   .superRefine((b, ctx) => {
-    const reserved = new Set(ownedKeys(b.urlKey, b.headersKey));
+    const reserved = new Set(
+      ownedKeys(b.urlKey, b.headersKey, b.toolTimeout?.key),
+    );
     for (const key of Object.keys(b.extraFields ?? {})) {
       if (reserved.has(key)) {
         ctx.addIssue({
@@ -77,6 +97,7 @@ export function createMcpEntryPlugin(deps?: {
       headersKey,
       extraFields,
       sessionRef,
+      toolTimeout,
     } = parsed.data;
     const effectiveKey = keyPath ?? DEFAULT_KEY_PATH;
     const effectiveHeadersKey = headersKey ?? DEFAULT_HEADERS_KEY;
@@ -109,6 +130,7 @@ export function createMcpEntryPlugin(deps?: {
         entries[c.name] = {
           ...(urlKey ? { [urlKey]: c.url } : { type: "http", url: c.url }),
           ...(headers ? { [effectiveHeadersKey]: headers } : {}),
+          ...toolTimeoutOf(toolTimeout, c.toolTimeoutSeconds),
           ...extraFields,
         };
       }

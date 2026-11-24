@@ -11,12 +11,17 @@ import {
   connections as connectionsTable,
 } from "db";
 import { DAM_KEY_INPUT } from "../domain/dam-connection.js";
+import type { GrantedConnection } from "../domain/tool-access.js";
 import {
   connectionAuthConfigSchema as authConfigSchema,
+  connectionToolAccessRecordSchema as toolAccessRecordSchema,
   contribution as contributionSchema,
+  grantToolAccessSchema,
   type Connection,
   type ConnectionAuthConfig,
+  type ConnectionToolAccessRecord,
   type Contribution,
+  type GrantToolAccess,
 } from "api-server-api";
 
 export interface ConnectionsRepository {
@@ -30,6 +35,7 @@ export interface ConnectionsRepository {
     contributions: Contribution[];
     parentId?: string;
     isParent?: true;
+    toolAccess?: ConnectionToolAccessRecord;
   }): Promise<void>;
 
   listByOwner(ownerId: string): Promise<Connection[]>;
@@ -41,6 +47,11 @@ export interface ConnectionsRepository {
   listDue(skewSec: number): Promise<Connection[]>;
 
   updateAuth(id: string, auth: ConnectionAuthConfig): Promise<void>;
+
+  updateToolAccess(
+    id: string,
+    toolAccess: ConnectionToolAccessRecord,
+  ): Promise<void>;
 
   mergeInputs(id: string, patch: Record<string, unknown>): Promise<void>;
 
@@ -58,11 +69,31 @@ export interface ConnectionsRepository {
 
   delete(id: string, ownerId: string): Promise<void>;
 
-  grant(connectionId: string, agentId: string): Promise<void>;
-  revoke(connectionId: string, agentId: string): Promise<void>;
-  listAgentGrants(
+  /* UNIT_BOUNDARY_DESCRIPTION: grants a Connection to an Agent with the tool access the new grant starts with, or null to follow the Connection's tool mode. A grant that already exists keeps its own access. */
+  grant(
+    connectionId: string,
     agentId: string,
-  ): Promise<{ connectionId: string; grantedAt: Date; preferred: boolean }[]>;
+    toolAccess: GrantToolAccess | null,
+  ): Promise<void>;
+  revoke(connectionId: string, agentId: string): Promise<void>;
+  listAgentGrants(agentId: string): Promise<
+    {
+      connectionId: string;
+      grantedAt: Date;
+      preferred: boolean;
+      toolAccess: GrantToolAccess | null;
+    }[]
+  >;
+  /* UNIT_BOUNDARY_DESCRIPTION: sets the tool access of one grant, and answers false when the Agent does not hold the Connection. */
+  setGrantToolAccess(
+    connectionId: string,
+    agentId: string,
+    toolAccess: GrantToolAccess,
+  ): Promise<boolean>;
+  /* UNIT_BOUNDARY_DESCRIPTION: clears the tool access of every grant of one Connection, so each of them follows the Connection's tool mode again. */
+  clearGrantToolAccess(connectionId: string): Promise<void>;
+  /* UNIT_BOUNDARY_DESCRIPTION: the Agent's granted Connections, each with the tool access its grant stores, in one read. */
+  listGrantedConnections(agentId: string): Promise<GrantedConnection[]>;
   setPreferred(
     agentId: string,
     connectionId: string,
@@ -85,6 +116,7 @@ interface ConnectionRow {
   contributions: unknown;
   parentId?: string | null;
   isParent?: boolean;
+  toolAccess?: unknown;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -92,6 +124,7 @@ interface ConnectionRow {
 export function toConnection(row: ConnectionRow): Connection | null {
   const auth = authConfigSchema.safeParse(row.auth);
   if (!auth.success) return null;
+  const toolAccess = toolAccessRecordSchema.safeParse(row.toolAccess);
   return {
     id: row.id,
     ownerId: row.owner,
@@ -102,6 +135,7 @@ export function toConnection(row: ConnectionRow): Connection | null {
     contributions: contributionsOf(row.contributions),
     ...(row.parentId ? { parentId: row.parentId } : {}),
     ...(row.isParent ? { isParent: true as const } : {}),
+    ...(toolAccess.success ? { toolAccess: toolAccess.data } : {}),
   };
 }
 
@@ -111,6 +145,18 @@ function contributionsOf(raw: unknown): Contribution[] {
     const parsed = contributionSchema.safeParse(c);
     return parsed.success ? [parsed.data] : [];
   });
+}
+
+const BLOCK_ALL: GrantToolAccess = {
+  read: "block",
+  write: "block",
+  overrides: {},
+};
+
+function grantToolAccessOf(raw: unknown): GrantToolAccess | null {
+  if (raw === null || raw === undefined) return null;
+  const parsed = grantToolAccessSchema.safeParse(raw);
+  return parsed.success ? parsed.data : BLOCK_ALL;
 }
 
 function connectionsOf(rows: readonly ConnectionRow[]): Connection[] {
@@ -144,6 +190,7 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
         contributions: input.contributions,
         ...(input.parentId ? { parentId: input.parentId } : {}),
         ...(input.isParent ? { isParent: true } : {}),
+        ...(input.toolAccess ? { toolAccess: input.toolAccess } : {}),
       });
     },
 
@@ -226,6 +273,13 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
         .where(eq(connectionsTable.id, id));
     },
 
+    async updateToolAccess(id, toolAccess): Promise<void> {
+      await db
+        .update(connectionsTable)
+        .set({ toolAccess, updatedAt: new Date() })
+        .where(eq(connectionsTable.id, id));
+    },
+
     async adoptDamKey({ id, ownerSub, keyId, previousKeyId }) {
       await db.transaction(async (tx) => {
         await tx
@@ -276,10 +330,10 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
         );
     },
 
-    async grant(connectionId, agentId): Promise<void> {
+    async grant(connectionId, agentId, toolAccess): Promise<void> {
       await db
         .insert(connectionGrantsTable)
-        .values({ connectionId, agentId })
+        .values({ connectionId, agentId, toolAccess })
         .onConflictDoNothing();
     },
 
@@ -294,11 +348,7 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
         );
     },
 
-    async listAgentGrants(
-      agentId,
-    ): Promise<
-      { connectionId: string; grantedAt: Date; preferred: boolean }[]
-    > {
+    async listAgentGrants(agentId) {
       const rows = (await db
         .select()
         .from(connectionGrantsTable)
@@ -307,8 +357,62 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
         connectionId: string;
         grantedAt: Date;
         preferred: boolean;
+        toolAccess: unknown;
       }[];
-      return rows;
+      return rows.map((row) => ({
+        connectionId: row.connectionId,
+        grantedAt: row.grantedAt,
+        preferred: row.preferred,
+        toolAccess: grantToolAccessOf(row.toolAccess),
+      }));
+    },
+
+    async setGrantToolAccess(
+      connectionId,
+      agentId,
+      toolAccess,
+    ): Promise<boolean> {
+      const updated = await db
+        .update(connectionGrantsTable)
+        .set({ toolAccess })
+        .where(
+          and(
+            eq(connectionGrantsTable.connectionId, connectionId),
+            eq(connectionGrantsTable.agentId, agentId),
+          ),
+        )
+        .returning({ agentId: connectionGrantsTable.agentId });
+      return updated.length > 0;
+    },
+
+    async clearGrantToolAccess(connectionId): Promise<void> {
+      await db
+        .update(connectionGrantsTable)
+        .set({ toolAccess: null })
+        .where(eq(connectionGrantsTable.connectionId, connectionId));
+    },
+
+    async listGrantedConnections(agentId): Promise<GrantedConnection[]> {
+      const rows = (await db
+        .select({
+          connection: connectionsTable,
+          toolAccess: connectionGrantsTable.toolAccess,
+        })
+        .from(connectionGrantsTable)
+        .innerJoin(
+          connectionsTable,
+          eq(connectionGrantsTable.connectionId, connectionsTable.id),
+        )
+        .where(eq(connectionGrantsTable.agentId, agentId))) as {
+        connection: ConnectionRow;
+        toolAccess: unknown;
+      }[];
+      return rows.flatMap((row) => {
+        const connection = toConnection(row.connection);
+        return connection
+          ? [{ connection, toolAccess: grantToolAccessOf(row.toolAccess) }]
+          : [];
+      });
     },
 
     async setPreferred(

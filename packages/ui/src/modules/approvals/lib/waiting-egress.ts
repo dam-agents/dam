@@ -10,11 +10,13 @@ export function egressApprovalsWaiting(
       (a) =>
         (a.type === "ext_authz" ||
           a.type === "egress_proposal" ||
-          a.type === "web_search") &&
+          a.type === "web_search" ||
+          a.type === "mcp_tool_call") &&
         (a.agentId === agentId ||
           ((a.payload.kind === "ext_authz" ||
             a.payload.kind === "egress_proposal" ||
-            a.payload.kind === "web_search") &&
+            a.payload.kind === "web_search" ||
+            a.payload.kind === "mcp_tool_call") &&
             a.payload.forAgentId === agentId)) &&
         a.status === "pending" &&
         new Date(a.expiresAt).getTime() > now.getTime(),

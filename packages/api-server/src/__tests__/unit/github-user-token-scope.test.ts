@@ -22,6 +22,10 @@ import { refreshOAuthAccessToken } from "../../modules/connections/services/oaut
 import type { ConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
 import type { OAuthFlowService } from "../../modules/connections/services/oauth-flow.js";
+import {
+  fakeMcpToolLister,
+  noConnectionsParent,
+} from "../helpers/connections-service.js";
 
 /**
  * TEST_OVERVIEW: a GitHub sign-in connection made through a GitHub App holds
@@ -169,6 +173,7 @@ function makeRepoFake(initial: Connection) {
       const c = rows.get(id);
       if (c) rows.set(id, { ...c, auth });
     },
+    updateToolAccess: async () => {},
     updateContributions: async () => {},
     mergeInputs: async () => {},
     adoptDamKey: async () => {},
@@ -180,6 +185,9 @@ function makeRepoFake(initial: Connection) {
     setPreferred: async () => {},
     listAgentGrants: async () => [],
     listConnectionsForAgent: async () => [],
+    setGrantToolAccess: async () => false,
+    clearGrantToolAccess: async () => {},
+    listGrantedConnections: async () => [],
     listAgentsForConnection: async () => [],
     revokeAllForAgent: async () => {},
     listDistinctGrantAgentIds: async () => [],
@@ -228,7 +236,10 @@ function makeService(
     },
   };
   const svc = createConnectionsService({
+    parentOf: noConnectionsParent,
     damConnectionOffered: async () => true,
+    toolApprovalOffered: async () => true,
+    mcpToolLister: fakeMcpToolLister(),
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: OWNER,

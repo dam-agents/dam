@@ -25,10 +25,12 @@ describe("the DAM connection", () => {
     };
     expect(isDamConnection(connection)).toBe(true);
     expect(isDamConnection({ templateId: "github" })).toBe(false);
-    expect(connectionDetail(connection).account).toBe(
+    expect(connectionDetail(connection, false).account).toBe(
       damActsAsYou(getBrand().name),
     );
-    expect(connectionDetail(connection).account).toMatch(/^Acts as you on /);
+    expect(connectionDetail(connection, false).account).toMatch(
+      /^Acts as you on /,
+    );
     expect(filterOfferedTemplates([{ id: "dam" }], true, false)).toEqual([]);
     expect(filterOfferedTemplates([{ id: "dam" }], false, false)).toEqual([]);
     expect(

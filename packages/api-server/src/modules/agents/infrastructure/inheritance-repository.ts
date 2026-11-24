@@ -1,10 +1,11 @@
 import type { Db } from "db";
-import { agentInheritance, and, eq, ne } from "db";
+import { agentInheritance, and, eq, inArray, ne } from "db";
 import type { ChildInheritance } from "api-server-api";
 
 export interface InheritanceRepository {
   record(agentId: string, inheritance: ChildInheritance): Promise<void>;
   childrenMirroringConnections(parentAgentId: string): Promise<string[]>;
+  connectionsParentOf(agentId: string): Promise<string | null>;
   get(agentId: string): Promise<{
     parentAgentId: string;
     egressFrom: ChildInheritance["egressFrom"];
@@ -39,6 +40,20 @@ export function createInheritanceRepository(db: Db): InheritanceRepository {
           ),
         );
       return rows.map((r) => r.agentId);
+    },
+
+    async connectionsParentOf(agentId) {
+      const [row] = await db
+        .select({ parentAgentId: agentInheritance.parentAgentId })
+        .from(agentInheritance)
+        .where(
+          and(
+            eq(agentInheritance.agentId, agentId),
+            inArray(agentInheritance.connectionsFrom, ["parent", "subset"]),
+          ),
+        )
+        .limit(1);
+      return row?.parentAgentId ?? null;
     },
 
     async get(agentId) {

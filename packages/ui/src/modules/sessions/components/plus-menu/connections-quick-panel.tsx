@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 
 import type { RowMaintenanceActions } from "../../../connections/components/catalog-connection-row.js";
 import { useCatalogGroups } from "../../../connections/hooks/use-catalog-groups.js";
+import { useGrantRowToolAccess } from "../../../connections/hooks/use-grant-row-tool-access.js";
 import { useAgentConnectionGrants } from "../../../sandboxes/hooks/use-agent-connection-grants.js";
 import { excludeProviderConnections } from "../../../sandboxes/lib/provider-connections.js";
 import { PlusMenuNote, PlusMenuPanelFrame } from "./plus-menu-panel.js";
@@ -41,6 +42,7 @@ export function ConnectionsQuickPanel({
   );
   const { populated: groups, templateById } = useCatalogGroups(listed);
   const manages = grants.managesConnections;
+  const toolAccess = useGrantRowToolAccess(grants.grants);
   /* UNIT_BOUNDARY_DESCRIPTION: nothing is listed before the Agent's grants load: a list drawn on a pending read would show the Agent holding none. */
   const ready = grants.loaded && !grants.failed;
 
@@ -79,6 +81,7 @@ export function ConnectionsQuickPanel({
                   : undefined
               }
               maintenance={manages ? rowActions : undefined}
+              toolAccess={toolAccess}
             />
           ))}
         </div>

@@ -46,6 +46,12 @@ UPDATE public.connection_grants SET preferred = true WHERE agent_id = 'agent-abc
 UPDATE public.connection_grants SET granted_at = now() - interval '1 day' WHERE agent_id = 'agent-abc';
 DO $$ BEGIN ASSERT (SELECT generation = 5 FROM control.agents WHERE id = 'agent-abc'), 'a preferred flip or a granted_at touch bumped generation'; END $$;
 
+-- a grant's tool access is read by the gate on every request, so the gateway
+-- needs no new render when it changes
+UPDATE public.connection_grants SET tool_access = '{"read":"allow","write":"block","overrides":{}}' WHERE agent_id = 'agent-abc';
+UPDATE public.connection_grants SET tool_access = NULL WHERE agent_id = 'agent-abc';
+DO $$ BEGIN ASSERT (SELECT generation = 5 FROM control.agents WHERE id = 'agent-abc'), 'a tool_access write bumped generation'; END $$;
+
 -- every write to a versioned row rotates its token
 UPDATE control.agent_signals SET last_activity_at = now() WHERE agent_id = 'agent-abc';
 DO $$ BEGIN ASSERT (SELECT version = 2 FROM control.agent_signals WHERE agent_id = 'agent-abc'), 'signals version did not rotate'; END $$;

@@ -21,6 +21,7 @@ import {
   newConnectionsStore,
   serviceHarness,
   unused,
+  fakeMcpToolLister,
 } from "../helpers/connections-service.js";
 
 /**
@@ -496,6 +497,7 @@ describe("a connection on a retired host", () => {
       ownerId: "owner",
       callbackUrl: CALLBACK,
       connectionLock: unused(),
+      mcpToolLister: fakeMcpToolLister(),
     });
     await expect(flow.startOAuth("conn-signin")).rejects.toThrow(
       /retired on this platform\. Move this sign-in/,

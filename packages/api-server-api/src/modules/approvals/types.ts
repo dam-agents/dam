@@ -82,12 +82,29 @@ export interface WebSearchPayload {
   forAgentId?: string;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a `tools/call` of a tool that does not read, on an MCP Connection in needs approval, which the gateway holds until someone answers approve once or deny once. `key` is the sha256 of the Connection id, the tool name and the arguments as canonical JSON, so the same call sent again joins this approval and a call with other arguments files its own. `arguments` is kept only while the approval waits: it holds the call's arguments when their JSON is at most `MCP_TOOL_CALL_ARGUMENTS_MAX_BYTES`, else the first part of that JSON text as a string. `argumentsBytes` is the size of the whole arguments' JSON, so a larger value than the limit says they were cut. `targetLabel` is a name for the call's target that the Connection's Template looked up when the approval was filed, such as the Slack conversation a post goes to, at most `MCP_TOOL_CALL_TARGET_LABEL_MAX` characters; it is absent when the Template labels no target or the lookup failed, and it is kept when the approval settles.
+export interface McpToolCallPayload {
+  kind: "mcp_tool_call";
+  connectionId: string;
+  connectionName: string;
+  templateId: string | null;
+  tool: string;
+  key: string;
+  arguments?: unknown;
+  argumentsBytes: number;
+  targetLabel?: string;
+  viaAgentId?: string;
+  viaEnvironment?: string;
+  forAgentId?: string;
+}
+
 export type ApprovalPayload =
   | ExtAuthzPayload
   | AcpNativePayload
   | SpendLimitPayload
   | EgressProposalPayload
-  | WebSearchPayload;
+  | WebSearchPayload
+  | McpToolCallPayload;
 
 export interface ApprovalView {
   id: string;

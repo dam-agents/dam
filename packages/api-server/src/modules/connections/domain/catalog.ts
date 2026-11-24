@@ -644,11 +644,8 @@ function slack(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
     isCustom: false,
     description:
       "Search and read Slack as you, backed by Slack's MCP server. Read only unless you let it post as you.",
-    toolAccess: {
-      host: SLACK_MCP_HOST,
-      readTools: SLACK_READ_TOOLS,
-      fullAccessLabel: "Can post as me",
-    },
+    toolAccess: { readTools: SLACK_READ_TOOLS },
+    defaultToolMode: "read-only",
     iconSlug: "slack",
     authKind: "oauth",
     setupUrl: "https://api.slack.com/apps",

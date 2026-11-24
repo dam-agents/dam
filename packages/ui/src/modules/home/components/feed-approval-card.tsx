@@ -14,9 +14,11 @@ import {
   approvalHideHint,
   approvalReason,
   childRulesGroupCopy,
+  isRefusedLabel,
 } from "../lib/approval-copy.js";
+import { FeedToolCallCard } from "./feed-tool-call-card.js";
 
-interface Props {
+export interface FeedApprovalCardProps {
   approval: ApprovalView;
   ids?: readonly string[];
   members?: readonly ApprovalView[];
@@ -29,7 +31,16 @@ interface Props {
   onResolved?: (label: string) => void;
 }
 
-export function FeedApprovalCard({
+export function FeedApprovalCard(props: FeedApprovalCardProps) {
+  const { payload } = props.approval;
+  return payload.kind === "mcp_tool_call" ? (
+    <FeedToolCallCard {...props} payload={payload} />
+  ) : (
+    <FeedRequestCard {...props} />
+  );
+}
+
+function FeedRequestCard({
   approval,
   ids = [approval.id],
   members = [approval],
@@ -40,7 +51,7 @@ export function FeedApprovalCard({
   onDismiss,
   resolvedLabel = null,
   onResolved,
-}: Props) {
+}: FeedApprovalCardProps) {
   const { actions, primary, inflight, hostLabel, expiredNote, openSettings } =
     useApprovalActions(approval, ids);
   const grouped = childRulesGroupCopy(members);
@@ -73,8 +84,8 @@ export function FeedApprovalCard({
             )}
             <span className="truncate">{agentName}</span>
           </div>
-          <p className="text-md leading-snug font-semibold text-foreground">
-            {approvalHeadline(approval)}
+          <p className="flex items-center gap-2 text-md leading-snug font-semibold text-foreground">
+            <span className="min-w-0">{approvalHeadline(approval)}</span>
           </p>
         </div>
         <button
@@ -128,9 +139,7 @@ export function FeedApprovalCard({
           <span
             className={cn(
               "text-sm",
-              /^(Denied|Always denied|Stopped|Declined)/.test(resolved)
-                ? "text-danger"
-                : "text-success",
+              isRefusedLabel(resolved) ? "text-danger" : "text-success",
             )}
           >
             {resolved}

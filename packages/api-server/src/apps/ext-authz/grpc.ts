@@ -111,6 +111,9 @@ export async function startExtAuthzGrpcApp(
             SPEND_METADATA_NAMESPACE
           ];
         const spend = parseSpendMetadata(meter);
+        const cancelled = new AbortController();
+        if (call.cancelled) cancelled.abort();
+        else call.once("cancelled", () => cancelled.abort());
         const decision = await deps.gate.gateRequest({
           agentId,
           host,
@@ -125,6 +128,7 @@ export async function startExtAuthzGrpcApp(
           connectionId:
             httpReq?.headers[CONNECTION_EGRESS_ADDRESS_HEADER] ?? null,
           tlsHost: sni ? stripPort(sni) : null,
+          signal: cancelled.signal,
           spendCall: spend && {
             callId: spend.callId,
             payer: spend.payer,

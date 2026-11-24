@@ -18,6 +18,9 @@ const fake = vi.hoisted(() => ({
 vi.mock("../../modules/connections/api/queries.js", () => ({
   useAppConnections: () => ({ data: [] }),
 }));
+vi.mock("../../modules/features/api/queries.js", () => ({
+  useFeatures: () => ({ data: {} }),
+}));
 vi.mock("../../modules/connections/api/mutations.js", () => {
   const idle = { isPending: false, isError: false, error: null };
   return {

@@ -6,6 +6,7 @@ import type { CatalogProviderGroup } from "../lib/catalog-providers.js";
 import type {
   RowGrantControls,
   RowMaintenanceActions,
+  RowToolAccess,
 } from "./catalog-connection-row.js";
 import { ConnectionIcon } from "./connection-icon.js";
 import { ConnectionRows } from "./connection-rows.js";
@@ -22,6 +23,7 @@ interface Props {
   maintenance?: (
     connection: ConnectionView,
   ) => RowMaintenanceActions | undefined;
+  toolAccess?: (connection: ConnectionView) => RowToolAccess | undefined;
 }
 
 export function ConnectionGroup({
@@ -34,6 +36,7 @@ export function ConnectionGroup({
   deletingId = null,
   flat = false,
   maintenance,
+  toolAccess,
 }: Props) {
   const { provider, connections } = group;
   const rows = (
@@ -46,6 +49,7 @@ export function ConnectionGroup({
       onDelete={onDelete}
       deletingId={deletingId}
       maintenance={maintenance}
+      toolAccess={toolAccess}
     />
   );
   // UNIT_BOUNDARY_DESCRIPTION: the Services panel lists every connection in one run, so a group draws no header there and its rows join the others under the one card.

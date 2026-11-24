@@ -135,6 +135,7 @@ export interface ComposeRuntimeDeliveryOpts {
   deliveryConcurrency: number;
   /* UNIT_BOUNDARY_DESCRIPTION: the `dam` skill the api-server image carries, so the skill the DAM Connection writes is the one this install ships now. */
   damSkill: readonly DamSkillFile[];
+  mcpToolTimeoutSeconds: number;
 }
 
 export function composeRuntimeDelivery(
@@ -153,6 +154,7 @@ export function composeRuntimeDelivery(
     db: opts.db,
     outboxRepo,
     damSkill: opts.damSkill,
+    mcpToolTimeoutSeconds: opts.mcpToolTimeoutSeconds,
     builtin,
     agentName: opts.resolveAgentName,
     webSearchControl: opts.resolveWebSearchControl,

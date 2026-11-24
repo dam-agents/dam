@@ -35,8 +35,12 @@ import {
   providerAliasConflict,
   harnessFits,
   type ConnectionProviderView,
+  type ConnectionToolAccess,
+  type ConnectionToolAccessRecord,
+  type GrantToolAccess,
   type HarnessCatalog,
   type ProviderPresetType,
+  type ToolMode,
 } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
@@ -68,6 +72,22 @@ import {
   normalizePrivateKeyPem,
 } from "../domain/build-connection.js";
 import { parseGitHubAppScope } from "../domain/github-app-scope.js";
+import {
+  grantAccessOf,
+  isMcpConnection,
+  limitsToolCalls,
+  MAX_TOOL_ACCESS_OVERRIDES,
+  MAX_TOOL_NAME_LENGTH,
+  mcpServerOf,
+  normalizedAccess,
+  readToolsOf,
+  startingAccessOf,
+  toolModeOf,
+  toolModesOf,
+  type McpToolLister,
+  type ToolAccessTemplate,
+} from "../domain/tool-access.js";
+import { createMcpToolList } from "./mcp-tool-list.js";
 import {
   DAM_KEY_INPUT,
   isDamConnection,
@@ -209,6 +229,14 @@ function assertNoUnaddressableRival(
   }
 }
 
+function loggedAccess(access: GrantToolAccess): Record<string, unknown> {
+  return {
+    read: access.read,
+    write: access.write,
+    overrides: Object.keys(access.overrides).length,
+  };
+}
+
 function parentKindOf(conn: Connection): string {
   return conn.auth.kind === "github-app"
     ? "GitHub App installation"
@@ -285,6 +313,10 @@ export function createConnectionsService(deps: {
   damKey?: DamKeyPort;
   /* UNIT_BOUNDARY_DESCRIPTION: whether the install offers the person the Connection that drives it — its per-user flag — which decides their own create and their own grants of it, and never the platform's provisioning. Required, so no composition root can leave this path ungated by forgetting it, and read as not offered when it fails. */
   damConnectionOffered: () => Promise<boolean>;
+  /* UNIT_BOUNDARY_DESCRIPTION: whether the owner may set a Connection to need approval for its tool calls — the `mcp-tool-approval` feature for this person. Required, so no composition root leaves the mode ungated, and read as off when it fails. */
+  toolApprovalOffered: () => Promise<boolean>;
+  /* UNIT_BOUNDARY_DESCRIPTION: reads the tool list of an MCP server, with the credential the service hands over; the service stores what it returns on the Connection. */
+  mcpToolLister: McpToolLister;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
   providerModelCatalog?: ProviderModelCatalog;
   /* UNIT_BOUNDARY_DESCRIPTION: the Connection a plain create grants from the owner's default for new agents, and the harness that default boots the agent on, in place of the default harness's provider order; null while that default names none the owner holds. */
@@ -294,6 +326,8 @@ export function createConnectionsService(deps: {
   } | null>;
   /* UNIT_BOUNDARY_DESCRIPTION: the children whose connections follow an Agent's (launched with connections from their parent), which take the Agent's whole set each time it changes. */
   mirroredChildren?: (agentId: string) => Promise<string[]>;
+  /* UNIT_BOUNDARY_DESCRIPTION: the Agent a child took its connections from at launch, mirrored or a subset, or null for an Agent that took none from a parent. A new grant of a child copies the tool access of this parent's grant of the same Connection. */
+  parentOf: (agentId: string) => Promise<string | null>;
 }): ConnectionsService & ManagedProviderConnections {
   let catalog: ProviderModelCatalog | undefined;
   const providerModelCatalog = () =>
@@ -302,6 +336,15 @@ export function createConnectionsService(deps: {
       createProviderModelCatalog({ secretStore: deps.secretStore }));
   const maxSharedKbConnections =
     deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
+  const toolList = createMcpToolList({
+    lister: deps.mcpToolLister,
+    repo: deps.repo,
+    templates: deps.templates,
+    secretStore: deps.secretStore,
+    connectionLock: deps.connectionLock,
+    engine: deps.oauthEngine,
+    githubAppEngine: deps.githubAppEngine,
+  });
 
   function writerDeps(lockKey: string): CredentialWriterDeps {
     return {
@@ -485,6 +528,7 @@ export function createConnectionsService(deps: {
           }
         : {};
     const provider = providerView(conn.templateId);
+    const toolAccess = toolAccessView(conn, template);
     const host = connectionHostOf(conn);
     const retiredHost =
       template && host && isRetiredHost(template, host) ? host : undefined;
@@ -506,20 +550,103 @@ export function createConnectionsService(deps: {
       ...(conn.parentId ? { parentId: conn.parentId } : {}),
       ...(conn.isParent ? { isParent: true as const } : {}),
       ...((conn.auth.kind === "oauth" || conn.auth.kind === "github-app") &&
-      conn.auth.fullAccess
+      conn.auth.fullAccess === true
         ? { fullAccess: true as const }
         : {}),
-      ...(template?.toolAccess
-        ? {
-            accessChoice: {
-              fullAccessLabel: template.toolAccess.fullAccessLabel,
-            },
-          }
-        : {}),
+      ...(toolAccess ? { toolAccess } : {}),
       ...(provider
         ? { provider: { ...provider, preferred: conn.id === preferredId } }
         : {}),
     };
+  }
+
+  function toolAccessView(
+    conn: Connection,
+    template: ToolAccessTemplate | null | undefined,
+  ): ConnectionToolAccess | null {
+    if (!isMcpConnection(conn)) return null;
+    return {
+      mode: toolModeOf(conn, template),
+      modes: toolModesOf(conn),
+      defaultMode: template?.defaultToolMode ?? "allow-all",
+      tools: conn.toolAccess?.tools ?? null,
+      listedAt: conn.toolAccess?.listedAt ?? null,
+      listError: conn.toolAccess?.listError ?? null,
+    };
+  }
+
+  async function assertToolModeOffered(
+    conn: Pick<Connection, "name" | "auth" | "contributions">,
+    mode: ToolMode,
+  ): Promise<void> {
+    if (!toolModesOf(conn).includes(mode)) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `The connection "${conn.name}" does not offer the tool mode "${mode}".`,
+      });
+    }
+    if (
+      mode === "needs-approval" &&
+      !(await deps.toolApprovalOffered().catch(() => false))
+    ) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message:
+          "Approval of each tool call is an experimental feature that is off for you, so this connection cannot be set to need approval.",
+      });
+    }
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: writes a Connection's tool mode, one of the modes it offers; needs approval only while the owner has the `mcp-tool-approval` feature. A mode that limits tool calls writes the Secret again first, so a Secret made before its Template declared tool access asks the gateway for request bodies. It clears the tool access of every grant of the Connection, so every Agent that holds it follows the mode again. */
+  async function setToolMode(conn: Connection, mode: ToolMode): Promise<void> {
+    const template = deps.templates.get(conn.templateId);
+    await assertToolModeOffered(conn, mode);
+    const from = await deps.connectionLock(
+      connectionRefreshLockKey(conn.id),
+      async () => {
+        const fresh = await deps.repo.get(conn.id, deps.ownerId);
+        if (!fresh) return null;
+        if (mode !== "allow-all") await restampConnectionSecret(fresh);
+        await deps.repo.updateToolAccess(conn.id, {
+          tools: null,
+          listedAt: null,
+          listError: null,
+          ...fresh.toolAccess,
+          mode,
+        });
+        await deps.repo.clearGrantToolAccess(conn.id);
+        return toolModeOf(fresh, template);
+      },
+    );
+    if (from === null) return;
+    securityLog("info", "connection.access_update", {
+      category: "credential",
+      actor: deps.ownerId,
+      actorKind: "user",
+      target: conn.id,
+      result: "success",
+      detail: { templateId: conn.templateId, from, to: mode },
+    });
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: reads the tool list of an MCP Connection once its credential works: at create, and again when a new credential replaces the old one, since read only refuses every tool the list does not name. The list is for the owner and for read only, not for the Connection to work, so a failure is stored on the Connection or logged, and never fails the create or the update. */
+  async function readToolsAfterConnect(conn: Connection): Promise<void> {
+    await toolList.read(conn).catch((err: unknown) => {
+      securityLog("warn", "connection.tools_list", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: conn.id,
+        result: "failure",
+        reason: err instanceof Error ? err.message : "unknown",
+        detail: { templateId: conn.templateId },
+      });
+    });
+  }
+
+  async function readToolsAfterCredentialWrite(id: string): Promise<void> {
+    const fresh = await deps.repo.get(id, deps.ownerId).catch(() => null);
+    if (fresh && !fresh.isParent) await readToolsAfterConnect(fresh);
   }
 
   async function familyClientCreds(): Promise<
@@ -633,9 +760,9 @@ export function createConnectionsService(deps: {
     ];
   }
 
+  /* UNIT_BOUNDARY_DESCRIPTION: writes a Connection's Secret with the gateway's annotations for the contributions it injects. `conn` is the Connection the Secret belongs to, with the contributions written here. */
   async function putConnectionSecret(
-    connectionId: string,
-    templateId: string,
+    conn: Pick<Connection, "id" | "templateId" | "auth">,
     path: string,
     fields: Record<string, string>,
     contributions: Contribution[],
@@ -645,25 +772,28 @@ export function createConnectionsService(deps: {
       fields,
       {
         owner: deps.ownerId,
-        purpose: `connection:${templateId}`,
+        purpose: `connection:${conn.templateId}`,
         extraLabels: {
           "agent-platform.ai/secret-type": "connection",
-          "agent-platform.ai/connection": connectionId,
+          "agent-platform.ai/connection": conn.id,
         },
         extraAnnotations: connectionSecretAnnotations(
           contributions,
-          checkBodyHostsOf(templateId),
+          checkBodyHostsOf({ auth: conn.auth, contributions }),
         ),
       },
     );
   }
 
-  function checkBodyHostsOf(templateId: string): string[] {
-    const host = deps.templates.get(templateId)?.toolAccess?.host;
-    return host ? [host] : [];
+  /* UNIT_BOUNDARY_DESCRIPTION: the hosts whose requests the gateway sends to the check with their whole body: the MCP host of every MCP Connection with a Secret, whatever its tool mode, so a change of mode holds from the next request with no restart. */
+  function checkBodyHostsOf(
+    conn: Pick<Connection, "auth" | "contributions">,
+  ): string[] {
+    const server = mcpServerOf(conn);
+    return server ? [server.injectHost] : [];
   }
 
-  /* UNIT_BOUNDARY_DESCRIPTION: writes a Connection's Secret again with the annotations its Template asks for today. A Secret written before its Template declared read tools has no `checkBody`, so its gateway sends no body to the check, and a read-only Connection would have every call refused. */
+  /* UNIT_BOUNDARY_DESCRIPTION: writes a Connection's Secret again with the annotations asked for today. A Secret written before every MCP Connection with a Secret asked for request bodies has no `checkBody`, so its gateway sends no body to the check, and a Connection in read only or needs approval would have every call refused. */
   async function restampConnectionSecret(conn: Connection): Promise<void> {
     const path = connectionSecretPath(conn.auth);
     if (!path) return;
@@ -673,8 +803,7 @@ export function createConnectionsService(deps: {
     });
     if (!fields) return;
     await putConnectionSecret(
-      conn.id,
-      conn.templateId,
+      conn,
       path,
       fields,
       conn.isParent ? [] : conn.contributions,
@@ -1267,6 +1396,7 @@ export function createConnectionsService(deps: {
       },
     );
     if (!repointed) return false;
+    await readToolsAfterCredentialWrite(conn.id);
     securityLog("info", "connection.update", {
       category: "credential",
       actor: deps.ownerId,
@@ -1523,6 +1653,48 @@ export function createConnectionsService(deps: {
     }
   }
 
+  /* UNIT_BOUNDARY_DESCRIPTION: the tool access a new grant of each Connection stores. With the `mcp-tool-approval` feature on for the owner, a Connection whose requests the gateway reads starts safe; any other Connection, and every Connection while the feature is off, stores none and follows its tool mode. */
+  async function startingAccessFor(
+    connections: readonly Connection[],
+  ): Promise<Map<string, GrantToolAccess>> {
+    const read = connections.filter((conn) => mcpServerOf(conn) !== null);
+    if (read.length === 0) return new Map();
+    if (!(await deps.toolApprovalOffered().catch(() => false)))
+      return new Map();
+    return new Map(
+      read.map((conn) => [
+        conn.id,
+        startingAccessOf(conn, deps.templates.get(conn.templateId)),
+      ]),
+    );
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: writes the Secret of a Connection again, under its refresh lock, before a grant of it limits tool calls, so a Secret written before every MCP Connection asked for request bodies asks for them, and the gate does not refuse every call of the Agent. */
+  async function restampBeforeLimiting(connectionId: string): Promise<void> {
+    await deps.connectionLock(
+      connectionRefreshLockKey(connectionId),
+      async () => {
+        const fresh = await deps.repo.get(connectionId, deps.ownerId);
+        if (fresh) await restampConnectionSecret(fresh);
+      },
+    );
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the tool access each new grant of an Agent stores. A child that took its connections from a parent, mirrored or a subset, copies what the parent's grant of that Connection stores, nothing included, so a sub-agent, which often cannot ask a person, is held to its parent's rules. A Connection the parent does not hold, and every grant of an Agent with no such parent, takes the starting access. */
+  async function initialAccessFor(
+    owned: readonly Connection[],
+    agentId: string,
+  ): Promise<Map<string, GrantToolAccess | null>> {
+    const initial = new Map<string, GrantToolAccess | null>(
+      await startingAccessFor(owned.filter(isGrantable)),
+    );
+    const parentAgentId = await deps.parentOf(agentId);
+    if (parentAgentId === null) return initial;
+    for (const grant of await deps.repo.listAgentGrants(parentAgentId))
+      initial.set(grant.connectionId, grant.toolAccess);
+    return initial;
+  }
+
   async function applyGrants(
     agentId: string,
     desiredFrom: (current: string[]) => string[],
@@ -1542,6 +1714,19 @@ export function createConnectionsService(deps: {
     }
     const owned = await deps.repo.listByOwner(deps.ownerId);
     const ownedById = new Map(owned.map((c) => [c.id, c]));
+
+    const before = new Set(
+      (await deps.repo.listAgentGrants(agentId)).map((g) => g.connectionId),
+    );
+    const starting = await initialAccessFor(owned, agentId);
+    const restamped = new Set<string>();
+    for (const id of desiredFrom([...before])) {
+      const access = starting.get(id);
+      if (before.has(id) || !access || !limitsToolCalls(access)) continue;
+      await restampBeforeLimiting(id);
+      restamped.add(id);
+    }
+    let grantedNew: string[] = [];
 
     let applied: string[] = [];
     await deps.connectionLock(`agent:connections:${agentId}`, async () => {
@@ -1589,7 +1774,9 @@ export function createConnectionsService(deps: {
         grantedConnections,
       );
 
-      for (const id of toGrant) await deps.repo.grant(id, agentId);
+      for (const id of toGrant)
+        await deps.repo.grant(id, agentId, starting.get(id) ?? null);
+      grantedNew = toGrant;
       for (const id of toRevoke) await deps.repo.revoke(id, agentId);
 
       if (toGrant.length > 0 || toRevoke.length > 0) {
@@ -1610,10 +1797,15 @@ export function createConnectionsService(deps: {
         allOwnerConnectionIds: new Set(owned.map((c) => c.id)),
       });
     });
+    for (const id of grantedNew) {
+      const access = starting.get(id);
+      if (!restamped.has(id) && access && limitsToolCalls(access))
+        await restampBeforeLimiting(id);
+    }
     await mirrorToChildren(agentId, applied);
   }
 
-  /* UNIT_BOUNDARY_DESCRIPTION: a parent's new grant set reaches every child that mirrors it, and through each child its own mirroring children, once the parent's change is committed, each under its own lock. A child that refuses the set is logged and keeps what it had, and never undoes the parent's change. */
+  /* UNIT_BOUNDARY_DESCRIPTION: a parent's new grant set reaches every child that mirrors it, and through each child its own mirroring children, once the parent's change is committed, each under its own lock. A new grant of a child copies the tool access of its parent's grant. A child that refuses the set is logged and keeps what it had, and never undoes the parent's change. */
   async function mirrorToChildren(
     agentId: string,
     set: readonly string[],
@@ -1628,6 +1820,23 @@ export function createConnectionsService(deps: {
           "connections: a mirroring child did not take its parent's grants",
         );
       }
+    }
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: a parent's new tool access on one Connection reaches the grant of that Connection of every child that mirrors the parent's grants, and through each child its own mirroring children, so no child stays looser than its parent. A child that does not hold the Connection is skipped. A write that fails is thrown, so the owner sees that a child was not reached. */
+  async function mirrorAccessToChildren(
+    agentId: string,
+    connectionId: string,
+    access: GrantToolAccess,
+    seen: Set<string> = new Set([agentId]),
+  ): Promise<void> {
+    if (!deps.mirroredChildren) return;
+    for (const child of await deps.mirroredChildren(agentId)) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      if (!(await deps.repo.setGrantToolAccess(connectionId, child, access)))
+        continue;
+      await mirrorAccessToChildren(child, connectionId, access, seen);
     }
   }
 
@@ -1692,8 +1901,7 @@ export function createConnectionsService(deps: {
     token: string,
   ): Promise<void> {
     await putConnectionSecret(
-      record.id,
-      record.templateId,
+      record,
       secretPath,
       {
         access_token: token,
@@ -1740,8 +1948,7 @@ export function createConnectionsService(deps: {
     if (app.appSlug) next.appSlug = app.appSlug;
     const injected = conn.isParent ? [] : contributions;
     await putConnectionSecret(
-      conn.id,
-      conn.templateId,
+      conn,
       auth.accessTokenRef.path,
       {
         [auth.accessTokenRef.field]: "",
@@ -2285,6 +2492,7 @@ export function createConnectionsService(deps: {
       if (contributions !== null)
         assertNotInstallHost(conn.templateId, contributions);
 
+      let credentialWritten = false;
       switch (conn.auth.kind) {
         case "header": {
           const value =
@@ -2307,6 +2515,7 @@ export function createConnectionsService(deps: {
             );
             holdUnlessPassed(credentialCheck, policy);
             await rotateHeaderValue(conn, conn.auth, value);
+            credentialWritten = true;
             await deps.repo.mergeInputs(conn.id, {
               [KEY_CHECK_INPUT_KEY]: check,
               [CREDENTIAL_CHECK_INPUT_KEY]: credentialCheck,
@@ -2327,6 +2536,7 @@ export function createConnectionsService(deps: {
         }
         case "client-credentials":
           await rotateClientSecret(conn, conn.auth, singleValueOf(credential));
+          credentialWritten = true;
           break;
         case "github-app":
           refuseOnChild(conn);
@@ -2338,6 +2548,7 @@ export function createConnectionsService(deps: {
             );
           } else {
             await rotatePrivateKey(conn, conn.auth, singleValueOf(credential));
+            credentialWritten = true;
           }
           break;
         case "oauth":
@@ -2366,6 +2577,7 @@ export function createConnectionsService(deps: {
         result: "success",
         detail: { templateId: conn.templateId, authKind: conn.auth.kind },
       });
+      if (credentialWritten) await readToolsAfterCredentialWrite(conn.id);
     },
 
     async deleteConnection(id: string): Promise<void> {
@@ -2381,19 +2593,31 @@ export function createConnectionsService(deps: {
     },
 
     async getAgentConnections(agentId: string): Promise<AgentConnections> {
-      const [grants, library] = await Promise.all([
+      const [grants, library, granted, offered] = await Promise.all([
         deps.repo.listAgentGrants(agentId),
         service.listConnections(),
+        deps.repo.listConnectionsForAgent(agentId),
+        deps.toolApprovalOffered().catch(() => false),
       ]);
       const views = new Map(library.map((view) => [view.id, view]));
+      const connections = new Map(granted.map((conn) => [conn.id, conn]));
       return {
         agentId,
         connections: grants.map((g) => {
           const view = views.get(g.connectionId);
+          const conn = connections.get(g.connectionId);
+          const toolAccess =
+            offered && conn && mcpServerOf(conn)
+              ? grantAccessOf(
+                  { connection: conn, toolAccess: g.toolAccess },
+                  deps.templates.get(conn.templateId),
+                )
+              : null;
           return {
             connectionId: g.connectionId,
             grantedAt: g.grantedAt.toISOString(),
             preferred: g.preferred,
+            ...(toolAccess ? { toolAccess } : {}),
             ...(view ? { connection: view } : {}),
           };
         }),
@@ -2564,16 +2788,22 @@ export function createConnectionsService(deps: {
         (built.auth.kind === "oauth" || built.auth.kind === "github-app")
           ? withoutScope(built.auth)
           : built.auth;
-      if (effectiveInput.authKind === "oauth" && effectiveInput.fullAccess) {
-        if (!template.toolAccess || auth.kind !== "oauth") {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message:
-              "This connection has no read-only mode, so full access cannot be set on it.",
-          });
-        }
-        auth = { ...auth, fullAccess: true };
+      if (input.toolMode !== undefined) {
+        await assertToolModeOffered(
+          { name: connectionName, auth, contributions },
+          input.toolMode,
+        );
       }
+      const toolAccess: ConnectionToolAccessRecord | null = isMcpConnection({
+        contributions,
+      })
+        ? {
+            mode: input.toolMode ?? template.defaultToolMode ?? "allow-all",
+            tools: null,
+            listedAt: null,
+            listError: null,
+          }
+        : null;
       const mintFirstToken = async (
         current: TokenAuth,
         credential: {
@@ -2750,8 +2980,7 @@ export function createConnectionsService(deps: {
           CONNECTION_TOKEN_PLACEHOLDER,
         );
         await putConnectionSecret(
-          id,
-          template.id,
+          { id, templateId: template.id, auth },
           secretPath,
           { ...placeholderSds, ...(built.secrets.get(secretPath) ?? {}) },
           injected,
@@ -2764,9 +2993,9 @@ export function createConnectionsService(deps: {
         templateId: template.id,
         name: connectionName,
         inputs: {
-          ...(isParent || template.toolAccess
-            ? withoutScopeInputs(stripSecretsFromInputs(input))
-            : stripSecretsFromInputs(input)),
+          ...(isParent
+            ? withoutScopeInputs(recordedInputsOf(input))
+            : recordedInputsOf(input)),
           ...sharedKbInputs,
           ...platform?.rememberedInputs,
           ...(keyCheck ? { [KEY_CHECK_INPUT_KEY]: keyCheck } : {}),
@@ -2779,6 +3008,7 @@ export function createConnectionsService(deps: {
         auth,
         contributions,
         ...(isParent ? { isParent: true as const } : {}),
+        ...(toolAccess ? { toolAccess } : {}),
       };
       try {
         await deps.repo.insert(record);
@@ -2817,6 +3047,7 @@ export function createConnectionsService(deps: {
       if (headerValue) {
         await recordAccountLabel(record, headerValue, deps);
       }
+      if (record.auth.kind !== "oauth") await readToolsAfterConnect(record);
       if (firstChild) {
         try {
           return await createChild(record, connectionName, firstChild);
@@ -3231,7 +3462,7 @@ export function createConnectionsService(deps: {
       );
     },
 
-    async setFullAccess(input) {
+    async setToolMode(input) {
       const conn = await deps.repo.get(input.id, deps.ownerId);
       if (!conn) {
         throw new TRPCError({
@@ -3239,31 +3470,105 @@ export function createConnectionsService(deps: {
           message: "connection not found",
         });
       }
-      const template = deps.templates.get(conn.templateId);
-      if (!template?.toolAccess || conn.auth.kind !== "oauth") {
+      await setToolMode(conn, input.mode);
+    },
+
+    async setGrantToolAccess(input) {
+      const conn = await deps.repo.get(input.connectionId, deps.ownerId);
+      if (!conn) {
         throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            "This connection has no read-only mode, so its access cannot be changed.",
+          code: "NOT_FOUND",
+          message: "connection not found",
         });
       }
-      await deps.connectionLock(connectionRefreshLockKey(conn.id), async () => {
-        const fresh = await deps.repo.get(conn.id, deps.ownerId);
-        if (!fresh || fresh.auth.kind !== "oauth") return;
-        const nextAuth: OAuthAuth = { ...fresh.auth };
-        delete nextAuth.fullAccess;
-        if (input.fullAccess) nextAuth.fullAccess = true;
-        if (!input.fullAccess) await restampConnectionSecret(fresh);
-        await deps.repo.updateAuth(conn.id, nextAuth);
-      });
-      securityLog("info", "connection.access_update", {
-        category: "credential",
+      if (!(await deps.toolApprovalOffered().catch(() => false))) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message:
+            "Tool access for each agent is an experimental feature that is off for you, so it cannot be set.",
+        });
+      }
+      if (!mcpServerOf(conn)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `The connection "${conn.name}" has no MCP server whose requests the platform reads, so it has no tool access to set: only an MCP server connected with a credential has one.`,
+        });
+      }
+      const long = Object.keys(input.access.overrides).find(
+        (tool) => tool.length === 0 || tool.length > MAX_TOOL_NAME_LENGTH,
+      );
+      if (long !== undefined) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `A tool name in the tool access must have 1 to ${MAX_TOOL_NAME_LENGTH} characters.`,
+        });
+      }
+      const template = deps.templates.get(conn.templateId);
+      const access = normalizedAccess(
+        input.access,
+        readToolsOf(conn, template),
+      );
+      if (Object.keys(access.overrides).length > MAX_TOOL_ACCESS_OVERRIDES) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `The tool access can name at most ${MAX_TOOL_ACCESS_OVERRIDES} tools whose rule differs from their group's.`,
+        });
+      }
+      const notGranted = () =>
+        new TRPCError({
+          code: "BAD_REQUEST",
+          message: "connection is not granted to this agent",
+        });
+      const held = (await deps.repo.listAgentGrants(input.agentId)).find(
+        (g) => g.connectionId === conn.id,
+      );
+      if (!held) throw notGranted();
+      if (limitsToolCalls(access)) await restampBeforeLimiting(conn.id);
+      if (!(await deps.repo.setGrantToolAccess(conn.id, input.agentId, access)))
+        throw notGranted();
+      securityLog("info", "connection.grant_access_update", {
+        category: "authz-list",
         actor: deps.ownerId,
         actorKind: "user",
+        agentId: input.agentId,
         target: conn.id,
         result: "success",
-        detail: { templateId: conn.templateId, fullAccess: input.fullAccess },
+        detail: {
+          templateId: conn.templateId,
+          from: loggedAccess(
+            grantAccessOf(
+              { connection: conn, toolAccess: held.toolAccess },
+              template,
+            ),
+          ),
+          to: loggedAccess(access),
+        },
       });
+      await mirrorAccessToChildren(input.agentId, conn.id, access);
+    },
+
+    async refreshTools(input) {
+      const conn = await deps.repo.get(input.id, deps.ownerId);
+      if (!conn) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "connection not found",
+        });
+      }
+      const stored = await toolList.read(conn);
+      const view = stored
+        ? toolAccessView(
+            { ...conn, toolAccess: stored },
+            deps.templates.get(conn.templateId),
+          )
+        : null;
+      if (!view) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `The connection "${conn.name}" has no MCP server whose tools the platform reads: only an MCP server connected with a credential has one.`,
+        });
+      }
+      return view;
     },
 
     async updateGitHubUserTokenScope(input) {
@@ -3404,8 +3709,7 @@ export function createConnectionsService(deps: {
         );
         if ((moved || rotated) && keep.auth.kind === "header") {
           await putConnectionSecret(
-            keep.id,
-            provider.templateId,
+            keep,
             keep.auth.valueRef.path,
             {
               value: key,
@@ -3583,20 +3887,21 @@ function withoutScopeInputs(
   );
 }
 
-function stripSecretsFromInputs(input: {
+function recordedInputsOf(input: {
   authKind: ConnectionCreateInput["authKind"];
   [k: string]: unknown;
 }): Record<string, unknown> {
-  const SECRET_KEYS = [
+  const UNRECORDED_KEYS = [
     "value",
     "clientSecret",
     "privateKey",
     "accessKeyId",
     "secretAccessKey",
+    "toolMode",
   ];
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(input)) {
-    if (SECRET_KEYS.includes(k)) continue;
+    if (UNRECORDED_KEYS.includes(k)) continue;
     out[k] = v;
   }
   return out;

@@ -127,7 +127,10 @@ describe("connection row detail", () => {
   // TEST_SCENARIO: the row's Full access badge already names the access, so the detail line says only what it reaches, not "Full access" a second time.
   it("says what full access reaches without repeating the badge", () => {
     expect(
-      connectionDetail(view({ accountLabel: "octocat", fullAccess: true })),
+      connectionDetail(
+        view({ accountLabel: "octocat", fullAccess: true }),
+        false,
+      ),
     ).toEqual({
       account: "Acts as octocat",
       reach: { text: "everything the app can reach on every account" },
@@ -148,6 +151,7 @@ describe("connection row detail", () => {
             },
           },
         }),
+        false,
       ),
     ).toEqual({
       account: "Acts as octocat",
@@ -164,6 +168,7 @@ describe("connection row detail", () => {
         view({
           githubUserToken: { scope: { targetId: 1, targetLogin: "acme" } },
         }),
+        false,
       ),
     ).toEqual({
       reach: {
@@ -180,6 +185,7 @@ describe("connection row detail", () => {
           isParent: true,
           check: { status: "passed", at: "x", installedOn: "acme" },
         }),
+        false,
       ),
     ).toEqual({ account: "Installed on acme" });
   });
