@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a mutation with meta.invalidates stays pending until the invalidated queries have refetched, so a view that shows the pending value never falls back to the stale cache in between.
+// TEST_OVERVIEW: a mutation with meta.invalidates stays pending until the invalidated queries have refetched, so a view that shows the pending value never falls back to the stale cache in between. A mutation with an onSuccess of its own still refetches them.
 import { MutationObserver, QueryObserver } from "@tanstack/react-query";
 import { expect, it, vi } from "vitest";
 
@@ -36,6 +36,34 @@ it("settles a mutation only after its invalidated queries refetch", async () => 
 
   releaseRefetch();
   await done;
+  expect(queryClient.getQueryData(key)).toBe("new");
+  unsubscribe();
+});
+
+// TEST_SCENARIO: the feature switch has its own onSuccess. Its flags query must still refetch after the save, or the switch keeps showing the old value.
+it("refetches the invalidated queries of a mutation with its own onSuccess", async () => {
+  vi.stubGlobal("window", new EventTarget());
+  const { queryClient } = await import("../../query-client.js");
+  const key = ["mutation-invalidation-own-on-success-test"];
+  let server = "old";
+  const unsubscribe = new QueryObserver(queryClient, {
+    queryKey: key,
+    queryFn: () => server,
+    staleTime: Infinity,
+  }).subscribe(() => {});
+  await queryClient.refetchQueries({ queryKey: key });
+
+  const ownOnSuccess = vi.fn();
+  const mutation = new MutationObserver<void, Error, void>(queryClient, {
+    mutationFn: async () => {
+      server = "new";
+    },
+    onSuccess: ownOnSuccess,
+    meta: { invalidates: [key] },
+  });
+  await mutation.mutate();
+
+  expect(ownOnSuccess).toHaveBeenCalledOnce();
   expect(queryClient.getQueryData(key)).toBe("new");
   unsubscribe();
 });

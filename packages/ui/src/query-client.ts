@@ -1,4 +1,5 @@
 import {
+  MutationCache,
   onlineManager,
   type Query,
   QueryCache,
@@ -33,6 +34,15 @@ declare module "@tanstack/react-query" {
 const notifiedOutages = new WeakSet<Query<unknown, unknown, unknown>>();
 
 export const queryClient = new QueryClient({
+  /* UNIT_BOUNDARY_DESCRIPTION: a mutation's own onSuccess replaces the one in defaultOptions, but not this one, so every mutation refetches the queries its meta.invalidates names. The mutation stays pending until they have refetched. */
+  mutationCache: new MutationCache({
+    onSuccess: (_data, _vars, _ctx, mutation): Promise<unknown> =>
+      Promise.all(
+        (mutation.meta?.invalidates ?? []).map((key) =>
+          queryClient.invalidateQueries({ queryKey: key }),
+        ),
+      ),
+  }),
   queryCache: new QueryCache({
     onSuccess: (_data, query) => {
       notifiedOutages.delete(query);
@@ -63,12 +73,6 @@ export const queryClient = new QueryClient({
         refreshOnReturn(query.queryKey, "reconnect"),
     },
     mutations: {
-      onSuccess: (_data, _vars, _ctx, mutation): Promise<unknown> =>
-        Promise.all(
-          (mutation.meta?.invalidates ?? []).map((key) =>
-            queryClient.invalidateQueries({ queryKey: key }),
-          ),
-        ),
       onError: (error, _vars, _ctx, mutation) => {
         if (isTermsStaleError(error)) {
           onTermsStale();
