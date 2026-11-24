@@ -87,8 +87,9 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  *  conversation still gets one answer — and where the harness refuses steering
  *  the message waits and becomes the next turn instead of a second one racing
  *  the first; a refusal holds for that turn only, so the next turn, which may
- *  run on a harness that has started since, is asked again. A steer names the turn it may join by the prompt id of that
- *  turn's prompt, and the agent-runtime holds it until the agent's next steer
+ *  run on a harness that has started since, is asked again. A steer names the
+ *  turn it may join by the prompt id of that turn's prompt, and the
+ *  agent-runtime holds it until the agent's next steer
  *  point, which can take as long as a command runs, so it has no deadline. A
  *  steer claims its batch out of the queue before it goes out, and puts it
  *  back at the head only when the runtime declines it: once injected, the
