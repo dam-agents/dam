@@ -118,6 +118,7 @@ import {
   type ModeRole,
   type PromptFate,
   type PromptSubmission,
+  type SteerOnlyAnswer,
   type SteerOutcome,
 } from "./prompt-scheduler.js";
 import { createInterruptSteers } from "./interrupt-steers.js";
@@ -312,6 +313,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const sessionSteering = (): SessionSteering | null =>
     deps.steering ?? (harnessSteers ? "native" : null);
   const steersByInterrupt = (): boolean => sessionSteering() === "interrupt";
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a harness whose manifest says it steers
+   * natively proves it only in its initialize answer, which a harness still
+   * starting has not sent. A steer that arrives meanwhile is not refused as
+   * unsupported, which a channel takes as final for its whole conversation:
+   * it waits for a steer point like any other, and steers once the answer
+   * says the harness can.
+   */
+  const steeringAwaitsInitialize = (): boolean =>
+    deps.steering === "native" && initializeAnswer === null;
   const runtimeSteers = (): boolean =>
     steersByInterrupt() || (sessionSteering() === "native" && harnessSteers);
   const servedSteers = deps.servedSteers ?? createServedSteers();
@@ -1560,10 +1571,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       return;
     }
     if (!promptScheduler.hasWork(sessionId)) {
+      logSteerNotTaken(sessionId, promptId, "noRunningTurn", 0);
       servedSteers.settle(sessionId, promptId, "noRunningTurn");
       return;
     }
-    if (!runtimeSteers()) {
+    if (!runtimeSteers() && !steeringAwaitsInitialize()) {
+      deps.log?.(
+        `steer ${promptId} for ${sessionId} not taken: the harness cannot steer (manifest ${String(deps.steering ?? "none")}, initialize ${initializeAnswer === null ? "unanswered" : "does not steer"})`,
+      );
       servedSteers.drop(sessionId, promptId);
       sendToChannel(
         channel,
@@ -1581,6 +1596,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     engage(channel, sessionId);
     const sender = stampedSenderOf(params, "sender");
     const outboundId = nextOutboundId++;
+    const servedAt = performance.now();
     promptScheduler.submit({
       sessionId,
       channel,
@@ -1599,9 +1615,35 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       ...(sender !== null && { sender }),
       steerOnly: {
         targetPromptId,
-        answer: (answer) => servedSteers.settle(sessionId, promptId, answer),
+        answer: (answer) => {
+          if (answer !== "injected")
+            logSteerNotTaken(
+              sessionId,
+              promptId,
+              answer,
+              performance.now() - servedAt,
+            );
+          servedSteers.settle(sessionId, promptId, answer);
+        },
       },
     });
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a channel's steer that does not join its turn
+   * becomes that channel's next turn, and only this line says why: the answer
+   * the sender got, and how long the steer waited for a steer point first. A
+   * steer answered after a long wait waited out the turn.
+   */
+  function logSteerNotTaken(
+    sessionId: string,
+    promptId: string,
+    answer: SteerOnlyAnswer,
+    waitedMs: number,
+  ): void {
+    deps.log?.(
+      `steer ${promptId} for ${sessionId} not taken: ${answer} after ${String(Math.round(waitedMs))} ms`,
+    );
   }
 
   function rewriteRefusal(

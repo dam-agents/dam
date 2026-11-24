@@ -861,6 +861,9 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       isRequest(frame) &&
       !(leaseOfSession(sessionId)?.runtime.hasSessionWork(sessionId) ?? false)
     ) {
+      deps.log(
+        `steer ${String(steerId)} for ${sessionId} not taken: noRunningTurn, no process runs the session`,
+      );
       reply(real, frame.id, {
         outcome: "promptRequired",
         reason: "noRunningTurn",

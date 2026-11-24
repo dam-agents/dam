@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-11-14
+Last verified: 2026-11-24
 
 ## Session inside the machine
 
@@ -172,6 +172,8 @@ It is answered `injected` the moment it joins, and `promptRequired` on every oth
 A request sent again with the same `promptId` gets the first answer, so the message reaches the agent once.
 A steer-only entry still waiting is withdrawn when its connection closes; one already sent to the harness is always answered.
 The router answers `promptRequired` itself when no harness process holds work for the Session, so a steer never starts a harness, and its `initialize` answer says `servesSteering`, which a sender checks before it steers.
+A harness that cannot steer is answered with a method-not-found error, which a channel worker takes as final for the rest of that turn, and asks again on its next turn; a harness whose manifest says it steers but that has not answered `initialize` yet, such as one still starting after the agent woke, is not refused: the steer waits for a steer point, and goes once the answer says the harness steers.
+The runtime logs every steer it does not take, with its answer and how long it waited, and the channel worker logs `<surface>.turn.steer_declined` with the outcome.
 
 ### Messages between sessions
 
