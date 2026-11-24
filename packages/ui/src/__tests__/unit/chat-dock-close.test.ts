@@ -127,7 +127,7 @@ type Dock = ReturnType<typeof useStore.getState>["dock"];
 let host: HTMLDivElement;
 let root: Root;
 
-/** Renders a docked panel the way the chat does: in a scope where clearing the side-panel tab closes nothing. */
+// UNIT_BOUNDARY_DESCRIPTION: renders a docked panel the way the chat does, in a scope where clearing the side-panel tab closes nothing.
 function renderInChat(node: ReactNode) {
   act(() =>
     root.render(
@@ -144,6 +144,7 @@ const header = () => host.firstElementChild!.firstElementChild as HTMLElement;
 const headerButtons = () => [
   ...header().querySelectorAll<HTMLElement>("button, a"),
 ];
+const last = <T>(items: T[]): T => items[items.length - 1]!;
 
 beforeEach(() => {
   useStore.setState({ selectedAgent: "agent-a", openArtifactDirty: false });
@@ -205,7 +206,7 @@ describe("a panel docked beside the chat", () => {
       useStore.setState({ dock });
       renderInChat(panel());
       const buttons = headerButtons();
-      const close = buttons.at(-1)!;
+      const close = last(buttons);
       expect(close.getAttribute("aria-label")).toBe("Close panel");
       await act(async () => close.click());
       expect(useStore.getState().dock).toBeNull();
@@ -230,7 +231,7 @@ describe("a panel docked beside the chat", () => {
     });
     renderInChat(createElement(DockedArtifactPanel, { agentId: "agent-a" }));
     useStore.setState({ openArtifactDirty: true });
-    await act(async () => headerButtons().at(-1)!.click());
+    await act(async () => last(headerButtons()).click());
     expect(showConfirm).toHaveBeenCalledOnce();
     expect(useStore.getState().dock).toEqual({ kind: "artifact", id: "art-1" });
   });
@@ -254,8 +255,8 @@ describe("a panel docked beside the chat", () => {
     const buttons = headerButtons();
     const labels = buttons.map((el) => el.getAttribute("aria-label"));
     expect(labels).not.toContain("Back to files");
-    expect(labels.at(-1)).toBe("Close panel");
-    act(() => buttons.at(-1)!.click());
+    expect(last(labels)).toBe("Close panel");
+    act(() => last(buttons).click());
     expect(onClose).toHaveBeenCalledOnce();
   });
 });
