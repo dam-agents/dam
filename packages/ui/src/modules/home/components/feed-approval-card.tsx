@@ -6,20 +6,19 @@ import { cn } from "@/lib/utils";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { ApprovalActionsMenu } from "../../approvals/components/approval-actions-menu.js";
 import { ChildRuleRows } from "../../approvals/components/child-rule-rows.js";
-import { ToolCallView } from "../../approvals/components/tool-call-view.js";
 import { useApprovalActions } from "../../approvals/hooks/use-approval-actions.js";
 import { useAppConnections } from "../../connections/api/queries.js";
-import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import {
   approvalDetail,
   approvalHeadline,
   approvalHideHint,
   approvalReason,
-  approvalTemplateToolCall,
   childRulesGroupCopy,
+  isRefusedLabel,
 } from "../lib/approval-copy.js";
+import { FeedToolCallCard } from "./feed-tool-call-card.js";
 
-interface Props {
+export interface FeedApprovalCardProps {
   approval: ApprovalView;
   ids?: readonly string[];
   members?: readonly ApprovalView[];
@@ -32,7 +31,16 @@ interface Props {
   onResolved?: (label: string) => void;
 }
 
-export function FeedApprovalCard({
+export function FeedApprovalCard(props: FeedApprovalCardProps) {
+  const { payload } = props.approval;
+  return payload.kind === "mcp_tool_call" ? (
+    <FeedToolCallCard {...props} payload={payload} />
+  ) : (
+    <FeedRequestCard {...props} />
+  );
+}
+
+function FeedRequestCard({
   approval,
   ids = [approval.id],
   members = [approval],
@@ -43,12 +51,11 @@ export function FeedApprovalCard({
   onDismiss,
   resolvedLabel = null,
   onResolved,
-}: Props) {
+}: FeedApprovalCardProps) {
   const { actions, primary, inflight, hostLabel, expiredNote, openSettings } =
     useApprovalActions(approval, ids);
   const grouped = childRulesGroupCopy(members);
   const reason = grouped?.reason ?? approvalReason(approval);
-  const templateCall = approvalTemplateToolCall(approval);
   const { data: connections } = useAppConnections();
   const connectionName = (id: string) =>
     connections?.find((connection) => connection.id === id)?.name;
@@ -78,24 +85,8 @@ export function FeedApprovalCard({
             <span className="truncate">{agentName}</span>
           </div>
           <p className="flex items-center gap-2 text-md leading-snug font-semibold text-foreground">
-            {templateCall && (
-              <ConnectionIcon
-                iconSlug={templateCall.call.iconSlug}
-                alt=""
-                className="shrink-0"
-              />
-            )}
             <span className="min-w-0">{approvalHeadline(approval)}</span>
           </p>
-          {templateCall && (
-            <p
-              data-testid="tool-call-source"
-              className="mt-1 text-xs break-all text-muted-foreground"
-            >
-              {templateCall.source}
-              {ids.length > 1 && ` · ${String(ids.length)} requests`}
-            </p>
-          )}
         </div>
         <button
           type="button"
@@ -111,7 +102,7 @@ export function FeedApprovalCard({
         <div className="mt-3">
           <ChildRuleRows approvals={members} />
         </div>
-      ) : templateCall ? null : (
+      ) : (
         <div className="mt-3 flex min-w-0 items-center gap-2 overflow-hidden rounded-md border border-border/50 bg-muted/40 px-2.5 py-1.5">
           <span
             className={cn(
@@ -126,12 +117,6 @@ export function FeedApprovalCard({
               {ids.length} requests
             </span>
           )}
-        </div>
-      )}
-
-      {approval.payload.kind === "mcp_tool_call" && (
-        <div className={templateCall ? "mt-3" : "mt-2"}>
-          <ToolCallView payload={approval.payload} status={approval.status} />
         </div>
       )}
 
@@ -154,9 +139,7 @@ export function FeedApprovalCard({
           <span
             className={cn(
               "text-sm",
-              /^(Denied|Always denied|Stopped|Declined)/.test(resolved)
-                ? "text-danger"
-                : "text-success",
+              isRefusedLabel(resolved) ? "text-danger" : "text-success",
             )}
           >
             {resolved}

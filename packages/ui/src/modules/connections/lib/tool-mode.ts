@@ -16,17 +16,19 @@ const POST_AS_ME_LABEL = "Can post as me";
 
 const NEEDS_APPROVAL_LABEL = "Needs approval";
 
+export const CHANGE_ACCESS_TITLE = "Change access";
+
 export const ALLOW_ALL_WARNING =
   "Every agent you add this connection to can act as you, and so can anyone who can talk to that agent. Keep it read only unless an agent must act in your name.";
 
 export const TOOL_MODE_SAVED_NOTE =
   "The choice holds for every agent that has this connection, from its next request.";
 
-// UNIT_BOUNDARY_DESCRIPTION: the name and the one-line meaning of each tool mode. While the `mcp-tool-approval` feature is off, a Template that defaults to read only, such as a Slack Account, offers only read only or "Can post as me", the names it had before tool modes; with the feature on every mode has its own name.
-export function toolModeCopy(mode: ToolMode, offered: boolean): ToolModeCopy {
+// UNIT_BOUNDARY_DESCRIPTION: the name and the one-line meaning of each tool mode, for the one choice per connection that the owner makes while the `mcp-tool-approval` feature is off. A Template that defaults to read only, such as a Slack Account, names its modes read only and "Can post as me"; a connection of any other Template, which only shows a mode while it is still left in needs approval, uses each mode's own name.
+export function toolModeCopy(mode: ToolMode, ownNames: boolean): ToolModeCopy {
   switch (mode) {
     case "allow-all":
-      return offered
+      return ownNames
         ? {
             label: "Allow all",
             description:
@@ -39,7 +41,7 @@ export function toolModeCopy(mode: ToolMode, offered: boolean): ToolModeCopy {
     case "read-only":
       return {
         label: READ_ONLY_LABEL,
-        description: offered
+        description: ownNames
           ? "Agents call only the tools that read. Every tool that posts or changes something is refused."
           : "Agents search and read as you. Every tool that posts or changes something is refused.",
       };
@@ -52,18 +54,13 @@ export function toolModeCopy(mode: ToolMode, offered: boolean): ToolModeCopy {
   }
 }
 
-export function toolAccessTitle(offered: boolean): string {
-  return offered ? "Tool access" : "Change access";
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the modes the owner picks from, safest first. With the feature on, every mode the Connection or Template offers; with it off, only read only and allow all, and only on a Template that defaults to read only. Empty where nothing is to be picked, so no picker shows.
+// UNIT_BOUNDARY_DESCRIPTION: the modes the owner picks from when a connection is made: read only or allow all, only on a Template that defaults to read only and only while the `mcp-tool-approval` feature is off. With the feature on, tool access belongs to each Agent's grant, so the connect form asks nothing. Empty where nothing is to be picked, so no picker shows.
 export function pickableToolModes(
   toolAccess:
     Pick<ConnectionTemplateToolAccess, "modes" | "defaultMode"> | undefined,
   offered: boolean,
 ): readonly ToolMode[] {
-  if (!toolAccess || toolAccess.modes.length < 2) return [];
-  if (offered) return SAFEST_FIRST.filter((m) => toolAccess.modes.includes(m));
+  if (offered || !toolAccess || toolAccess.modes.length < 2) return [];
   return toolAccess.defaultMode === "read-only"
     ? ["read-only", "allow-all"]
     : [];
@@ -80,29 +77,29 @@ type ConnectionToolAccessModes = Pick<
   "mode" | "modes" | "defaultMode"
 >;
 
-// UNIT_BOUNDARY_DESCRIPTION: the modes the owner picks from for an existing connection. A connection left in needs approval while the feature is off keeps that mode as its current choice beside every other mode it offers, so the owner can switch it away; the dialog saves only a mode other than the current one, so needs approval is never set again with the feature off.
+// UNIT_BOUNDARY_DESCRIPTION: the modes the owner picks from for an existing connection while the feature is off. A connection left in needs approval keeps that mode as its current choice beside every other mode it offers, so the owner can switch it away; the dialog saves only a mode other than the current one, so needs approval is never set again with the feature off. With the feature on there is no choice per connection.
 export function connectionPickableToolModes(
   toolAccess: ConnectionToolAccessModes | undefined,
   offered: boolean,
 ): readonly ToolMode[] {
-  if (!offered && toolAccess?.mode === "needs-approval")
+  if (offered) return [];
+  if (toolAccess?.mode === "needs-approval")
     return SAFEST_FIRST.filter(
       (m) => m === "needs-approval" || toolAccess.modes.includes(m),
     );
-  return pickableToolModes(toolAccess, offered);
+  return pickableToolModes(toolAccess, false);
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a connection's modes go by their own names, the `offered` that toolModeCopy takes. Only a Template that defaults to read only keeps its old names while the feature is off.
+// UNIT_BOUNDARY_DESCRIPTION: whether a connection's modes go by their own names, the `ownNames` that toolModeCopy takes. Only a Template that defaults to read only keeps read only and "Can post as me".
 export function ownToolModeNames(
   toolAccess: Pick<ConnectionToolAccess, "defaultMode"> | undefined,
-  offered: boolean,
 ): boolean {
-  return offered || toolAccess?.defaultMode !== "read-only";
+  return toolAccess?.defaultMode !== "read-only";
 }
 
 type WithToolAccess = Pick<ConnectionView, "toolAccess">;
 
-// UNIT_BOUNDARY_DESCRIPTION: the tool mode a connection's row and its sharing warning name, or null where they name none: a connection with nothing to pick, and, while the feature is off, every connection but one whose Template defaults to read only or one still left in needs approval.
+// UNIT_BOUNDARY_DESCRIPTION: the tool mode a connection's row and its sharing warning name, or null where they name none. Only while the feature is off, and only a connection whose Template defaults to read only or one still left in needs approval, names its mode; with the feature on each Agent's grant says it instead.
 export function shownToolMode(
   connection: WithToolAccess,
   offered: boolean,
@@ -113,7 +110,7 @@ export function shownToolMode(
   return toolAccess?.mode ?? null;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the line under a connection's name that says what its tool mode lets an agent do; undefined where the row names no mode. While the feature is off it keeps the Slack Account's wording.
+// UNIT_BOUNDARY_DESCRIPTION: the line under a connection's name that says what its tool mode lets an agent do, in the Slack Account's words; undefined where the row names no mode.
 export function toolModeReach(
   connection: WithToolAccess,
   offered: boolean,
@@ -122,13 +119,9 @@ export function toolModeReach(
   if (mode === null) return undefined;
   switch (mode) {
     case "allow-all":
-      return offered
-        ? "Allow all: every tool call goes through"
-        : "Searches, reads and posts as you";
+      return "Searches, reads and posts as you";
     case "read-only":
-      return offered
-        ? `${READ_ONLY_LABEL}: only the tools that read, every other tool refused`
-        : `${READ_ONLY_LABEL}: searches and reads as you, posts nothing`;
+      return `${READ_ONLY_LABEL}: searches and reads as you, posts nothing`;
     case "needs-approval":
       return `${NEEDS_APPROVAL_LABEL}: the tools that read go through, every other tool waits for an answer`;
   }
@@ -139,7 +132,7 @@ export interface ToolModeMark {
   tone: "danger" | "warning";
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the mark beside a connection's name for its tool mode: the danger mark where it allows all on a Template that defaults to read only, so posting as the owner always shows, and the warning mark for needs approval. Allow all on a Template whose default it is, and read only, carry none: the line under the name says them.
+// UNIT_BOUNDARY_DESCRIPTION: the mark beside a connection's name for its tool mode: "Can post as me" in danger where a Template that defaults to read only allows all, so posting as the owner always shows, and the warning mark for a connection still left in needs approval. Read only carries none: the line under the name says it.
 export function toolModeMark(
   connection: WithToolAccess,
   offered: boolean,
@@ -149,6 +142,6 @@ export function toolModeMark(
   if (mode === "needs-approval")
     return { label: NEEDS_APPROVAL_LABEL, tone: "warning" };
   if (mode === "allow-all" && toolAccess?.defaultMode === "read-only")
-    return { label: toolModeCopy("allow-all", offered).label, tone: "danger" };
+    return { label: POST_AS_ME_LABEL, tone: "danger" };
   return null;
 }

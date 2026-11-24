@@ -29,7 +29,7 @@ import {
   templateFormDefaults,
   type TemplateFormValues,
 } from "../lib/template-form-schema.js";
-import { pickableToolModes } from "../lib/tool-mode.js";
+import { ownToolModeNames, pickableToolModes } from "../lib/tool-mode.js";
 import { DisclosureBox } from "./disclosure-box.js";
 import { GithubAppScopePicker } from "./github-app-scope-picker.js";
 import { GithubAppSetupHint } from "./github-app-setup-hint.js";
@@ -294,7 +294,7 @@ export function TemplateCreateFormBody({
           value={toolMode ?? template.toolAccess.defaultMode}
           onChange={(next) => setValue("toolMode", next, { shouldDirty: true })}
           modes={toolModes}
-          offered={toolApproval}
+          ownNames={ownToolModeNames(template.toolAccess)}
           testIdPrefix="connection-access"
         />
       )}

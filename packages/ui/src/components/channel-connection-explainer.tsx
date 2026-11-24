@@ -79,10 +79,10 @@ export function SlackAccountExplainer({
         search and read anywhere you can.{" "}
         {toolApproval ? (
           <>
-            It is read only unless you change its tool access: with allow all it
-            also posts anywhere you can, and with needs approval each post or
-            change waits for your answer. Those posts come from you, not the{" "}
-            {getBrand().name} bot.
+            {forAgent ? "This agent" : "Each agent"} starts read only. In{" "}
+            {forAgent ? "its" : "an agent's"} tool access you can let it post
+            anywhere you can, or ask you before each post. Those posts come from
+            you, not the {getBrand().name} bot.
           </>
         ) : (
           <>

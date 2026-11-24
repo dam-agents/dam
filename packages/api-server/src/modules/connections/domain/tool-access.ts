@@ -2,7 +2,9 @@ import type {
   Connection,
   ConnectionTemplateToolAccess,
   ConnectionTool,
+  GrantToolAccess,
   ToolMode,
+  ToolRule,
 } from "api-server-api";
 import type { ConnectionTemplate } from "./connection-template.js";
 
@@ -11,14 +13,24 @@ export type ToolAccessTemplate = Pick<
   "toolAccess" | "defaultToolMode"
 >;
 
-export type LimitingToolMode = Exclude<ToolMode, "allow-all">;
+/* UNIT_BOUNDARY_DESCRIPTION: one Connection granted to an Agent, with the tool access stored on that grant, or null when the grant stores none and follows its Connection's tool mode. */
+export interface GrantedConnection {
+  readonly connection: Connection;
+  readonly toolAccess: GrantToolAccess | null;
+}
 
-export interface ToolAccessLimit {
+export interface LimitingConnection {
   readonly connectionId: string;
   readonly connectionName: string;
   readonly templateId: string;
-  readonly mode: LimitingToolMode;
-  readonly readTools: readonly string[];
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: what limits the tool calls of one request. The fields name the Connection that a refusal names when it is about no single tool. `ruleOf` answers the rule of one tool, and the Connection whose grant gave that rule. */
+export interface ToolAccessLimit extends LimitingConnection {
+  ruleOf(tool: string): {
+    readonly rule: ToolRule;
+    readonly connection: LimitingConnection;
+  };
 }
 
 export interface McpServer {
@@ -137,44 +149,172 @@ export function readToolsOf(
   );
 }
 
-/* UNIT_BOUNDARY_DESCRIPTION: the tool-access limit that applies to one request an Agent sends to a host, or null when nothing limits it. Only a granted Connection whose MCP server is on that host can limit a request. A request that names such a Connection gets that Connection's own mode. Any other request can still leave with a granted credential, because the gateway adds one where nothing contests the host, so it gets the strictest mode: read only before needs approval, since read only refuses at once and never asks a person for an approval they did not expect. */
-export function toolAccessFor(
-  granted: readonly Connection[],
-  templateOf: (templateId: string) => ToolAccessTemplate | null | undefined,
-  request: { host: string; connectionId: string | null },
-): ToolAccessLimit | null {
-  const declaring = granted.flatMap((connection) => {
-    if (mcpServerOf(connection)?.host !== request.host) return [];
-    const template = templateOf(connection.templateId);
-    return [{ connection, template, mode: toolModeOf(connection, template) }];
-  });
-  const subject =
-    declaring.find((d) => d.connection.id === request.connectionId) ??
-    declaring.find((d) => d.mode === "read-only") ??
-    declaring.find((d) => d.mode === "needs-approval");
-  if (!subject || subject.mode === "allow-all") return null;
+const STRICTNESS: Readonly<Record<ToolRule, number>> = {
+  allow: 0,
+  ask: 1,
+  block: 2,
+};
+
+function stricterRule(a: ToolRule, b: ToolRule): ToolRule {
+  return STRICTNESS[a] >= STRICTNESS[b] ? a : b;
+}
+
+const ACCESS_OF_MODE: Readonly<Record<ToolMode, GrantToolAccess>> = {
+  "read-only": { read: "allow", write: "block", overrides: {} },
+  "needs-approval": { read: "allow", write: "ask", overrides: {} },
+  "allow-all": { read: "allow", write: "allow", overrides: {} },
+};
+
+/* UNIT_BOUNDARY_DESCRIPTION: the tool access that a tool mode stands for, with no overrides. A grant that stores no access of its own gets the access of its Connection's mode, so it behaves as the mode did before access moved to the grant. */
+export function accessOfMode(mode: ToolMode): GrantToolAccess {
+  return ACCESS_OF_MODE[mode];
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the tool access a new grant starts with while the owner has the `mcp-tool-approval` feature, for a Connection whose requests the gateway reads. Each group takes the stricter rule of two: the safe start (read only where the Template's default mode is read only, as on the Slack Account, else reads allowed and every other tool asking) and the access of the Connection's tool mode. So a new grant never starts looser than the mode the owner chose. */
+export function startingAccessOf(
+  connection: Connection,
+  template: ToolAccessTemplate | null | undefined,
+): GrantToolAccess {
+  const safe = accessOfMode(
+    template?.defaultToolMode === "read-only" ? "read-only" : "needs-approval",
+  );
+  const chosen = accessOfMode(toolModeOf(connection, template));
   return {
-    connectionId: subject.connection.id,
-    connectionName: subject.connection.name,
-    templateId: subject.connection.templateId,
-    mode: subject.mode,
-    readTools: readToolsOf(subject.connection, subject.template),
+    read: stricterRule(safe.read, chosen.read),
+    write: stricterRule(safe.write, chosen.write),
+    overrides: {},
   };
 }
 
-/* UNIT_BOUNDARY_DESCRIPTION: a limit the Agent holds on any host, or null when every granted MCP Connection allows all. It is the strictest one, for a request whose real host the gateway did not say. */
-export function heldToolAccess(
-  granted: readonly Connection[],
-  templateOf: (templateId: string) => ToolAccessTemplate | null | undefined,
-): ToolAccessLimit | null {
-  const hosts = new Set(
-    granted.flatMap((connection) => mcpServerOf(connection)?.host ?? []),
+export const MAX_TOOL_ACCESS_OVERRIDES = 500;
+export const MAX_TOOL_NAME_LENGTH = 256;
+
+/* UNIT_BOUNDARY_DESCRIPTION: a tool access as it is stored: an override equal to the rule of its tool's group says nothing, so it is dropped. The group of a tool is the read tools for a read tool, else every other tool. */
+export function normalizedAccess(
+  access: GrantToolAccess,
+  readTools: readonly string[],
+): GrantToolAccess {
+  const overrides = Object.fromEntries(
+    Object.entries(access.overrides).filter(
+      ([tool, rule]) =>
+        rule !== (readTools.includes(tool) ? access.read : access.write),
+    ),
   );
-  const limits = [...hosts].flatMap(
-    (host) =>
-      toolAccessFor(granted, templateOf, { host, connectionId: null }) ?? [],
-  );
+  return { read: access.read, write: access.write, overrides };
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the tool access of one grant: the one it stores, else the access of its Connection's tool mode. */
+export function grantAccessOf(
+  grant: GrantedConnection,
+  template: ToolAccessTemplate | null | undefined,
+): GrantToolAccess {
   return (
-    limits.find((limit) => limit.mode === "read-only") ?? limits[0] ?? null
+    grant.toolAccess ?? accessOfMode(toolModeOf(grant.connection, template))
   );
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the rule of one tool in a tool access: its override, else the rule of the read tools for a read tool, else the rule of every other tool. A tool the stored list does not name is not a read tool. */
+export function ruleOfTool(
+  access: GrantToolAccess,
+  readTools: readonly string[],
+  tool: string,
+): ToolRule {
+  if (Object.hasOwn(access.overrides, tool)) return access.overrides[tool]!;
+  return readTools.includes(tool) ? access.read : access.write;
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: whether a tool access limits any tool call, that is whether any of its rules is other than allow. */
+export function limitsToolCalls(access: GrantToolAccess): boolean {
+  return [access.read, access.write, ...Object.values(access.overrides)].some(
+    (rule) => rule !== "allow",
+  );
+}
+
+function blocksAny(access: GrantToolAccess): boolean {
+  return [access.read, access.write, ...Object.values(access.overrides)].some(
+    (rule) => rule === "block",
+  );
+}
+
+interface GrantOnHost {
+  readonly connection: LimitingConnection;
+  readonly access: GrantToolAccess;
+  readonly readTools: readonly string[];
+}
+
+function limitingConnectionOf(connection: Connection): LimitingConnection {
+  return {
+    connectionId: connection.id,
+    connectionName: connection.name,
+    templateId: connection.templateId,
+  };
+}
+
+function grantsOnHost(
+  granted: readonly GrantedConnection[],
+  templateOf: (templateId: string) => ToolAccessTemplate | null | undefined,
+  host: string,
+): (GrantOnHost & { readonly id: string })[] {
+  return granted.flatMap((grant) => {
+    if (mcpServerOf(grant.connection)?.host !== host) return [];
+    const template = templateOf(grant.connection.templateId);
+    return [
+      {
+        id: grant.connection.id,
+        connection: limitingConnectionOf(grant.connection),
+        access: grantAccessOf(grant, template),
+        readTools: readToolsOf(grant.connection, template),
+      },
+    ];
+  });
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the tool-access limit that applies to one request an Agent sends to a host, or null when nothing limits it. Only a granted Connection whose MCP server is on that host can limit a request, and only when its grant has a rule other than allow. A request that names such a Connection gets that grant's rules. Any other request can still leave with a granted credential, because the gateway adds one where nothing contests the host, so each of its tools gets the strictest rule among the Agent's grants there: block, then ask, then allow. Block comes first because it refuses at once and never asks a person for an approval they did not expect. */
+export function toolAccessFor(
+  granted: readonly GrantedConnection[],
+  templateOf: (templateId: string) => ToolAccessTemplate | null | undefined,
+  request: { host: string; connectionId: string | null },
+): ToolAccessLimit | null {
+  const onHost = grantsOnHost(granted, templateOf, request.host);
+  const named = onHost.find((grant) => grant.id === request.connectionId);
+  const subjects = named ? [named] : onHost;
+  const limiting = subjects.filter((grant) => limitsToolCalls(grant.access));
+  const shown =
+    limiting.find((grant) => blocksAny(grant.access)) ?? limiting[0];
+  if (!shown) return null;
+  return {
+    ...shown.connection,
+    ruleOf(tool) {
+      let strictest: { rule: ToolRule; connection: LimitingConnection } = {
+        rule: "allow",
+        connection: shown.connection,
+      };
+      for (const grant of subjects) {
+        const rule = ruleOfTool(grant.access, grant.readTools, tool);
+        if (STRICTNESS[rule] > STRICTNESS[strictest.rule])
+          strictest = { rule, connection: grant.connection };
+      }
+      return strictest;
+    },
+  };
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: a granted Connection whose grant has a rule other than allow, on any host, or null when every grant the gateway reads allows every tool. A grant with a block comes first. It is for a request whose real host the gateway did not say. */
+export function heldToolAccess(
+  granted: readonly GrantedConnection[],
+  templateOf: (templateId: string) => ToolAccessTemplate | null | undefined,
+): LimitingConnection | null {
+  const limiting = granted.flatMap((grant) => {
+    if (!mcpServerOf(grant.connection)) return [];
+    const access = grantAccessOf(
+      grant,
+      templateOf(grant.connection.templateId),
+    );
+    return limitsToolCalls(access)
+      ? [{ connection: limitingConnectionOf(grant.connection), access }]
+      : [];
+  });
+  const shown =
+    limiting.find((grant) => blocksAny(grant.access)) ?? limiting[0];
+  return shown?.connection ?? null;
 }

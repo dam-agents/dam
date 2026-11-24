@@ -1135,6 +1135,13 @@
       "when": 1795191661020,
       "tag": "0161_connection_tool_access",
       "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1795508930163,
+      "tag": "0162_grant_tool_access",
+      "breakpoints": true
     }
   ]
 }

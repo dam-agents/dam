@@ -1,3 +1,4 @@
+import type { ToolRule } from "api-server-api";
 import { securityLog } from "../../../core/security-log.js";
 import { decodedUtf8 } from "../domain/check-body.js";
 import {
@@ -11,7 +12,6 @@ import {
   refusedToolCalls,
   unnamedToolCall,
   unreadableRequestRefusal,
-  type LimitingToolMode,
   type ToolAccessRefusal,
 } from "../domain/tool-access-refusal.js";
 import type { AgentIdentityResolver } from "./ext-authz-gate.js";
@@ -21,21 +21,27 @@ export interface ToolAccessConnection {
   readonly connectionId: string;
   readonly connectionName: string;
   readonly templateId: string;
-  readonly mode: LimitingToolMode;
-  readonly readTools: readonly string[];
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the tool-access limits of one Agent, read from the database once for each request, so a change of the owner's mode holds from the next request and one check never reads twice.
+// UNIT_BOUNDARY_DESCRIPTION: what limits the tool calls of one request. The fields name the Connection a refusal names when it is about no single tool. `ruleOf` answers the rule of one tool for this Agent, and the Connection whose grant gave it.
+export interface ToolAccessRules extends ToolAccessConnection {
+  ruleOf(tool: string): {
+    readonly rule: ToolRule;
+    readonly connection: ToolAccessConnection;
+  };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the tool-access limits of one Agent, read from the database once for each request, so a change of the owner's rules holds from the next request and one check never reads twice.
 export interface ToolAccessConnections {
   forAgent(agentId: string): Promise<ToolAccessLimits>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Agent's granted Connections as one read saw them. `limiting` answers which Connection limits the tool calls of a request to a host, where `connectionId` is the Connection the gateway says the request names, or null; null as the answer means nothing limits the request. `held` answers a limiting Connection the Agent holds on any host, or null when it holds none.
+// UNIT_BOUNDARY_DESCRIPTION: the Agent's grants as one read saw them. `limiting` answers what limits the tool calls of a request to a host, where `connectionId` is the Connection the gateway says the request names, or null; null as the answer means nothing limits the request. `held` answers a Connection whose grant has a rule other than allow, on any host, or null when the Agent holds none.
 export interface ToolAccessLimits {
   limiting(request: {
     host: string;
     connectionId: string | null;
-  }): ToolAccessConnection | null;
+  }): ToolAccessRules | null;
   held(): ToolAccessConnection | null;
 }
 
@@ -58,7 +64,7 @@ export interface ToolAccessGateInput {
   body: ModelCallBody | undefined;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one `tools/call` of a tool outside the read tools of a Connection in needs approval, which the gate holds as a tool-call approval. `host` is the host the refusals name, `id` the call's JSON-RPC id, and `arguments` the call's arguments as sent.
+// UNIT_BOUNDARY_DESCRIPTION: one `tools/call` of a tool whose rule for this Agent is ask, which the gate holds as a tool-call approval. `connection` is the Connection whose grant gave the rule. `host` is the host the refusals name, `id` the call's JSON-RPC id, and `arguments` the call's arguments as sent.
 export interface HeldToolCall {
   readonly connection: ToolAccessConnection;
   readonly host: string;
@@ -89,13 +95,13 @@ const NO_CHAIN_METHODS: ReadonlySet<string> = new Set(["CONNECT", "*"]);
 
 const MAX_LOGGED_NAME = 100;
 
-// UNIT_BOUNDARY_DESCRIPTION: the tool access step of the ext_authz gate, which holds an MCP Connection to its tool mode. For a request that a Connection in read only or needs approval limits, it reads the whole body the gateway sent. In read only it refuses the body when a `tools/call` in it names a tool outside the Connection's read tools, also in a batch. In needs approval a `tools/call` of a read tool passes at once, as in read only, also in a batch; a body of one `tools/call` that names any other tool is answered with a hold, which the gate files as a tool-call approval; a batch that holds such a call, or a call that names no tool, is refused, since one approval answers one call. A refusal is an error the agent can read, and it answers every request of a batch, since no part of a refused body is sent. The limit is looked up for the TLS server name as well as for the Host header, so a forged Host does not skip it. A gateway that has not yet restarted onto the body check sends no server name, so the Host header alone could hide the Connection's MCP host: while the Agent holds a limiting Connection, a TLS request that can carry a body and comes without a server name is refused with the restart's retry. A POST with no body in the check is refused too, even when its headers declare none, because an HTTP/2 request can carry a body without a length header; so is a body read in part or one that is not strict JSON, since a call could hide in it. Every other request passes on to the gate's other checks.
+// UNIT_BOUNDARY_DESCRIPTION: the tool access step of the ext_authz gate, which holds an Agent to the tool access of its grant of an MCP Connection. Each tool has one rule: allow passes, ask holds the call as a tool-call approval, and block refuses it at once. For a request that a grant limits, it reads the whole body the gateway sent. A body with a `tools/call` of a blocked tool is refused, also in a batch. A body of one `tools/call` of a tool that asks is answered with a hold, which the gate files as a tool-call approval; a batch that holds such a call is refused, since one approval answers one call. A call that names no tool is refused, since its rule cannot be told. A body whose tool calls are all allowed passes, also in a batch. A refusal is an error the agent can read, and it answers every request of a batch, since no part of a refused body is sent. The limit is looked up for the TLS server name as well as for the Host header, so a forged Host does not skip it. A gateway that has not yet restarted onto the body check sends no server name, so the Host header alone could hide the Connection's MCP host: while the Agent holds a limiting grant, a TLS request that can carry a body and comes without a server name is refused with the restart's retry. A POST with no body in the check is refused too, even when its headers declare none, because an HTTP/2 request can carry a body without a length header; so is a body read in part or one that is not strict JSON, since a call could hide in it. Every other request passes on to the gate's other checks.
 export function createToolAccessGate(deps: {
   connections: ToolAccessConnections;
 }): ToolAccessGate {
   function refuse(
     input: ToolAccessGateInput,
-    limit: ToolAccessConnection,
+    connection: ToolAccessConnection,
     reason: string,
     response: ToolAccessRefusal,
     detail: Record<string, unknown> = {},
@@ -113,8 +119,7 @@ export function createToolAccessGate(deps: {
         method: input.method,
         path: input.path.split("?")[0],
         basis: "tool-access",
-        mode: limit.mode,
-        connectionId: limit.connectionId,
+        connectionId: connection.connectionId,
         status: response.status,
         via: input.via,
         ...detail,
@@ -126,7 +131,7 @@ export function createToolAccessGate(deps: {
   function limitOf(
     input: ToolAccessGateInput,
     limits: ToolAccessLimits,
-  ): { limit: ToolAccessConnection; host: string } | null {
+  ): { limit: ToolAccessRules; host: string } | null {
     const hosts = new Set(
       input.tlsHost === null ? [input.host] : [input.tlsHost, input.host],
     );
@@ -220,49 +225,57 @@ export function createToolAccessGate(deps: {
         ),
       };
 
-      const notRead = calls.filter(
-        (call) => call.name === null || !limit.readTools.includes(call.name),
+      const ruled = calls.flatMap((call) =>
+        call.name === null
+          ? []
+          : [{ ...call, name: call.name, ...limit.ruleOf(call.name) }],
       );
-      if (notRead.length === 0) return PASS;
 
-      if (limit.mode === "needs-approval") {
-        if (request.batch)
-          return refuse(
-            input,
-            limit,
-            "needs-approval-batch",
-            batchedToolCalls(shown, { ids }),
-            logged,
-          );
-        const [call] = notRead;
-        if (call.name === null)
-          return refuse(
-            input,
-            limit,
-            "needs-approval-unnamed",
-            unnamedToolCall(shown, { ids }),
-            logged,
-          );
-        return {
-          kind: "hold",
-          toolCall: {
-            connection: limit,
-            host: found.host,
-            tool: call.name,
-            arguments: call.arguments,
-            id: call.id,
-          },
-        };
+      const blocked = ruled.filter((call) => call.rule === "block");
+      const [firstBlocked] = blocked;
+      if (firstBlocked) {
+        const tools = blocked.map((call) => call.name);
+        return refuse(
+          input,
+          firstBlocked.connection,
+          "tool-access-blocked",
+          refusedToolCalls(
+            { ...firstBlocked.connection, host: found.host },
+            { refused: tools, ids, batch: request.batch },
+          ),
+          { tools: tools.map((name) => name.slice(0, MAX_LOGGED_NAME)) },
+        );
       }
 
-      const tools = notRead.map((call) => call.name);
-      return refuse(
-        input,
-        limit,
-        "read-only-tool",
-        refusedToolCalls(shown, { refused: tools, ids, batch: request.batch }),
-        { tools: tools.map((name) => name?.slice(0, MAX_LOGGED_NAME) ?? null) },
-      );
+      if (ruled.length < calls.length)
+        return refuse(
+          input,
+          limit,
+          "tool-access-unnamed",
+          unnamedToolCall(shown, { ids, batch: request.batch }),
+          logged,
+        );
+
+      const asked = ruled.find((call) => call.rule === "ask");
+      if (!asked) return PASS;
+      if (request.batch)
+        return refuse(
+          input,
+          asked.connection,
+          "tool-access-ask-batch",
+          batchedToolCalls({ ...asked.connection, host: found.host }, { ids }),
+          logged,
+        );
+      return {
+        kind: "hold",
+        toolCall: {
+          connection: asked.connection,
+          host: found.host,
+          tool: asked.name,
+          arguments: asked.arguments,
+          id: asked.id,
+        },
+      };
     },
   };
 }

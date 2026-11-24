@@ -15,9 +15,12 @@ export interface SlackMessageCall {
   text: string;
 }
 
+export type ToolCallVerb = "post" | "schedule" | "draft";
+
 export interface TemplateToolCall {
   iconSlug: string;
   action: string;
+  verb: ToolCallVerb;
   message: SlackMessageCall | null;
 }
 
@@ -29,6 +32,7 @@ interface ToolRenderer {
     targetLabel: string | null,
   ) => SlackMessageCall | null;
   action: (message: SlackMessageCall | null) => string;
+  verb: ToolCallVerb;
 }
 
 interface TemplateRenderers {
@@ -90,15 +94,18 @@ const RENDERERS: Readonly<Partial<Record<string, TemplateRenderers>>> = {
           message?.threadTs
             ? "reply in a Slack thread"
             : "send a Slack message",
+        verb: "post",
       },
       slack_send_message_draft: {
         render: (args, targetLabel) =>
           slackMessage(args, targetLabel, { kind: "draft" }),
         action: () => "save a Slack draft",
+        verb: "draft",
       },
       slack_schedule_message: {
         render: slackScheduledMessage,
         action: () => "schedule a Slack message",
+        verb: "schedule",
       },
     },
   },
@@ -107,7 +114,7 @@ const RENDERERS: Readonly<Partial<Record<string, TemplateRenderers>>> = {
 const isRecord = (value: unknown): value is ArgumentsRecord =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-// UNIT_BOUNDARY_DESCRIPTION: how a tool-call approval shows a call that its Connection's Template knows. A Template registers a renderer per tool: its logo, what the call does in plain words for the headline, such as "send a Slack message", and the arguments read as what the call will do, such as the Slack message a post sends, named by the target label the api-server looked up when there is one. The message is null when the arguments are cut, gone or not in the shape the renderer expects. Every other tool, and every tool of a Template with no renderers, returns null and shows as the generic tool name and JSON.
+// UNIT_BOUNDARY_DESCRIPTION: how a tool-call approval shows a call that its Connection's Template knows. A Template registers a renderer per tool: its logo, what the call does in plain words for the headline, such as "send a Slack message", the verb its answer buttons name (post, schedule or save a draft), and the arguments read as what the call will do, such as the Slack message a post sends, named by the target label the api-server looked up when there is one. The message is null when the arguments are cut, gone or not in the shape the renderer expects. Every other tool, and every tool of a Template with no renderers, returns null and shows as the generic tool name and JSON.
 export function templateToolCallOf(
   payload: McpToolCallPayload,
 ): TemplateToolCall | null {
@@ -124,6 +131,7 @@ export function templateToolCallOf(
   return {
     iconSlug: template.iconSlug,
     action: renderer.action(message),
+    verb: renderer.verb,
     message,
   };
 }

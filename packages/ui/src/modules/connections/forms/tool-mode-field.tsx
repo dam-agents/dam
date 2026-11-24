@@ -9,7 +9,7 @@ interface Props {
   value: ToolMode;
   onChange: (value: ToolMode) => void;
   modes: readonly ToolMode[];
-  offered: boolean;
+  ownNames: boolean;
   testIdPrefix: string;
 }
 
@@ -18,7 +18,7 @@ export function ToolModeField({
   value,
   onChange,
   modes,
-  offered,
+  ownNames,
   testIdPrefix,
 }: Props) {
   return (
@@ -32,7 +32,7 @@ export function ToolModeField({
       className="gap-3"
     >
       {modes.map((mode) => {
-        const copy = toolModeCopy(mode, offered);
+        const copy = toolModeCopy(mode, ownNames);
         const allowsAll = mode === "allow-all";
         return (
           <RadioGroupCard

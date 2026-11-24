@@ -6,6 +6,7 @@ export {
   attachProviderToBareAgents,
   connectionGrantProvisioner,
   childrenMirroringConnections,
+  connectionsParentOf,
   inheritanceCleanup,
   nearestOwnEgress,
   inheritanceOf,

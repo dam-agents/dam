@@ -13,7 +13,10 @@ import { createConnectionsService } from "../../modules/connections/services/con
 import type { SecretStore } from "../../modules/secret-store/index.js";
 import { configureLogger } from "../../core/logger.js";
 import { TEST_CLUSTER_CERT as CA_PEM } from "../helpers/test-cluster-cert.js";
-import { fakeMcpToolLister } from "../helpers/connections-service.js";
+import {
+  fakeMcpToolLister,
+  noConnectionsParent,
+} from "../helpers/connections-service.js";
 
 /**
  * TEST_OVERVIEW: a GitHub personal access token is checked when it is saved,
@@ -45,6 +48,7 @@ function makeService(initial: CredentialProbeOutcome) {
   const probed: (CredentialProbeTarget & { value: string })[] = [];
   const answer = { outcome: initial };
   const svc = createConnectionsService({
+    parentOf: noConnectionsParent,
     damConnectionOffered: async () => true,
     toolApprovalOffered: async () => true,
     mcpToolLister: fakeMcpToolLister(),

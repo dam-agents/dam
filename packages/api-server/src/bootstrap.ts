@@ -75,6 +75,7 @@ import {
 } from "./modules/agents/infrastructure/labels.js";
 import {
   childrenMirroringConnections,
+  connectionsParentOf,
   inheritanceCleanup,
   nearestOwnEgress,
   childEgressGrants,
@@ -1333,6 +1334,7 @@ export async function bootstrap() {
       ownerId,
       db,
       mirroredChildren: childrenMirroringConnections(db),
+      parentOf: connectionsParentOf(db),
       templates: connectionsBoot.templates,
       oauthEngine: connectionsBoot.oauthEngine,
       githubAppEngine: connectionsBoot.githubAppEngine,

@@ -9,22 +9,17 @@ import {
 } from "@/components/modal";
 import { Callout } from "@/components/ui/callout";
 
-import {
-  useRefreshConnectionTools,
-  useSetConnectionToolMode,
-} from "../api/mutations.js";
+import { useSetConnectionToolMode } from "../api/mutations.js";
 import { ToolModeField } from "../forms/tool-mode-field.js";
-import { useToolApprovalOffered } from "../hooks/use-tool-approval-offered.js";
 import { mutationMessage } from "../lib/mutation-message.js";
 import {
+  CHANGE_ACCESS_TITLE,
   connectionPickableToolModes,
   ownToolModeNames,
   TOOL_MODE_SAVED_NOTE,
-  toolAccessTitle,
 } from "../lib/tool-mode.js";
-import { ConnectionToolList } from "./connection-tool-list.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: the dialog where the owner changes the tool mode of an MCP connection. With the `mcp-tool-approval` feature on it also shows the server's tools, read tools first, with a refresh; with it off it keeps the Slack Account's choice between read only and "Can post as me", and lets the owner switch a connection still left in needs approval away from it. The mode holds for every agent that has the connection, from its next request.
+// UNIT_BOUNDARY_DESCRIPTION: the dialog where the owner changes the tool mode of an MCP connection while the `mcp-tool-approval` feature is off: the Slack Account's choice between read only and "Can post as me", and the way to switch a connection still left in needs approval away from it. The mode holds for every agent that has the connection, from its next request. With the feature on, the tool access dialog of each Agent's grant takes its place.
 export function ConnectionToolAccessDialog({
   connection,
   onClose,
@@ -32,20 +27,13 @@ export function ConnectionToolAccessDialog({
   connection: ConnectionView;
   onClose: () => void;
 }) {
-  const offered = useToolApprovalOffered();
   const save = useSetConnectionToolMode();
-  const refresh = useRefreshConnectionTools();
-  const toolAccess = refresh.data ?? connection.toolAccess;
+  const toolAccess = connection.toolAccess;
   const current = toolAccess?.mode ?? "allow-all";
   const [mode, setMode] = useState<ToolMode>(current);
-  const modes = connectionPickableToolModes(toolAccess, offered);
   const saveError = mutationMessage(
     save.error,
     "Couldn't change the access. Please try again.",
-  );
-  const refreshError = mutationMessage(
-    refresh.error,
-    "the request failed. Please try again.",
   );
 
   const submit = async () => {
@@ -56,12 +44,9 @@ export function ConnectionToolAccessDialog({
   };
 
   return (
-    <Modal
-      onClose={save.isPending ? undefined : onClose}
-      size={offered ? "md" : "sm"}
-    >
+    <Modal onClose={save.isPending ? undefined : onClose} size="sm">
       <DialogHeader
-        title={toolAccessTitle(offered)}
+        title={CHANGE_ACCESS_TITLE}
         subtitle={connection.name}
         onClose={onClose}
         closeDisabled={save.isPending}
@@ -71,19 +56,11 @@ export function ConnectionToolAccessDialog({
         <ToolModeField
           value={mode}
           onChange={setMode}
-          modes={modes}
-          offered={ownToolModeNames(toolAccess, offered)}
+          modes={connectionPickableToolModes(toolAccess, false)}
+          ownNames={ownToolModeNames(toolAccess)}
           testIdPrefix="edit-access"
         />
         <p className="text-sm text-muted-foreground">{TOOL_MODE_SAVED_NOTE}</p>
-        {offered && toolAccess && (
-          <ConnectionToolList
-            toolAccess={toolAccess}
-            refreshing={refresh.isPending}
-            refreshError={refreshError}
-            onRefresh={() => refresh.mutate({ id: connection.id })}
-          />
-        )}
         {saveError && (
           <Callout tone="danger" size="sm">
             {saveError}

@@ -119,6 +119,62 @@ interface McpToolCallPayload {
 }
 ```
 
+## Second round: tool access per agent
+
+QA of the first six slices (2026-11-24) changed four decisions.
+Where this section and the text above disagree, this section wins.
+
+- **Access belongs to the grant.**
+  One Agent on one Connection has its own tool access.
+  A change for one Agent never reaches another, and a new grant never copies another Agent's access.
+- **Three rules per tool: allow, ask, block.**
+  They replace the three modes for the owner.
+  The owner sets one rule for the read tools and one for every other tool, and a single tool can differ as an exception.
+  A tool the stored list does not name follows the second group.
+  There is still no "always" verdict on an approval.
+- **A new grant starts safe while the feature is on.**
+  A Slack Account starts read only; any other MCP Connection starts with reads allowed and writes asking.
+  This reverses the 2026-11-20 decision that a generic MCP Connection starts as allow all.
+  With the feature on, the connect forms ask nothing about access.
+- **The feature flag decides which UI writes, not what the gate reads.**
+  The gate always reads the grant; a grant with no access of its own follows its Connection's mode.
+  With `mcp-tool-approval` off, every screen stays as on main, and the Slack choice between read only and "Can post as me" stays one choice for the Connection, written through `setToolMode`, which clears the grants' own access.
+- **The approval card reads as the message it sends.**
+
+```ts
+// packages/api-server-api/src/modules/connections/types.ts — pinned, already in the tree
+type ToolRule = "allow" | "ask" | "block";
+
+interface GrantToolAccess {
+  read: ToolRule; // the read tools
+  write: ToolRule; // every other tool, also one the stored list does not name
+  overrides: Record<string, ToolRule>; // tools that differ from their group
+}
+
+// AgentConnections.connections[].toolAccess?: GrantToolAccess — on a grant of a Connection the gateway reads
+setGrantToolAccess(input: { agentId: string; connectionId: string; access: GrantToolAccess }): Promise<void>;
+```
+
+| #   | Title                                  | Scope                                                                                           | Depends on |
+| --- | -------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------- |
+| 07  | Tool access on the grant               | `connection_grants.tool_access`, the rule of a tool, the gate decides per tool                  | 01–06      |
+| 08  | Set and read a grant's tool access     | `setGrantToolAccess`, the grant's access on `getAgentConnections`, what a new grant starts with | 07         |
+| 09  | Tool access dialog and rows            | The dialog for one Agent, the Agent's Connections row, the Connections page row                 | contract   |
+| 10  | The approval card reads as the message | Title, Slack formatting, action buttons, details, time left                                     | 06         |
+| 11  | CLI: tool access per agent             | `dam connection scope --agent`, listings, the skill                                             | contract   |
+| 12  | Docs, profiles and end-to-end          | Architecture pages, glossary, QA profile, e2e helpers                                           | 07–11      |
+
+```mermaid
+graph LR
+  07 --> 08
+  08 --> 12
+  09 --> 12
+  10 --> 12
+  11 --> 12
+```
+
+Slices 07 to 11 change code only and each owns its own folders, so they build side by side; slice 12 owns every doc and profile.
+
 ## Conventions & glossary
 
 - **MCP Connection**: a Connection with an `mcp-entry` contribution (Slack Account, Figma, custom MCP, shared knowledge base).
@@ -140,22 +196,41 @@ interface McpToolCallPayload {
 
 On the dev cluster (`cluster-ops` skill), with `mcp-tool-approval` on for the test user and `chat-network-approvals` on:
 
-1. Connect a custom MCP server with header auth (any public test server that lists tools with `readOnlyHint`) and grant it to a Claude Code agent and a Codex agent.
-   The connections panel shows the tool list, grouped read / write, and the mode allow all.
-2. Set read only.
-   In a chat, ask each agent to call a write tool: the agent reports a refusal that names the Connection and the mode.
-   A read tool still answers.
-3. Set needs approval.
-   Ask the agent to call a read tool: it answers at once, with no card.
-   Ask the agent to call a write tool: a card shows in the chat and on Home with the tool and its arguments.
-   Approve once: the call runs.
+1. Connect a custom MCP server with header auth (any public test server that lists tools with `readOnlyHint`).
+   The connect form asks nothing about access.
+   Grant it to a Claude Code agent and a Codex agent.
+   Each agent's Connections row says "Asks before writing", and the Connections page row says "Used by 2 agents".
+2. Open "Used by 2 agents": both agents show inside the row, each with "Asks before writing" and "Tool access".
+   Open "Tool access" for the Claude Code agent: the subtitle names the connection and the agent, the two groups show their counts, and "Tools listed …" and Refresh work.
+3. Ask the Claude Code agent to call a read tool: it answers at once, with no card.
+   Ask it to call a write tool: a card shows in the chat and on Home, titled "<Agent> wants to use <tool>", with the arguments as names and values, a "Refused in m:ss" countdown, and "Allow once" / "Deny".
+   Allow once: the call runs and the card says so.
    Ask again: a new card shows.
-   Deny once: the agent reports a refusal and its session goes on.
-4. On the Codex agent, wait more than one minute before approving: the call still runs, or, if Codex gave up, the agent's next identical call runs without a new card.
-5. With a Slack Channel Binding and no browser open, ask the agent in Slack to use the tool: it answers that the call waits for the owner, and Home shows the approval.
-6. On a Slack Account Connection, set needs approval and ask the agent to post: the card shows the channel and the message text.
-7. `dam connection list` shows each MCP Connection's mode; `dam connection scope <name> --mode read-only` changes it.
-8. Turn `mcp-tool-approval` off: the Slack Account shows the read only / "Can post as me" choice as before, and generic MCP Connections show no mode.
+   Deny: the agent reports a refusal and its session goes on.
+4. In the Claude Code agent's Tool access, set "Tools that post or change" to Block and save.
+   The row says "Read only".
+   Ask it to call a write tool: it reports that the tool is blocked for this agent on the connection, at once and with no card.
+   The Codex agent still gets a card for the same call: its access did not change.
+5. In the Codex agent's Tool access, set "Tools that post or change" to Allow, then open the group, set one write tool to Ask, and save.
+   The tool shows an "exception" badge, the closed group names it, and the summary counts the tools.
+   The row and the Connections page show "Writes without asking"; the page row says "1 agent writes without asking".
+   A write tool runs at once; the exception tool shows a card.
+   Reset the exception and save: the summary says "Allows everything".
+6. On the Codex agent, wait more than one minute before approving a held call: the call still runs, or, if Codex gave up, the agent's next identical call runs without a new card.
+7. With a Slack Channel Binding and no browser open, ask the agent in Slack to call a tool that asks: it answers that the call waits for the owner, and Home shows the approval.
+8. Grant a Slack Account Connection to an agent: it starts "Read only".
+   Set its "Tools that post or change" to Ask and ask the agent to post: the card says "<Agent> wants to post in #<channel>", "As you, <account>", "Goes out now", shows the message with Slack's formatting, and offers "Post" / "Don't post".
+   Ask for a post with a link labelled with other text and a user mention: the link shows its real address in brackets after the label, and the mention shows the user id, not the name in the text.
+   Post: the card says "Posted in #<channel> as you".
+9. `dam connection list <agent>` shows each MCP connection's access as a short phrase.
+   `dam connection scope <connection> --agent <agent> --write ask --tool <name>=allow` changes that agent only, and `dam connection tools <connection> --agent <agent>` shows each tool's rule.
+   `dam connection scope <connection> --mode read-only` puts every agent that holds the connection back on read only, and refuses `--agent` beside it.
+   Grant the connection to a third agent: it starts "Read only", the stricter of the mode and the safe start.
+10. Have the Codex agent launch a sub-agent that takes all its connections: the sub-agent's grant starts with the Codex agent's access.
+    Change the Codex agent's access: the sub-agent's line changes with it.
+11. Turn `mcp-tool-approval` off: the Slack Account shows the read only / "Can post as me" choice as before, and generic MCP Connections show no access; `dam connection list <agent>` shows no per-agent access either.
+    An access set while the feature was on still holds at the gate, though nothing shows it.
+    Setting the Slack choice clears it for every agent.
 
 ## Delivery
 

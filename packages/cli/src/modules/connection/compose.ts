@@ -83,20 +83,8 @@ export function composeConnectionModule(
       createConnectionService: createService,
     }),
   );
-  parent.addCommand(
-    buildScopeCommand({
-      compatService: opts.compatService,
-      configService: opts.configService,
-      createConnectionService: createService,
-    }),
-  );
-  parent.addCommand(
-    buildToolsCommand({
-      compatService: opts.compatService,
-      configService: opts.configService,
-      createConnectionService: createService,
-    }),
-  );
+  parent.addCommand(buildScopeCommand(agentScoped));
+  parent.addCommand(buildToolsCommand(agentScoped));
   parent.addCommand(
     buildReauthCommand({
       compatService: opts.compatService,

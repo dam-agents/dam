@@ -14,13 +14,14 @@ import { useToolApprovalOffered } from "../hooks/use-tool-approval-offered.js";
 import { parentNoun } from "../lib/connection-hierarchy.js";
 import { childRepair } from "../lib/github-card.js";
 import {
+  CHANGE_ACCESS_TITLE,
   shownToolMode,
-  toolAccessTitle,
   toolModeMark,
 } from "../lib/tool-mode.js";
 import type {
   RowGrantControls,
   RowMaintenanceActions,
+  RowToolAccess,
 } from "./catalog-connection-row.js";
 
 interface Props {
@@ -50,9 +51,11 @@ export function ConnectionRowActions({
   maintenance,
   chooseAccessAgain = false,
   usedBy,
+  toolAccess,
 }: Pick<Props, "connection" | "grant" | "maintenance"> & {
   chooseAccessAgain?: boolean;
   usedBy?: ReactNode;
+  toolAccess?: RowToolAccess;
 }) {
   const offered = useToolApprovalOffered();
   const toolModeShown = shownToolMode(connection, offered) !== null;
@@ -100,6 +103,17 @@ export function ConnectionRowActions({
         <RowGrantAction rowId={connection.id} grant={grant} />
       )}
       {usedBy}
+      {toolAccess?.onEdit && (
+        <Button
+          variant="outline"
+          size="sm"
+          className={ROW_BUTTON}
+          onClick={toolAccess.onEdit}
+          data-testid={`grant-tool-access-${connection.id}`}
+        >
+          Tool access
+        </Button>
+      )}
       {narrow && (
         <Button
           variant="outline"
@@ -108,7 +122,7 @@ export function ConnectionRowActions({
           onClick={narrow}
           data-testid={`catalog-narrow-${connection.id}`}
         >
-          {toolModeShown ? toolAccessTitle(offered) : "Narrow access"}
+          {toolModeShown ? CHANGE_ACCESS_TITLE : "Narrow access"}
         </Button>
       )}
     </div>
@@ -165,7 +179,7 @@ export function ConnectionRowMenu({
           data-testid={`catalog-edit-scope-${connection.id}`}
         >
           {shownToolMode(connection, offered) !== null
-            ? toolAccessTitle(offered)
+            ? CHANGE_ACCESS_TITLE
             : "Edit repositories & permissions"}
         </DropdownMenuItem>
       )}

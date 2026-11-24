@@ -8,6 +8,7 @@ import type {
   ConnectionView,
   CredentialCheck,
   GitHubAppInstallationProbe,
+  GrantToolAccess,
   GitHubUserTokenProbe,
   SecretRequestState,
   SecretRequestTicket,
@@ -71,6 +72,11 @@ export interface ConnectionService {
     fullAccess?: boolean;
   }): Promise<ConnResult<void>>;
   setToolMode(input: { id: string; mode: ToolMode }): Promise<ConnResult<void>>;
+  setGrantToolAccess(input: {
+    agentId: string;
+    connectionId: string;
+    access: GrantToolAccess;
+  }): Promise<ConnResult<void>>;
   refreshTools(id: string): Promise<ConnResult<ConnectionToolAccess>>;
   createFromParent(input: {
     parentId: string;
@@ -144,11 +150,14 @@ export function createConnectionService(deps: {
       return trpcCall(async () =>
         (
           await deps.trpc.connections.getAgentConnections.query({ agentId })
-        ).connections.map(({ connectionId, grantedAt, preferred }) => ({
-          connectionId,
-          grantedAt,
-          preferred,
-        })),
+        ).connections.map(
+          ({ connectionId, grantedAt, preferred, toolAccess }) => ({
+            connectionId,
+            grantedAt,
+            preferred,
+            ...(toolAccess && { toolAccess }),
+          }),
+        ),
       );
     },
     async setDefault(agentId, connectionId) {
@@ -209,6 +218,11 @@ export function createConnectionService(deps: {
     async setToolMode(input) {
       return trpcCall(async () => {
         await deps.trpc.connections.setToolMode.mutate(input);
+      });
+    },
+    async setGrantToolAccess(input) {
+      return trpcCall(async () => {
+        await deps.trpc.connections.setGrantToolAccess.mutate(input);
       });
     },
     async refreshTools(id) {

@@ -2,9 +2,11 @@ import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
 import { PanelCard } from "@/components/ui/panel-card";
 
+import { WritesWithoutAskingMark } from "../../../connections/components/access-summary-label.js";
 import {
   type RowGrantControls,
   type RowMaintenanceActions,
+  type RowToolAccess,
   StatusBadges,
 } from "../../../connections/components/catalog-connection-row.js";
 import { ConnectionIcon } from "../../../connections/components/connection-icon.js";
@@ -19,13 +21,15 @@ import {
  * chat refresh design's ConnectionGroupCard draws them: a card with the
  * provider's icon, name and count, then one row per Connection with its name,
  * its status, what kind it is under it, and its menu behind the design's ⋯. A viewer who may not
- * change the Agent's Connections sees the rows with no menu.
+ * change the Agent's Connections sees the rows with no menu. A Connection
+ * whose grant lets this Agent write without asking carries that mark.
  */
 export function QuickConnectionGroup({
   group,
   templateById,
   grant,
   maintenance,
+  toolAccess,
 }: {
   group: CatalogProviderGroup;
   templateById: Map<string, ConnectionTemplateView>;
@@ -33,6 +37,7 @@ export function QuickConnectionGroup({
   maintenance?: (
     connection: ConnectionView,
   ) => RowMaintenanceActions | undefined;
+  toolAccess?: (connection: ConnectionView) => RowToolAccess | undefined;
 }) {
   const { provider, connections } = group;
   return (
@@ -73,6 +78,12 @@ export function QuickConnectionGroup({
                     {c.name}
                   </p>
                   <StatusBadges connection={c} />
+                  {toolAccess?.(c)?.summary.tone === "writes" && (
+                    <WritesWithoutAskingMark
+                      label="Writes without asking"
+                      testId={`grant-writes-mark-${c.id}`}
+                    />
+                  )}
                 </div>
                 {subtitle && (
                   <p className="truncate text-sm text-muted-foreground">

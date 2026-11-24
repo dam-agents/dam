@@ -1,30 +1,55 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The web app's side of an MCP connection's tool mode. The create form sends a mode only when the owner picks one. Each row names the mode in the line under its name, and marks allow all on a Template that defaults to read only, such as a Slack Account, and needs approval. With the `mcp-tool-approval` feature off, only a Slack Account names its mode, in the read only / "Can post as me" words it had before, and a connection still in needs approval keeps naming it so the owner can switch it away; with it on, every MCP connection that offers a choice does. The warning before an agent is shared with a chat says what the people there can do through each such connection.
+// TEST_OVERVIEW: The web app's side of an MCP connection's tool mode, the one choice per connection while the `mcp-tool-approval` feature is off. The create form sends a mode only when the owner picks one. Only a Slack Account names its mode, in the read only / "Can post as me" words, in the line under its name and as a mark beside it when it can post; a connection still in needs approval keeps naming it so the owner can switch it away. With the feature on no connection names a mode and the connect form asks nothing, because tool access belongs to each Agent's grant. The warning before an agent is shared with a chat says what the people there can do through each such connection, from the connection's mode with the feature off and from the Agent's own grant with it on.
 import type {
+  AgentConnections,
   ConnectionTemplateView,
   ConnectionToolAccess,
   ConnectionView,
 } from "api-server-api";
-import { createElement } from "react";
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { AgentView } from "../../types.js";
+
 const flags = vi.hoisted(() => ({ "mcp-tool-approval": false }));
+const server = vi.hoisted(() => ({
+  connections: [] as unknown[],
+  grants: undefined as unknown,
+}));
 
 vi.mock("../../modules/features/api/queries.js", () => ({
   useFeatures: () => ({ data: flags }),
 }));
+vi.mock("../../modules/connections/api/queries.js", () => ({
+  useAppConnections: () => ({ data: server.connections }),
+}));
+vi.mock("../../modules/agents/api/queries.js", () => ({
+  useAgentConnections: (agentId: string | null) => ({
+    data: agentId ? server.grants : undefined,
+  }),
+}));
+vi.mock("../../modules/satellites/api/queries.js", () => ({
+  useSatellites: () => ({ data: [] }),
+}));
 
 const { BindSharingText } =
   await import("../../modules/agents/components/bind/bind-sharing-text.js");
+const { useAgentToolAccess } =
+  await import("../../modules/agents/hooks/use-agent-shared-access.js");
 const { StatusBadges } =
   await import("../../modules/connections/components/catalog-connection-row.js");
 const { buildCreatePayload } =
   await import("../../modules/connections/lib/build-create-payload.js");
 const { connectionDetail } =
   await import("../../modules/connections/lib/connection-detail.js");
-const { connectionPickableToolModes, ownToolModeNames, toolModeCopy } =
-  await import("../../modules/connections/lib/tool-mode.js");
+const {
+  connectionPickableToolModes,
+  ownToolModeNames,
+  pickableToolModes,
+  toolModeCopy,
+} = await import("../../modules/connections/lib/tool-mode.js");
 
 const ALL_MODES = ["allow-all", "read-only", "needs-approval"] as const;
 
@@ -135,7 +160,7 @@ describe("a Slack Account's row with the feature off", () => {
 describe("a connection left in needs approval after the feature is turned off", () => {
   const cards = (c: ConnectionView) =>
     connectionPickableToolModes(c.toolAccess, false).map(
-      (mode) => toolModeCopy(mode, ownToolModeNames(c.toolAccess, false)).label,
+      (mode) => toolModeCopy(mode, ownToolModeNames(c.toolAccess)).label,
     );
 
   // TEST_SCENARIO: the gate still holds every call of a tool that does not read, so the row keeps the amber mark and its line, and the dialog shows needs approval as the current card beside the modes the owner can switch to: Slack's old names, the generic connection's own names.
@@ -178,40 +203,31 @@ describe("an MCP connection's row with the feature on", () => {
     flags["mcp-tool-approval"] = true;
   });
 
-  // TEST_SCENARIO: a Slack Account set to allow all can post as the owner, which its Template does not do by default, so it carries the danger mark under the mode's own name.
-  it("marks allow all on a Template that defaults to read only", () => {
-    const html = badges(slack({ mode: "allow-all" }));
-    expect(html).toContain("Allow all");
-    expect(html).not.toContain("Can post as me");
-    expect(reach(slack({ mode: "allow-all" }))).toBe(
-      "Allow all: every tool call goes through",
-    );
+  // TEST_SCENARIO: tool access belongs to each Agent's grant, so no connection names a mode, carries a mode mark or offers the choice per connection, whatever mode it was left in.
+  it("names no mode on any MCP connection", () => {
+    for (const c of [
+      slack(),
+      slack({ mode: "allow-all" }),
+      customMcp(),
+      customMcp({ mode: "needs-approval" }),
+    ]) {
+      expect(badges(c)).toBe("");
+      expect(reach(c)).toBeUndefined();
+      expect(connectionPickableToolModes(c.toolAccess, true)).toEqual([]);
+    }
   });
 
-  // TEST_SCENARIO: allow all is a generic MCP connection's default, so it carries no mark; its line still names the mode.
-  it("leaves the default allow all of a generic MCP connection unmarked", () => {
-    expect(badges(customMcp())).toBe("");
-    expect(reach(customMcp())).toBe("Allow all: every tool call goes through");
-    expect(reach(customMcp({ mode: "read-only" }))).toBe(
-      "Read only: only the tools that read, every other tool refused",
-    );
+  // TEST_SCENARIO: the connect form asks nothing about access for a Slack Account, which only offered the choice with the feature off.
+  it("asks nothing at connect", () => {
+    expect(pickableToolModes(SLACK_TEMPLATE.toolAccess, true)).toEqual([]);
+    expect(pickableToolModes(SLACK_TEMPLATE.toolAccess, false)).toEqual([
+      "read-only",
+      "allow-all",
+    ]);
   });
 
-  // TEST_SCENARIO: needs approval holds every call of a tool that does not read, so the owner sees the amber mark and the line says reads go through and every other call waits.
-  it("marks needs approval in amber", () => {
-    const html = badges(customMcp({ mode: "needs-approval" }));
-    expect(html).toContain("Needs approval");
-    expect(html).toContain("bg-warning");
-    expect(reach(customMcp({ mode: "needs-approval" }))).toBe(
-      "Needs approval: the tools that read go through, every other tool waits for an answer",
-    );
-  });
-
-  // TEST_SCENARIO: an MCP server with no auth offers allow all alone, so its row names no mode and carries no mark; a GitHub connection keeps its own "Full access" mark.
-  it("names nothing where there is nothing to pick", () => {
-    const open = customMcp({ modes: ["allow-all"] });
-    expect(badges(open)).toBe("");
-    expect(reach(open)).toBeUndefined();
+  // TEST_SCENARIO: a GitHub connection keeps its own "Full access" mark, which is not a tool mode.
+  it("keeps GitHub's full access mark", () => {
     const github = {
       id: "conn-gh",
       name: "github",
@@ -226,17 +242,14 @@ describe("an MCP connection's row with the feature on", () => {
 
 describe("sharing an agent that holds MCP connections with a chat", () => {
   const text = (
-    modes: {
-      name: string;
-      mode: "read-only" | "allow-all" | "needs-approval";
-    }[],
+    connections: { name: string; reach: "reads" | "asks" | "writes" }[],
   ) => {
     const host = document.createElement("div");
     host.innerHTML = renderToStaticMarkup(
       createElement(BindSharingText, {
         agentName: "helper",
-        connectionNames: modes.map((c) => c.name),
-        toolModes: modes,
+        connectionNames: connections.map((c) => c.name),
+        toolAccess: connections,
         audience: {
           kind: "slack-channel",
           id: "C1",
@@ -250,7 +263,7 @@ describe("sharing an agent that holds MCP connections with a chat", () => {
 
   // TEST_SCENARIO: a read-only Slack Account still lets the people in the chat read the owner's Slack through the agent, so the warning stays and says exactly that, and that nothing can be changed.
   it("says a read-only connection lets them read and change nothing", () => {
-    const shown = text([{ name: "my-slack", mode: "read-only" }]);
+    const shown = text([{ name: "my-slack", reach: "reads" }]);
     expect(shown).toContain("ask it to use it, with your access.");
     expect(shown).toContain(
       "my-slack is read only: through it they can read what you can read, and change nothing.",
@@ -261,8 +274,8 @@ describe("sharing an agent that holds MCP connections with a chat", () => {
   // TEST_SCENARIO: with allow all the people in the chat can make the agent post as the owner, and with needs approval they can read while every other call waits for someone, so the warning says each.
   it("says what allow all and needs approval let them do", () => {
     const shown = text([
-      { name: "my-slack", mode: "allow-all" },
-      { name: "my-notes", mode: "needs-approval" },
+      { name: "my-slack", reach: "writes" },
+      { name: "my-notes", reach: "asks" },
     ]);
     expect(shown).toContain(
       "Through my-slack they can also post and change things as you.",
@@ -270,5 +283,51 @@ describe("sharing an agent that holds MCP connections with a chat", () => {
     expect(shown).toContain(
       "Through my-notes they can read what you can read, and every other tool call waits until someone approves it.",
     );
+  });
+
+  const sharedAccess = () => {
+    let shared: ReturnType<typeof useAgentToolAccess> = null;
+    function Probe() {
+      shared = useAgentToolAccess({
+        id: "agent-standup",
+        grantedConnectionIds: ["conn-slack", "conn-notes"],
+      } as AgentView);
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    act(() => root.render(createElement(Probe)));
+    act(() => root.unmount());
+    return shared;
+  };
+
+  // TEST_SCENARIO: with the feature on the warning reads this Agent's own grant of each connection, not the connection's mode: a Slack Account left in allow all that this Agent may only read is read only here, and a connection where this Agent writes without asking says so.
+  it("reads the Agent's own grant with the feature on", () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    server.connections = [slack({ mode: "allow-all" }), customMcp()];
+    server.grants = {
+      agentId: "agent-standup",
+      connections: [
+        {
+          connectionId: "conn-slack",
+          grantedAt: "2026-11-24T00:00:00Z",
+          preferred: false,
+          toolAccess: { read: "allow", write: "block", overrides: {} },
+        },
+        {
+          connectionId: "conn-notes",
+          grantedAt: "2026-11-24T00:00:00Z",
+          preferred: false,
+          toolAccess: { read: "allow", write: "allow", overrides: {} },
+        },
+      ],
+    } satisfies AgentConnections;
+
+    expect(sharedAccess()).toEqual([{ name: "my-slack", reach: "writes" }]);
+
+    flags["mcp-tool-approval"] = true;
+    expect(sharedAccess()).toEqual([
+      { name: "my-slack", reach: "reads" },
+      { name: "my-notes", reach: "writes" },
+    ]);
   });
 });

@@ -14,7 +14,7 @@ import {
 import { BindSharingText } from "../components/bind/bind-sharing-text.js";
 import {
   useAgentSharedAccess,
-  useAgentToolModes,
+  useAgentToolAccess,
 } from "./use-agent-shared-access.js";
 import { useHoldsDamConnection } from "./use-holds-dam-connection.js";
 
@@ -35,7 +35,7 @@ export function useBindSharingConfirm(
   agent: AgentView | null,
 ): BindSharingConfirm {
   const names = useAgentSharedAccess(agent);
-  const toolModes = useAgentToolModes(agent);
+  const toolAccess = useAgentToolAccess(agent);
   const dam = damHoldWarns(useHoldsDamConnection(agent))
     ? damAudienceSentence(getBrand().name, "anyone in this chat")
     : null;
@@ -53,7 +53,7 @@ export function useBindSharingConfirm(
             <BindSharingText
               agentName={agent.name}
               connectionNames={names}
-              toolModes={toolModes ?? []}
+              toolAccess={toolAccess ?? []}
               audience={audience}
               whisper={whisper}
             />
@@ -66,7 +66,7 @@ export function useBindSharingConfirm(
         </>
       );
     },
-    [agent, names, toolModes, dam],
+    [agent, names, toolAccess, dam],
   );
   const confirm = useCallback(
     async (

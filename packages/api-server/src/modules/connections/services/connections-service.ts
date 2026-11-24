@@ -37,6 +37,7 @@ import {
   type ConnectionProviderView,
   type ConnectionToolAccess,
   type ConnectionToolAccessRecord,
+  type GrantToolAccess,
   type HarnessCatalog,
   type ProviderPresetType,
   type ToolMode,
@@ -72,8 +73,15 @@ import {
 } from "../domain/build-connection.js";
 import { parseGitHubAppScope } from "../domain/github-app-scope.js";
 import {
+  grantAccessOf,
   isMcpConnection,
+  limitsToolCalls,
+  MAX_TOOL_ACCESS_OVERRIDES,
+  MAX_TOOL_NAME_LENGTH,
   mcpServerOf,
+  normalizedAccess,
+  readToolsOf,
+  startingAccessOf,
   toolModeOf,
   toolModesOf,
   type McpToolLister,
@@ -221,6 +229,14 @@ function assertNoUnaddressableRival(
   }
 }
 
+function loggedAccess(access: GrantToolAccess): Record<string, unknown> {
+  return {
+    read: access.read,
+    write: access.write,
+    overrides: Object.keys(access.overrides).length,
+  };
+}
+
 function parentKindOf(conn: Connection): string {
   return conn.auth.kind === "github-app"
     ? "GitHub App installation"
@@ -310,6 +326,8 @@ export function createConnectionsService(deps: {
   } | null>;
   /* UNIT_BOUNDARY_DESCRIPTION: the children whose connections follow an Agent's (launched with connections from their parent), which take the Agent's whole set each time it changes. */
   mirroredChildren?: (agentId: string) => Promise<string[]>;
+  /* UNIT_BOUNDARY_DESCRIPTION: the Agent a child took its connections from at launch, mirrored or a subset, or null for an Agent that took none from a parent. A new grant of a child copies the tool access of this parent's grant of the same Connection. */
+  parentOf: (agentId: string) => Promise<string | null>;
 }): ConnectionsService & ManagedProviderConnections {
   let catalog: ProviderModelCatalog | undefined;
   const providerModelCatalog = () =>
@@ -557,7 +575,7 @@ export function createConnectionsService(deps: {
     };
   }
 
-  /* UNIT_BOUNDARY_DESCRIPTION: writes a Connection's tool mode, one of the modes it offers; needs approval only while the owner has the `mcp-tool-approval` feature. A mode that limits tool calls writes the Secret again first, so a Secret made before its Template declared tool access asks the gateway for request bodies. */
+  /* UNIT_BOUNDARY_DESCRIPTION: writes a Connection's tool mode, one of the modes it offers; needs approval only while the owner has the `mcp-tool-approval` feature. A mode that limits tool calls writes the Secret again first, so a Secret made before its Template declared tool access asks the gateway for request bodies. It clears the tool access of every grant of the Connection, so every Agent that holds it follows the mode again. */
   async function assertToolModeOffered(
     conn: Pick<Connection, "name" | "auth" | "contributions">,
     mode: ToolMode,
@@ -596,6 +614,7 @@ export function createConnectionsService(deps: {
           ...fresh.toolAccess,
           mode,
         });
+        await deps.repo.clearGrantToolAccess(conn.id);
         return toolModeOf(fresh, template);
       },
     );
@@ -1634,6 +1653,48 @@ export function createConnectionsService(deps: {
     }
   }
 
+  /* UNIT_BOUNDARY_DESCRIPTION: the tool access a new grant of each Connection stores. With the `mcp-tool-approval` feature on for the owner, a Connection whose requests the gateway reads starts safe; any other Connection, and every Connection while the feature is off, stores none and follows its tool mode. */
+  async function startingAccessFor(
+    connections: readonly Connection[],
+  ): Promise<Map<string, GrantToolAccess>> {
+    const read = connections.filter((conn) => mcpServerOf(conn) !== null);
+    if (read.length === 0) return new Map();
+    if (!(await deps.toolApprovalOffered().catch(() => false)))
+      return new Map();
+    return new Map(
+      read.map((conn) => [
+        conn.id,
+        startingAccessOf(conn, deps.templates.get(conn.templateId)),
+      ]),
+    );
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: writes the Secret of a Connection again, under its refresh lock, before a grant of it limits tool calls, so a Secret written before every MCP Connection asked for request bodies asks for them, and the gate does not refuse every call of the Agent. */
+  async function restampBeforeLimiting(connectionId: string): Promise<void> {
+    await deps.connectionLock(
+      connectionRefreshLockKey(connectionId),
+      async () => {
+        const fresh = await deps.repo.get(connectionId, deps.ownerId);
+        if (fresh) await restampConnectionSecret(fresh);
+      },
+    );
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the tool access each new grant of an Agent stores. A child that took its connections from a parent, mirrored or a subset, copies what the parent's grant of that Connection stores, nothing included, so a sub-agent, which often cannot ask a person, is held to its parent's rules. A Connection the parent does not hold, and every grant of an Agent with no such parent, takes the starting access. */
+  async function initialAccessFor(
+    owned: readonly Connection[],
+    agentId: string,
+  ): Promise<Map<string, GrantToolAccess | null>> {
+    const initial = new Map<string, GrantToolAccess | null>(
+      await startingAccessFor(owned.filter(isGrantable)),
+    );
+    const parentAgentId = await deps.parentOf(agentId);
+    if (parentAgentId === null) return initial;
+    for (const grant of await deps.repo.listAgentGrants(parentAgentId))
+      initial.set(grant.connectionId, grant.toolAccess);
+    return initial;
+  }
+
   async function applyGrants(
     agentId: string,
     desiredFrom: (current: string[]) => string[],
@@ -1653,6 +1714,19 @@ export function createConnectionsService(deps: {
     }
     const owned = await deps.repo.listByOwner(deps.ownerId);
     const ownedById = new Map(owned.map((c) => [c.id, c]));
+
+    const before = new Set(
+      (await deps.repo.listAgentGrants(agentId)).map((g) => g.connectionId),
+    );
+    const starting = await initialAccessFor(owned, agentId);
+    const restamped = new Set<string>();
+    for (const id of desiredFrom([...before])) {
+      const access = starting.get(id);
+      if (before.has(id) || !access || !limitsToolCalls(access)) continue;
+      await restampBeforeLimiting(id);
+      restamped.add(id);
+    }
+    let grantedNew: string[] = [];
 
     let applied: string[] = [];
     await deps.connectionLock(`agent:connections:${agentId}`, async () => {
@@ -1700,7 +1774,9 @@ export function createConnectionsService(deps: {
         grantedConnections,
       );
 
-      for (const id of toGrant) await deps.repo.grant(id, agentId);
+      for (const id of toGrant)
+        await deps.repo.grant(id, agentId, starting.get(id) ?? null);
+      grantedNew = toGrant;
       for (const id of toRevoke) await deps.repo.revoke(id, agentId);
 
       if (toGrant.length > 0 || toRevoke.length > 0) {
@@ -1721,10 +1797,15 @@ export function createConnectionsService(deps: {
         allOwnerConnectionIds: new Set(owned.map((c) => c.id)),
       });
     });
+    for (const id of grantedNew) {
+      const access = starting.get(id);
+      if (!restamped.has(id) && access && limitsToolCalls(access))
+        await restampBeforeLimiting(id);
+    }
     await mirrorToChildren(agentId, applied);
   }
 
-  /* UNIT_BOUNDARY_DESCRIPTION: a parent's new grant set reaches every child that mirrors it, and through each child its own mirroring children, once the parent's change is committed, each under its own lock. A child that refuses the set is logged and keeps what it had, and never undoes the parent's change. */
+  /* UNIT_BOUNDARY_DESCRIPTION: a parent's new grant set reaches every child that mirrors it, and through each child its own mirroring children, once the parent's change is committed, each under its own lock. A new grant of a child copies the tool access of its parent's grant. A child that refuses the set is logged and keeps what it had, and never undoes the parent's change. */
   async function mirrorToChildren(
     agentId: string,
     set: readonly string[],
@@ -1739,6 +1820,23 @@ export function createConnectionsService(deps: {
           "connections: a mirroring child did not take its parent's grants",
         );
       }
+    }
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: a parent's new tool access on one Connection reaches the grant of that Connection of every child that mirrors the parent's grants, and through each child its own mirroring children, so no child stays looser than its parent. A child that does not hold the Connection is skipped. A write that fails is thrown, so the owner sees that a child was not reached. */
+  async function mirrorAccessToChildren(
+    agentId: string,
+    connectionId: string,
+    access: GrantToolAccess,
+    seen: Set<string> = new Set([agentId]),
+  ): Promise<void> {
+    if (!deps.mirroredChildren) return;
+    for (const child of await deps.mirroredChildren(agentId)) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      if (!(await deps.repo.setGrantToolAccess(connectionId, child, access)))
+        continue;
+      await mirrorAccessToChildren(child, connectionId, access, seen);
     }
   }
 
@@ -2495,19 +2593,31 @@ export function createConnectionsService(deps: {
     },
 
     async getAgentConnections(agentId: string): Promise<AgentConnections> {
-      const [grants, library] = await Promise.all([
+      const [grants, library, granted, offered] = await Promise.all([
         deps.repo.listAgentGrants(agentId),
         service.listConnections(),
+        deps.repo.listConnectionsForAgent(agentId),
+        deps.toolApprovalOffered().catch(() => false),
       ]);
       const views = new Map(library.map((view) => [view.id, view]));
+      const connections = new Map(granted.map((conn) => [conn.id, conn]));
       return {
         agentId,
         connections: grants.map((g) => {
           const view = views.get(g.connectionId);
+          const conn = connections.get(g.connectionId);
+          const toolAccess =
+            offered && conn && mcpServerOf(conn)
+              ? grantAccessOf(
+                  { connection: conn, toolAccess: g.toolAccess },
+                  deps.templates.get(conn.templateId),
+                )
+              : null;
           return {
             connectionId: g.connectionId,
             grantedAt: g.grantedAt.toISOString(),
             preferred: g.preferred,
+            ...(toolAccess ? { toolAccess } : {}),
             ...(view ? { connection: view } : {}),
           };
         }),
@@ -3361,6 +3471,80 @@ export function createConnectionsService(deps: {
         });
       }
       await setToolMode(conn, input.mode);
+    },
+
+    async setGrantToolAccess(input) {
+      const conn = await deps.repo.get(input.connectionId, deps.ownerId);
+      if (!conn) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "connection not found",
+        });
+      }
+      if (!(await deps.toolApprovalOffered().catch(() => false))) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message:
+            "Tool access for each agent is an experimental feature that is off for you, so it cannot be set.",
+        });
+      }
+      if (!mcpServerOf(conn)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `The connection "${conn.name}" has no MCP server whose requests the platform reads, so it has no tool access to set: only an MCP server connected with a credential has one.`,
+        });
+      }
+      const long = Object.keys(input.access.overrides).find(
+        (tool) => tool.length === 0 || tool.length > MAX_TOOL_NAME_LENGTH,
+      );
+      if (long !== undefined) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `A tool name in the tool access must have 1 to ${MAX_TOOL_NAME_LENGTH} characters.`,
+        });
+      }
+      const template = deps.templates.get(conn.templateId);
+      const access = normalizedAccess(
+        input.access,
+        readToolsOf(conn, template),
+      );
+      if (Object.keys(access.overrides).length > MAX_TOOL_ACCESS_OVERRIDES) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `The tool access can name at most ${MAX_TOOL_ACCESS_OVERRIDES} tools whose rule differs from their group's.`,
+        });
+      }
+      const notGranted = () =>
+        new TRPCError({
+          code: "BAD_REQUEST",
+          message: "connection is not granted to this agent",
+        });
+      const held = (await deps.repo.listAgentGrants(input.agentId)).find(
+        (g) => g.connectionId === conn.id,
+      );
+      if (!held) throw notGranted();
+      if (limitsToolCalls(access)) await restampBeforeLimiting(conn.id);
+      if (!(await deps.repo.setGrantToolAccess(conn.id, input.agentId, access)))
+        throw notGranted();
+      securityLog("info", "connection.grant_access_update", {
+        category: "authz-list",
+        actor: deps.ownerId,
+        actorKind: "user",
+        agentId: input.agentId,
+        target: conn.id,
+        result: "success",
+        detail: {
+          templateId: conn.templateId,
+          from: loggedAccess(
+            grantAccessOf(
+              { connection: conn, toolAccess: held.toolAccess },
+              template,
+            ),
+          ),
+          to: loggedAccess(access),
+        },
+      });
+      await mirrorAccessToChildren(input.agentId, conn.id, access);
     },
 
     async refreshTools(input) {

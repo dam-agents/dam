@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the tool mode and the tool list of an MCP Connection. A Slack Account is read only unless the create names another mode, and its owner switches it with one verb. The Templates that make an MCP Connection list the modes they offer, so a client shows the picker only there. Every MCP Connection with a Secret offers all three modes, and its Secret tells the gateway to send request bodies on its MCP host to the check; one with no auth offers allow all alone. The api-server reads the server's tool list with the Connection's own credential, at create, when a new credential replaces the old one, and on refresh, and stores which tools read: the server's `readOnlyHint`, or the Template's own read list where it declares one. A list that fails never fails the create. When a call of a Slack Account that writes a message is held, the api-server names where the message goes with the Connection's own token: the channel, or the person of a direct message; any other call, or a Slack answer that is not ok, gets no name. The listing shows the mode on MCP Connections only, and needs approval is open only to an owner with the feature on.
+// TEST_OVERVIEW: the tool mode and the tool list of an MCP Connection. A Slack Account is read only unless the create names another mode, and its owner switches it with one verb. The Templates that make an MCP Connection list the modes they offer, so a client shows the picker only there. Every MCP Connection with a Secret offers all three modes, and its Secret tells the gateway to send request bodies on its MCP host to the check; one with no auth offers allow all alone. The api-server reads the server's tool list with the Connection's own credential, at create, when a new credential replaces the old one, and on refresh, and stores which tools read: the server's `readOnlyHint`, or the Template's own read list where it declares one. A list that fails never fails the create. When a call of a Slack Account that writes a message is held, the api-server names where the message goes with the Connection's own token: the channel, or the person of a direct message; any other call, or a Slack answer that is not ok, gets no name. The listing shows the mode on MCP Connections only, and needs approval is open only to an owner with the feature on. Setting the mode clears the tool access of every grant of the Connection, so every Agent follows the mode again.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Connection, ToolMode } from "api-server-api";
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
@@ -147,6 +147,30 @@ describe("the tool mode of a Slack Account Connection", () => {
     expect(on.rows.get(created.id)!.toolAccess?.mode).toBe("needs-approval");
     const view = await on.svc.getConnection(created.id);
     expect(view?.toolAccess?.mode).toBe("needs-approval");
+  });
+
+  // TEST_SCENARIO: the Slack choice between read only and "Can post as me" stays one choice for the whole Connection. Setting the mode clears the access each grant stores, so every Agent that holds the Connection follows the new mode.
+  it("clears the access of every grant when the mode changes", async () => {
+    const h = harness();
+    const created = await connectSlack(h);
+    await h.svc.setAgentConnections("agent-1", [created.id]);
+    await h.svc.setAgentConnections("agent-2", [created.id]);
+    await h.svc.setGrantToolAccess({
+      agentId: "agent-1",
+      connectionId: created.id,
+      access: { read: "allow", write: "ask", overrides: {} },
+    });
+    await h.svc.setToolMode({ id: created.id, mode: "allow-all" });
+    expect(h.grantAccess.get(`${created.id}|agent-1`)).toBeNull();
+    expect(h.grantAccess.get(`${created.id}|agent-2`)).toBeNull();
+    for (const agentId of ["agent-1", "agent-2"]) {
+      const listed = await h.svc.getAgentConnections(agentId);
+      expect(listed.connections[0]?.toolAccess).toEqual({
+        read: "allow",
+        write: "allow",
+        overrides: {},
+      });
+    }
   });
 
   // TEST_SCENARIO: a Connection made before tool access existed has a Secret that does not ask for request bodies, so its gateway sends none and the gate would refuse every call of a read-only Connection. Switching it to read only writes the Secret again with the flag, and keeps its fields.
@@ -328,22 +352,24 @@ describe("the tool list of an MCP Connection", () => {
     ]);
   });
 
-  // TEST_SCENARIO: the owner sets a custom MCP Connection to read only. The gate's limit on its MCP host lets through only the tools the stored list marks as reading: not a write tool, and not a tool the list does not name.
+  // TEST_SCENARIO: the owner sets a custom MCP Connection to read only, and the Agent's grant stores no access of its own. The gate's limit on its MCP host allows only the tools the stored list marks as reading, and blocks a write tool and a tool the list does not name.
   it("limits a read-only custom MCP Connection to its read tools", async () => {
     const h = harness({
       lister: fakeMcpToolLister({ ok: true, tools: NOTES_TOOLS }),
     });
     const created = await connectCustomMcp(h);
     await h.svc.setToolMode({ id: created.id, mode: "read-only" });
-    const limit = toolAccessFor(
-      [h.rows.get(created.id)!],
-      (id) => templates.get(id),
-      { host: "mcp.example.com", connectionId: null },
-    );
-    expect(limit).toMatchObject({ mode: "read-only" });
-    expect(limit?.readTools).toEqual(["notes_search"]);
+    const granted = [{ connection: h.rows.get(created.id)!, toolAccess: null }];
+    const limit = toolAccessFor(granted, (id) => templates.get(id), {
+      host: "mcp.example.com",
+      connectionId: null,
+    });
+    expect(limit).toMatchObject({ connectionId: created.id });
+    expect(limit?.ruleOf("notes_search").rule).toBe("allow");
+    expect(limit?.ruleOf("notes_write").rule).toBe("block");
+    expect(limit?.ruleOf("notes_new_tool").rule).toBe("block");
     expect(
-      toolAccessFor([h.rows.get(created.id)!], (id) => templates.get(id), {
+      toolAccessFor(granted, (id) => templates.get(id), {
         host: "api.example.com",
         connectionId: null,
       }),

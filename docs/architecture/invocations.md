@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-11-20
+Last verified: 2026-11-24
 
 ## Overview
 
@@ -79,6 +79,7 @@ An image target declares nothing, so nothing is narrowed.
 **The driver can enter its target.** A target accepts the [Environment Link](environments.md#the-environment-link) from its driver alone (`linkFrom`, set at spawn), so the driver reaches the target's machine over SSH, while the target still dials Environments of its own; nothing in a target reaches its driver, and no other agent, the driver's own driver included, reaches the target.
 
 **Connections from the Driver.** A spawn says which of the Driver's connections its target holds, recorded once, at launch, in what the target inherits: `parent` gives it all of them and keeps them in step with the Driver's own for as long as the target lives, a grant or a revoke on the Driver reaching the target, and through it the target's own mirroring children, once the Driver's change commits; a list copies those connections once, each already granted to the Driver; `none`, the default, leaves it only its provider, and is the only choice for a target whose egress is open.
+Each connection a target takes this way carries the Driver's tool access on it, or none where the Driver's grant stores none; with `parent` a later change of that access reaches the target too, while a list keeps what it copied ([connections](connections.md#connection)).
 Network reach needs no grant of its own: by default a target has no egress identity and runs under its Driver's rules, unless the spawn gives it egress of its own, open or scoped ([detached egress](security-and-credentials.md)), though its own provider Connections' hosts pass over them ([Egress Aliasing](security-and-credentials.md)); its spend is attributed to its root Driver ([observability](observability.md)).
 An *open* child follows only the rules its Driver sets and is denied anything else without a prompt, except that a wildcard allow rule (`*`, `*.example.com`) waits for the owner's approval.
 **A child never reaches more than its Driver unless the owner agreed.** An allow rule the Driver sets on an open child, at launch or when it replaces the child's rules, waits for the owner's approval like a wildcard rule when it lets through a request (a host, port, method and path) that the Driver's own rules (as they are at that moment) do not allow, compared as the gate reads them: the most specific host pattern decides, and a Driver limited to one method or path of a host gives its child no more of that host.

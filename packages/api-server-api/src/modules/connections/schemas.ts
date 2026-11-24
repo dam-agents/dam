@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { RESERVED_MCP_SERVER_NAMES, resourceNameSchema } from "../shared.js";
-import { toolMode } from "./types.js";
+import { grantToolAccess, toolMode } from "./types.js";
 
 const GATEWAY_HOST =
   /^(?:\*\.)?[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)*$/;
@@ -252,6 +252,12 @@ export const connectionUpdateGitHubUserTokenScopeInputSchema = z.object({
 export const connectionSetToolModeInputSchema = z.object({
   id: z.string().min(1),
   mode: toolMode,
+});
+
+export const connectionSetGrantToolAccessInputSchema = z.object({
+  agentId: z.string().min(1),
+  connectionId: z.string().min(1),
+  access: grantToolAccess,
 });
 
 export const connectionMoveToHostInputSchema = z.object({

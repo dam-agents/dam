@@ -47,6 +47,7 @@ import {
   parseToolMode,
   TOOL_MODE_FLAG_HINT,
   toolModeNote,
+  LATER_GRANT_HELP,
 } from "../domain/tool-mode.js";
 import type { ConnectionService } from "../services/connection-service.js";
 import {
@@ -191,7 +192,8 @@ export function buildConnectCommand(deps: {
     .option(
       "--mode <mode>",
       "the tool mode of an MCP connection, such as a Slack Account: allow-all, read-only or needs-approval " +
-        "(default: the template's, read-only for a Slack Account and allow-all elsewhere)",
+        "(default: the template's, read-only for a Slack Account and allow-all elsewhere). " +
+        "An agent you grant it to can start stricter, see below",
     )
     .option("--header-name <name>", "input: header name")
     .option("--value-format <format>", "input: header value format")
@@ -276,6 +278,9 @@ export function buildConnectCommand(deps: {
         "signs in on the one --host names, and asks which at a terminal without it;\n" +
         "`dam connection templates` lists them. Another host takes your own app:\n" +
         "pass --client-id and --client-secret with it.\n" +
+        "\nAn MCP connection has a tool mode: allow all, read only or needs approval.\n" +
+        "--mode picks it, else the template's default.\n" +
+        LATER_GRANT_HELP +
         "\nA missing secret (token, API key, client secret, private key, key pair)\n" +
         "is entered on a DAM web page: the command opens it, waits until the\n" +
         "secret is saved, and reports the result. The page shows where the secret\n" +
@@ -287,8 +292,8 @@ export function buildConnectCommand(deps: {
         "      --permissions contents:read,pull_requests:write\n" +
         "  dam connection connect github --full-access --no-browser\n" +
         "  dam connection connect slack   # read only: the agent reads Slack as you\n" +
-        "  dam connection connect slack --mode allow-all   # it can also post as you\n" +
-        "  dam connection connect slack --mode needs-approval   # writes wait for approval\n" +
+        "  dam connection connect slack --mode allow-all   # the mode also allows posting as you\n" +
+        "  dam connection connect slack --mode needs-approval   # the mode asks before each write\n" +
         "  dam connection connect github-enterprise --host research.ghe.example.com\n" +
         "  dam connection connect --from github --account acme --repositories docs --name github-docs\n" +
         "  dam connection connect github-pat   # the token is entered on a DAM web page\n" +

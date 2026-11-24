@@ -94,7 +94,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "mcp-tool-approval",
     label: "Tool approval for MCP connections",
     description:
-      "Choose for each MCP connection whether an agent may call every tool, only the tools that read, or each tool only after someone approves the call.",
+      "Choose for each agent what it may do with the tools of an MCP connection: call a tool at once, call it only after someone approves the call, or not at all.",
   },
 ];
 

@@ -8,10 +8,7 @@ import {
 } from "api-server-api";
 import { match } from "ts-pattern";
 
-import {
-  type TemplateToolCall,
-  templateToolCallOf,
-} from "../../approvals/lib/tool-call-renderers.js";
+import { templateToolCallOf } from "../../approvals/lib/tool-call-renderers.js";
 import {
   AGENT_LIMIT_NAME,
   allAgentsConnectionLimitName,
@@ -103,22 +100,22 @@ function toolCallLine(
     : call;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a tool call that its Template renders, with the quiet line that still names the Connection and the exact tool, so the friendly headline never hides what runs. Null for every other approval, which keeps the generic detail line.
-export function approvalTemplateToolCall(
-  approval: ApprovalView,
-): { call: TemplateToolCall; source: string } | null {
+// UNIT_BOUNDARY_DESCRIPTION: the quiet line under a tool-call approval's Details that names the Connection and the exact tool, and the sub-agent or Environment the call came from, so the friendly title never hides what runs. Null for every other approval.
+export function approvalToolCallSource(approval: ApprovalView): string | null {
   const payload = approval.payload;
   if (payload.kind !== "mcp_tool_call") return null;
-  const call = templateToolCallOf(payload);
-  if (!call) return null;
-  return {
-    call,
-    source: toolCallLine(
-      approval,
-      payload,
-      `${payload.connectionName} · ${payload.tool}`,
-    ),
-  };
+  return toolCallLine(
+    approval,
+    payload,
+    `${payload.connectionName} · ${payload.tool}`,
+  );
+}
+
+const REFUSED_LABEL = /^(Denied|Always denied|Stopped|Declined|Not )/;
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the line an approval card shows after the answer says the request was refused, such as "Denied" or "Not posted. Standup writer was told.", so the card shows it in the refusal colour.
+export function isRefusedLabel(label: string): boolean {
+  return REFUSED_LABEL.test(label);
 }
 
 function spendLimitName(

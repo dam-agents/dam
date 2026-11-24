@@ -9,6 +9,7 @@ import {
 import {
   childEgressGrants,
   childrenMirroringConnections,
+  connectionsParentOf,
   composeAgentsModule,
   composeEditorStanding,
   connectionGrantProvisioner,
@@ -254,6 +255,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const connections = composeConnectionsForOwner({
       ownerId: user.sub,
       mirroredChildren: childrenMirroringConnections(db),
+      parentOf: connectionsParentOf(db),
       maxSharedKbConnections: config.kbShareMaxConnectionsPerOwner,
       db,
       templates: connectionsBoot.templates,

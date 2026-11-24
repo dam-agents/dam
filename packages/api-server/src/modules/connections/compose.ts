@@ -41,6 +41,7 @@ import {
 import {
   heldToolAccess,
   toolAccessFor,
+  type LimitingConnection,
   type McpToolLister,
   type ToolAccessLimit,
 } from "./domain/tool-access.js";
@@ -295,7 +296,7 @@ export function createProviderEgressScopes(db: Db): {
   };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: answers the egress gate which Connection limits the tool calls of a request of an Agent to a host, and in which tool mode. Any MCP Connection with a Secret can limit its own MCP host, so it reads the Agent's granted Connections once for each request, with no cache, and the owner's mode holds from the next request. The one read answers every host the check looks up, and whether the Agent holds a limiting Connection on any host, for a request whose real host the gateway did not say.
+// UNIT_BOUNDARY_DESCRIPTION: answers the egress gate which grant limits the tool calls of a request of an Agent to a host, and the rule of each tool. Any MCP Connection with a Secret can limit its own MCP host, so it reads the Agent's granted Connections with each grant's tool access once for each request, with no cache, and the owner's change holds from the next request. The one read answers every host the check looks up, and whether the Agent holds a limiting grant on any host, for a request whose real host the gateway did not say.
 export function createToolAccessConnections(
   db: Db,
   templates: Pick<ConnectionTemplateRegistry, "get">,
@@ -305,14 +306,14 @@ export function createToolAccessConnections(
       host: string;
       connectionId: string | null;
     }): ToolAccessLimit | null;
-    held(): ToolAccessLimit | null;
+    held(): LimitingConnection | null;
   }>;
 } {
   const repo = createConnectionsRepository(db);
   const templateOf = (templateId: string) => templates.get(templateId);
   return {
     async forAgent(agentId) {
-      const granted = await repo.listConnectionsForAgent(agentId);
+      const granted = await repo.listGrantedConnections(agentId);
       return {
         limiting: (request) => toolAccessFor(granted, templateOf, request),
         held: () => heldToolAccess(granted, templateOf),
@@ -371,6 +372,7 @@ export function composeConnectionsForOwner(opts: {
     harness: string;
   } | null>;
   mirroredChildren?: (agentId: string) => Promise<string[]>;
+  parentOf: (agentId: string) => Promise<string | null>;
 }): ConnectionsService & ManagedProviderConnections {
   const repo = createConnectionsRepository(opts.db);
   const connectionLock = createXactLock(opts.db);
@@ -409,6 +411,7 @@ export function composeConnectionsForOwner(opts: {
     ...(opts.mirroredChildren
       ? { mirroredChildren: opts.mirroredChildren }
       : {}),
+    parentOf: opts.parentOf,
     templates: opts.templates,
     repo,
     secretStore: opts.secretStore,

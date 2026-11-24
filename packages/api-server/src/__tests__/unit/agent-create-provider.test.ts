@@ -25,7 +25,10 @@ import {
   attachProviderToBareAgents,
   connectionGrantProvisioner,
 } from "../../modules/agents/compose.js";
-import { fakeMcpToolLister } from "../helpers/connections-service.js";
+import {
+  fakeMcpToolLister,
+  noConnectionsParent,
+} from "../helpers/connections-service.js";
 
 type AgentsDeps = Parameters<typeof createAgentsService>[0];
 type ConnectionsDeps = Parameters<typeof createConnectionsService>[0];
@@ -89,6 +92,7 @@ function setup(
   opts: { damOffered?: boolean } = {},
 ) {
   const connections = createConnectionsService({
+    parentOf: noConnectionsParent,
     damConnectionOffered: async () => opts.damOffered ?? true,
     toolApprovalOffered: async () => true,
     mcpToolLister: fakeMcpToolLister(),

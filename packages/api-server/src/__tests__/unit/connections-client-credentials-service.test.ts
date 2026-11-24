@@ -21,7 +21,10 @@ import { sdsFileKeyForHost } from "../../modules/connections/domain/connection-s
 import type { ConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
 import type { OAuthFlowService } from "../../modules/connections/services/oauth-flow.js";
-import { fakeMcpToolLister } from "../helpers/connections-service.js";
+import {
+  fakeMcpToolLister,
+  noConnectionsParent,
+} from "../helpers/connections-service.js";
 
 const NOW_MS = 1_800_000_000_000;
 const OWNER = "owner-sub";
@@ -60,6 +63,9 @@ function makeRepoFake() {
     setPreferred: async () => {},
     listAgentGrants: async () => [],
     listConnectionsForAgent: async () => [],
+    setGrantToolAccess: async () => false,
+    clearGrantToolAccess: async () => {},
+    listGrantedConnections: async () => [],
     listAgentsForConnection: async () => [],
     revokeAllForAgent: async () => {},
     listDistinctGrantAgentIds: async () => [],
@@ -123,6 +129,7 @@ function makeService(
     },
   };
   const svc = createConnectionsService({
+    parentOf: noConnectionsParent,
     damConnectionOffered: async () => true,
     toolApprovalOffered: async () => true,
     mcpToolLister: fakeMcpToolLister(),

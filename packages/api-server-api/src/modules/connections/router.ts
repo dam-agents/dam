@@ -22,6 +22,7 @@ import {
   connectionCreateFromParentInputSchema,
   connectionProbeGitHubUserTokenInputSchema,
   connectionUpdateGitHubUserTokenScopeInputSchema,
+  connectionSetGrantToolAccessInputSchema,
   connectionSetToolModeInputSchema,
   connectionMoveToHostInputSchema,
   connectionAgentCatalogInputSchema,
@@ -170,6 +171,10 @@ export const connectionsRouter = t.router({
   setToolMode: manageCredentialsProcedure
     .input(connectionSetToolModeInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.setToolMode(input)),
+
+  setGrantToolAccess: manageCredentialsProcedure
+    .input(connectionSetGrantToolAccessInputSchema)
+    .mutation(({ ctx, input }) => ctx.connections.setGrantToolAccess(input)),
 
   refreshTools: manageCredentialsProcedure
     .input(connectionIdInputSchema)

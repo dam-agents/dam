@@ -1,6 +1,8 @@
 // TEST_OVERVIEW: The CLI shows and changes the tool mode of an MCP connection, such as a Slack Account: allow all, read only or needs approval. `dam connection list` shows the mode in the SCOPE column and carries toolAccess in --json. `dam connection scope --mode` sets the mode with setToolMode and refuses the GitHub scope flags and a mode the connection does not offer. `dam connection tools` prints the tool list grouped into read and write tools, and reads it again on --refresh.
 import type { ConnectionToolAccess } from "api-server-api";
+import type { Command } from "commander";
 import { describe, expect, it, vi } from "vitest";
+import { buildConnectCommand } from "../modules/connection/commands/connect.js";
 import { buildListCommand } from "../modules/connection/commands/list.js";
 import { buildScopeCommand } from "../modules/connection/commands/scope.js";
 import { buildToolsCommand } from "../modules/connection/commands/tools.js";
@@ -145,6 +147,26 @@ describe("dam connection scope on an MCP connection", () => {
       expect(output.stderr).toContain(message);
     }
     expect(setToolMode).not.toHaveBeenCalled();
+  });
+
+  /** TEST_SCENARIO: with tool access per agent on, an agent granted later starts with the stricter of the mode and the safe start, so the help of --mode on connect and on scope must not promise that the mode reaches it. Scope's --mode sets the agents that hold the connection now. */
+  it("says in its help whom --mode reaches", () => {
+    const helpOf = (command: Command) => {
+      let help = "";
+      command.configureOutput({ writeOut: (s) => (help += s) });
+      command.outputHelp();
+      return help.replace(/\s+/g, " ");
+    };
+    const scopeHelp = helpOf(scope({}));
+    expect(scopeHelp).toContain(
+      "It sets the agents that hold the connection now",
+    );
+    const connectHelp = helpOf(buildConnectCommand(deps({})));
+    for (const help of [scopeHelp, connectHelp]) {
+      expect(help).toContain("can start stricter");
+      expect(help).toContain("the stricter of the mode and the safe start");
+      expect(help).not.toContain("it can also post as you");
+    }
   });
 
   /** TEST_SCENARIO: --mode means nothing on a connection with no MCP server, such as a GitHub App connection, so it is refused instead of ignored. */

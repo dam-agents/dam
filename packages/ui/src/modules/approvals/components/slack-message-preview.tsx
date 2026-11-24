@@ -1,16 +1,27 @@
-import { slackTargetLine } from "../lib/slack-target-line.js";
 import type { SlackMessageCall } from "../lib/tool-call-renderers.js";
+import { SlackMarkup } from "./slack-markup.js";
 
-export function SlackMessagePreview({ call }: { call: SlackMessageCall }) {
+export function SlackMessagePreview({
+  message,
+  sender,
+}: {
+  message: SlackMessageCall;
+  sender: string;
+}) {
   return (
     <div
       data-testid="tool-call-slack-message"
-      className="flex flex-col gap-1.5"
+      className="rounded-lg border border-border bg-background px-3.5 py-3"
     >
-      <p className="text-sm text-muted-foreground">{slackTargetLine(call)}</p>
-      <p className="max-h-60 overflow-y-auto rounded-lg border border-border bg-background px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words text-foreground">
-        {call.text}
-      </p>
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <span className="text-sm font-bold text-foreground">{sender}</span>
+        <span className="text-xs text-muted-foreground">
+          how it will look in Slack
+        </span>
+      </div>
+      <div className="mt-0.5 max-h-80 overflow-y-auto text-sm leading-relaxed text-foreground">
+        <SlackMarkup text={message.text} />
+      </div>
     </div>
   );
 }

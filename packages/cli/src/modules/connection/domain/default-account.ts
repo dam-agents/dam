@@ -3,12 +3,14 @@ import {
   preferenceGroupOf,
   type ConnectionView,
   type DefaultAccountKindId,
+  type GrantToolAccess,
 } from "api-server-api";
 
 export interface AgentGrant {
   connectionId: string;
   grantedAt: string;
   preferred: boolean;
+  toolAccess?: GrantToolAccess;
 }
 
 export interface DefaultMark {

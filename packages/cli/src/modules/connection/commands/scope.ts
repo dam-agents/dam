@@ -9,6 +9,7 @@ import type {
 import type { Result } from "../../../result.js";
 import type { AuthRequiredError, TransportError } from "../../shared/errors.js";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
+import type { AgentService } from "../../agent/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
@@ -19,11 +20,16 @@ import {
 } from "../domain/connection-ref.js";
 import {
   formatToolMode,
+  LATER_GRANT_HELP,
   parseToolMode,
   TOOL_MODE_FLAG_HINT,
   toolModeNote,
 } from "../domain/tool-mode.js";
 import { credentialCheckSummary } from "../domain/credential-check.js";
+import {
+  hasToolAccessFlags,
+  parseToolAccessFlags,
+} from "../domain/grant-tool-access.js";
 import {
   childrenOf,
   connectFromHint,
@@ -47,10 +53,18 @@ import {
 } from "../domain/github-scope.js";
 import type { ConnectionService } from "../services/connection-service.js";
 import { readBackFailure, readBackWarning } from "./connect-from.js";
+import { scopeGrantToolAccess } from "./grant-tool-access.js";
+
+const collect = (v: string, acc: string[]): string[] => [...acc, v];
 
 interface ScopeOpts extends ScopeFlags {
   fullAccess?: boolean;
   mode?: string;
+  agent?: string;
+  read?: string;
+  write?: string;
+  tool: string[];
+  resetTool: string[];
   clear?: boolean;
   server?: string;
   json?: boolean;
@@ -61,12 +75,13 @@ type Available = GitHubUserTokenProbe | GitHubAppInstallationProbe;
 export function buildScopeCommand(deps: {
   compatService: CompatService;
   configService: ConfigService;
+  createAgentService: (host: string) => AgentService;
   createConnectionService: (host: string) => ConnectionService;
 }): Command {
   return new Command("scope")
     .description(
       "Show or limit the account, repositories and permissions a GitHub connection reaches, " +
-        "or show and set the tool mode of an MCP connection, such as a Slack Account",
+        "or show and set the tool access of an MCP connection, such as a Slack Account, for one agent or for the agents that hold it",
     )
     .argument(
       "<id-or-name>",
@@ -97,7 +112,33 @@ export function buildScopeCommand(deps: {
     .option(
       "--mode <mode>",
       "set the tool mode of an MCP connection: allow-all (every tool call passes), " +
-        "read-only (only the tools that read pass) or needs-approval (the tools that read pass, every other tool call waits until someone approves it)",
+        "read-only (only the tools that read pass) or needs-approval (the tools that read pass, every other tool call waits until someone approves it). " +
+        "It sets the agents that hold the connection now, in place of their own tool access. " +
+        "An agent granted later can start stricter, see below",
+    )
+    .option(
+      "--agent <agent>",
+      "show or set the tool access of this agent alone on an MCP connection (Agent Ref: name or 'agent-…' ID)",
+    )
+    .option(
+      "--read <rule>",
+      "with --agent: the rule for the tools that read: allow, ask (wait until someone approves the call) or block",
+    )
+    .option(
+      "--write <rule>",
+      "with --agent: the rule for every other tool, also a tool the list does not name: allow, ask or block",
+    )
+    .option(
+      "--tool <name=rule>",
+      "with --agent: give one tool its own rule, e.g. slack_add_reaction=allow (repeatable)",
+      collect,
+      [] as string[],
+    )
+    .option(
+      "--reset-tool <name>",
+      "with --agent: drop a tool's own rule, so it follows its group again (repeatable)",
+      collect,
+      [] as string[],
     )
     .addOption(new Option("--clear").hideHelp())
     .option(
@@ -108,6 +149,7 @@ export function buildScopeCommand(deps: {
       "--json",
       "emit { id, name, kind, scope, parentId?, available?, check? } as JSON; available lists what can be chosen, " +
         'an MCP connection gives { id, name, kind: "tool-mode", toolAccess }, ' +
+        'with --agent { id, name, kind: "grant-tool-access", agentId, agentName, grantToolAccess: { read, write, overrides } }, ' +
         "check is a GitHub App's credential check of the new scope, as in `dam connection test`; " +
         "a GitHub sign-in or installation gives { id, name, kind, isParent: true, connections, available }",
     )
@@ -120,9 +162,12 @@ export function buildScopeCommand(deps: {
         "  dam connection scope my-github-app --repositories api\n" +
         "  dam connection scope github --full-access\n" +
         "  dam connection scope slack                       # show its tool mode\n" +
-        "  dam connection scope slack --mode allow-all      # let the agent post as you\n" +
-        "  dam connection scope slack --mode read-only      # back to reading only\n" +
-        "  dam connection scope my-mcp --mode needs-approval # writes wait for approval\n" +
+        "  dam connection scope slack --mode allow-all      # its agents may post as you\n" +
+        "  dam connection scope slack --mode read-only      # its agents only read\n" +
+        "  dam connection scope my-mcp --mode needs-approval # its agents ask before writes\n" +
+        "  dam connection scope slack --agent standup       # show one agent's tool access\n" +
+        "  dam connection scope slack --agent standup --write ask \\\n" +
+        "      --tool slack_add_reaction=allow              # writes wait, reactions pass\n" +
         "\nA flag you leave out keeps that part of the current scope; on a connection\n" +
         "with full access, it leaves every one of that part.\n" +
         "A connection made from a GitHub sign-in reaches one account once it is limited;\n" +
@@ -135,11 +180,19 @@ export function buildScopeCommand(deps: {
         "scope; limit the connections made from it, or make another with\n" +
         "`dam connection connect --from <sign-in or installation>`.\n" +
         "\nAn MCP connection has a tool mode: allow all, read only or needs approval.\n" +
-        "A Slack Account is read only unless you choose another mode. The platform's\n" +
-        "gateway enforces the mode for every agent that holds the connection, from\n" +
-        "its next request, whatever the harness. Needs approval is an experimental\n" +
-        "feature. An MCP server connected with no auth offers allow all alone.\n" +
-        "`dam connection tools <connection>` lists the tools and which ones read.\n",
+        "A Slack Account is read only unless you choose another mode. --mode sets\n" +
+        "every agent that holds the connection now, and drops its own tool access.\n" +
+        "The platform's gateway enforces it from the agent's next request, whatever\n" +
+        "the harness. Needs approval is an experimental feature. An MCP server\n" +
+        "connected with no auth offers allow all alone.\n" +
+        "`dam connection tools <connection>` lists the tools and which ones read.\n" +
+        LATER_GRANT_HELP +
+        "\nWith --agent, tool access belongs to that one agent on the connection, and\n" +
+        "no other agent changes. Each tool has a rule: allow, ask (the call waits\n" +
+        "until someone approves it) or block. --read sets the rule of the tools that\n" +
+        "read, --write the rule of every other tool, and --tool gives one tool its own\n" +
+        "rule. A flag you leave out keeps that part. Tool access per agent is an\n" +
+        "experimental feature; the server refuses a change while it is off.\n",
     )
     .action(async (ref: string, opts: ScopeOpts) => {
       const json = opts.json ?? false;
@@ -160,6 +213,29 @@ export function buildScopeCommand(deps: {
         process.stderr.write(`error: ${TOOL_MODE_FLAG_HINT}\n`);
         process.exit(EXIT_INVALID_INPUT);
       }
+      const accessFlags = {
+        read: opts.read,
+        write: opts.write,
+        tool: opts.tool,
+        resetTool: opts.resetTool,
+      };
+      const change = parseToolAccessFlags(accessFlags);
+      if (!change.ok) {
+        process.stderr.write(`error: ${change.error}\n`);
+        process.exit(EXIT_INVALID_INPUT);
+      }
+      if (opts.agent === undefined && hasToolAccessFlags(accessFlags)) {
+        process.stderr.write(
+          "error: --read, --write, --tool and --reset-tool set the tool access of one agent; pass --agent <agent>\n",
+        );
+        process.exit(EXIT_INVALID_INPUT);
+      }
+      if (opts.agent !== undefined && mode !== undefined) {
+        process.stderr.write(
+          "error: --mode sets the agents that hold the connection now, --agent one agent; pass one of them\n",
+        );
+        process.exit(EXIT_INVALID_INPUT);
+      }
       const host = await resolveActiveHost(deps, opts.server);
       const svc = deps.createConnectionService(host);
 
@@ -169,6 +245,30 @@ export function buildScopeCommand(deps: {
       if (!match) {
         process.stderr.write(unresolvedConnectionRef(listed.value, ref));
         process.exit(EXIT_INVALID_INPUT);
+      }
+      if (opts.agent !== undefined) {
+        if (!match.toolAccess) {
+          process.stderr.write(
+            `error: --agent applies only to an MCP connection, such as a Slack Account, not '${match.name}'\n`,
+          );
+          process.exit(EXIT_INVALID_INPUT);
+        }
+        if (hasScopeFlags(opts) || opts.fullAccess === true) {
+          process.stderr.write(
+            `error: ${match.name} is an MCP connection: it has tool access, not a scope; ` +
+              "pass only --read, --write, --tool and --reset-tool with --agent\n",
+          );
+          process.exit(EXIT_INVALID_INPUT);
+        }
+        return scopeGrantToolAccess({
+          createAgentService: deps.createAgentService,
+          svc,
+          host,
+          connection: { ...match, toolAccess: match.toolAccess },
+          agentRef: opts.agent,
+          change: change.value,
+          json,
+        });
       }
       if (match.toolAccess) {
         return scopeToolMode(svc, host, match, match.toolAccess, {

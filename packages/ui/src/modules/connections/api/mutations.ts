@@ -228,6 +228,16 @@ export function useSetConnectionToolMode() {
   });
 }
 
+export function useSetGrantToolAccess() {
+  return useMutation({
+    ...trpc.connections.setGrantToolAccess.mutationOptions(),
+    meta: {
+      invalidates: [trpc.connections.getAgentConnections.queryKey()],
+      suppressErrorToast: true,
+    },
+  });
+}
+
 export function useMoveConnectionToHost() {
   return useMutation({
     ...trpc.connections.moveToHost.mutationOptions(),

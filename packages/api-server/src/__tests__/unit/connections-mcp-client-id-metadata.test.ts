@@ -25,6 +25,7 @@ import {
   keyedMutex,
   unused,
   fakeMcpToolLister,
+  noConnectionsParent,
 } from "../helpers/connections-service.js";
 
 /**
@@ -581,6 +582,7 @@ describe("custom MCP OAuth client", () => {
 describe("discoverMcp", () => {
   function service(callbackUrl = CALLBACK) {
     return createConnectionsService({
+      parentOf: noConnectionsParent,
       damConnectionOffered: async () => true,
       toolApprovalOffered: async () => true,
       mcpToolLister: fakeMcpToolLister(),

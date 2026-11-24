@@ -159,7 +159,6 @@ export function createToolCallHold(deps: {
           {
             host: toolCall.host,
             connectionName: connection.connectionName,
-            mode: connection.mode,
           },
           { tool, id: toolCall.id },
           end,

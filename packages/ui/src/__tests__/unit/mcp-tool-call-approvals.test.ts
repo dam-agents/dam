@@ -9,7 +9,6 @@ import {
   approvalGroupKey,
   groupBy,
 } from "../../modules/approvals/lib/group-approvals.js";
-import { slackTargetLine } from "../../modules/approvals/lib/slack-target-line.js";
 import { toolCallArgumentsOf } from "../../modules/approvals/lib/tool-call-arguments.js";
 import { templateToolCallOf } from "../../modules/approvals/lib/tool-call-renderers.js";
 import { egressApprovalsWaiting } from "../../modules/approvals/lib/waiting-egress.js";
@@ -17,10 +16,10 @@ import {
   approvalDetail,
   approvalHeadline,
   approvalPromptTitle,
-  approvalTemplateToolCall,
+  approvalToolCallSource,
 } from "../../modules/home/lib/approval-copy.js";
 
-// TEST_OVERVIEW: a held MCP tool call where the owner meets it: in the agent's chat beside its waiting network approvals, and on Home. It names the tool and the Connection and shows the call's arguments: whole as JSON, cut with a note that says how much is shown, or gone once the approval settled, with why. A Slack Account call that posts, saves a draft or schedules a message reads as what it does, with the Slack logo, and shows the message it sends, to the channel or person named as the api-server looked them up, else by their Slack id; it still names the Connection and the exact tool, and falls back to the JSON when its arguments are not in the expected shape. Any other tool keeps the generic copy. Two requests for the same call are one approval with a count.
+// TEST_OVERVIEW: a held MCP tool call where the owner meets it: in the agent's chat beside its waiting network approvals, and on Home. It names the tool and the Connection and shows the call's arguments: whole as JSON, cut with a note that says how much is shown, or gone once the approval settled, with why. A Slack Account call that posts, saves a draft or schedules a message reads as what it does, with the Slack logo, and shows the message it sends; it still names the Connection and the exact tool, and falls back to the generic view when its arguments are not in the expected shape. Any other tool keeps the generic copy. Two requests for the same call are one approval with a count.
 
 const NOW = new Date("2026-11-20T12:00:00Z");
 
@@ -163,10 +162,13 @@ describe("a Slack tool call", () => {
     );
     expect(approvalHeadline(post)).toBe("Wants to send a Slack message");
     expect(approvalPromptTitle(post)).toBe("Send a Slack message?");
-    expect(approvalTemplateToolCall(post)).toMatchObject({
-      call: { iconSlug: "slack" },
-      source: "slack-account · slack_send_message",
+    expect(templateToolCallOf(slack("slack_send_message", {}))).toMatchObject({
+      iconSlug: "slack",
+      verb: "post",
     });
+    expect(approvalToolCallSource(post)).toBe(
+      "slack-account · slack_send_message",
+    );
 
     const headlineOf = (tool: string, args: unknown) =>
       approvalHeadline(toolCall({}, slack(tool, args)));
@@ -194,17 +196,15 @@ describe("a Slack tool call", () => {
 
   // TEST_SCENARIO: the headline comes from the tool, so it stays once the approval settles and its arguments are gone; only the message is missing then.
   it("keeps its headline when the arguments are gone", () => {
-    const settled = toolCall(
-      { status: "resolved" },
-      {
-        templateId: "slack",
-        connectionName: "slack-account",
-        tool: "slack_send_message",
-        arguments: undefined,
-      },
-    );
+    const gone = payload({
+      templateId: "slack",
+      connectionName: "slack-account",
+      tool: "slack_send_message",
+      arguments: undefined,
+    });
+    const settled = toolCall({ status: "resolved", payload: gone });
     expect(approvalHeadline(settled)).toBe("Wants to send a Slack message");
-    expect(approvalTemplateToolCall(settled)?.call.message).toBeNull();
+    expect(templateToolCallOf(gone)?.message).toBeNull();
   });
 
   // TEST_SCENARIO: a Slack post shows its target, whether it goes to a thread, and its text as written.
@@ -240,49 +240,6 @@ describe("a Slack tool call", () => {
     ).toMatchObject({ target: { kind: "person", id: "D0789" } });
   });
 
-  // TEST_SCENARIO: the api-server looked up the target's name when it held the call. The line above the message names the channel or the person by it, in a post, a thread and a draft alike, and shows the Slack id when the lookup gave no name.
-  it("names the target by the name the api-server looked up", () => {
-    const lineOf = (
-      args: Record<string, unknown>,
-      targetLabel?: string,
-      tool = "slack_send_message",
-    ) => {
-      const message = templateToolCallOf({
-        ...slack(tool, args),
-        ...(targetLabel ? { targetLabel } : {}),
-      })?.message;
-      if (!message) throw new Error("no message");
-      return slackTargetLine(message);
-    };
-    expect(
-      lineOf({ channel_id: "C0CL63K6FKL", message: "hi" }, "#general"),
-    ).toBe("To #general · as you");
-    expect(lineOf({ channel_id: "D0789", message: "hi" }, "Jane Doe")).toBe(
-      "To Jane Doe (direct message) · as you",
-    );
-    expect(
-      lineOf(
-        {
-          channel_id: "C0CL63K6FKL",
-          message: "hi",
-          thread_ts: "1700000000.000100",
-          reply_broadcast: true,
-        },
-        "#general",
-      ),
-    ).toBe("Thread in #general · also sent to the conversation · as you");
-    expect(
-      lineOf(
-        { channel_id: "C0CL63K6FKL", message: "hi" },
-        "#general",
-        "slack_send_message_draft",
-      ),
-    ).toBe("Draft for #general · as you");
-    expect(lineOf({ channel_id: "C0CL63K6FKL", message: "hi" })).toBe(
-      "To C0CL63K6FKL · as you",
-    );
-  });
-
   // TEST_SCENARIO: a scheduled post shows when it goes out.
   it("shows when a scheduled post goes out", () => {
     expect(
@@ -313,7 +270,11 @@ describe("a Slack tool call", () => {
       {},
       slack("slack_add_reaction", { channel_id: "C1", message: "x" }),
     );
-    expect(approvalTemplateToolCall(reaction)).toBeNull();
+    expect(
+      templateToolCallOf(
+        slack("slack_add_reaction", { channel_id: "C1", message: "x" }),
+      ),
+    ).toBeNull();
     expect(approvalHeadline(reaction)).toBe(
       "Wants to use slack_add_reaction on slack-account",
     );
@@ -329,7 +290,14 @@ describe("a Slack tool call", () => {
         arguments: { channel_id: "C1", message: "x" },
       },
     );
-    expect(approvalTemplateToolCall(untemplated)).toBeNull();
+    expect(
+      templateToolCallOf(
+        payload({
+          tool: "slack_send_message",
+          arguments: { channel_id: "C1", message: "x" },
+        }),
+      ),
+    ).toBeNull();
     expect(approvalHeadline(untemplated)).toBe(
       "Wants to use slack_send_message on Issue Tracker",
     );

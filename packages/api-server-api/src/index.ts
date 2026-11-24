@@ -789,6 +789,8 @@ export type {
   ConnectionToolAccessRecord,
   ConnectionTemplateToolAccess,
   ToolMode,
+  ToolRule,
+  GrantToolAccess,
   ConnectionTemplateView,
   ProviderBalance,
   ProviderKeyCheck,
@@ -815,6 +817,8 @@ export {
   authConfig as connectionAuthConfigSchema,
   connectionToolAccessRecord as connectionToolAccessRecordSchema,
   toolMode as toolModeSchema,
+  toolRule as toolRuleSchema,
+  grantToolAccess as grantToolAccessSchema,
   providerKeyCheck as providerKeyCheckSchema,
   credentialCheck as credentialCheckSchema,
 } from "./modules/connections/types.js";

@@ -1,14 +1,18 @@
 import { BoldList } from "../../../../components/inline-list.js";
 import { SharedChannelsPhrase } from "../../../connections/components/shared-channels-phrase.js";
 import type { SharedChannel } from "../../../sandboxes/lib/shared-channels.js";
-import type { SharedToolMode } from "../../hooks/use-agent-shared-access.js";
+import type { SharedToolAccess } from "../../hooks/use-agent-shared-access.js";
 
-function ToolModeText({ modes }: { modes: readonly SharedToolMode[] }) {
-  const named = (mode: SharedToolMode["mode"]) =>
-    modes.filter((c) => c.mode === mode).map((c) => c.name);
-  const readOnly = named("read-only");
-  const approval = named("needs-approval");
-  const full = named("allow-all");
+function ToolAccessText({
+  connections,
+}: {
+  connections: readonly SharedToolAccess[];
+}) {
+  const named = (reach: SharedToolAccess["reach"]) =>
+    connections.filter((c) => c.reach === reach).map((c) => c.name);
+  const readOnly = named("reads");
+  const approval = named("asks");
+  const full = named("writes");
   return (
     <>
       {readOnly.length > 0 && (
@@ -41,13 +45,13 @@ function ToolModeText({ modes }: { modes: readonly SharedToolMode[] }) {
 export function BindSharingText({
   agentName,
   connectionNames,
-  toolModes = [],
+  toolAccess = [],
   audience,
   whisper,
 }: {
   agentName: string;
   connectionNames: readonly string[] | null;
-  toolModes?: readonly SharedToolMode[];
+  toolAccess?: readonly SharedToolAccess[];
   audience: SharedChannel;
   whisper: boolean;
 }) {
@@ -78,7 +82,7 @@ export function BindSharingText({
         : <BoldList items={connectionNames} limit={4} />. Anyone in {phrase} can
         ask it to use {connectionNames.length === 1 ? "it" : "them"}, with your
         access.
-        <ToolModeText modes={toolModes} />
+        <ToolAccessText connections={toolAccess} />
       </>
     );
   return whisper ? (

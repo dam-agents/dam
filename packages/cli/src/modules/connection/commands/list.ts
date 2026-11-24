@@ -3,6 +3,7 @@ import {
   aliasForTemplateId,
   PROVIDER_TEMPLATE_IDS,
   type ConnectionView,
+  type GrantToolAccess,
 } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
@@ -20,6 +21,7 @@ import {
 } from "../domain/default-account.js";
 import { childrenOf, parentLabel } from "../domain/github-parent.js";
 import { formatScope, scopeKindOf, scopeOf } from "../domain/github-scope.js";
+import { formatToolAccess } from "../domain/grant-tool-access.js";
 import { formatToolMode } from "../domain/tool-mode.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
@@ -60,7 +62,15 @@ function statusCell({ status, check, retiredHost }: ConnectionView): string {
     : status;
 }
 
-function scopeCell(c: ConnectionView, children: number): string {
+type GrantAccess = ReadonlyMap<string, GrantToolAccess>;
+
+function scopeCell(
+  c: ConnectionView,
+  children: number,
+  access?: GrantAccess,
+): string {
+  const granted = access?.get(c.id);
+  if (granted) return formatToolAccess(granted);
   if (c.toolAccess) return formatToolMode(c.toolAccess.mode);
   if (!c.isParent) return formatScope(scopeOf(c), scopeKindOf(c));
   return children > 0
@@ -91,6 +101,7 @@ function treeRows(
 function tableFor(
   views: readonly ConnectionView[],
   marks?: ReadonlyMap<string, DefaultMark>,
+  access?: GrantAccess,
 ): string {
   return renderTable([
     marks ? [...HEADER, "DEFAULT"] : HEADER,
@@ -102,7 +113,7 @@ function tableFor(
       providerCell(c),
       c.hosts.join(","),
       c.check?.expiresAt ? formatExpiry(c.check.expiresAt) : "—",
-      scopeCell(c, children),
+      scopeCell(c, children, access),
       ...(marks ? [defaultCell(marks.get(c.id))] : []),
     ]),
   ]);
@@ -111,14 +122,17 @@ function tableFor(
 function withScope(
   views: readonly ConnectionView[],
   marks?: ReadonlyMap<string, DefaultMark>,
+  access?: GrantAccess,
 ) {
   return views.map((c) => {
     const scope = scopeOf(c);
     const mark = marks?.get(c.id);
+    const grantToolAccess = access?.get(c.id);
     return {
       ...c,
       ...(scope && { scope }),
       ...(mark && { default: mark }),
+      ...(grantToolAccess && { grantToolAccess }),
     };
   });
 }
@@ -162,7 +176,8 @@ export function buildListCommand(deps: {
         "a GitHub sign-in or installation carries isParent: true, and each connection made from it parentId; " +
         "a connection on a GitHub Enterprise host the server retired carries retiredHost; " +
         "a checked credential carries its last check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, installedOn?, repositories?, repositoriesTruncated?, reason?, at }; " +
-        "listed for an agent, a connection that shares its host with another granted one carries default { kind, scope, active }",
+        "listed for an agent, a connection that shares its host with another granted one carries default { kind, scope, active }, " +
+        "and an MCP connection the gateway reads carries that agent's grantToolAccess { read, write, overrides }, each rule allow, ask or block",
     )
     .addHelpText(
       "after",
@@ -176,6 +191,10 @@ export function buildListCommand(deps: {
         "`read only` unless you choose another mode. Change it with\n" +
         "`dam connection scope <connection> --mode <mode>`;\n" +
         "`dam connection tools <connection>` lists its tools.\n" +
+        "\nListed for an agent, an MCP connection's SCOPE is that agent's own tool\n" +
+        "access, such as `read only`, `asks before writing` or `allows everything`,\n" +
+        "with the number of tools that have their own rule; change it with\n" +
+        "`dam connection scope <connection> --agent <agent>`.\n" +
         "\nEXPIRES is when the credential expires, as its last check found it.\n" +
         "\nPROVIDER names a model provider's alias, the harnesses that run on it, and\n" +
         "`preferred` on the one a plain `dam agent create` (no --provider, --template\n" +
@@ -240,11 +259,16 @@ export function buildListCommand(deps: {
           else missing.push(connectionId);
         }
         const marks = defaultMarks(granted, grantsRes.value);
+        const access: GrantAccess = new Map(
+          grantsRes.value.flatMap((g) =>
+            g.toolAccess ? [[g.connectionId, g.toolAccess] as const] : [],
+          ),
+        );
         const matched = onlyProviders(granted, opts.providers);
 
         if (opts.json) {
           return writeStdoutAndExit(
-            `${JSON.stringify(withScope(matched, marks))}\n`,
+            `${JSON.stringify(withScope(matched, marks, access))}\n`,
             EXIT_SUCCESS,
           );
         }
@@ -260,7 +284,10 @@ export function buildListCommand(deps: {
           );
         }
         if (matched.length > 0) {
-          return writeStdoutAndExit(tableFor(matched, marks), EXIT_SUCCESS);
+          return writeStdoutAndExit(
+            tableFor(matched, marks, access),
+            EXIT_SUCCESS,
+          );
         }
         process.exit(EXIT_SUCCESS);
       },

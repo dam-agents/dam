@@ -7,6 +7,7 @@ import type {
 import type {
   RowGrantControls,
   RowMaintenanceActions,
+  RowToolAccess,
 } from "./catalog-connection-row.js";
 import { ConnectionRowCard } from "./connection-row-card.js";
 
@@ -21,6 +22,7 @@ export interface ConnectionRowControls {
     connection: ConnectionView,
   ) => RowMaintenanceActions | undefined;
   holders?: ConnectionHolders | null;
+  toolAccess?: (connection: ConnectionView) => RowToolAccess | undefined;
 }
 
 export function usedByOf(
@@ -40,6 +42,7 @@ export function ConnectionRow({
   deletingId = null,
   maintenance,
   holders,
+  toolAccess,
 }: ConnectionRowControls & { connection: ConnectionView }) {
   return (
     <ConnectionRowCard
@@ -52,6 +55,7 @@ export function ConnectionRow({
       deleting={deletingId === connection.id}
       maintenance={maintenance?.(connection)}
       usedBy={usedByOf(holders, connection.id)}
+      toolAccess={toolAccess?.(connection)}
     />
   );
 }
