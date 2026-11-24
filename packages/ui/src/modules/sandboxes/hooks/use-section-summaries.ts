@@ -59,9 +59,9 @@ const PRESET_SUMMARY: Record<EgressPreset, string> = {
 };
 
 const CHAT_FORMS_SUMMARY = {
-  all: "Whenever they help",
-  input: "Only to ask for input",
-  off: "Off",
+  all: "Whenever helpful",
+  input: "Only to ask questions",
+  off: "Never",
 } as const;
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;

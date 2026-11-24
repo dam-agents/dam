@@ -16,30 +16,28 @@ type Choice<K extends keyof ChatFormPreferences> = {
 };
 
 const FORMS: Choice<"forms">[] = [
-  { value: "all", label: "Whenever they help" },
-  { value: "input", label: "Only to ask for input" },
-  { value: "off", label: "Off" },
+  { value: "all", label: "Whenever helpful" },
+  { value: "input", label: "Only to ask questions" },
+  { value: "off", label: "Never (plain text only)" },
 ];
 const PACING: Choice<"pacing">[] = [
   { value: "agent", label: "Agent decides" },
-  { value: "together", label: "All in one form" },
+  { value: "together", label: "All at once" },
   { value: "one-at-a-time", label: "One at a time" },
 ];
 const RECOMMEND: Choice<"recommend">[] = [
-  { value: "preselect", label: "Preselect and mark" },
-  { value: "mark", label: "Only mark" },
-  { value: "off", label: "Don't recommend" },
+  { value: "preselect", label: "Select and explain" },
+  { value: "mark", label: "Recommend only" },
+  { value: "off", label: "No suggestions" },
 ];
 
 function ChoiceField<K extends "forms" | "pacing" | "recommend">({
   title,
-  hint,
   choices,
   value,
   onChange,
 }: {
   title: string;
-  hint: string;
   choices: Choice<K>[];
   value: ChatFormPreferences[K];
   onChange: (value: ChatFormPreferences[K]) => void;
@@ -61,7 +59,6 @@ function ChoiceField<K extends "forms" | "pacing" | "recommend">({
           />
         ))}
       </RadioGroup>
-      <p className="mt-1.5 text-sm text-muted-foreground">{hint}</p>
     </OptionField>
   );
 }
@@ -74,7 +71,7 @@ export function ChatFormSettings({ agentId }: { agentId: string }) {
     return (
       <section className="mb-8">
         <p className="text-sm text-muted-foreground">
-          Chat forms are an experimental feature, and it is off for your
+          Interactive chat is an experimental feature, and it is off for your
           account.
         </p>
       </section>
@@ -88,8 +85,7 @@ export function ChatFormSettings({ agentId }: { agentId: string }) {
   return (
     <section className="mb-8">
       <ChoiceField
-        title="Forms"
-        hint="When the agent may put forms, choices and cards into its replies in the web chat."
+        title="When to use interactive elements"
         choices={FORMS}
         value={preferences.forms}
         onChange={(forms) => update({ forms })}
@@ -97,26 +93,24 @@ export function ChatFormSettings({ agentId }: { agentId: string }) {
       {preferences.forms !== "off" && (
         <>
           <ChoiceField
-            title="Questions"
-            hint="Whether the agent asks everything at once or one question per form."
+            title="Questions per form"
             choices={PACING}
             value={preferences.pacing}
             onChange={(pacing) => update({ pacing })}
           />
           <ChoiceField
-            title="Recommendations"
-            hint="Whether the agent fills in the answer it recommends, only marks it, or leaves the choice to you."
+            title="Suggested answers"
             choices={RECOMMEND}
             value={preferences.recommend}
             onChange={(recommend) => update({ recommend })}
           />
-          <ToggleRow
-            className="mt-6"
-            title="Lock the chat input"
-            description="Let the agent lock the message box until you answer a short form."
-            checked={preferences.lockComposer}
-            onCheckedChange={(lockComposer) => update({ lockComposer })}
-          />
+          <OptionField title="Chat input">
+            <ToggleRow
+              title="Lock for quick questions"
+              checked={preferences.lockComposer}
+              onCheckedChange={(lockComposer) => update({ lockComposer })}
+            />
+          </OptionField>
         </>
       )}
       <p role="status" className="mt-4 min-h-5 text-sm text-muted-foreground">

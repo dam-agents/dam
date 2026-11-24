@@ -63,9 +63,9 @@ export const SECTIONS: SectionEntry[] = [
   },
   {
     section: "chat-forms",
-    title: "Chat forms",
+    title: "Interactive chat",
     description:
-      "How this agent may use forms, choices and cards in its web chat replies.",
+      "Let the agent use interactive forms, buttons, and fields in web chat so you can click instead of type.",
   },
   {
     section: "skills",

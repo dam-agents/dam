@@ -129,13 +129,13 @@ const renderPage = (section: string) =>
 // TEST_SCENARIO: with chat forms off the section has nothing left to offer — the thinking setting moved to Settings › Appearance — so it leaves the navigation.
 it("hides the navigation entry while chat forms are off", () => {
   state.chatForms = false;
-  expect(renderPage("usage")).not.toContain("Chat forms");
+  expect(renderPage("usage")).not.toContain("Interactive chat");
 });
 
 // TEST_SCENARIO: with chat forms on the section returns, and a link to it still opens it while the feature is off.
 it("shows the navigation entry with chat forms on, and keeps the address", () => {
   state.chatForms = true;
-  expect(renderPage("usage")).toContain("Chat forms");
+  expect(renderPage("usage")).toContain("Interactive chat");
   state.chatForms = false;
   expect(renderPage("chat-forms")).toContain("CHAT-FORMS-SETTINGS");
 });
