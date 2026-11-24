@@ -7,14 +7,20 @@ export const ID_TESTID_PREFIXES = [
   "catalog-connection-",
   "catalog-connection-account-",
   "catalog-connection-check-",
+  "catalog-connection-note-",
+  "catalog-connection-retired-",
+  "catalog-connection-title-",
   "catalog-edit-scope-",
   "catalog-fix-",
   "catalog-menu-",
+  "catalog-move-host-",
   "catalog-narrow-",
   "catalog-option-",
   "catalog-reauth-",
   "catalog-remove-",
+  "catalog-rotate-",
   "catalog-update-credential-",
+  "connection-card-",
   "connection-children-",
   "connection-choose-reach-",
   "connection-field-",
@@ -22,6 +28,9 @@ export const ID_TESTID_PREFIXES = [
   "connection-new-child-",
   "connection-parent-",
   "connection-parent-empty-",
+  "connection-parent-lead-",
+  "connection-parent-status-",
+  "connection-parent-title-",
   "connection-scope-",
   "egress-group-",
   "env-group-",
@@ -45,6 +54,7 @@ export const FIXED_TESTID_PREFIXES = [
   "egress-preset-",
   "github-app-perm-",
   "section-add-",
+  "security-check-level-",
   "share-visibility-",
   "side-panel-badge-",
   "side-panel-tab-",
@@ -85,8 +95,6 @@ export function routePattern(route: Route): string {
       return route.session ? "/chat/:agent/:session" : "/chat/:agent";
     case "settings":
       return `/settings/${route.settingsTab}`;
-    case "sandbox-home":
-      return `/sandboxes/:agent/${route.sandboxSection}`;
     case "starter-kit":
       return "/starter-kits/:catalog/:kit";
     case "not-found":
