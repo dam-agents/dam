@@ -64,10 +64,10 @@ In the user's own message the chat shows a short summary — the action's human-
 
 The owner sets, for each agent, how it may use forms, in the agent's Interactive chat section (the UI's name for chat forms); the section is listed while the feature is on, and the platform-chat-forms skill on the Skills page links to it:
 
-- **When to use interactive elements** — whenever helpful, only to ask questions, or never (plain text only).
+- **When to use them** — for questions and results, only for questions, or never (plain text only).
 - **Questions per form** — the agent decides, all at once, or one at a time.
-- **Suggested answers** — select and explain, recommend only, or no suggestions.
-- **Chat input** — lock for quick questions: whether the agent may lock the message box until a short form is answered.
+- **Suggested answers** — pick for me and say why, recommend and let me pick, or no suggestions.
+- **Chat input** — lock the message box during quick questions: whether the agent may lock the message box until a short form is answered.
 
 The settings are stored per agent in Postgres, because the api-server needs them for the briefings it composes and for `check_chat_form`.
 They travel to the agent inside the capability announcement, under the platform extension `urn:platform:a2ui:extension:chat:v1` as `preferences`, so a change applies from the next message without a new session.

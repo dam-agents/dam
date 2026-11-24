@@ -16,8 +16,8 @@ type Choice<K extends keyof ChatFormPreferences> = {
 };
 
 const FORMS: Choice<"forms">[] = [
-  { value: "all", label: "Whenever helpful" },
-  { value: "input", label: "Only to ask questions" },
+  { value: "all", label: "For questions and results" },
+  { value: "input", label: "Only for questions" },
   { value: "off", label: "Never (plain text only)" },
 ];
 const PACING: Choice<"pacing">[] = [
@@ -26,8 +26,8 @@ const PACING: Choice<"pacing">[] = [
   { value: "one-at-a-time", label: "One at a time" },
 ];
 const RECOMMEND: Choice<"recommend">[] = [
-  { value: "preselect", label: "Select and explain" },
-  { value: "mark", label: "Recommend only" },
+  { value: "preselect", label: "Pick for me and say why" },
+  { value: "mark", label: "Recommend, I pick" },
   { value: "off", label: "No suggestions" },
 ];
 
@@ -85,7 +85,7 @@ export function ChatFormSettings({ agentId }: { agentId: string }) {
   return (
     <section className="mb-8">
       <ChoiceField
-        title="When to use interactive elements"
+        title="When to use them"
         choices={FORMS}
         value={preferences.forms}
         onChange={(forms) => update({ forms })}
@@ -106,7 +106,7 @@ export function ChatFormSettings({ agentId }: { agentId: string }) {
           />
           <OptionField title="Chat input">
             <ToggleRow
-              title="Lock for quick questions"
+              title="Lock the message box during quick questions"
               checked={preferences.lockComposer}
               onCheckedChange={(lockComposer) => update({ lockComposer })}
             />

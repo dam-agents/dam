@@ -59,8 +59,8 @@ const PRESET_SUMMARY: Record<EgressPreset, string> = {
 };
 
 const CHAT_FORMS_SUMMARY = {
-  all: "Whenever helpful",
-  input: "Only to ask questions",
+  all: "Questions and results",
+  input: "Only questions",
   off: "Never",
 } as const;
 
