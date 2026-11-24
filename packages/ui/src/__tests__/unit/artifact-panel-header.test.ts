@@ -104,7 +104,6 @@ function render(props: { standalone?: boolean } = {}) {
         createElement(ArtifactPanel, {
           artifactId: "art-1",
           agentId: null,
-          onBack: props.standalone ? undefined : () => {},
           close: props.standalone
             ? undefined
             : createElement("button", { "aria-label": "Close panel" }),
@@ -157,7 +156,6 @@ describe("artifact panel top bar", () => {
     render();
     expect(bar().textContent).toContain("PM dashboard");
     expect(barLabels()).toEqual([
-      "Back to artifacts",
       "Older version",
       "v2 / 2",
       "Newer version",
@@ -252,7 +250,7 @@ describe("artifact panel top bar", () => {
 });
 
 describe("artifact page in its own tab", () => {
-  // TEST_SCENARIO: the artifact page already fills its tab, so it has no Back, no close, no Open in new tab and no Full page; Share, Download and the rest of the menu stay.
+  // TEST_SCENARIO: the artifact page already fills its tab, so it has no close, no Open in new tab and no Full page; Share, Download and the rest of the menu stay.
   it("shows the bar without the panel's own actions", () => {
     render({ standalone: true });
     expect(barLabels()).toEqual([

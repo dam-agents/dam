@@ -1,8 +1,6 @@
-import { ArrowLeft } from "@carbon/icons-react";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback } from "react";
 
-import { Button } from "@/components/ui/button";
 import { LoadFailed, PanelMessage } from "@/components/ui/empty-state";
 
 import { TruncateStart } from "../../../components/truncate-start.js";
@@ -63,24 +61,14 @@ export function DockedFilePanel({ onOpenFile }: Props) {
   if (!openFilePath) return null;
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex h-12 shrink-0 items-center gap-2 pl-2 pr-4 border-b border-border">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0"
-          onClick={() => void close()}
-          aria-label="Back to files"
-          tooltip="Back to files"
-        >
-          <ArrowLeft size={16} />
-        </Button>
+      <div className="flex h-12 shrink-0 items-center gap-2 px-4 border-b border-border">
         <TruncateStart
           className="text-sm font-medium text-foreground flex-1 min-w-0"
           title={openFilePath}
         >
           {openFilePath}
         </TruncateStart>
-        <SidePanelCloseButton />
+        <SidePanelCloseButton onClose={() => void close()} />
       </div>
       <div className="flex-1 overflow-auto p-4">
         {gone ? (

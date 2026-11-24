@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
+import { useStore } from "../../../store.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
 import { useChangeSetDiff, useChangeSets } from "../api/queries.js";
@@ -32,6 +33,7 @@ export const DockedChangesPanel = memo(function DockedChangesPanel({
   sessionId,
 }: Props) {
   const operable = useIsAgentOperable(agentId);
+  const setDock = useStore((s) => s.setDock);
   const { data, error, isPending } = useChangeSets(agentId, sessionId);
   useChangesWatch(agentId, true);
   const changeSets = data?.changeSets;
@@ -83,7 +85,7 @@ export const DockedChangesPanel = memo(function DockedChangesPanel({
             </div>
           )}
         </div>
-        <SidePanelCloseButton />
+        <SidePanelCloseButton onClose={() => setDock(null)} />
       </div>
       {error ? (
         <Notice text={listErrorText(error.message)} />

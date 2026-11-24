@@ -21,12 +21,15 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
       artifactId={openArtifactId}
       agentId={agentId}
       onSendPrompt={onSendPrompt}
-      onBack={() =>
-        void confirmDockDiscard().then((discard) => {
-          if (discard) setDock(null);
-        })
+      close={
+        <SidePanelCloseButton
+          onClose={() =>
+            void confirmDockDiscard().then((discard) => {
+              if (discard) setDock(null);
+            })
+          }
+        />
       }
-      close={<SidePanelCloseButton />}
     />
   );
 }
