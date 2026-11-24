@@ -42,6 +42,7 @@ It controls where a feature *appears*:
 - **A create the platform makes for the person** — switching the assistant's flag on gives that person their assistant, and an install that pins the flag `on` gives it at the first request instead ([assistant](assistant.md#provisioning)).
   The flag decides who is offered one; it protects nothing afterwards, since the Agent it makes is the person's own.
   The security check's flag works the same way for a Schedule: switching it on gives the person's assistant its weekly check, and switching it off deletes that Schedule ([assistant](assistant.md#the-security-check)).
+  How much a check does is not a flag: it is a level the person chooses in the assistant's own settings, so it stays when the feature stops being an experiment.
 
 - **A rollup inside a shared read** — where a feature adds one section to a response every caller already receives, the flag decides whether that section is computed.
   The gate is a cost decision, not an access one: the section rides in a procedure nobody can opt out of, so leaving it ungated would charge every user its backing queries to render nothing.

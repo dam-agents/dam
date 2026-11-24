@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-11-21
+Last verified: 2026-11-23
 
 ## Overview
 
@@ -73,7 +73,7 @@ A new agent holds one provider ([agent-lifecycle](agent-lifecycle.md#create)) an
 The owner is told on [Home](home-feed.md#default-model-notices) about an agent with no model provider, a default on a provider the agent no longer holds, and one the conversion changed; the first two only once the agent runs something unattended.
 The conversion runs after each `hello` while nothing is saved, and once per channel turn.
 A schedule fire for an agent moved to a new image and still asleep wakes it first, so the fire is checked, converted and resolved against the new runtime rather than the one its last `hello` came from; when the new runtime does not say hello in time, the fire fails as still setting up instead of going out on the old view.
-Run Now on such an agent refuses with "setting up" and starts that wake in the background.
+Run Now waits for that wake too, for at most 100 s, then refuses with "setting up".
 **A turn with no model.** On a harness that reaches its models through the Model Router, the runtime resolves a session's model in one order: its own while usable, else its kind's default on its harness, else the preferred model its providers list ([sessions](sessions.md)).
 With nothing to serve it, a turn waits up to 30 s for the env, a provider or a listing, then is refused as `no-model`, saying to connect a model provider.
 A harness on a native Connection, or an agent holding no provider whose API the harness speaks, is not refused.

@@ -12,6 +12,7 @@ import type { CountDay } from "./count-day.js";
 export interface Repricer {
   repriceAwaiting(provider: string): Promise<void>;
   backfill(provider: string): Promise<void>;
+  repriceGuesses(provider: string): Promise<void>;
 }
 
 const BATCH = 500;
@@ -20,8 +21,11 @@ const DAY_MS = 86_400_000;
 /**
  * UNIT_BOUNDARY_DESCRIPTION: prices again the call rows of a provider whose
  * model had no price when they were metered: the calls that waited for their
- * price, after each read that adds prices, and the estimates written before
- * calls recorded where their price came from, after each full read. Each
+ * price, after each read that adds prices or, for a provider whose prices
+ * come with a deploy, at each start; the estimates written before calls
+ * recorded where their price came from, after each full read; and, at each
+ * start, the guesses from a model family's highest prices that such a
+ * provider wrote before guesses were removed. Each
  * batch moves the call rows and their rollup rows in one transaction, then
  * today's day counters and the calls' kept state by the same difference, so
  * a late record of the same call adds nothing twice. A row is re-priced only
@@ -61,7 +65,11 @@ export function createRepricer(deps: {
         if (call.row.day === today && call.costDelta !== 0)
           await deps.countDay(call.row, call.costDelta);
         await deps.calls
-          .reprice(call.callId, call.costMicros, call.estimated ? 1 : 0)
+          .reprice(call.callId, {
+            costMicros: call.costMicros,
+            estimatedCalls: call.estimated ? 1 : 0,
+            awaitingCalls: call.awaiting ? 1 : 0,
+          })
           .catch((err: unknown) =>
             log().warn(
               { callId: call.callId, reason: formatError(err) },
@@ -90,5 +98,6 @@ export function createRepricer(deps: {
   return {
     repriceAwaiting: (provider) => run(provider, "awaiting"),
     backfill: (provider) => run(provider, "backfill"),
+    repriceGuesses: (provider) => run(provider, "guess"),
   };
 }

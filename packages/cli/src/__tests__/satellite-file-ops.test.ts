@@ -12,9 +12,13 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  pathSegments,
+  pinRoot,
+} from "../modules/satellite/services/confined-files.js";
 import {
   createFileOps,
   FREE_HEADROOM_BYTES,
@@ -977,5 +981,39 @@ describe("the per-root lock", () => {
     } finally {
       await rm(home, { recursive: true, force: true });
     }
+  });
+});
+
+describe("the root a files satellite exposes", () => {
+  it("refuses the home directory, the whole filesystem, a file and a path that is not there", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "dam-root-"));
+    try {
+      const root = await realpath(dir);
+      const file = join(root, "app.log");
+      await writeFile(file, "x");
+      for (const raw of ["/", homedir()])
+        expect((await pinRoot(raw)).ok).toBe(false);
+      expect((await pinRoot(file)).ok).toBe(false);
+      expect((await pinRoot(join(root, "nope"))).ok).toBe(false);
+      expect(await pinRoot(root)).toEqual({ ok: true, root });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a path that is not one relative name per segment", () => {
+    expect(pathSegments("logs/app.log")).toEqual(["logs", "app.log"]);
+    for (const bad of [
+      "../outside/secret.txt",
+      "/etc/passwd",
+      "logs/../outside/secret.txt",
+      "logs/./app.log",
+      "logs//app.log",
+      "logs\\app.log",
+      "",
+      "a\0b",
+      `logs/${"x".repeat(1100)}`,
+    ])
+      expect(pathSegments(bad)).toBeNull();
   });
 });

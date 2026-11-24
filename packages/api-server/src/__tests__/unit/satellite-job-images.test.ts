@@ -271,7 +271,6 @@ describe("a reported job read back", () => {
       agentId: "agent-1",
       tool: "plot",
       args: {},
-      transferDirection: null,
       status: "running",
       isError: false,
       exitCode: null,

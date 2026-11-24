@@ -194,7 +194,7 @@ export function createFileOps(deps: {
         ? { ok: false, errno: "ENOENT" }
         : { ok: true, path: root, info };
     }
-    const parent = await walkInRoot(root, segments.slice(0, -1), false);
+    const parent = await walkInRoot(root, segments.slice(0, -1));
     if (!parent.ok)
       return {
         ok: false,
@@ -212,7 +212,7 @@ export function createFileOps(deps: {
     root: string,
     segments: readonly string[],
   ): Promise<{ ok: true; path: string; proved: Proved } | Refused> {
-    const walked = await walkInRoot(root, segments.slice(0, -1), false);
+    const walked = await walkInRoot(root, segments.slice(0, -1));
     if (!walked.ok)
       return {
         ok: false,

@@ -1,10 +1,24 @@
 import type { z } from "zod";
 
-import type { securityCheckReportInputSchema } from "./schemas.js";
+import type {
+  securityCheckLevelSchema,
+  securityCheckReportInputSchema,
+} from "./schemas.js";
 
 export type SecurityCheckReportInput = z.infer<
   typeof securityCheckReportInputSchema
 >;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: how much a person lets each check do. `off` runs
+ * none. `standard` is one run of their assistant, which reads the setup and
+ * the instruction files of the Agents other people steer, and runs no turn
+ * on another Agent. `deep` is that run with leave to also ask each such
+ * Agent what its files left open, and each question is a turn on that Agent.
+ * The model and the effort of a run are not part of the level: they are the
+ * Schedule's own.
+ */
+export type SecurityCheckLevel = z.infer<typeof securityCheckLevelSchema>;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what the assistant last reported about its
@@ -46,6 +60,19 @@ export interface SecurityChecksService {
    * feature off: the Schedule the platform made, and the last report with it.
    */
   disable(): Promise<void>;
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: the level the person's check runs at now, and
+   * `off` when none runs: they chose so, they deleted its Schedule, or the
+   * feature is off for them.
+   */
+  level(): Promise<SecurityCheckLevel>;
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: the person's own choice of level. `off` takes
+   * the Schedule away and keeps the record, so nothing gives it back unasked.
+   * Any other level makes the Schedule when none stands, or puts that
+   * level's task on the one that does.
+   */
+  setLevel(level: SecurityCheckLevel): Promise<void>;
   /**
    * UNIT_BOUNDARY_DESCRIPTION: records what a check found, replacing the
    * report before it. An update says what is left of the same check after a

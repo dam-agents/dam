@@ -1,6 +1,6 @@
 {
-  "id": "395fcc8c-f79d-45fd-97c5-cc0976c89c1a",
-  "prevId": "ddac8164-a568-4ec2-a4c6-f46cfa5c008b",
+  "id": "27410254-1e2f-4e5f-9559-31e2ab4b94ee",
+  "prevId": "2e638256-64c8-48b5-acbb-754bd314e0b5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1726,6 +1726,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "level": {
+          "name": "level",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "items": {
           "name": "items",
           "type": "jsonb",
@@ -2368,12 +2374,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
-        },
-        "tool_access": {
-          "name": "tool_access",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -2467,12 +2467,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
-        },
-        "tool_access": {
-          "name": "tool_access",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         },
         "parent_id": {
           "name": "parent_id",
@@ -7122,6 +7116,13 @@
         },
         "estimated_calls": {
           "name": "estimated_calls",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "awaiting_calls": {
+          "name": "awaiting_calls",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,

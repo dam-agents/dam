@@ -33,6 +33,10 @@ export const satelliteToolNameSchema = z
  * MCP `tools/list` entry trimmed to what the platform re-exposes. `inputSchema`
  * travels as opaque JSON Schema: the platform never reads inside it, because
  * only the machine knows what its own arguments mean.
+ *
+ * A tool's `transfer` marker is sent only by a `dam satellite files` from before
+ * the mount. Registration refuses it on sight, so the field outlives every tool
+ * that declared it.
  */
 export const satelliteToolSchema = z.object({
   name: satelliteToolNameSchema,
@@ -560,61 +564,6 @@ export const fileResultInputSchema = z
       JSON.stringify(input.result).length <= SATELLITE_FILE_MAX_RESULT_BYTES,
     `a result must fit in ${SATELLITE_FILE_MAX_RESULT_BYTES} bytes`,
   );
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: The satellite transfer ceiling, and the only
- * declaration of it: one file crossing between the machine and the Agent's
- * workspace, in either direction, carries at most this many bytes. A transfer
- * is streamed and never buffered, so the ceiling bounds a transfer rather than
- * a file held in memory, and it is counted while the bytes move. The bytes
- * travel over their own request, never through a Job's arguments or its 1 MiB
- * result, which is what keeps a transfer out of the Agent's context.
- */
-export const SATELLITE_FILE_MAX_BYTES = 5 * 1024 * 1024 * 1024;
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: The transfer token a worker is handed with the
- * work item it claimed, and must present with any file request for that Job.
- * It is minted per claim, stored as a hash on the Job row, and consumed by the
- * transfer it authorises, so a transfer belongs to one claimant of one running
- * Job and can happen once. That is what makes a transfer request prove the
- * operation the Agent asked for, rather than merely naming a Job that happens
- * to be running.
- */
-export const SATELLITE_TRANSFER_CLAIM_HEADER = "x-dam-claim";
-
-export const satelliteTransferTokenSchema = z
-  .string()
-  .regex(/^[0-9a-f]{64}$/, "a transfer token is 64 hex characters");
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: The name a transferred file takes in the Agent's
- * workspace. The platform takes it from the Job's own arguments — the path the
- * Agent asked for — so a name is one segment and nothing else: no separator, no
- * `..`, no NUL.
- */
-export const satelliteFileNameSchema = z
-  .string()
-  .min(1)
-  .max(200)
-  .refine(
-    (name) =>
-      !name.includes("/") &&
-      !name.includes("\\") &&
-      !name.includes("\0") &&
-      name !== "." &&
-      name !== "..",
-    "a file name is a single path segment, with no separator, no .. and no NUL",
-  );
-
-export const satelliteFileWrittenSchema = z.object({
-  path: z.string().min(1),
-  size: z.number().int().nonnegative(),
-  sha256: z
-    .string()
-    .regex(/^[0-9a-f]{64}$/, "sha256 is 64 lowercase hex digits"),
-});
-export type SatelliteFileWritten = z.infer<typeof satelliteFileWrittenSchema>;
 
 export const satelliteGrantInputSchema = z.object({
   satellite: satelliteNameSchema,

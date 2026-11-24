@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-11-14
+Last verified: 2026-11-24
 
 ## Session inside the machine
 
@@ -76,6 +76,10 @@ Otherwise, or on provider failure, the runtime's own `session/load` fills the lo
 Waiters are then served from the log; the UI also reads its newest tail as data and renders it while the load engages the session.
 On a waking Agent the UI asks for that tail at the click, as it asks for the session list: the agent's tRPC relay holds the ask until the Agent answers, and an ask it refuses is asked again once the Agent is operable.
 When the socket that carries the load goes away, as when an api-server replica shuts down, the UI asks the load again on a new socket instead of reporting that the Session would not load.
+A load that fails while the session list shows the Session running, as when the chat opens a kit update Session during its first turn, is asked again for about ten seconds before the chat shows that the Session would not load.
+A live message of the shown Session — its text, thinking or a tool call, not a run start or another platform update — takes that error away.
+The UI then reads the Session's history again, without a spinner, on a fresh channel: the runtime keeps a replay cursor per channel, and the channel that carried the live message would replay only what it has not sent.
+When that read fails too, the chat engages the Session without it and keeps the live messages it shows.
 An image may also declare a **session-cut provider**, a module in a worker thread of its own: it cuts a closed Session's stored conversation in place, keeping everything before a given user message under the same id.
 It drives the harness's own store directly, never the harness's protocol, since the adapter would replay a cut passed to it whenever it rebuilds the session.
 
@@ -172,6 +176,8 @@ It is answered `injected` the moment it joins, and `promptRequired` on every oth
 A request sent again with the same `promptId` gets the first answer, so the message reaches the agent once.
 A steer-only entry still waiting is withdrawn when its connection closes; one already sent to the harness is always answered.
 The router answers `promptRequired` itself when no harness process holds work for the Session, so a steer never starts a harness, and its `initialize` answer says `servesSteering`, which a sender checks before it steers.
+A harness that cannot steer is answered with a method-not-found error, which a channel worker takes as final for the rest of that turn, and asks again on its next turn; a harness whose manifest says it steers but that has not answered `initialize` yet, such as one still starting after the agent woke, is not refused: the steer waits for a steer point, and goes once the answer says the harness steers.
+The runtime logs every steer it does not take, with its answer and how long it waited, and the channel worker logs `<surface>.turn.steer_declined` with the outcome.
 
 ### Messages between sessions
 
@@ -197,6 +203,7 @@ A client fails a prompt on evidence instead:
   Unacknowledged this long means it never arrived, and the failure carries the socket's stated cause when it gave one.
   Until the acceptance arrives the person's own message says it is **sending**, or that the agent is **waking** when the send woke it, after a second so a fast send shows nothing; the reply, the working indicator and the session's row in the sidebar wait for the acceptance, so none says the agent is working on a message it does not have.
   A send whose chat moves to another session before it went out goes over a connection of its own, engaged to its session, so the move cannot strand it.
+  The chat's own connection is engaged to the session on screen alone: a resume that answers after the person moved on never engages it, and one left engaged to another session engages the shown one again at the next send, so a send or its retry never fails for the move.
 - **Waiting is unbounded.** A queued prompt is never failed for waiting, however long the turn ahead of it runs.
   The user is told it is waiting, which is true.
 

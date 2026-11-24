@@ -52,19 +52,23 @@ function status(limits: SpendLimitView[]): SpendStatus {
       state: "ok",
       source: "operator",
     },
-    spent: [{ unit: "usd", costMicros: 5 * USD, estimatedCalls: 2 }],
+    spent: [
+      { unit: "usd", costMicros: 5 * USD, estimatedCalls: 2, awaitingCalls: 0 },
+    ],
     spentByConnection: [
       {
         connectionId: "conn-1",
         unit: "usd",
         costMicros: 3 * USD,
         estimatedCalls: 1,
+        awaitingCalls: 0,
       },
       {
         connectionId: "conn-2",
         unit: "bobcoin",
         costMicros: 7 * USD,
         estimatedCalls: 1,
+        awaitingCalls: 0,
       },
     ],
     ownerSpentByConnection: [
@@ -73,6 +77,7 @@ function status(limits: SpendLimitView[]): SpendStatus {
         unit: "usd",
         costMicros: 3 * USD,
         estimatedCalls: 1,
+        awaitingCalls: 0,
       },
     ],
     binding: [],

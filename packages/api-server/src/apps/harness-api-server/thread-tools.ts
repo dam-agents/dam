@@ -18,7 +18,7 @@ export interface ThreadToolPorts {
   startThread(
     channel: ChannelType,
     start: ThreadStart,
-  ): Promise<StartedThread | { error: string }>;
+  ): Promise<StartedThread | { error: string; refused?: string }>;
   listThreads(
     channel: ChannelType,
     sessionId: string,
@@ -30,7 +30,7 @@ export interface ThreadToolPorts {
   audit(
     action: "start" | "leave",
     outcome: { error: string } | { conversationId: string; threadTs: string },
-    detail?: { hasCard: boolean },
+    detail?: { hasCard: boolean; slackError?: string },
   ): void;
 }
 
@@ -87,7 +87,12 @@ export function registerThreadTools(
           text,
           ...(built.card ? { card: built.card } : {}),
         });
-        ports.audit("start", result, { hasCard: built.card !== undefined });
+        ports.audit("start", result, {
+          hasCard: built.card !== undefined,
+          ...("refused" in result && result.refused
+            ? { slackError: result.refused }
+            : {}),
+        });
         if ("error" in result) return errorResult(result.error);
         return json({
           chatId: result.conversationId,

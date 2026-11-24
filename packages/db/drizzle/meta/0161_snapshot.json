@@ -1,5 +1,5 @@
 {
-  "id": "ddac8164-a568-4ec2-a4c6-f46cfa5c008b",
+  "id": "2e638256-64c8-48b5-acbb-754bd314e0b5",
   "prevId": "45f67264-060b-4c09-8d9a-2110364b3cfb",
   "version": "7",
   "dialect": "postgresql",
@@ -1726,6 +1726,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "level": {
+          "name": "level",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "items": {
           "name": "items",
           "type": "jsonb",
@@ -2461,12 +2467,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
-        },
-        "tool_access": {
-          "name": "tool_access",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         },
         "parent_id": {
           "name": "parent_id",

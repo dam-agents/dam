@@ -9,8 +9,17 @@ import type { AcpUpdate, FrameMeta, UpdateHandler } from "../../acp/types.js";
 import { isOutputFrame } from "../lib/quiet-turn.js";
 import { reportedCommandsOf } from "../lib/skill-commands.js";
 
+const MESSAGE_CONTENT_UPDATES: ReadonlySet<AcpUpdate["sessionUpdate"]> =
+  new Set([
+    "user_message_chunk",
+    "agent_message_chunk",
+    "agent_thought_chunk",
+    "tool_call",
+  ]);
+
 export function useAcpUpdateHandler(
   onSessionReset: (sessionId: string) => void,
+  onLoadErrorCleared: (sessionId: string) => void,
 ): () => UpdateHandler {
   const setMessages = useStore((s) => s.setMessages);
 
@@ -86,7 +95,14 @@ export function useAcpUpdateHandler(
       }
       if (inFlight?.takeBack) return;
 
+      if (
+        MESSAGE_CONTENT_UPDATES.has(kind) &&
+        useStore.getState().sessionError?.sessionId === sessionId
+      ) {
+        useStore.getState().setSessionError(null);
+        onLoadErrorCleared(sessionId);
+      }
       setMessages((prev) => applyUpdate(prev, update, frame));
     };
-  }, [dismissStalePermission, setMessages, onSessionReset]);
+  }, [dismissStalePermission, setMessages, onSessionReset, onLoadErrorCleared]);
 }

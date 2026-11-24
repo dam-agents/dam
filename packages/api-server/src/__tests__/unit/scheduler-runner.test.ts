@@ -101,7 +101,7 @@ function makeDeps(opts?: {
   firePair?: FirePair;
   boundary?: RunBoundary;
   ensureDefault?: (agentId: string) => Promise<AgentActivityStamp | null>;
-  defaultPendingAfterMove?: (agentId: string) => Promise<boolean>;
+  runNowWakeCapMs?: number;
   choices?: {
     harness?: string;
     model?: string;
@@ -234,8 +234,9 @@ function makeDeps(opts?: {
     ...(opts?.firePair ? { firePair: opts.firePair } : {}),
     ...(opts?.boundary ? { boundary: opts.boundary } : {}),
     ensureDefault: opts?.ensureDefault ?? (async () => null),
-    defaultPendingAfterMove:
-      opts?.defaultPendingAfterMove ?? (async () => false),
+    ...(opts?.runNowWakeCapMs !== undefined
+      ? { runNowWakeCapMs: opts.runNowWakeCapMs }
+      : {}),
     scheduleModelFor: async (_agentId, model) => model,
     ...(opts?.validateSessionChoices
       ? { validateSessionChoices: opts.validateSessionChoices }
@@ -570,11 +571,54 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
     expect(payloads[0]?.onDefault).toBe(true);
   });
 
-  /** TEST_SCENARIO: Run now never waits for an agent that is still setting up
-   * its default after a move; it says so at once. */
-  it("refuses run now while the default is being set up", async () => {
+  /** TEST_SCENARIO: Run now on an asleep agent moved to a new image waits for
+   * the wake onto it, as a fire does, and then starts the run: one press is
+   * enough (#6811). */
+  it("waits for the wake onto a new image, then runs now", async () => {
+    const order: string[] = [];
+    let woken: (stamp: AgentActivityStamp) => void = () => {};
     const { runner, events } = makeDeps({
-      defaultPendingAfterMove: async () => true,
+      ensureDefault: () =>
+        new Promise((resolve) => {
+          order.push("wake");
+          woken = resolve;
+        }),
+      firePair: async () => {
+        order.push("pair");
+        return { harness: "claude-code", provider: "lite", model: "m" };
+      },
+    });
+    const pressed = runner.runNow(SCHEDULE_ID);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(events).toEqual([]);
+    woken({ previous: null, written: WAKE_STAMP });
+    expect(await pressed).toBe("started");
+    expect(order).toEqual(["wake", "pair"]);
+    expect(events).toHaveLength(1);
+  });
+
+  /** TEST_SCENARIO: a wake onto a new image that does not finish within Run
+   * now's cap still ends in "still setting up", leaving the schedule's record
+   * alone, as before (#6811). */
+  it("says run now is setting up when the wake outlasts its cap", async () => {
+    const { runner, events, stampedFires, stampedResults } = makeDeps({
+      runNowWakeCapMs: 20,
+      ensureDefault: () => new Promise(() => {}),
+    });
+    expect(await runner.runNow(SCHEDULE_ID)).toBe("default-pending");
+    expect(events).toEqual([]);
+    expect(stampedFires).toEqual([]);
+    expect(stampedResults).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: the new runtime does not say hello in time, so the wake
+   * fails as still setting up: Run now says so rather than running on the old
+   * runtime's view. */
+  it("says run now is setting up when the new runtime never says hello", async () => {
+    const { runner, events } = makeDeps({
+      ensureDefault: async () => {
+        throw new NoDefaultModelError({ pending: true });
+      },
     });
     expect(await runner.runNow(SCHEDULE_ID)).toBe("default-pending");
     expect(events).toEqual([]);

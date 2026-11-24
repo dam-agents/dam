@@ -105,6 +105,7 @@ function createLeaseWorld(opts: {
   catalog?: ModelCatalog;
   sessionDefaults?: SessionDefaultsStore;
   beforeSpawn?: () => Promise<void>;
+  log?: (msg: string) => void;
 }) {
   let providers = opts.providers;
   let keptProcesses = 0;
@@ -173,7 +174,7 @@ function createLeaseWorld(opts: {
     },
     idleCheckMs: IDLE_CHECK_MS,
     leaseIdleMs: LEASE_IDLE_MS,
-    log: () => {},
+    log: opts.log ?? (() => {}),
     agentRequests: opts.agentRequests ?? noopAgentRequests,
     createRuntime: (pair, scoped) =>
       createAcpRuntime({
@@ -334,6 +335,41 @@ describe("acp-runtime: one harness process per harness", () => {
     expect(world.harnessCount("codex")).toBe(0);
     startSession(world, client, "codex", "s-c", 6, { harness: "codex" });
     expect(world.harnessCount("codex")).toBe(1);
+  });
+
+  /** TEST_SCENARIO: A channel's steer names a session no process runs a turn
+   * for. The router answers it noRunningTurn without a process, and logs the
+   * steer it did not take, so a message that queued behind it can be traced. */
+  it("logs a steer it answers for a session with nothing running", () => {
+    const logs: string[] = [];
+    const world = createLeaseWorld({
+      providers: ["conn-a"],
+      log: (msg) => logs.push(msg),
+    });
+    const client = world.connect();
+    client.send(frames.initialize(1));
+    startSession(world, client, "claude-code", "s-a", 2, {
+      model: "ibm/aws/claude-opus-4-8",
+    });
+    world
+      .harness("claude-code")
+      .replyToSession("session/set_config_option", "s-a", {});
+    client.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "_session/steering",
+      params: {
+        sessionId: "s-a",
+        prompt: [{ type: "text", text: "one more thing" }],
+        _meta: { platform: { promptId: "steer-1", targetPromptId: "turn-1" } },
+      },
+    });
+    expect(client.reply(3)).toMatchObject({
+      result: { outcome: "promptRequired", reason: "noRunningTurn" },
+    });
+    expect(logs.filter((line) => line.includes("not taken"))).toEqual([
+      "steer steer-1 for s-a not taken: noRunningTurn, no process runs the session",
+    ]);
   });
 
   /** TEST_SCENARIO: A client's initialize is answered from the manifest's

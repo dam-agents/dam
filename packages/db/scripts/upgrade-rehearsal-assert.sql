@@ -210,7 +210,7 @@ FROM connections
 WHERE template_id = 'slack' AND auth ? 'fullAccess'
 GROUP BY () HAVING count(*) > 0;
 
--- 0161 writes a tool mode on Slack's rows alone.
+-- 0163 writes a tool mode on Slack's rows alone.
 INSERT INTO rehearsal_failure
 SELECT 'kept.connections.tool_access_only_slack', 'tool_access only on Slack Account connections', string_agg(id, ', ')
 FROM connections

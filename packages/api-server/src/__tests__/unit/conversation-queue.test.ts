@@ -349,6 +349,30 @@ describe("createConversationQueue", () => {
   });
 
   /**
+   * TEST_SCENARIO: An unsupported answer holds for its own turn only. A harness
+   * can answer it while it is still starting, so the next turn must ask again
+   * rather than queue every later message of the conversation until it goes
+   * quiet.
+   */
+  it("asks again on the next turn after an unsupported answer", async () => {
+    const h = spyQueue({ hold: true, steerResult: "unsupported" });
+
+    void h.queue.submit({ id: "a" });
+    await h.waitFor(() => h.turns.length === 1);
+    void h.queue.submit({ id: "b" });
+    await h.waitFor(() => h.steers.length === 1);
+
+    h.releaseTurn();
+    await h.waitFor(() => h.turns.length === 2);
+    expect(h.turns[1]).toEqual(["b"]);
+
+    void h.queue.submit({ id: "c" });
+    await h.waitFor(() => h.steers.length === 2);
+    expect(h.steers).toEqual([["b"], ["c"]]);
+    h.releaseAll();
+  });
+
+  /**
    * TEST_SCENARIO: A turn can end while a batch is still claimed by a steer. No
    * later turn may be composed until that batch is back, or it reaches the
    * agent after messages that were sent after it.

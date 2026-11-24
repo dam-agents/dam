@@ -19,7 +19,8 @@ import {
   type CallAmounts,
   type SpendRow,
 } from "../domain/ledger.js";
-import type { PriceBook } from "../domain/prices.js";
+import { LISTED_PROVIDERS, type PriceBook } from "../domain/prices.js";
+import { AWAITING_SOURCE } from "../domain/reprice.js";
 import { payingProvider, unitOf } from "../domain/units.js";
 import type { CallMeta, CallStates } from "../infrastructure/call-states.js";
 import type { DayCounters } from "../infrastructure/day-counters.js";
@@ -245,18 +246,22 @@ export function createSpendIngest(deps: {
     if (!state || state.final) return;
     if (state.row) {
       const amounts = { ...state.amounts, estimatedCalls: 1 };
+      const awaiting = amounts.awaitingCalls > 0;
+      const reasons: EstimateReason[] = awaiting
+        ? ["awaiting-price", "record-missing"]
+        : ["record-missing"];
       const settled = await settle(callId, state.row, amounts, true, {
         startedAt:
           state.meta?.startedAt ?? new Date(`${state.row.day}T00:00:00Z`),
         routerCallId: state.meta?.routerCallId ?? null,
         sessionId: state.meta?.sessionId ?? null,
-        priceSource: "estimate",
+        priceSource: awaiting ? AWAITING_SOURCE : "estimate",
         priceModel: state.row.model,
-        estimateReasons: ["record-missing"],
+        estimateReasons: reasons,
       });
       if (settled)
         logEstimate(callId, state.row, amounts, {
-          reasons: ["record-missing"],
+          reasons,
           referenceCost: false,
         });
       return;
@@ -407,7 +412,12 @@ export function createSpendIngest(deps: {
         priceModel: measure.priceModel,
         estimateReasons: measure.estimateReasons,
       });
-      if (awaiting && record.final && record.connectionId)
+      if (
+        awaiting &&
+        record.final &&
+        record.connectionId &&
+        LISTED_PROVIDERS.includes(measure.provider)
+      )
         deps.prices.requestRead(record.connectionId);
       if (settled && awaiting) {
         deps.metrics.awaitingPrice({

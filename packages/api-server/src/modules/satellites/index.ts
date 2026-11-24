@@ -11,7 +11,5 @@ export {
   createOutcomeDelivery,
   createOutcomeWakeRetry,
 } from "./services/outcome-delivery.js";
-export { createSatelliteFileRoutes } from "./routes/file-transfer.js";
 export { createAgentFileChannelRoutes } from "./routes/agent-file-channel.js";
 export { FILE_OP_DEADLINE_MS } from "./services/file-channel.js";
-export { createAgentTransfer } from "./infrastructure/agent-transfer.js";

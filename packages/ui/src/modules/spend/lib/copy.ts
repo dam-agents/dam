@@ -199,10 +199,28 @@ export function alsoSpent(amounts: readonly SpendAmount[]): string {
   return `Also ${joinNames(amounts.map((amount) => ALSO_SPENT[amount.unit](amount.costMicros)))}.`;
 }
 
-export function callsAreEstimates(calls: number): string {
-  return calls === 1
-    ? "1 call is an estimate."
-    : `${calls.toLocaleString("en-US")} calls are estimates.`;
+function callCount(calls: number): string {
+  return calls.toLocaleString("en-US");
+}
+
+function noLimitCounts(awaiting: number): string {
+  return awaiting === 1
+    ? "has no price yet, and no spend limit counts it until its price arrives."
+    : "have no price yet, and no spend limit counts them until their price arrives.";
+}
+
+export function callsAreEstimates(calls: number, awaiting: number): string {
+  if (awaiting > 0 && awaiting >= calls) {
+    return awaiting === 1
+      ? `1 call ${noLimitCounts(1)}`
+      : `${callCount(awaiting)} calls ${noLimitCounts(awaiting)}`;
+  }
+  const estimates =
+    calls === 1
+      ? "1 call is an estimate."
+      : `${callCount(calls)} calls are estimates.`;
+  if (awaiting === 0) return estimates;
+  return `${estimates} ${callCount(awaiting)} of them ${noLimitCounts(awaiting)}`;
 }
 
 export function apiSpendHelp(dayStart: string): string {
@@ -327,10 +345,24 @@ export const API_CALLS = "API calls";
 
 export const TOKENS_IN_OUT = "Tokens in / out";
 
-export function estimatedCallsNote(calls: number): string {
-  return calls === 1
-    ? "1 call in these totals is an estimate."
-    : `${calls.toLocaleString("en-US")} calls in these totals are estimates.`;
+function countZeroForNow(awaiting: number): string {
+  return awaiting === 1
+    ? "has no price yet and counts $0 for now."
+    : "have no price yet and count $0 for now.";
+}
+
+export function estimatedCallsNote(calls: number, awaiting: number): string {
+  if (awaiting > 0 && awaiting >= calls) {
+    return awaiting === 1
+      ? `1 call in these totals ${countZeroForNow(1)}`
+      : `${callCount(awaiting)} calls in these totals ${countZeroForNow(awaiting)}`;
+  }
+  const estimates =
+    calls === 1
+      ? "1 call in these totals is an estimate."
+      : `${callCount(calls)} calls in these totals are estimates.`;
+  if (awaiting === 0) return estimates;
+  return `${estimates} ${callCount(awaiting)} of them ${countZeroForNow(awaiting)}`;
 }
 
 export const SPEND_BY_DAY = "Spend by day";
@@ -365,6 +397,13 @@ export const NOT_PRICED = "Not priced";
 
 export function notPricedHelp(): string {
   return `${getBrand().name} has no price for this provider, so its calls count as $0. Your operator can set a price.`;
+}
+
+export const NO_PRICE_YET = "No price yet";
+
+export function noPriceYetHelp(): string {
+  const brand = getBrand().name;
+  return `${brand} has no price yet for the model of these calls, so they count $0. When ${brand} gets the price, it prices them from their tokens, and these figures go up. Your operator can set a price sooner.`;
 }
 
 export const VIEW_EARLIER_ESTIMATES = "View the earlier estimates";

@@ -403,9 +403,11 @@ export function createSpendService(deps: {
           unit: row.unit,
           costMicros: 0,
           estimatedCalls: 0,
+          awaitingCalls: 0,
         };
         total.costMicros += row.costMicros;
         total.estimatedCalls += row.estimatedCalls;
+        total.awaitingCalls += row.awaitingCalls;
         spent.set(row.unit, total);
       }
       const limitViews = await Promise.all(

@@ -13,7 +13,7 @@ export interface PriceTableEntry {
 }
 
 export interface PriceTable {
-  source: { url: string; commit: string; fetchedAt: string };
+  source: { url: string; commit: string; committedAt: string };
   models: Record<string, PriceTableEntry>;
 }
 

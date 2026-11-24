@@ -5,7 +5,11 @@ import { exhaustMap, timer, type Subscription } from "rxjs";
 import { CALL_ROWS_RETENTION_DAYS, type SpendService } from "api-server-api";
 import { formatError } from "../../core/format-error.js";
 import { getLogger } from "../../core/logger.js";
-import { LISTED_PROVIDERS, type PriceBook } from "./domain/prices.js";
+import {
+  deployPricedProviders,
+  LISTED_PROVIDERS,
+  type PriceBook,
+} from "./domain/prices.js";
 import { loadAnthropicPriceTable } from "./infrastructure/anthropic-price-table.js";
 import { createRedisCallStates } from "./infrastructure/call-states.js";
 import { createRedisDayCounters } from "./infrastructure/day-counters.js";
@@ -87,6 +91,7 @@ export interface SpendSystem {
   prices: PriceReader;
   readAllPrices(): Promise<void>;
   readPricesIfEmpty(): Promise<void>;
+  repriceDeployPriced(): Promise<void>;
   readPricesSaga: Subscription;
   priceBookReload: Subscription;
   openCalls(agentId: string): Promise<number>;
@@ -189,6 +194,12 @@ export function composeSpendSystem(deps: {
     async readPricesIfEmpty() {
       for (const provider of LISTED_PROVIDERS)
         await prices.readAllIfEmpty(provider);
+    },
+    async repriceDeployPriced() {
+      for (const provider of deployPricedProviders(priceBook.current())) {
+        await repricer.repriceAwaiting(provider);
+        await repricer.repriceGuesses(provider);
+      }
     },
     readPricesSaga: startReadPricesOnConnectionSaga({
       reader: prices,

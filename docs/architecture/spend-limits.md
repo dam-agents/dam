@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-11-19
+Last verified: 2026-11-23
 
 ## Overview
 
@@ -95,8 +95,6 @@ An IBM LiteLLM call is priced in this order, and the first match wins:
   A listed model with a free search quota also takes the reply's cost on a call with web searches, because only LiteLLM knows how much of the quota is left.
 - **Awaiting price:** a call that none of these prices costs nothing and is marked estimated until its price arrives ([Estimates](#estimates)).
 
-No IBM call takes an estimate from a similar model, so no IBM call counts many times its price, and no IBM call costs nothing because a free model has a similar name.
-
 Any other provider's call is priced in this order, and the first match wins:
 
 - **An operator price** from the chart.
@@ -104,12 +102,13 @@ Any other provider's call is priced in this order, and the first match wins:
   Curve Bender costs nothing.
   Bob uses the Bobcoins in each reply.
   The Claude subscription is valued at Anthropic's list prices, as a value and not a bill.
-- **The Anthropic table:** Anthropic's list prices, copied from a pinned version of LiteLLM's public price list.
+- **The Anthropic table:** Anthropic's list prices, the Anthropic part of the pinned copy of LiteLLM's public price list that the model catalogs also read.
   It prices own Anthropic keys and the subscription value.
-- **An estimate** for a model with no price: the highest price of its model family among the provider's prices, else the provider's highest price, marked "estimated".
+- **Awaiting price:** a call to a model that none of these prices, on a provider that has the Anthropic table or operator prices, costs nothing and is marked estimated until a deploy brings its price ([Estimates](#estimates)).
 
 A reply can name its model differently from the request, for example without a routing prefix or with a release date, so each lookup also matches on the model's own name.
 OpenAI and Bedrock have no public prices in DAM yet: without an operator price, their calls keep their tokens and cost nothing, so a spend limit does not stop them.
+No call takes an estimate from a similar model, so no call counts many times its price, and no call costs nothing because a free model has a similar name.
 
 **How a cost is computed.** The rules follow LiteLLM's own cost rules, so DAM's cost equals LiteLLM's for the same counts.
 A price sets input, output, cache reads, five-minute and one-hour cache writes, and web searches.
@@ -122,12 +121,19 @@ On the Anthropic API, fast mode and US-only inference multiply the token prices 
 Costs are whole micro-units of the Connection's unit, rounded up.
 
 **When a cost is fixed.** DAM prices a call when its record arrives and stores that cost, so a later price change alters neither the history nor a limit.
-Two kinds of IBM LiteLLM call are priced again from their stored token counts, at the standard tier, because a call row keeps no tier:
+Some calls inside the 30 days of call rows are priced again from their stored token counts, at the standard tier, because a call row keeps no tier:
 
-- **A call that waited for its price** is priced again as soon as a read brings a price for its model.
+- **A call that waited for its price** is priced again as soon as its model has a price.
+  An IBM LiteLLM call is priced again after each read that brings a price for its model.
+  A call on a provider priced by the Anthropic table or by operator prices is priced again at each api-server start, because these prices change only with a deploy.
   It stays an estimate only when another reason remains, such as a cut stream.
-- **An estimate written before calls recorded where their price came from** is priced again after each full read, while it is inside the 30 days of call rows, has input tokens and names a model with a price.
+- **An IBM LiteLLM estimate written before calls recorded where their price came from** is priced again after each full read when it has input tokens and names a model with a price.
   It stays marked as an estimate, because its row does not say why it was estimated.
+- **A guess written before DAM stopped guessing**, a call priced by the highest prices of its model's family, is priced again at each api-server start, on a provider priced by the Anthropic table or by operator prices, when it has input tokens.
+  It takes its cost from the list when its model has a price now, and else costs nothing and waits for its price.
+  An estimate from before calls recorded where their price came from may be a guess or a real price, for example a cut stream priced from the Anthropic table in fast mode.
+  It keeps its cost when its model's price, with or without the price's fast-mode and region factors, gives that cost, because a guess never had a factor and no Anthropic price changed while such rows were written; else it is a guess.
+  It stays marked as an estimate until it waits for a price and then gets one.
 
 A call that had a real price never changes.
 A call without input tokens never changes either, because its cost came from the payer's most expensive call or from nothing, not from a price.
@@ -142,7 +148,10 @@ Two counters, `platform.spend.proxy_cost.compared` and `platform.spend.proxy_cos
 They carry only the provider and the model, which is the reply's model group when the reply names one, so they name no user, agent or Connection.
 
 **Updating prices.** The Anthropic table changes only through a reviewed update to a newer pinned version of LiteLLM's list, which the regular dependency update proposes.
-The update stops when a copied price lacks one of its token prices, so a broken upstream list never reaches DAM.
+One update writes the model catalogs' part and the Anthropic part from one LiteLLM version, so spend and the catalogs know the same models.
+It stops before it writes anything when a model that DAM prices would lose any of its prices, a prompt-size price, a fast-mode or region factor and the web-search price included, so a broken upstream list never reaches DAM.
+A price that Anthropic really removed passes only after a reviewer deletes it from DAM's copy.
+A new model without every token price is left out of the Anthropic part, so its calls wait for their price, while the catalogs still get it.
 Operator prices change through the chart.
 
 **Reading prices.** The api-server reads IBM LiteLLM's own prices from its model info (`/v1/model/info`) with the key of each IBM LiteLLM Connection.
@@ -233,7 +242,7 @@ A call row changes only while its price source is still the one that was read, s
 ## Estimates
 
 DAM marks a call estimated when its usage or its price is missing or unsure.
-It counts high, except for a call that got no answer and an IBM LiteLLM call that waits for its price:
+It counts high, except for a call that got no answer and a call that waits for its price:
 
 - **A stream that stopped early** keeps the counts read so far, and its output is estimated from the reply size when that gives more.
 - **A successful reply without usage** counts as the payer's most expensive call on that Connection that day, else in the last seven days, because the reply does not show its input.
@@ -246,12 +255,17 @@ It counts high, except for a call that got no answer and an IBM LiteLLM call tha
 - **A call whose record never arrived.**
   The gate notes each metered call when it starts.
   Sixty minutes later, a periodic sweep finishes a call that has only periodic records from its last counts, and counts a call with no record as the payer's most expensive call on that Connection that day, else in the last seven days, else at nothing with a warning.
+  A call whose last counts waited for a price keeps waiting for it.
   A real record that arrives later corrects the estimate.
-- **An IBM LiteLLM call that waits for its price** counts nothing and is marked estimated with the reason `awaiting-price`.
+- **A call that waits for its price** counts nothing and is marked estimated with the reason `awaiting-price`.
+  Its model has no price yet in its provider's price sources: the IBM list, the Anthropic table or operator prices ([Prices](#prices)).
   Only a call with usage waits; a call without usage follows the rules above, whatever its model.
   It writes one `spend.call_awaiting_price` log line with the call, the Connection and the model, and the counter `platform.spend.awaiting_price` counts it by provider and model.
-  The api-server reads the call's Connection at once, without making the call wait, one read at a time and at most once in five minutes per Connection, so the price normally arrives within seconds.
   Until the price arrives, a spend limit does not see the call; when it arrives, DAM prices the call again ([When a cost is fixed](#prices)).
+  A call that still waits after 30 days keeps costing nothing, and the screens stop counting it as waiting.
+  For an IBM LiteLLM call, the api-server reads the call's Connection at once, without making the call wait, one read at a time and at most once in five minutes per Connection, so the price normally arrives within seconds.
+  For the Anthropic table and operator prices, the price arrives with the next deploy that has it.
+  An operator price in the chart prices a new model at once, and the restart prices its waiting calls again.
 
 An estimated call keeps the Session and the calling agent of its stamp, and the gate's own row for a refused call keeps them too.
 Each estimate writes one `spend.call_estimated` log line with its reasons, whether the payer's most expensive call priced it, the calling agent and whether it is a sub-agent, the Connection, the model, the cost, the reply size and the duration, so the share of spend that estimates add can be measured.
@@ -419,7 +433,7 @@ The spend ceiling shows only when the operator has set one.
 The screens:
 
 - **The agent's settings:** the Usage section starts with the card for the agent limit, which counts the paid calls of the agent and its sub-agents.
-  The card also gives today's spend in the other units and how many calls are estimates.
+  The card also gives today's spend in the other units, how many calls are estimates and how many have no price yet.
   Its "Also counted by" list holds, by provider, the agent's Connection limits and the Connection limits for all agents on its Connections, then the total daily limit and the ceiling.
   An agent with only the Claude subscription or Bob gets no button: its card gives today's spend in that unit and points to its Providers section.
   The agent's summary shows today's spend in each unit and the limit.
@@ -440,6 +454,7 @@ The screens:
   Under the total, a line gives the subscription value when the checkbox is on, and a line tells when the subscriptions covered more than the user paid.
   Bobcoins get their own line, which says that they are not in the total.
   A provider without a price shows "Not priced", and a free provider shows "No cost".
+  Under the counts, a line says how many calls are estimates and how many have no price yet; a row with nothing else to show but waiting calls shows "No price yet".
   For 30 days after T, and only when the telemetry store is on, a link opens the earlier estimates: the old view of the spend that each agent reported about itself.
 - **Settings, Operator tab:** only platform operators see this tab.
   Its Spend ceilings section gives the default ceiling, then each user with a ceiling of their own: the amount, the operator who set it last, and when.

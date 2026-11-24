@@ -143,9 +143,13 @@ function OtherSpendLine({
     (sum, total) => sum + total.estimatedCalls,
     0,
   );
+  const awaiting = status.spent.reduce(
+    (sum, total) => sum + total.awaitingCalls,
+    0,
+  );
   const text = [
     others.length > 0 ? alsoSpent(others) : null,
-    estimated > 0 ? callsAreEstimates(estimated) : null,
+    estimated > 0 ? callsAreEstimates(estimated, awaiting) : null,
   ]
     .filter(Boolean)
     .join(" ");
