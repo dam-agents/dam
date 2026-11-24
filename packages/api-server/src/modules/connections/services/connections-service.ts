@@ -575,7 +575,6 @@ export function createConnectionsService(deps: {
     };
   }
 
-  /* UNIT_BOUNDARY_DESCRIPTION: writes a Connection's tool mode, one of the modes it offers; needs approval only while the owner has the `mcp-tool-approval` feature. A mode that limits tool calls writes the Secret again first, so a Secret made before its Template declared tool access asks the gateway for request bodies. It clears the tool access of every grant of the Connection, so every Agent that holds it follows the mode again. */
   async function assertToolModeOffered(
     conn: Pick<Connection, "name" | "auth" | "contributions">,
     mode: ToolMode,
@@ -598,6 +597,7 @@ export function createConnectionsService(deps: {
     }
   }
 
+  /* UNIT_BOUNDARY_DESCRIPTION: writes a Connection's tool mode, one of the modes it offers; needs approval only while the owner has the `mcp-tool-approval` feature. A mode that limits tool calls writes the Secret again first, so a Secret made before its Template declared tool access asks the gateway for request bodies. It clears the tool access of every grant of the Connection, so every Agent that holds it follows the mode again. */
   async function setToolMode(conn: Connection, mode: ToolMode): Promise<void> {
     const template = deps.templates.get(conn.templateId);
     await assertToolModeOffered(conn, mode);

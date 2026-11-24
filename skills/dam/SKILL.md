@@ -461,7 +461,7 @@ dam connection tools slack-account --agent standup
 With tool access per agent on, a new grant starts with the stricter of the connection's tool mode and the safe start.
 The safe start allows reads, and blocks writes on a Slack Account or asks before them on any other MCP connection.
 An MCP server connected with no auth has no tool access to set: the gateway does not read its requests, so every call passes.
-Tool access per agent is an experimental feature: while it is off for the user, the server refuses a change and each grant follows the connection's tool mode.
+Tool access per agent is an experimental feature: while it is off for the user, `--agent` can neither show nor set it, and `scope --mode` sets the tool mode of every agent that holds the connection.
 
 The connection also has a tool mode: `allow-all` lets every tool call through, `read-only` lets through only the tools that read and refuses the rest, and `needs-approval` lets the tools that read through at once and holds every other tool call until someone approves it.
 A mode you set applies to the agents that hold the connection now, and drops their own access.

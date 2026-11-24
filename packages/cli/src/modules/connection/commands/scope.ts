@@ -192,7 +192,7 @@ export function buildScopeCommand(deps: {
         "until someone approves it) or block. --read sets the rule of the tools that\n" +
         "read, --write the rule of every other tool, and --tool gives one tool its own\n" +
         "rule. A flag you leave out keeps that part. Tool access per agent is an\n" +
-        "experimental feature; the server refuses a change while it is off.\n",
+        "experimental feature; while it is off, --agent can neither show nor set it.\n",
     )
     .action(async (ref: string, opts: ScopeOpts) => {
       const json = opts.json ?? false;

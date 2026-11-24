@@ -146,8 +146,8 @@ A sub-agent that takes its connections from its Driver, all of them or a list, s
 A later change of the Driver's access reaches the same grant of every child that keeps in step with it, and of their children; a child given a list keeps what it copied.
 Otherwise a new grant never copies another Agent's access.
 With the feature off a new grant stores nothing and follows the mode, unless it copies its Driver's.
-Only the Connection's owner sets a grant's tool access, an Editor of the Agent never, and only with the feature on, for an Agent that holds the Connection, on a Connection the gateway reads.
-An own rule equal to its group's is dropped, the number of own rules and the length of a tool name are capped, and every change is written to the security log.
+Only the Connection's owner sets a grant's tool access, an Editor of the Agent never on the owner's Connections, and only with the feature on, for an Agent that holds the Connection, on a Connection the gateway reads.
+An own rule equal to its group's is dropped, the number of own rules and the length of a tool name are capped, and every change the owner makes is written to the security log.
 The owner sets it in the tool access dialog for one Agent, opened from the Agent's Connections or from the Agents listed inside the Connection's row on the Connections page, riskiest first; the dialog sets each group, opens a group to give a tool its own rule, and shows and refreshes the stored tool list.
 Each place sums the access up in a few words, such as read only or asks before writing, and marks an Agent that writes without asking: its rule for every other tool is allow, so a tool the server adds later runs at once, or a tool that is not a read tool has its own allow; the CLI uses the same rule, and the Connections page row counts those Agents.
 An own rule on a tool the stored list does not name counts everywhere: in the summary, in the marks, and in the dialog, where it shows under the other tools as not in the tool list.

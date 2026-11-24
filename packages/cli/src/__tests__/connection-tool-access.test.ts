@@ -324,6 +324,24 @@ describe("dam connection scope --agent", () => {
     expect(output.stderr).toContain("open-mcp has no tool access to set");
     expect(svc.setGrantToolAccess).not.toHaveBeenCalled();
   });
+
+  /** TEST_SCENARIO: with tool access per agent off for the person, the server sends no access on a Slack Account grant either; the command names the feature as the cause and points to the Connection's tool mode, and never says that every call passes. */
+  it("names the feature when the server sends no access on a connection the gateway reads", async () => {
+    const svc = service([grant("conn-slack")]);
+    await run(
+      scope(svc),
+      ["slack-account", "--agent", "standup", "--write", "ask"],
+      EXIT_INVALID_INPUT,
+    );
+    expect(output.stderr).toContain(
+      "tool access per agent is an experimental feature that is off for you",
+    );
+    expect(output.stderr).toContain(
+      "dam connection scope slack-account --mode <mode>",
+    );
+    expect(output.stderr).not.toContain("every tool call passes");
+    expect(svc.setGrantToolAccess).not.toHaveBeenCalled();
+  });
 });
 
 describe("dam connection list <agent> on an MCP connection", () => {

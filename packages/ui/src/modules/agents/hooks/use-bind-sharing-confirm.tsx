@@ -53,7 +53,7 @@ export function useBindSharingConfirm(
             <BindSharingText
               agentName={agent.name}
               connectionNames={names}
-              toolAccess={toolAccess ?? []}
+              toolAccess={toolAccess}
               audience={audience}
               whisper={whisper}
             />

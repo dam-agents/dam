@@ -228,6 +228,12 @@ export function EgressApprovalPrompt() {
   const groups = groupBy(waiting, approvalGroupKey);
   const current = groups[0];
   const currentKey = current ? approvalGroupKey(current[0]!) : null;
+  if (
+    answered &&
+    (answered.agentId !== agentId ||
+      (current && !answered.ids.includes(current[0]!.id)))
+  )
+    setAnswered(null);
   const shownAnswer =
     answered?.agentId === agentId &&
     (current === undefined || answered.ids.includes(current[0]!.id))

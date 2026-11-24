@@ -45,13 +45,13 @@ function ToolAccessText({
 export function BindSharingText({
   agentName,
   connectionNames,
-  toolAccess = [],
+  toolAccess,
   audience,
   whisper,
 }: {
   agentName: string;
   connectionNames: readonly string[] | null;
-  toolAccess?: readonly SharedToolAccess[];
+  toolAccess: readonly SharedToolAccess[] | null;
   audience: SharedChannel;
   whisper: boolean;
 }) {
@@ -82,7 +82,14 @@ export function BindSharingText({
         : <BoldList items={connectionNames} limit={4} />. Anyone in {phrase} can
         ask it to use {connectionNames.length === 1 ? "it" : "them"}, with your
         access.
-        <ToolAccessText connections={toolAccess} />
+        {toolAccess === null ? (
+          <>
+            {" "}
+            Through some of them they may also post and change things as you.
+          </>
+        ) : (
+          <ToolAccessText connections={toolAccess} />
+        )}
       </>
     );
   return whisper ? (

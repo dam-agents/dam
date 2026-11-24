@@ -48,9 +48,14 @@ export async function resolveGrantToolAccessOrExit(deps: {
     process.exit(EXIT_INVALID_INPUT);
   }
   if (!grant.toolAccess) {
+    const { modes } = connection.toolAccess;
     process.stderr.write(
-      `error: ${connection.name} has no tool access to set: it is an MCP server with no auth, ` +
-        "whose requests the gateway does not read, so every tool call passes\n",
+      modes.length === 1 && modes[0] === "allow-all"
+        ? `error: ${connection.name} has no tool access to set: it is an MCP server with no auth, ` +
+            "whose requests the gateway does not read, so every tool call passes\n"
+        : "error: tool access per agent is an experimental feature that is off for you, " +
+            `so the CLI can neither show nor set ${agent.name}'s access on ${connection.name}\n` +
+            `hint: \`dam connection scope ${connection.name} --mode <mode>\` sets the tool mode of every agent that holds it\n`,
     );
     process.exit(EXIT_INVALID_INPUT);
   }

@@ -285,6 +285,27 @@ describe("sharing an agent that holds MCP connections with a chat", () => {
     );
   });
 
+  // TEST_SCENARIO: the connections are known but their tool access is not, because the grants are still loading or failed to load, so the warning does not read as if nothing could post and says that some may.
+  it("warns that some may post while the tool access is unknown", () => {
+    const host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(
+      createElement(BindSharingText, {
+        agentName: "helper",
+        connectionNames: ["my-slack"],
+        toolAccess: null,
+        audience: {
+          kind: "slack-channel",
+          id: "C1",
+          name: "team",
+        } as never,
+        whisper: false,
+      }),
+    );
+    expect(host.textContent).toContain(
+      "Through some of them they may also post and change things as you.",
+    );
+  });
+
   const sharedAccess = () => {
     let shared: ReturnType<typeof useAgentToolAccess> = null;
     function Probe() {
