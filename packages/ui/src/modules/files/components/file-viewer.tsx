@@ -1,9 +1,4 @@
-import {
-  Close,
-  Download,
-  RequestQuote,
-  Save,
-} from "@carbon/icons-react";
+import { Close, Download, RequestQuote, Save } from "@carbon/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { RenderToggle } from "@/components/render-toggle";

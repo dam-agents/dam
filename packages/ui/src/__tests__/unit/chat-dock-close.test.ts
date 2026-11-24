@@ -199,15 +199,18 @@ const panels: [string, Dock, () => ReactNode][] = [
 
 describe("a panel docked beside the chat", () => {
   // TEST_SCENARIO: AC — the panel is docked in the chat; its top bar's last control is the Close panel X, and a click on it closes the dock.
-  it.each(panels)("%s ends its top bar with an X that closes it", async (_, dock, panel) => {
-    useStore.setState({ dock });
-    renderInChat(panel());
-    const buttons = headerButtons();
-    const close = buttons.at(-1)!;
-    expect(close.getAttribute("aria-label")).toBe("Close panel");
-    await act(async () => close.click());
-    expect(useStore.getState().dock).toBeNull();
-  });
+  it.each(panels)(
+    "%s ends its top bar with an X that closes it",
+    async (_, dock, panel) => {
+      useStore.setState({ dock });
+      renderInChat(panel());
+      const buttons = headerButtons();
+      const close = buttons.at(-1)!;
+      expect(close.getAttribute("aria-label")).toBe("Close panel");
+      await act(async () => close.click());
+      expect(useStore.getState().dock).toBeNull();
+    },
+  );
 
   // TEST_SCENARIO: AC — the artifact panel's header has no back arrow before its title; the X is the one control that closes it.
   it("shows no back arrow on an artifact", () => {
