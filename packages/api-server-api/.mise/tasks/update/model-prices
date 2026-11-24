@@ -4,17 +4,25 @@
 /* UNIT_BOUNDARY_DESCRIPTION: DAM keeps one copy of LiteLLM's public price
 list, from one commit, in two parts. The model catalogs read the "models"
 part: one row per model family name, with its limits, reasoning, vision and
-base prices. Spend prices Anthropic API keys and the Claude subscription value
-from the "anthropic" part: the Anthropic API's chat rows with every price
-field, unchanged, so a reviewer can compare them with LiteLLM's file. Before
-it writes anything, the task stops when a row that the current file prices
-is missing upstream, lacks one of the five token prices, or loses any price
-that the current file has, such as a prompt-size price, the fast-mode or
-region factor, or the web-search price, because DAM would count those calls
-low. A price that Anthropic really removed passes once it is deleted from
-the current file. A new row without every price is left out of the "anthropic"
-part, so its model's calls wait for their price, and stays in "models". Each
-row is on its own line, so a diff shows one line per changed model. */
+base prices. LiteLLM keeps one row per provider route, and a route can lack a
+field that another route of the same model has, for example a route added
+only to make a model id selectable. So a family row takes each field from the
+first route that has it, the route with the plainest key first, and names
+that first route as its key. A cache price comes only from a route with the
+row's input and output prices, so a row never pairs one host's input price
+with another host's cache price. The task names every family that loses a
+field that the current file has. Spend prices Anthropic API keys and the
+Claude subscription value from the "anthropic" part: the Anthropic API's chat
+rows with every price field, unchanged, so a reviewer can compare them with
+LiteLLM's file. Before it writes anything, the task stops when a row that
+the current file prices is missing upstream, lacks one of the five token
+prices, or loses any price that the current file has, such as a prompt-size
+price, the fast-mode or region factor, or the web-search price, because DAM
+would count those calls low. A price that Anthropic really removed passes
+once it is deleted from the current file. A new row without every price is
+left out of the "anthropic" part, so its model's calls wait for their price,
+and stays in "models". Each row is on its own line, so a diff shows one line
+per changed model. */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,6 +48,7 @@ const CATALOG_FIELDS = [
   "supports_vision",
   "supports_reasoning",
 ];
+const CACHE_PRICES = new Set(["cache_read_input_token_cost", "cache_creation_input_token_cost"]);
 const REQUIRED = [
   "input_cost_per_token",
   "output_cost_per_token",
@@ -76,9 +85,12 @@ async function pinnedCommit() {
 const familyName = (key) => key.split("/").at(-1).toLowerCase().replace(/\./g, "-");
 const plainness = (key) =>
   (key.includes("/") ? 2 : 0) + (/^[a-z-]+\.[a-z]/i.test(key) ? 1 : 0);
+const samePrices = (route, row) =>
+  route.input_cost_per_token === row.input_cost_per_token &&
+  route.output_cost_per_token === row.output_cost_per_token;
 
 function catalogPart(list) {
-  const models = {};
+  const routes = {};
   const keys = Object.keys(list)
     .filter(
       (key) =>
@@ -88,14 +100,20 @@ function catalogPart(list) {
         CATALOG_MODES.has(list[key].mode),
     )
     .sort((a, b) => plainness(a) - plainness(b) || a.localeCompare(b));
-  for (const key of keys) {
-    const family = familyName(key);
-    if (models[family]) continue;
-    const kept = { key };
-    for (const field of CATALOG_FIELDS) if (list[key][field] !== undefined) kept[field] = list[key][field];
-    models[family] = kept;
-  }
-  return models;
+  for (const key of keys) (routes[familyName(key)] ??= []).push(key);
+  return Object.fromEntries(
+    Object.entries(routes).map(([family, familyKeys]) => {
+      const kept = { key: familyKeys[0] };
+      for (const field of CATALOG_FIELDS) {
+        const value = familyKeys
+          .filter((key) => !CACHE_PRICES.has(field) || samePrices(list[key], kept))
+          .map((key) => list[key][field])
+          .find((found) => found != null);
+        if (value !== undefined) kept[field] = value;
+      }
+      return [family, kept];
+    }),
+  );
 }
 
 function anthropicRows(list) {
@@ -193,7 +211,7 @@ const source = {
   commit,
   committedAt: meta.commit.committer.date,
   pruned:
-    "models: mode in chat|responses|completion; one entry per family name (last path segment, lowercased, dots as dashes); fields the model catalog reads. anthropic: litellm_provider anthropic and mode chat; every price field, unchanged",
+    "models: mode in chat|responses|completion; one entry per family name (last path segment, lowercased, dots as dashes); fields the model catalog reads, each from the first route of the family that has it, plainest key first, a cache price only from a route with the same input and output prices. anthropic: litellm_provider anthropic and mode chat; every price field, unchanged",
 };
 writeFileSync(
   OUT,
@@ -211,6 +229,11 @@ const catalogChanged = Object.keys(models).filter(
   (family) => JSON.stringify(oldModels[family]) !== JSON.stringify(models[family]),
 ).length;
 const catalogRemoved = Object.keys(oldModels).filter((family) => !models[family]).length;
+const catalogLost = Object.keys(oldModels).flatMap((family) => {
+  if (!models[family]) return [];
+  const gone = Object.keys(oldModels[family]).filter((field) => models[family][field] === undefined);
+  return gone.length > 0 ? [`${family}: no ${gone.join(", no ")}`] : [];
+});
 const report = (title, lines) =>
   console.log(`${title}: ${lines.length === 0 ? "none" : `\n  ${lines.join("\n  ")}`}`);
 
@@ -218,6 +241,7 @@ console.log(`Wrote LiteLLM ${commit} (${source.committedAt}) to ${OUT}`);
 console.log(
   `models: ${Object.keys(models).length} families, ${catalogChanged} new or changed, ${catalogRemoved} removed`,
 );
+report("Catalog families that lose a field", catalogLost);
 console.log(`anthropic: ${Object.keys(anthropic).length} rows`);
 report("Anthropic rows added", added);
 report("Anthropic prices changed", changed);
