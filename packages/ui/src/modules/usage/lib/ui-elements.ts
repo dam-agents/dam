@@ -32,10 +32,14 @@ export const ID_TESTID_PREFIXES = [
   "connection-parent-status-",
   "connection-parent-title-",
   "connection-scope-",
+  "connection-used-by-",
+  "connection-writes-mark-",
   "egress-group-",
   "env-group-",
   "github-app-repo-",
   "github-user-account-",
+  "grant-tool-access-",
+  "grant-writes-mark-",
   "prefer-connection-",
   "secret-request-",
   "secret-request-audience-",
@@ -44,6 +48,7 @@ export const ID_TESTID_PREFIXES = [
   "starter-kit-schedule-",
   "starter-kit-schedule-instructions-",
   "starter-kit-schedule-settings-",
+  "tool-rule-",
 ] as const;
 
 export const FIXED_TESTID_PREFIXES = [
@@ -61,6 +66,7 @@ export const FIXED_TESTID_PREFIXES = [
   "starter-kit-connect-",
   "starter-kit-connected-",
   "starter-kit-requirement-",
+  "tool-group-",
 ] as const;
 
 const MAX_ELEMENT = 120;
