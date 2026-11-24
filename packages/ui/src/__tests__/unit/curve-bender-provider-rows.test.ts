@@ -92,7 +92,7 @@ const render = () =>
   );
 
 const CUSTOM = "CurveBender (own key)";
-const SHARED = "CurveBender (shared)";
+const SHARED = "CurveBender";
 
 const deploymentConfigured = () =>
   (state.templates = [{ id: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID }]);
@@ -128,9 +128,7 @@ describe("CurveBender provider rows", () => {
     const html = render();
     expect(html).toContain(`>${SHARED}<`);
     expect(html).toContain(">Connected<");
-    expect(html).toMatch(
-      /<button[^>]*aria-label="About CurveBender \(shared\)"/,
-    );
+    expect(html).toMatch(/<button[^>]*aria-label="About CurveBender"/);
     expect(html).not.toContain(`aria-label="Connect ${SHARED}"`);
     expect(html).not.toContain(`aria-label="Edit ${SHARED}"`);
     expect(html).not.toContain("Disconnect");
@@ -146,18 +144,27 @@ describe("CurveBender provider rows", () => {
     expect(render()).toContain(`aria-label="Edit ${CUSTOM}"`);
   });
 
-  // TEST_SCENARIO: the explainer is read-only: it says what CurveBender is and that inference is free within fair use, and its only control is Close, with the docs link opening in a new tab.
+  // TEST_SCENARIO: the explainer is read-only: it says every user of this deployment is set up with CurveBender and links its docs in a new tab, states that the models are approved for restricted use cases only with that phrase linking the legal page, and its only control is Close.
   it("explains the deployment integration without a form", () => {
     const html = renderToStaticMarkup(
       createElement(CurveBenderInfoDialog, { onClose: () => {} }),
     );
-    expect(html).toContain("CurveBender</a> is an IBM Research platform");
     expect(html).toContain(
-      "All Acme users are provided with free inference on CurveBender, subject to fair-use policy.",
+      "All Acme users are set up with CurveBender, IBM-hosted open-source models.",
     );
-    expect(html).toContain(`href="${CURVE_BENDER_DOCS_URL}"`);
-    expect(html).toContain('target="_blank"');
-    expect(html).toContain('rel="noopener noreferrer"');
+    const externalLink = (href: string, text: string) =>
+      new RegExp(
+        `<a href="${href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}" target="_blank" rel="noopener noreferrer" class="[^"]*">${text}</a>`,
+      );
+    expect(html).toMatch(externalLink(CURVE_BENDER_DOCS_URL, "Learn more"));
+    expect(html).toMatch(
+      externalLink(
+        "https://cb-docs-curvebender.apps.fmaas-backend.fmaas.res.ibm.com/ai-platform-incubation/cb_docs/getting-started/model-usage-guidance/",
+        "restricted use cases",
+      ),
+    );
+    expect(html).toContain("These models are currently only approved for <a ");
+    expect(html).toContain(">restricted use cases</a>.");
     expect(html).toMatch(/<button[^>]*>Close<\/button>/);
     expect(html).not.toContain("<input");
   });

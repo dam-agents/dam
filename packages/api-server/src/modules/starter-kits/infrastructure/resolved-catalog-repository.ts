@@ -6,7 +6,11 @@ import {
   type Db,
   starterKitCatalogEntries,
 } from "db";
-import type { ResolvedSkill, ResolvedStarterKit } from "api-server-api";
+import type {
+  ResolvedSkill,
+  ResolvedStarterKit,
+  StarterKitPublisher,
+} from "api-server-api";
 
 export interface ResolvedKitRow {
   catalog: string;
@@ -15,6 +19,7 @@ export interface ResolvedKitRow {
   source: string;
   kit: ResolvedStarterKit;
   skillsInKit: ResolvedSkill[];
+  publisher: StarterKitPublisher;
 }
 
 export interface ResolvedCatalogRepository {
@@ -37,6 +42,7 @@ async function upsertRows(tx: Tx, rows: ResolvedKitRow[]): Promise<void> {
         source: row.source,
         kit: row.kit,
         bundledSkills: row.skillsInKit,
+        publisher: row.publisher,
       })
       .onConflictDoUpdate({
         target: [
@@ -48,6 +54,7 @@ async function upsertRows(tx: Tx, rows: ResolvedKitRow[]): Promise<void> {
           source: row.source,
           kit: row.kit,
           bundledSkills: row.skillsInKit,
+          publisher: row.publisher,
           refreshedAt: sql`now()`,
         },
       });
@@ -65,6 +72,7 @@ function toRow(r: {
   source: string;
   kit: unknown;
   bundledSkills: unknown;
+  publisher: unknown;
 }): ResolvedKitRow {
   return {
     catalog: r.catalog,
@@ -73,6 +81,7 @@ function toRow(r: {
     source: r.source,
     kit: withListDefaults(r.kit as ResolvedStarterKit),
     skillsInKit: (r.bundledSkills as ResolvedSkill[] | null) ?? [],
+    publisher: (r.publisher as StarterKitPublisher | null) ?? { kind: "team" },
   };
 }
 

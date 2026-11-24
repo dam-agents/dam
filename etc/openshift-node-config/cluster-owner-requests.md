@@ -37,6 +37,7 @@ On the platform side, the default agent image's layers are being made reproducib
   - the same images again: mostly ~120 ms, but up to 2.4 s on another admission-control replica, since each of the replicas keeps its own cache.
 - The API server's webhook latency metric showed a small share of creates taking 1–10 s, and some creates and updates returning 503 and failing open.
 - The admission controller's `error fetching image` lines were mostly for the platform's own freshly built images, and the controller's slowest StatefulSet writes (5 s and 10 s) match those timeouts.
+- Since then every agent runs as a microVM, whose image the VM runner pulls: admission sees only the agent's gateway StatefulSet, and an image update writes none.
 
 ### Asks
 

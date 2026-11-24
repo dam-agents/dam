@@ -1,6 +1,6 @@
 # Agent Telemetry (trace and log read path)
 
-Last verified: 2026-10-19
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -131,9 +131,7 @@ A few seconds' slack covers a sender's own message, which keeps the browser's st
 A keyed match is never displaced by a timed one, a reply still streaming shows nothing until it settles, and a reply with neither an id nor a time stays unlabelled rather than being lined up by position.
 
 Session-wide access stays off the conversation: the Session's own menu exports its telemetry as a file.
-The panel is revealed by an experimental feature ([features](features.md)); the procedures themselves stay open to any authenticated owner.
-The flag is disclosure, not authorization — the raw view is deliberately structural, and the designed diagnostic experience it feeds is separate work.
-The API and the export are therefore usable before the surface is revealed.
+The panel shows for every user, with no setting to turn on; the raw view is deliberately structural, and the designed diagnostic experience it feeds is separate work.
 
 ## Disabled backend
 
@@ -141,7 +139,7 @@ The telemetry store is optional and off by default.
 With no store configured the service is wired to an **unavailable** variant that reports its unavailability as a value with a reason, rather than throwing.
 This is the deliberate inverse of the spend path's fail-closed posture, for the reason given in the overview, and it also serves the programmatic consumer, which needs to record "telemetry is not measured on this install" and carry on.
 Both variants are chosen once at composition time.
-The install capabilities (`features.install`) report the choice as `telemetryBackend`, so the Session menu offers its telemetry export only where a store exists, instead of offering one that fails.
+The install capabilities (`features.install`) report the choice as `telemetryBackend`, so the conversation shows the per-reply telemetry, on replies and on delegation cards, and the Session menu offers its telemetry export only where a store exists, instead of showing a surface that has nothing to read.
 
 ## Trust story
 

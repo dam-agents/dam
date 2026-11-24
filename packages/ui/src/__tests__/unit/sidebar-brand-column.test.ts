@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: Where the brand sits in a navigation header. The rail's icons sit on one column 26px from the rail's edge, and the brand sits on it too: the collapsed rail, the expanded rail and the phone drawer each put the logo in one fixed-size slot padded like a nav item. The logo keeps its own width and overflows that slot evenly, so the column holds whatever width the brand's wordmark has.
+// TEST_OVERVIEW: Where the brand sits in a navigation header. The rail's icons sit on one column 26px from the rail's edge, and the brand sits on it too where there is one: the expanded rail and the phone drawer each put the logo in one fixed-size slot padded like a nav item, and the logo keeps its own width and overflows that slot evenly, so the column holds whatever width the brand's wordmark has. The collapsed rail carries no brand at all: its one control is the chevron that expands it.
 import { act, createElement, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -68,13 +68,20 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-// TEST_SCENARIO: the collapsed rail shows the brand where the icons below it sit, in the same slot a nav item's icon gets, so the wordmark's centre is the Home icon's centre and not the rail's.
-it("puts the brand on the icon column of the collapsed rail", () => {
+// TEST_SCENARIO: the collapsed rail's header is one control that expands it, drawn as its chevron whether or not the pointer is over it, in the nav item's 40px box on the icon column; the brand stands only in the expanded header, so no wordmark is rendered here.
+it("shows the chevron, and no brand, on the collapsed rail", () => {
   render(header(false));
   const [toggle] = buttons();
+  expect(toggle?.getAttribute("aria-label")).toBe("Expand navigation");
+  expect(toggle?.getAttribute("aria-expanded")).toBe("false");
   expect(classes(toggle).sort()).toContain("pl-2.5");
   expect(classes(toggle).sort()).toContain("h-10");
-  expect(slot()).toEqual(SLOT);
+  expect(document.querySelectorAll("button")).toHaveLength(1);
+  expect(document.querySelector("svg[aria-label]")).toBeNull();
+  expect(slot()).toEqual([]);
+  const icons = toggle ? [...toggle.querySelectorAll("svg")] : [];
+  expect(icons).toHaveLength(1);
+  expect(classes(icons[0]).join(" ")).not.toContain("opacity");
 });
 
 // TEST_SCENARIO: the expanded rail keeps the wordmark on the left and the toggle after it, and the brand button is a 40px box whose padding is the nav item's, so the logo's slot starts on the icon column; the button's own box stays large enough to hold the overflowing logo, so the hover background covers what it highlights.

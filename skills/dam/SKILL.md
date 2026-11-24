@@ -1,16 +1,21 @@
 ---
 name: dam
 description: >
-  Drive the user's DAM deployment from this machine with the `dam` CLI: create, run, restart and delete their DAM agents, give them prompts and read the answers, move files in and out, create agents from starter kits and take kit updates, and manage schedules, connections, network rules, approvals, channels, skills and spend.
-  Use whenever the user asks to do anything on DAM or with one of their DAM agents, or mentions the `dam` command — even when they don't say "CLI".
-  Covers installing the CLI, signing in, and the rule that you never see a secret: the user types every credential on a DAM web page or into a command you hand them.
+  Drive the user's DAM deployment with the `dam` CLI: agents, prompts and answers, files, artifacts, starter kits, schedules, connections, network rules, approvals, channels, skills and spend.
+  Use whenever the user asks to do anything on DAM or with one of their DAM agents, or mentions `dam`.
+  Covers installing the CLI, signing in, and that you never see a secret: the user types every credential on a DAM page.
+  Its security advisory says how to set agents up so credentials stay out of reach.
+  It asks before it deletes anything and waits for the answer in a later message: the request is not that answer.
+  Its map of the web app says where each task is done.
+  A DAM agent holding the install's own connection has the CLI and this skill already; the personal assistant the install gave the user reads it before it starts on a task.
+  It diagnoses another of the user's agents when asked why one failed, slowed or costs more, and drafts a platform problem report the user sends, posting nothing.
 ---
 
 DAM runs the user's AI agents in isolated sandboxes on a server.
 The `dam` CLI on this machine is how you drive it: everything the DAM web app does has a `dam` command.
 You act as the user, with the user's own rights, so treat every command as if the user typed it.
 
-This page describes `dam` CLI 0.3.0.
+This page describes `dam` CLI 0.3.3.
 Before you rely on it, compare that with the CLI you have: see [Match this skill to the CLI](#match-this-skill-to-the-cli).
 
 ## Hard rules
@@ -22,9 +27,12 @@ Before you rely on it, compare that with the CLI you have: see [Match this skill
 2. **Never touch the user's DAM sign-in.**
    Don't read the CLI's state directory (`~/.local/state/dam/`), and don't print or export `DAM_TOKEN`.
    `dam auth status` is safe: it never prints tokens.
-3. **Ask before anything you can't undo.**
-   `dam agent delete` removes an agent and all its data, and `dam connection disconnect` deletes a stored credential that every agent it is granted to loses.
-   Confirm with the user first, then pass `--yes` yourself; without a terminal, these commands refuse to run without it ([Without a terminal](#without-a-terminal) lists them).
+3. **Ask before anything you can't undo, and wait for the answer.**
+   Deleting an agent (`dam agent delete`) throws away its sessions, files and memory, `dam connection disconnect` deletes a stored credential that every agent it is granted to loses, and `dam schedule delete` removes a schedule for good.
+   When the user asks for one of those, don't run it: say what is lost, ask once whether to go ahead, and end your turn.
+   The request is not that answer, however plainly it was put: only their yes to that question, in a later message, is.
+   Then run it with `--yes`, which the CLI needs from you because you have no terminal ([Without a terminal](#without-a-terminal) lists those commands).
+   Reversible changes you make when they ask, with no second confirmation: renaming or updating an agent, running a task, setting up or changing a schedule, granting a connection.
 4. **Approvals and the Terms of Use are the user's to decide.**
    Don't approve or deny a pending request, and don't accept the Terms of Use, unless the user told you to after seeing what is being asked.
 5. **Parse `--json`, not tables.**
@@ -33,6 +41,23 @@ Before you rely on it, compare that with the CLI you have: see [Match this skill
 6. **Only the CLI talks to DAM.**
    Never call DAM's API directly — with curl, a script or anything else — and never reuse the CLI's sign-in to do so.
    See [When the CLI can't do it](#when-the-cli-cant-do-it).
+7. **Say who can act as the user.**
+   Anyone who can steer a DAM agent uses every connection and satellite it holds.
+   Before you bind a channel, grant a connection or satellite, or widen what an agent reaches, check the agent as the [security advisory](references/security-advisory.md) says: choose the safer set-up it names, and tell the user what each change shares.
+
+## Inside a DAM agent
+
+When you are a DAM agent yourself, and `DAM_SERVER` and `DAM_TOKEN` are set in your environment, the CLI is already set up: skip [Set up](#set-up).
+`dam` is on your PATH, built from the same commit as the server, and this skill came with it, so it matches the CLI.
+`DAM_TOKEN` is a placeholder that your machine's network gateway swaps for the user's real credential on the way out: it works, and it is not a secret you can see.
+Never run `dam auth login` there.
+
+Every command acts as the user who owns you, yourself included: `dam run`, `dam session show --follow` and `dam ssh connect` work from inside an agent as they do from the user's machine.
+To prompt yourself or another of the user's agents, use `dam run <agent> -p "<prompt>" --json`; a sleeping agent wakes for it.
+To run a command on another agent, use `dam ssh connect <agent> -- <command>`.
+You have no terminal, so `dam chat` and an interactive `dam ssh connect` shell are not for you ([Without a terminal](#without-a-terminal)).
+
+If the user's instructions say you are the personal assistant this DAM install gave them, also read [the personal assistant's guide](references/personal-assistant.md) before you start on a task they pick or ask for.
 
 ## Set up
 
@@ -161,11 +186,13 @@ A ref that matches nothing or more than one agent exits with code 5; list the ag
 
 Your shell has no terminal attached, and the CLI behaves accordingly:
 
-- These commands need `--yes` (see the hard rules):
+- These commands need `--yes`, because the CLI would otherwise ask at a prompt you cannot answer:
   `dam agent delete`, `dam connection disconnect`, `dam schedule delete`, `dam import`, `dam skill source remove` and `dam satellite rm`;
   `dam network create`, `dam network update` and `dam network revoke` when the change restarts the agent's network gateway, and `dam network apply-preset --preset all`.
-  `dam terms accept` needs it too, and only after the user accepts (hard rule 4).
-- `dam chat <agent>` attaches to the agent's interactive session and `dam agent create-interactive` walks through a form; both need a terminal, so offer the command to the user instead.
+  The deletes and disconnects among them also wait for the answer hard rule 3 makes you ask; the rest run when the user asks.
+  `dam terms accept` needs `--yes` too, and only after the user accepts (hard rule 4).
+- `dam chat <agent>` attaches to the agent's interactive session, `dam ssh connect <agent>` without a command opens a shell, and `dam agent create-interactive` walks through a form; they need a terminal, so offer the command to the user instead.
+  `dam run` and `dam ssh connect <agent> -- <command>` are the ways in that need none.
 - A prompt the CLI would show a person becomes an error that names the flag to pass.
 
 ## Common tasks
@@ -177,10 +204,13 @@ Run `dam <command> --help` for every flag; it is the authority when it disagrees
 ```sh
 dam agent list --json
 dam agent get my-agent --json
+dam outage list --json
 dam template list
 dam kit list
 dam connection list
 ```
+
+The [diagnosing an agent](references/diagnose-an-agent.md) reference says how to read a failure, and [reporting a platform problem](references/diagnose-an-agent.md#8-reporting-a-platform-problem) how to draft one.
 
 ### Create an agent
 
@@ -191,9 +221,15 @@ dam agent create my-agent --wait --json
 - `--template <id>` picks a template from `dam template list`; without it the deployment's default is used.
 - `--provider <connection>` picks the model provider connection; without it the user's preferred one is used.
   `dam connection list --providers` lists the model providers: the PROVIDER column names each one's alias and the harnesses that run on it, and marks the preferred one (`provider.preferred` in `--json`).
-  The preferred one is the provider of the user's default for new agents (a profile, set in Settings › Providers › Profiles), which may be a shared provider, and the agent starts on that profile's model and harness; with no such default it is the first provider the default harness runs on.
-  The create output names the provider it granted and why (`defaultProvider` in `--json`: its `connectionId`; `source`, what chose it — `profile` for the default for new agents, `kit` for the starter kit's providers list, `template` for the template's, `harness` for the harness's provider order; and `profile` with its name, model and harness, or `null` unless `source` is `profile`); tell the user what it says rather than assuming.
-  If it lists none, the user connects one first ([Secrets](#secrets)); `dam connection templates --providers` lists the kinds there are.
+  With `--provider`, the agent holds that provider alone (plus nothing else unless you name it), starts on a harness that provider runs — the harness of the user's default for new agents when the provider runs it, else the deployment's default harness, else the first the provider runs — and its chat default is the platform's preferred model of that provider for the harness, once the provider has listed its models.
+  Without it, the preferred one is the provider of the user's default for new agents (a profile or their own harness, provider and model, picked in Settings › Providers; with none picked, the deployment's base default), which may be a shared provider, and the agent starts on that default's model and harness; with no such default it is the first provider the default harness runs on.
+- `--harness <name>`, `--model <provider>/<model id>` and `--setting <id=value>` choose what the agent starts on, with the same meaning as on `dam agent update`; the model must be one a granted provider offers on that harness, else the create is refused before anything is made.
+  To give the user exactly what they asked for, pass all of them in the one create: `dam agent create my-agent --provider <connection> --harness claude-code --model anthropic/<model id> --wait --json`.
+- The create output says what the agent starts on: a `Starts on:` line with the harness and model (`startsOn` in `--json`: `harness`; `model`, or `null` for the automatic model; and `providers`, each granted provider with its `connectionId`, the `harnesses` it runs and `source`, what chose it — `named` for one you named, `profile` or `default` for the default for new agents (a profile, or values), `kit` for the starter kit's providers list, `template` for the template's, `harness` for the harness's provider order).
+  Without `--provider` it also names the provider it chose and why (`defaultProvider` in `--json`, with the same `source`, and `profile` with its name (`null` for values), model and harness, or `null` unless `source` is `profile` or `default`).
+  A `warning:` on stderr means no provider you named runs the harness the agent starts on, with the `dam agent update` that fixes it.
+  Tell the user what it says rather than assuming.
+  If `dam connection list --providers` lists none, the user connects one first ([Secrets](#secrets)); `dam connection templates --providers` lists the kinds there are.
   To change the providers or the default model later, see [Models and harnesses](#models-and-harnesses).
 - `--wait` returns once the agent is running, and stops early on an error or when there is no room to start it.
 
@@ -223,6 +259,9 @@ dam agent create my-desk --kit research --connection github --json
   `done: null` means not checked: without `credentials:read` the CLI cannot read which connections meet a need, so ask the user before setting up another one.
   Work through the steps that are not done, with the user.
   Most kits open a first session that asks the user for what the kit needs: find it with `dam session list <agent>` and relay the user's answers with `dam run <agent> --session <session-id> -p "<answer>"`.
+- Read `dam agent get <agent>` after the create, and put the harness and model its chat `DEFAULT` names and the `PROVIDERS` it granted into your reply: a kit's providers list can land the agent on another harness and provider than the user's default for new agents, which the create output's `defaultProvider` says with `"source": "kit"`.
+  For example "I've made it, and it runs on Claude Code with Opus through the IBM proxy."
+  A model or provider it has not read yet is one you say you can't see yet, never one you guess, and you switch it to the user's default only when they ask.
 
 `dam agent get <agent>` names the kit an agent came from (`STARTER KIT`, and `starterKit` in `--json`) and whether a newer version of the kit is out (`KIT UPDATE`, and `kitUpdate.state` in `--json`: `available`, `pending`, `skipped`, `onboarding`, `unreachable` or `up-to-date`).
 `dam kit changes <agent>` shows what the newer version changes.
@@ -292,10 +331,13 @@ dam run my-agent -p "Review the diff" --model ibm/gpt-5-mini
   To swap a provider for another one of the same alias, pass both in one update: each default on the removed provider moves to the new one when it offers the same model, and a `note:` names each default that moved (`defaultMoves` in `--json`).
   A default that cannot move gets a `warning:` and runs fail until you set a new model with `--model` (with `--kind` for a channel or scheduled default).
   `--kind channel` or `--kind scheduled` changes that default instead of chat's, and `--same-as-chat` makes it follow chat again.
+  `--tool-approval ask|auto|bypass` sets how every session of the agent approves tool calls unless the session picked its own, channel turns and schedule fires included, and `default` removes it.
+  `bypass` runs every tool unasked, so set it only when the user asks for it.
   Changing the agent's defaults is a change to the user's agent, so ask first unless the user told you to.
 - `dam run` with `--harness`, `--model` or `--setting` chooses for that one run and leaves the defaults alone.
 
-When a run fails because the agent has no model provider, or no provider is granted, run `dam connection list`; grant one the user already has with `dam agent update my-agent --provider <connection>`, or have the user connect one ([Secrets](#secrets)).
+A run never fails for lack of a saved model: with none saved, or one its provider no longer serves, it takes a model from the agent's providers.
+When a run fails because the agent has no model provider that serves it, run `dam connection list`; grant one the user already has with `dam agent update my-agent --provider <connection>`, or have the user connect one ([Secrets](#secrets)).
 
 ### Name and avatar
 
@@ -325,16 +367,32 @@ dam import my-agent ./project --yes
 Paths are relative to the agent's workspace.
 `dam import` merges local files and folders into the agent's `work/` folder.
 
+### Artifacts
+
+```sh
+dam artifact share <artifact-id>
+dam artifact share <artifact-id> --add ada@example.com --add bob@example.com
+dam artifact share <artifact-id> --remove bob@example.com
+dam artifact share <artifact-id> --private
+```
+
+Without flags, `dam artifact share` only shows who can open the artifact: its level, its link and its viewers.
+`--add` gives people access by email and makes the artifact restricted, so only the user and its viewers can open the link once they sign in with that address.
+`--remove` takes people off the list and keeps the level, and `--private` closes the link of a public artifact.
+A restricted artifact stays restricted: only the user makes it private or public, in the web app's Share dialog.
+Sharing sends the user's work to new people, so add only the people the user names, and say who you added.
+An interactive page's viewers can send its agent prompts, so the user adds them in the web app's Share dialog; the command can only remove them.
+Inside a DAM agent, `DAM_TOKEN` reaches the server as an API key, so there this command cannot add or remove viewers.
+Use the `set_artifact_sharing` tool instead, which changes viewers under the same rules.
+
 ### Lifecycle
 
 ```sh
 dam agent restart my-agent --wait
-dam agent disable my-agent
-dam agent enable my-agent
 dam agent delete my-agent --yes
 ```
 
-`dam agent disable` keeps the agent asleep until `dam agent enable`; `dam agent delete` is permanent, so confirm first.
+`dam agent delete` deletes the agent with everything in it, so say what will be lost and ask whether to go ahead; pass `--yes` only after the user says yes (hard rule 3).
 
 ### Schedules
 
@@ -352,16 +410,20 @@ A schedule that only checks whether something changed should carry `--precheck <
 
 ### Connections
 
+In the web app, this is **Settings › Connections**, and the ones an agent may use are on its own page under **Connections**.
+
 ```sh
 dam connection templates
 dam connection list my-agent
 dam connection grant my-agent --connection github
 dam connection revoke my-agent --connection github
+dam connection default my-agent --connection github-work
 ```
 
 A connection belongs to the user; granting it lets one agent use it.
+An agent that holds several GitHub accounts on one host, or several Object Storage connections, acts as one of them by default: `dam connection list my-agent` marks it in the DEFAULT column (`default.active` in `--json`), and `dam connection default` picks another.
 Creating one, rotating its credential, and removing it are `dam connection connect`, `dam connection update` and `dam connection disconnect`; read [Secrets](#secrets) before the first two.
-`dam connection disconnect` can't be undone: confirm with the user, then pass `--yes` (hard rule 3).
+`dam connection disconnect` can't be undone: ask first, and pass `--yes` only after the user says yes (hard rule 3).
 Without `--yes` it names the agents that would lose the connection.
 
 A GitHub sign-in (`github`, `github-enterprise`) or a GitHub App installation (`github-app`, `github-enterprise-app`) holds the credential, and no agent is ever granted one.
@@ -384,6 +446,10 @@ Without a scope, `dam connection connect github` keeps the sign-in alone and sho
 `--full-access` gives a connection everything its sign-in or installation reaches: every account, repository and permission.
 Pass it only when the user asks for that, and tell them what it reaches.
 `dam connection list` marks such a connection `FULL ACCESS`, and in `--json` its `scope` is `{ "restricted": false, "fullAccess": true }`.
+
+A Slack Account connection (`dam connection connect slack`) is read only unless it has full access: the agent searches and reads Slack as the user, and the platform refuses every tool that posts or changes something, whatever the harness.
+`dam connection scope <connection> --full-access` lets the agent post and change things as the user, and `--read-only` takes that away; `dam connection scope <connection>` shows which it is.
+Pass `--full-access` only when the user asks for it, and tell them that anyone who can talk to the agent can then post as them.
 
 `dam connection scope <connection>` with no flags changes nothing: it shows the current scope and, under `available`, the accounts, repositories and permissions you can choose from.
 A flag you leave out keeps that part of the scope.
@@ -426,9 +492,19 @@ Show the user what the request is and act only on their answer (hard rule 4).
 dam channel available
 dam channel list my-agent
 dam channel slack connect my-agent --channel-id C0123ABCD
+dam channel slack-dm status
+dam channel slack-dm connect my-agent --purpose "your Friday draft"
+dam channel slack-dm disconnect my-agent
+dam channel telegram bot --json
 ```
 
 A Telegram chat is bound from inside the chat with the bind command, not from the CLI.
+When the user asks to connect an agent on Telegram, run `dam channel telegram bot --json` and send them its `link`, the bot's `https://t.me/<username>` page, with the steps: for a private chat, open the link and press **Start**; for a group, add the bot to it and send `/bind` there, which only a group admin can; then follow the link the bot posts and pick the agent within about 10 minutes.
+When `enabled` is false, Telegram is off on this install; when `link` is null, the server does not know the bot's name yet: tell the user that, and point them to the agent's **Channels** settings in the web app.
+Everyone in a bound channel steers the agent with its connections: check the agent first, as the [security advisory](references/security-advisory.md#check-before-you-share) says.
+
+`dam channel slack-dm` is the DM Bridge: `status` reports whether the user's Slack account can be paired, `connect` binds the agent to the user's own direct message with the bot, and `disconnect` releases it.
+It works only where the deployment trusts the Slack workspace for email pairing and the user's email is verified there; `status` says why when it cannot.
 
 ### Skills on DAM agents
 
@@ -443,6 +519,8 @@ dam skill list my-agent
 
 ### Spend
 
+In the web app, **Home**'s **API spend** card shows the last months, and **Usage details** opens Settings › Usage for any dates they pick.
+
 ```sh
 dam spend status my-agent
 dam spend daily --days 30
@@ -455,6 +533,22 @@ dam telemetry show my-agent --session <session-id>
 
 `dam satellite` (experimental) lets a DAM agent call tools on this machine, and keeps running while it serves them.
 It exposes the user's machine, so start one only when the user asks for it.
+
+## In the web app
+
+When the user asks where in the app to do something, answer with the page rather than a command, and name pages only as they are named here.
+
+- **Home**: their agents, the approvals waiting on them, **API spend** — **Today**, **This month**, which is the calendar month, and **Last month**, whose **Usage details** opens Settings › Usage — and the compute card showing the memory, storage and CPU their agents share, with each agent's share.
+  The bell in the chat's top strip holds the outage alerts when a model provider fails their unattended work, and a banner across the top says when a provider is having problems.
+- **Artifacts** — what their agents made for them — and **Starter kits**, what an agent is created from.
+- **Settings › Connections**: the credentials their agents work with, such as a GitHub sign-in, a token or an MCP server.
+  **Settings › Providers**: the LLM providers they connected and the default for new agents.
+  **Settings › Profiles**: a named harness, model and provider that several agents share.
+  **Settings › Usage**: spend over the dates they pick.
+  **Settings › Schedules**: every schedule they have.
+- **Configure agent**, from an agent's row in the sidebar or in Home's list: **General**, which holds its name, avatar and description and the harness and model its sessions start on, then **People**, **Providers**, **Connections**, **Network access**, **Environment vars**, **Channels**, **Chat forms**, **Skills**, **Schedules**, **Usage**, and **Environments** where the install has them.
+
+For anything the map doesn't cover, say you don't know the way there, and offer a command only when this page or `dam <command> --help` shows one: never name a screen of your own.
 
 ## Exit codes
 
@@ -481,3 +575,17 @@ The CLI is meant to do everything the web app does, so a task it can't do is a g
 Don't work around it through the API (hard rule 6).
 Tell the user which command or flag is missing, so the gap can be closed, and point them to the web app to do it for now.
 If the CLI may just be old, update it first and check `dam <command> --help` again.
+
+## Diagnosing an agent
+
+When the user asks why one of their agents failed, stopped answering, got slower or costs so much, read [diagnosing one of the user's agents](references/diagnose-an-agent.md) before you answer.
+It reads what the platform measured first; it opens the agent's own transcripts only when that does not explain it, and it says what it could not see.
+It holds for any agent that holds this install's DAM connection, not only the personal assistant.
+
+## Reporting a platform problem
+
+When the cause is the platform's and no outage alert or provider status explains it, and the user asks you to report it, write a short draft meant to be public and give them a link that opens the platform's new-issue form filled in; they review and submit it themselves.
+You post nothing and open nothing.
+The repository comes from the `BUILD` file in the agent's image, or the upstream repository when that file is not there, never from the install's brand.
+[Drafting the report](references/diagnose-an-agent.md#8-reporting-a-platform-problem) holds the rules: what never goes in the URL, the length, and the plain new-issue page for Slack and Telegram.
+That is the one exception to the `platform-docs` rule against putting the user's question in a URL; the rule otherwise stands.

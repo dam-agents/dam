@@ -1,14 +1,19 @@
 import type { Db } from "db";
 import {
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  type Connection,
   type ConnectionsService,
   type HarnessCatalog,
   type SecretRequestsService,
 } from "api-server-api";
 import { createXactLock } from "../../core/xact-lock.js";
+import { connectionEnv } from "./domain/connection-env.js";
 import { getLogger } from "../../core/logger.js";
 import { createKbShareResolver } from "../kb-shares/index.js";
-import { createConnectionsRepository } from "./infrastructure/connections-repository.js";
+import {
+  createConnectionsRepository,
+  listConnectionsByTemplate,
+} from "./infrastructure/connections-repository.js";
 import { readConnectionTemplateIds } from "./infrastructure/connection-template-ids.js";
 import { createProviderBalanceSource } from "./infrastructure/provider-balance-source.js";
 import {
@@ -28,7 +33,14 @@ import { createProviderKeyProbe } from "./infrastructure/provider-key-probe.js";
 import { createAcceptingProviderKeyProbe } from "./infrastructure/accepting-provider-key-probe.js";
 import type { ProviderKeyProbe } from "./domain/provider-key-probe.js";
 import { createCredentialProbe } from "./infrastructure/credential-probe.js";
-import { createConnectionTemplateRegistry } from "./domain/connection-template.js";
+import {
+  createConnectionTemplateRegistry,
+  type ConnectionTemplateRegistry,
+} from "./domain/connection-template.js";
+import {
+  readOnlyAccessFor,
+  type ReadOnlyAccess,
+} from "./domain/read-only-access.js";
 import { buildCatalog, type OperatorCredentials } from "./domain/catalog.js";
 import {
   createConnectionsService,
@@ -71,6 +83,7 @@ import type { SecretStore } from "../secret-store/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import type { AgentsRepository } from "../agents/infrastructure/agents-repository.js";
 import type { ConnectionRulesSync } from "../egress-rules/services/connection-rules-sync.js";
+import type { DamKeyPort, DamSkillFile } from "./domain/dam-connection.js";
 
 export interface SecretRequestStores {
   pending: TtlStore<PendingSecretRequest>;
@@ -97,6 +110,9 @@ export interface ComposeConnectionsAtBootOpts {
   operatorCredentials?: OperatorCredentials;
   shareBaseUrl?: string;
   curveBenderDeployment?: boolean;
+  damBaseUrl?: string;
+  brandName?: string;
+  damSkill?: readonly DamSkillFile[];
   e2eEnabled?: boolean;
 }
 
@@ -106,6 +122,9 @@ export function composeConnectionsAtBoot(
   const templates = createConnectionTemplateRegistry(
     buildCatalog(opts.operatorCredentials, {
       ...(opts.shareBaseUrl ? { shareBaseUrl: opts.shareBaseUrl } : {}),
+      ...(opts.damBaseUrl ? { damBaseUrl: opts.damBaseUrl } : {}),
+      ...(opts.brandName ? { brandName: opts.brandName } : {}),
+      ...(opts.damSkill ? { damSkill: opts.damSkill } : {}),
       curveBenderDeployment: opts.curveBenderDeployment ?? false,
     }),
   );
@@ -212,6 +231,47 @@ export function createGrantedConnectionTemplates(db: Db): {
   };
 }
 
+interface PricedConnection {
+  readonly connectionId: string;
+  readonly provider: string;
+  readonly env: Readonly<Record<string, string>>;
+  credential(): Promise<string | null>;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the Connections of one provider template with
+ * their env and a way to read their key, for the spend module's price
+ * reader. The key is read from the secret store only when a read asks for
+ * it, and only a key-header Connection has one.
+ */
+export function createPricedConnections(deps: {
+  db: Db;
+  secretStore: SecretStore;
+}): {
+  list(provider: string): Promise<PricedConnection[]>;
+  one(connectionId: string): Promise<PricedConnection | null>;
+} {
+  const repo = createConnectionsRepository(deps.db);
+  const priced = (connection: Connection): PricedConnection => ({
+    connectionId: connection.id,
+    provider: connection.templateId,
+    env: connectionEnv(connection),
+    credential: async () =>
+      connection.auth.kind === "header"
+        ? deps.secretStore.getField(connection.auth.valueRef)
+        : null,
+  });
+  return {
+    async list(provider) {
+      return (await listConnectionsByTemplate(deps.db, provider)).map(priced);
+    },
+    async one(connectionId) {
+      const connection = await repo.getById(connectionId);
+      return connection ? priced(connection) : null;
+    },
+  };
+}
+
 export function createProviderEgressScopes(db: Db): {
   covers(agentId: string, request: ProviderEgressRequest): Promise<boolean>;
 } {
@@ -222,6 +282,48 @@ export function createProviderEgressScopes(db: Db): {
       return providerEgressScopes(granted).some((scope) =>
         scopeCovers(scope, request),
       );
+    },
+  };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: answers the egress gate which read-only Connection limits a request of an Agent to a host. It reads the Agent's grants on every call to a host that a Template declares read tools for, so the owner's choice holds from the next request, and reads nothing for any other host. It also answers whether the Agent holds a read-only Connection on any host, for a request whose real host the gateway did not say.
+export function createReadOnlyConnections(
+  db: Db,
+  templates: Pick<ConnectionTemplateRegistry, "get" | "list">,
+): {
+  limiting(
+    agentId: string,
+    request: { host: string; connectionId: string | null },
+  ): Promise<ReadOnlyAccess | null>;
+  held(agentId: string): Promise<ReadOnlyAccess | null>;
+} {
+  const repo = createConnectionsRepository(db);
+  const limitedHosts = () => [
+    ...new Set(templates.list().flatMap((t) => t.toolAccess?.host ?? [])),
+  ];
+  const toolAccessOf = (templateId: string) =>
+    templates.get(templateId)?.toolAccess;
+  return {
+    async limiting(agentId, request) {
+      if (!limitedHosts().includes(request.host)) return null;
+      return readOnlyAccessFor(
+        await repo.listConnectionsForAgent(agentId),
+        toolAccessOf,
+        request,
+      );
+    },
+    async held(agentId) {
+      const hosts = limitedHosts();
+      if (hosts.length === 0) return null;
+      const granted = await repo.listConnectionsForAgent(agentId);
+      for (const host of hosts) {
+        const limit = readOnlyAccessFor(granted, toolAccessOf, {
+          host,
+          connectionId: null,
+        });
+        if (limit) return limit;
+      }
+      return null;
     },
   };
 }
@@ -254,6 +356,8 @@ export function composeConnectionsForOwner(opts: {
   oauthCallbackUrl: string;
   brandName: string;
   maxSharedKbConnections?: number;
+  damKey: DamKeyPort;
+  damConnectionOffered: () => Promise<boolean>;
   curveBenderDeploymentKey: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
   providerModelCatalog: ProviderModelCatalog;
@@ -261,6 +365,7 @@ export function composeConnectionsForOwner(opts: {
     connectionId: string;
     harness: string;
   } | null>;
+  mirroredChildren?: (agentId: string) => Promise<string[]>;
 }): ConnectionsService & ManagedProviderConnections {
   const repo = createConnectionsRepository(opts.db);
   const connectionLock = createXactLock(opts.db);
@@ -295,6 +400,9 @@ export function composeConnectionsForOwner(opts: {
 
   return createConnectionsService({
     ownerId: opts.ownerId,
+    ...(opts.mirroredChildren
+      ? { mirroredChildren: opts.mirroredChildren }
+      : {}),
     templates: opts.templates,
     repo,
     secretStore: opts.secretStore,
@@ -308,6 +416,8 @@ export function composeConnectionsForOwner(opts: {
     credentialProbe: createCredentialProbe(),
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
+    damKey: opts.damKey,
+    damConnectionOffered: opts.damConnectionOffered,
     connectionLock,
     isOwnedAgent: (agentId) => opts.agentsRepo.isOwnedBy(agentId, opts.ownerId),
     resolveKbShare: createKbShareResolver(opts.db),

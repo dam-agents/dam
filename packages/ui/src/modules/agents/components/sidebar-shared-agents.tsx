@@ -10,7 +10,7 @@ import { SidebarAgentSessions } from "../../sessions/components/sidebar-agent-se
 import { useStartSession } from "../../sessions/hooks/use-start-session.js";
 import { useSidebarSharedAgents } from "../hooks/use-sidebar-agents.js";
 import { holds } from "../lib/agent-permissions.js";
-import { AgentAvatar, avatarMood } from "./avatar/agent-avatar.js";
+import { AgentAvatar } from "./avatar/agent-avatar.js";
 import { SidebarSessionActions } from "./sidebar-agent-actions.js";
 
 const NO_PREVIEW: never[] = [];
@@ -23,7 +23,7 @@ const noConversation = () => undefined;
  * are on, and is hidden while nothing is shared. A row the person may use
  * sessions on opens to the agent's Sessions, read from the agent itself, as
  * the attention record that previews the person's own agents holds none of
- * them; any other row opens the agent's page.
+ * them; any other row opens the agent's settings.
  */
 export function SidebarSharedAgents({
   stickyHeaderClassName,
@@ -34,7 +34,7 @@ export function SidebarSharedAgents({
 }) {
   const { shared, active, folded, openAgentId, sessionOpen, isOpen } =
     useSidebarSharedAgents();
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const setAgentOpen = useStore((s) => s.setSidebarAgentOpen);
   const showFolded = useStore((s) => s.sidebarShowHibernating);
   const setShowFolded = useStore((s) => s.setSidebarShowHibernating);
@@ -63,7 +63,7 @@ export function SidebarSharedAgents({
       <ul className="flex flex-col gap-px">
         {shown.map((agent) => {
           const current = agent.id === openAgentId;
-          const configure = navigate(() => navigateToSandboxHome(agent.id));
+          const configure = navigate(() => openAgentSettings(agent.id));
           if (!holds(agent.access, "sessions"))
             return (
               <SharedAgentRow
@@ -109,7 +109,7 @@ export function SidebarSharedAgents({
           aria-expanded={showFolded}
           className="mt-px flex h-[30px] w-full items-center rounded-lg px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
-          {showFolded ? "Show less" : `See all (${folded.length} hibernating)`}
+          {showFolded ? "Show less" : `See all (${folded.length} more)`}
         </button>
       )}
     </section>
@@ -131,7 +131,6 @@ function SharedAgentRow({
   actions?: ReactNode;
   children?: ReactNode;
 }) {
-  const mood = avatarMood(agent.state, agent);
   return (
     <li data-testid="sidebar-shared-agent" data-agent-id={agent.id}>
       <div
@@ -150,16 +149,13 @@ function SharedAgentRow({
             actions && "group-hover/agent:pr-15",
             open
               ? "text-foreground"
-              : mood !== "awake"
-                ? "text-muted-foreground hover:text-foreground"
-                : "text-foreground/90 hover:text-foreground",
+              : "text-foreground/90 hover:text-foreground",
           )}
         >
           <AgentAvatar
             name={agent.name}
             avatar={agent.avatar}
             size={24}
-            mood={mood}
             className="shrink-0"
           />
           <span

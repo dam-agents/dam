@@ -61,14 +61,15 @@ const NO_STORE_REASON =
   "no object store is configured on this deployment, so a script's output has nowhere to go";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the life of a script sub-agent's output. The
- * target uploads stdout and stderr to keys only the server builds, then
- * reports; the report is checked against what the store holds, so the size the
- * driver is told is the size it will download. A driver acks each stream once
- * it holds a verified copy, which deletes the blob; what nobody collects goes
- * after OUTPUT_RETENTION_MS, and all of it goes with the root driver. The keys
- * are fixed per invocation, so a cleanup deletes both streams whatever the
- * record says, and an upload no report recorded never outlives its root.
+ * UNIT_BOUNDARY_DESCRIPTION: the life of a script run's output. The target
+ * uploads stdout and stderr to keys only the server builds, then reports; the
+ * report is checked against what the store holds, so the size the driver is
+ * told is the size it will download. A driver acks each stream once it holds
+ * a verified copy, which deletes the blob; what nobody collects goes after
+ * OUTPUT_RETENTION_MS, and all of it goes with the root driver. The keys are
+ * fixed per run, so a cleanup deletes both streams whatever the record says,
+ * and an upload no report recorded never outlives its root. A driver names a
+ * run, or the target for its latest run.
  */
 export function createScriptOutputs(deps: {
   repo: InvocationsRepository;
@@ -78,17 +79,30 @@ export function createScriptOutputs(deps: {
 }): ScriptOutputs {
   const now = deps.now ?? (() => new Date());
 
+  async function reportingRun(
+    agentId: string,
+    run: string | undefined,
+  ): Promise<InvocationRow | null> {
+    if (run) {
+      const named = await deps.repo.getRun(run);
+      if (named) return named.id === agentId ? named : null;
+    }
+    const latest = await deps.repo.get(agentId);
+    return !run || latest?.runId === agentId ? latest : null;
+  }
+
   async function runningScript(
     agentId: string,
+    run: string | undefined,
   ): Promise<
     | { row: InvocationRow; refused?: undefined }
     | { row: InvocationRow | null; refused: string }
   > {
-    const row = await deps.repo.get(agentId);
-    if (!row || row.script === null)
+    const row = await reportingRun(agentId, run);
+    if (!row || row.script === null || row.runId === null)
       return {
         row: null,
-        refused: "this agent is not running a script for a driver",
+        refused: "this agent is not running that script for a driver",
       };
     if (row.status !== "running")
       return {
@@ -123,8 +137,8 @@ export function createScriptOutputs(deps: {
   }
 
   return {
-    async uploads(agentId) {
-      const { row, refused } = await runningScript(agentId);
+    async uploads(agentId, run) {
+      const { row, refused } = await runningScript(agentId, run);
       if (refused !== undefined) return { outcome: "refused", reason: refused };
       const [stdout, stderr] = await Promise.all([
         deps.store.createUploadUrl(outputKey(row, "stdout")),
@@ -136,7 +150,7 @@ export function createScriptOutputs(deps: {
     },
 
     async report(agentId, input: ScriptReportInput) {
-      const { row, refused } = await runningScript(agentId);
+      const { row, refused } = await runningScript(agentId, input.run);
       if (refused !== undefined) {
         if (row) {
           const recorded = heldStreams(row.output);
@@ -159,13 +173,13 @@ export function createScriptOutputs(deps: {
           : input.failure;
       const recorded =
         failure === undefined && input.exitCode === 0
-          ? await deps.repo.finishScript(running.id, {
+          ? await deps.repo.finishScript(running.runId!, {
               status: "done",
               exitCode: 0,
               output,
               outputExpiresAt,
             })
-          : await deps.repo.finishScript(running.id, {
+          : await deps.repo.finishScript(running.runId!, {
               status: "failed",
               exitCode: input.exitCode,
               errorReason: failure ?? `script exited ${input.exitCode}`,
@@ -183,19 +197,19 @@ export function createScriptOutputs(deps: {
     },
 
     async link(invocationId, driverAgentId, stream) {
-      const row = await deps.repo.get(invocationId);
+      const row = await deps.repo.find(invocationId);
       if (!row || row.driverAgentId !== driverAgentId) return null;
       const blob = row.output?.[stream];
       if (!blob) return null;
       const signed = await deps.store.createAgentDownloadUrl(
         outputKey(row, stream),
-        `${row.id}.${stream}`,
+        `${row.runId && row.runId !== row.id ? row.runId.replace(/[^A-Za-z0-9_.-]/g, "_") : row.id}.${stream}`,
       );
       return signed ? { ...blob, url: signed.url } : null;
     },
 
     async preview(invocationId, driverAgentId, stream, edgeBytes) {
-      const row = await deps.repo.get(invocationId);
+      const row = await deps.repo.find(invocationId);
       if (!row || row.driverAgentId !== driverAgentId) return null;
       const blob = row.output?.[stream];
       if (!blob) return null;
@@ -218,11 +232,11 @@ export function createScriptOutputs(deps: {
     },
 
     async ack(invocationId, driverAgentId, stream) {
-      const row = await deps.repo.get(invocationId);
+      const row = await deps.repo.find(invocationId);
       if (!row || row.driverAgentId !== driverAgentId) return false;
-      if (!row.output?.[stream]) return true;
+      if (!row.output?.[stream] || !row.runId) return true;
       await deps.store.delete(outputKey(row, stream));
-      await deps.repo.dropOutputStream(row.id, stream);
+      await deps.repo.dropOutputStream(row.runId, stream);
       return true;
     },
 
@@ -231,7 +245,7 @@ export function createScriptOutputs(deps: {
       for (const row of rows) {
         try {
           await deleteStreams(row, INVOCATION_OUTPUT_STREAMS);
-          await deps.repo.clearOutput(row.id);
+          await deps.repo.clearOutput(row.runId!);
         } catch (err) {
           getLogger().warn(
             { invocationId: row.id, err },

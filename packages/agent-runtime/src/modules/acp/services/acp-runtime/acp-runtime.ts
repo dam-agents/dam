@@ -109,6 +109,7 @@ import {
   type AgentRequestObserver,
 } from "./pending-agent-requests.js";
 import { createAutonomousTurns } from "./autonomous-turns.js";
+import { createChatFormChecks } from "./chat-form-checks.js";
 import { createHarnessActivity } from "./harness-activity.js";
 import { createLocalCommandEchoes } from "./local-command-echoes.js";
 import type { HarnessStatePort } from "../../domain/harness-state.js";
@@ -117,6 +118,7 @@ import {
   type ModeRole,
   type PromptFate,
   type PromptSubmission,
+  type SteerOnlyAnswer,
   type SteerOutcome,
 } from "./prompt-scheduler.js";
 import { createInterruptSteers } from "./interrupt-steers.js";
@@ -233,6 +235,8 @@ export interface AcpRuntimeDeps {
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onSubAgentSpawn?: (spawn: SubAgentSpawn) => void;
   onToolActivity?: (activity: ToolActivity) => void;
+  // UNIT_BOUNDARY_DESCRIPTION: a sub-agent run's turn starts, the run its prompt names: a run whose prompt waited behind another turn of its session starts here, not when it was queued.
+  onInvocationTurn?: (sessionId: string, run: string) => void;
   agentRequests: AgentRequestObserver;
   onHarnessExited?: () => void;
   onTurnOutcome?: (
@@ -240,6 +244,7 @@ export interface AcpRuntimeDeps {
     end: { stopReason: string | null; error: string | null },
   ) => void;
   onResultAccepted?: (sessionId: string) => void;
+  onChatFormFix?: (sessionId: string, prompt: string) => void;
   sessionSettingFrames?: (sessionId: string) => SessionSettingFrame[];
   modelSettingConfig?: string;
   modeSettingId?: string;
@@ -308,6 +313,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const sessionSteering = (): SessionSteering | null =>
     deps.steering ?? (harnessSteers ? "native" : null);
   const steersByInterrupt = (): boolean => sessionSteering() === "interrupt";
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a harness whose manifest says it steers
+   * natively proves it only in its initialize answer, which a harness still
+   * starting has not sent. A steer that arrives meanwhile is not refused as
+   * unsupported, which a channel takes as final for its whole conversation:
+   * it waits for a steer point like any other, and steers once the answer
+   * says the harness can.
+   */
+  const steeringAwaitsInitialize = (): boolean =>
+    deps.steering === "native" && initializeAnswer === null;
   const runtimeSteers = (): boolean =>
     steersByInterrupt() || (sessionSteering() === "native" && harnessSteers);
   const servedSteers = deps.servedSteers ?? createServedSteers();
@@ -467,12 +482,17 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       queuedAt,
       frame,
       sender,
+      source,
     }) => {
       autonomousTurns.end(sessionId);
+      const invocationRun = platformString(source, "invocationRun");
+      if (invocationRun) deps.onInvocationTurn?.(sessionId, invocationRun);
       finishHeldRun(sessionId);
       interruptSteers.onTurnStarted(sessionId);
       generating.add(sessionId);
       localCommandEchoes.start(sessionId, typed);
+      const turnId = promptScheduler.activeTurnId(sessionId);
+      if (turnId !== null) chatFormChecks.start(sessionId, turnId, typed);
       const echoId = promptId ?? randomUUID();
       appendUserPromptToLog(
         sessionId,
@@ -725,6 +745,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     historyProvider: deps.historyProvider,
     onProviderServed(sessionId) {
       harnessColdSessions.add(sessionId);
+      deps.sessionMetadata?.markStored(sessionId);
     },
     harnessLoadOrphaned(sessionId) {
       return orphanedHarnessLoads.has(sessionId);
@@ -764,6 +785,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     onClose() {},
   };
   const turnModels = new Map<string, string>();
+  const chatFormChecks = createChatFormChecks();
   const runTextBuffers = new Map<
     string,
     { text: string; truncated: boolean }
@@ -974,14 +996,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: a harness may refuse a model name it has not
-   * listed yet (Claude Code lists the router's catalog lazily), so a critical
-   * setting is sent once more after a short wait; a second refusal answers
+   * listed yet (Claude Code lists the router's catalog lazily, and loading it
+   * can take longer than one short wait), so a critical setting is sent again
+   * after each of a few growing waits; a refusal after the last one answers
    * the queued prompts with the harness's own reason rather than running
    * them on a substitute. The refused value is forgotten, so the next prompt
    * asks again until the model changes.
    */
   const criticalRetries = new Map<string, number>();
-  const CRITICAL_RETRY_MS = 2_000;
+  const CRITICAL_RETRY_DELAYS_MS = [2_000, 4_000, 8_000, 16_000];
   function retryCriticalSetting(
     sessionId: string,
     mapping: OutboundMapping,
@@ -990,7 +1013,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   ): boolean {
     const key = `${sessionId}:${mapping.method}`;
     const tried = criticalRetries.get(key) ?? 0;
-    if (tried < 1) {
+    const delay = CRITICAL_RETRY_DELAYS_MS[tried];
+    if (delay !== undefined) {
       criticalRetries.set(key, tried + 1);
       const timer = setTimeout(() => {
         const applied = appliedSettings.get(sessionId);
@@ -998,7 +1022,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (k.startsWith(mapping.method)) applied?.delete(k);
         syncSettings(sessionId, true);
         promptScheduler.onSettingResponse(sessionId, outboundId);
-      }, CRITICAL_RETRY_MS);
+      }, delay);
       timer.unref?.();
       return true;
     }
@@ -1182,6 +1206,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     autonomousTurns.clear();
     localCommandEchoes.clear();
     runTextBuffers.clear();
+    chatFormChecks.clear();
     openToolCalls.clear();
     generating.clear();
     turnModels.clear();
@@ -1546,10 +1571,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       return;
     }
     if (!promptScheduler.hasWork(sessionId)) {
+      logSteerNotTaken(sessionId, promptId, "noRunningTurn", 0);
       servedSteers.settle(sessionId, promptId, "noRunningTurn");
       return;
     }
-    if (!runtimeSteers()) {
+    if (!runtimeSteers() && !steeringAwaitsInitialize()) {
+      deps.log?.(
+        `steer ${promptId} for ${sessionId} not taken: the harness cannot steer (manifest ${String(deps.steering ?? "none")}, initialize ${initializeAnswer === null ? "unanswered" : "does not steer"})`,
+      );
       servedSteers.drop(sessionId, promptId);
       sendToChannel(
         channel,
@@ -1567,6 +1596,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     engage(channel, sessionId);
     const sender = stampedSenderOf(params, "sender");
     const outboundId = nextOutboundId++;
+    const servedAt = performance.now();
     promptScheduler.submit({
       sessionId,
       channel,
@@ -1585,9 +1615,35 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       ...(sender !== null && { sender }),
       steerOnly: {
         targetPromptId,
-        answer: (answer) => servedSteers.settle(sessionId, promptId, answer),
+        answer: (answer) => {
+          if (answer !== "injected")
+            logSteerNotTaken(
+              sessionId,
+              promptId,
+              answer,
+              performance.now() - servedAt,
+            );
+          servedSteers.settle(sessionId, promptId, answer);
+        },
       },
     });
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a channel's steer that does not join its turn
+   * becomes that channel's next turn, and only this line says why: the answer
+   * the sender got, and how long the steer waited for a steer point first. A
+   * steer answered after a long wait waited out the turn.
+   */
+  function logSteerNotTaken(
+    sessionId: string,
+    promptId: string,
+    answer: SteerOnlyAnswer,
+    waitedMs: number,
+  ): void {
+    deps.log?.(
+      `steer ${promptId} for ${sessionId} not taken: ${answer} after ${String(Math.round(waitedMs))} ms`,
+    );
   }
 
   function rewriteRefusal(
@@ -1979,6 +2035,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     generating.delete(sessionId);
     supersededEchoes.delete(sessionId);
     runTextBuffers.delete(sessionId);
+    chatFormChecks.forget(sessionId);
     bootstrap.fill(sessionId, (loaded) => {
       const line = JSON.stringify(
         buildPlatformSessionResetNotification({ sessionId }),
@@ -2148,6 +2205,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     dropHarnessWork(sessionId);
     promptScheduler.forget(sessionId);
     runTextBuffers.delete(sessionId);
+    chatFormChecks.forget(sessionId);
     pendingRequests.forget(sessionId);
     deps.backgroundWork.forget(sessionId);
     lease.maybeRecycle();
@@ -2325,6 +2383,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             bootstrap.onLoadResponse(mapping.attachSessionId, frame);
           }
           if (
+            (mapping.method === "session/load" ||
+              mapping.method === "session/resume") &&
+            (frame as { error?: unknown }).error === undefined
+          )
+            deps.sessionMetadata?.markStored(mapping.attachSessionId);
+          if (
             !mapping.rehydrate &&
             (mapping.method === "session/load" ||
               mapping.method === "session/resume") &&
@@ -2390,6 +2454,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           const error = extractTurnError(frame);
           const model = turnModels.get(sid);
           turnModels.delete(sid);
+          const chatFormFix =
+            turnEnded && turnId !== null
+              ? chatFormChecks.end(turnId, {
+                  stopReason,
+                  failed: lost || error !== undefined,
+                  nextPromptWaiting:
+                    promptScheduler.hasTurnInFlight(sid) ||
+                    promptScheduler.snapshot(sid).length > 0,
+                })
+              : null;
           transcript.append(
             sid,
             JSON.stringify(
@@ -2400,9 +2474,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
                 ...(stopReason !== null && { stopReason }),
                 ...(error !== undefined && { error }),
                 ...(model !== undefined && { model }),
+                ...(chatFormFix !== null && {
+                  chatFormFix: chatFormFix.attempt,
+                }),
               }),
             ),
           );
+          if (chatFormFix !== null)
+            deps.onChatFormFix?.(sid, chatFormFix.prompt);
           if (turnEnded && (runPrompt || isRunSession(sid))) {
             if (harnessActivity.isBusy(sid))
               heldRuns.set(sid, { promptId, stopReason, cancelled: false });
@@ -2499,6 +2578,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           accumulateRunText(sessionId, text);
         const update = sessionUpdateKind(frame);
         const promptTurn = promptScheduler.activeTurnId(sessionId);
+        if (text !== null && promptTurn !== null)
+          chatFormChecks.text(promptTurn, text);
         transcript.append(
           sessionId,
           logged,

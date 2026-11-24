@@ -674,7 +674,7 @@ func TestARefusedStartWaitsOutItsRunnersWarmUpWindow(t *testing.T) {
 	assert.False(t, reclaimedAgent(t, r, "idle-peer-2"), "the start hibernated an agent the wave is bringing back")
 }
 
-// TEST_SCENARIO: the window is a bound on how long the platform waits, not a promise of room: past it the pool is the owner's to free, so the start hibernates the idlest agent that covers the room it lacks, and reads as a start waiting for room it has just freed rather than as a refusal that asks the owner to disable an agent.
+// TEST_SCENARIO: the window is a bound on how long the platform waits, not a promise of room: past it the pool is the owner's to free, so the start hibernates the idlest agent that covers the room it lacks, and reads as a start waiting for room it has just freed rather than as a refusal that asks the owner to delete an agent.
 func TestAStartRefusedAfterItsRunnersWarmUpWindowFreesRoom(t *testing.T) {
 	r, _ := reconcilerWithAWarmUpWindow(t, runnerWarmUpWindow+time.Minute)
 

@@ -1,6 +1,7 @@
 import {
   ATTENTION_FEED_LIMIT,
   ATTENTION_PAGE_LIMIT,
+  ownerQuestionNoticeKey,
   type AttentionItem,
   type AttentionList,
   type AttentionService,
@@ -8,6 +9,9 @@ import {
   type CostReviewOffer,
   type DefaultModelNotice,
   type OutageAlertNotice,
+  type OwnerQuestionNotice,
+  type SecurityCheckNotice,
+  type SecurityCheckReport,
   type SessionMode,
   type SessionType,
 } from "api-server-api";
@@ -47,6 +51,36 @@ function toItem(row: AttentionRecordRow): AttentionItem {
 const agentOfDefaultModelNoticeId = (id: string): string =>
   id.slice(0, Math.max(0, id.lastIndexOf(":")));
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the alert for a security check's report. Its
+ * Session is the newest one the check's Schedule opened before the report,
+ * which is where the assistant described the problems, so the alert opens
+ * that chat and nothing runs again. A later run that has not reported yet
+ * is not it. Null when the session list no longer holds one.
+ */
+function securityCheckNotice(
+  report: SecurityCheckReport,
+  records: readonly AttentionRecordRow[],
+): SecurityCheckNotice {
+  const reportedAt = new Date(report.reportedAt).getTime();
+  const [latest] = records
+    .filter(
+      (row) =>
+        row.agentId === report.agentId &&
+        row.scheduleId !== null &&
+        row.scheduleId === report.scheduleId &&
+        row.createdAt.getTime() <= reportedAt,
+    )
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  return {
+    id: report.reportedAt,
+    agentId: report.agentId,
+    sessionId: latest?.sessionId ?? null,
+    problems: report.problems,
+    reportedAt: report.reportedAt,
+  };
+}
+
 function staleDismissals(
   dismissals: readonly DismissalRow[],
   kind: AttentionItemKind,
@@ -65,32 +99,76 @@ export function createAttentionService(deps: {
   defaultModelNotices: () => Promise<DefaultModelNotice[]>;
   outageAlerts: () => Promise<OutageAlertNotice[]>;
   costReviews: () => Promise<CostReviewOffer[]>;
+  ownerQuestions?: () => Promise<OwnerQuestionNotice[]>;
+  securityCheck?: () => Promise<SecurityCheckReport | null>;
   log: (message: string) => void;
 }): AttentionService {
+  // UNIT_BOUNDARY_DESCRIPTION: the questions the owner's sub-agents wait on now, or null when they cannot be read, so a failed read never looks like "no question waits" and clears a dismissal.
+  const currentOwnerQuestions = (): Promise<OwnerQuestionNotice[] | null> =>
+    (deps.ownerQuestions?.() ?? Promise.resolve([])).catch((err: Error) => {
+      deps.log(`[attention] sub-agent questions: ${err.message}`);
+      return null;
+    });
+
+  // UNIT_BOUNDARY_DESCRIPTION: the security check's report as it stands now, or null when it cannot be read, so a failed read never looks like "nothing to tell" and clears a dismissal.
+  const currentSecurityChecks = (): Promise<SecurityCheckReport[] | null> =>
+    (deps.securityCheck?.() ?? Promise.resolve(null)).then(
+      (report) => (report === null ? [] : [report]),
+      (err: Error) => {
+        deps.log(`[attention] security check: ${err.message}`);
+        return null;
+      },
+    );
+
   return {
     async listForOwner(): Promise<AttentionList> {
-      const [records, allDismissals, notices, alerts, costReviews] =
-        await Promise.all([
-          deps.repo.listForOwner(deps.ownerSub, ATTENTION_FEED_LIMIT),
-          deps.repo.listDismissals(deps.ownerSub),
-          deps.defaultModelNotices().catch((err: Error) => {
-            deps.log(`[attention] default-model notices: ${err.message}`);
-            return null;
-          }),
-          deps.outageAlerts().catch((err: Error) => {
-            deps.log(`[attention] outage alerts: ${err.message}`);
-            return null;
-          }),
-          deps.costReviews().catch((err: Error) => {
-            deps.log(`[attention] cost reviews: ${err.message}`);
-            return [];
-          }),
-        ]);
+      const [
+        records,
+        allDismissals,
+        notices,
+        alerts,
+        costReviews,
+        ownerQuestions,
+        securityReports,
+      ] = await Promise.all([
+        deps.repo.listForOwner(deps.ownerSub, ATTENTION_FEED_LIMIT),
+        deps.repo.listDismissals(deps.ownerSub),
+        deps.defaultModelNotices().catch((err: Error) => {
+          deps.log(`[attention] default-model notices: ${err.message}`);
+          return null;
+        }),
+        deps.outageAlerts().catch((err: Error) => {
+          deps.log(`[attention] outage alerts: ${err.message}`);
+          return null;
+        }),
+        deps.costReviews().catch((err: Error) => {
+          deps.log(`[attention] cost reviews: ${err.message}`);
+          return [];
+        }),
+        currentOwnerQuestions(),
+        currentSecurityChecks(),
+      ]);
+      const securityChecks =
+        securityReports?.map((report) =>
+          securityCheckNotice(report, records),
+        ) ?? null;
       const resolved = [
         ...staleDismissals(allDismissals, "default-model", notices),
         ...staleDismissals(allDismissals, "outage-alert", alerts),
+        ...staleDismissals(
+          allDismissals,
+          "owner-question",
+          ownerQuestions?.map((q) => ({ id: ownerQuestionNoticeKey(q) })) ??
+            null,
+        ),
+        ...staleDismissals(allDismissals, "security-check", securityChecks),
       ];
-      for (const kind of ["default-model", "outage-alert"] as const) {
+      for (const kind of [
+        "default-model",
+        "outage-alert",
+        "owner-question",
+        "security-check",
+      ] as const) {
         const ids = resolved
           .filter((d) => d.kind === kind)
           .map((d) => d.itemId);
@@ -102,6 +180,8 @@ export function createAttentionService(deps: {
         defaultModels: notices ?? [],
         outageAlerts: alerts ?? [],
         costReviews,
+        ownerQuestions: ownerQuestions ?? [],
+        securityChecks: securityChecks ?? [],
         items: records.map(toItem),
         dismissed: dismissals.map((d) => ({
           kind: d.kind,
@@ -180,6 +260,26 @@ export function createAttentionService(deps: {
           : [],
       );
 
+      const ownerQuestions = items.filter(
+        (item) => item.kind === "owner-question",
+      );
+      const currentQuestions = new Set(
+        ownerQuestions.length > 0
+          ? ((await currentOwnerQuestions()) ?? []).map(ownerQuestionNoticeKey)
+          : [],
+      );
+
+      const securityChecks = items.filter(
+        (item) => item.kind === "security-check",
+      );
+      const currentChecks = new Set(
+        securityChecks.length > 0
+          ? ((await currentSecurityChecks()) ?? []).map(
+              (report) => report.reportedAt,
+            )
+          : [],
+      );
+
       await deps.repo.setDismissals(
         deps.ownerSub,
         [
@@ -187,6 +287,8 @@ export function createAttentionService(deps: {
           ...approvals.filter((a) => a.owned).map((a) => a.item),
           ...defaultModels.filter((d) => d.owned).map((d) => d.item),
           ...outageAlerts.filter((item) => currentAlerts.has(item.id)),
+          ...ownerQuestions.filter((item) => currentQuestions.has(item.id)),
+          ...securityChecks.filter((item) => currentChecks.has(item.id)),
         ].map((item) => ({ kind: item.kind, itemId: item.id })),
         at,
       );

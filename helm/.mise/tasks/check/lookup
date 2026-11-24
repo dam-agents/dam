@@ -1,0 +1,176 @@
+#!/usr/bin/env node
+//MISE description="The container-backend gate refuses an Agent the cluster still holds, passes a fleet that is all vm, and never fires in an offline render"
+//MISE sources=["templates/_validators.tpl", ".mise/tasks/check/lookup"]
+//MISE outputs=[]
+//MISE cache.enabled=true
+
+/* UNIT_BOUNDARY_DESCRIPTION: the gate reads the cluster during a render, and an
+ * offline render cannot exercise that read: `lookup` finds nothing there, so a
+ * gate that never fired at all would still pass `helm template`. This task stands
+ * a fake API server in front of Helm and renders the gate against it, so a fleet
+ * the release cannot run fails the render, a fleet it can run passes, the
+ * `contract` authority — whose custom resources are frozen — is not read at
+ * all, and an identity that may not list Agents fails closed. */
+
+import { execFile } from "node:child_process";
+import fs from "node:fs/promises";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+
+const exec = promisify(execFile);
+const groupVersion = { groupVersion: "agent-platform.ai/v1", version: "v1" };
+const group = {
+  name: "agent-platform.ai",
+  versions: [groupVersion],
+  preferredVersion: groupVersion,
+};
+
+let agents = [];
+let forbidden = false;
+let listReads = 0;
+
+const server = http.createServer((request, response) => {
+  const route = new URL(request.url, "http://localhost").pathname;
+  let body;
+  if (route === "/version")
+    body = { major: "1", minor: "35", gitVersion: "v1.35.0" };
+  else if (route === "/api") body = { apiVersion: "v1", kind: "APIVersions", versions: ["v1"] };
+  else if (route === "/apis") body = { apiVersion: "v1", kind: "APIGroupList", groups: [group] };
+  else if (route === "/apis/agent-platform.ai") body = { apiVersion: "v1", kind: "APIGroup", ...group };
+  else if (route === "/api/v1") body = { apiVersion: "v1", kind: "APIResourceList", groupVersion: "v1", resources: [] };
+  else if (route === "/apis/agent-platform.ai/v1")
+    body = {
+      apiVersion: "v1",
+      kind: "APIResourceList",
+      groupVersion: groupVersion.groupVersion,
+      resources: [{ name: "agents", singularName: "agent", namespaced: true, kind: "Agent", verbs: ["get", "list"] }],
+    };
+  else if (route === "/apis/agent-platform.ai/v1/namespaces/test-agents/agents") {
+    listReads++;
+    if (forbidden) {
+      response.statusCode = 403;
+      body = { kind: "Status", apiVersion: "v1", status: "Failure", reason: "Forbidden", code: 403, message: "list agents forbidden" };
+    } else {
+      body = { apiVersion: groupVersion.groupVersion, kind: "AgentList", metadata: { resourceVersion: "1" }, items: agents };
+    }
+  } else {
+    response.statusCode = 404;
+    body = { kind: "Status", apiVersion: "v1", status: "Failure", reason: "NotFound", code: 404 };
+  }
+  response.setHeader("content-type", "application/json");
+  response.end(JSON.stringify(body));
+});
+
+const agentObject = (name, backend) => ({
+  apiVersion: groupVersion.groupVersion,
+  kind: "Agent",
+  metadata: { name, namespace: "test-agents" },
+  spec: backend === null ? { image: "test:1" } : { image: "test:1", backend: { type: backend } },
+});
+
+const chartDir = await fs.mkdtemp(path.join(os.tmpdir(), "platform-gate-"));
+try {
+  await fs.mkdir(path.join(chartDir, "templates"));
+  await fs.writeFile(path.join(chartDir, "Chart.yaml"), "apiVersion: v2\nname: gate\nversion: 1.0.0\n");
+  await fs.writeFile(path.join(chartDir, "values.yaml"), "agentNamespace: test-agents\nagentStore:\n  authority: crd\n");
+  const validators = await fs.readFile("templates/_validators.tpl", "utf8");
+  const start = validators.indexOf('{{- define "platform.validate.noContainerAgents" -}}');
+  const end = validators.indexOf("\n\n{{/*", start);
+  if (start < 0 || end < 0) {
+    console.error("check:lookup: platform.validate.noContainerAgents is not in templates/_validators.tpl any more");
+    process.exit(1);
+  }
+  await fs.writeFile(path.join(chartDir, "templates", "gate.tpl"), `${validators.slice(start, end)}\n`);
+  await fs.writeFile(
+    path.join(chartDir, "templates", "validate.yaml"),
+    '{{- include "platform.validate.noContainerAgents" . -}}\n',
+  );
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const kubeconfig = path.join(chartDir, "kubeconfig");
+  await fs.writeFile(
+    kubeconfig,
+    [
+      "apiVersion: v1",
+      "kind: Config",
+      "clusters:",
+      "- name: fake",
+      "  cluster:",
+      `    server: http://127.0.0.1:${server.address().port}`,
+      "users:",
+      "- name: fake",
+      "  user: {}",
+      "contexts:",
+      "- name: fake",
+      "  context:",
+      "    cluster: fake",
+      "    user: fake",
+      "current-context: fake",
+      "",
+    ].join("\n"),
+  );
+
+  const render = async ({ live, set }) => {
+    const args = ["template", "gate", chartDir, "--kubeconfig", kubeconfig];
+    if (live) args.push("--dry-run=server");
+    for (const value of set) args.push("--set", value);
+    listReads = 0;
+    try {
+      const { stdout } = await exec("helm", args, { maxBuffer: 8 << 20 });
+      return { ok: true, output: stdout };
+    } catch (error) {
+      return { ok: false, output: `${error.stdout ?? ""}${error.stderr ?? ""}` };
+    }
+  };
+
+  const cases = [
+    {
+      name: "a fleet that is all vm renders",
+      agents: [agentObject("agent-1", "vm"), agentObject("agent-2", "vm")],
+      live: true,
+      set: [],
+      ok: true,
+    },
+    { name: "an explicit container Agent fails the render", agents: [agentObject("agent-1", "container")], live: true, set: [], ok: false, names: "test-agents/agent-1 (backend: container)" },
+    { name: "an Agent that names no backend fails the render", agents: [agentObject("agent-1", null)], live: true, set: [], ok: false, names: "test-agents/agent-1 (backend: none)" },
+    { name: "the contract authority reads no custom resource", agents: [agentObject("agent-1", "container")], live: true, set: ["agentStore.authority=contract"], ok: true, reads: 0 },
+    { name: "an offline render never reads the Agents", agents: [agentObject("agent-1", "container")], live: false, set: [], ok: true, reads: 0 },
+  ];
+
+  let failed = 0;
+  for (const testCase of cases) {
+    agents = testCase.agents;
+    forbidden = false;
+    const result = await render(testCase);
+    let message = "";
+    if (result.ok !== testCase.ok) {
+      message = `expected ${testCase.ok ? "a render" : "a refusal"}, got:\n${result.output}`;
+    } else if (testCase.names && !result.output.includes(testCase.names)) {
+      message = `the refusal does not name ${testCase.names}:\n${result.output}`;
+    } else if (testCase.reads !== undefined && listReads !== testCase.reads) {
+      message = `expected ${testCase.reads} read(s) of the Agents, saw ${listReads}`;
+    }
+    console.log(`${message === "" ? "ok  " : "FAIL"} ${testCase.name}`);
+    if (message !== "") {
+      console.error(`      ${message.replaceAll("\n", "\n      ")}`);
+      failed++;
+    }
+  }
+
+  agents = [];
+  forbidden = true;
+  const denied = await render({ live: true, set: [] });
+  if (denied.ok) {
+    console.error("FAIL an identity that may not list Agents rendered, but the refusal must fail closed");
+    failed++;
+  } else {
+    console.log("ok   an identity that may not list Agents fails the render");
+  }
+
+  process.exitCode = failed === 0 ? 0 : 1;
+} finally {
+  await new Promise((resolve) => server.close(resolve));
+  await fs.rm(chartDir, { recursive: true, force: true });
+}

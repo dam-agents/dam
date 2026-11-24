@@ -65,8 +65,9 @@ export function SandboxProvidersSection({
           reach a model.
         </EmptyState>
       )}
+      <AgentModelPicker agentId={agentId} kind="chat" />
       {owned.length > 0 && (
-        <div className="flex flex-col gap-3">
+        <div className="mt-6 flex flex-col gap-3">
           {owned.map((p) => {
             const attached = granted.some((g) => g.id === p.id);
             return (
@@ -82,6 +83,7 @@ export function SandboxProvidersSection({
                       ? void grant(p.id)
                       : void showConfirm(
                           <DetachProviderMessage
+                            agentId={agentId}
                             name={p.name}
                             usage={usage(p)}
                           />,
@@ -110,9 +112,6 @@ export function SandboxProvidersSection({
           </AddRow>
         </Card>
       )}
-      <div className="mt-6">
-        <AgentModelPicker agentId={agentId} kind="chat" />
-      </div>
     </div>
   );
 }

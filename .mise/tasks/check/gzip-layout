@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+#MISE description="image:gzip-layout gzips a layout's plain layers once per GZIP_LAYOUT_CACHE, to the bytes it makes without one"
+#MISE sources=[".mise/tasks/image/gzip-layout", ".mise/tasks/check/gzip-layout"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+set -euo pipefail
+gzip_layout="$(cd "$(dirname "$0")/../image" && pwd)/gzip-layout"
+t="$(mktemp -d)"
+trap 'rm -rf "$t"' EXIT
+
+# A layout of two plain layers, and a config naming them as its diff ids, as
+# image:pack leaves one.
+mkdir -p "$t/tmpl/blobs/sha256"
+put() {
+  local h; h="$(printf '%s' "$1" | sha256sum | cut -c1-64)"
+  printf '%s' "$1" > "$t/tmpl/blobs/sha256/$h"
+  jq -cn --arg d "sha256:$h" --argjson s "${#1}" --arg m "$2" '{mediaType: $m, digest: $d, size: $s}'
+}
+config="$(put '{"architecture":"amd64","os":"linux","config":{},"rootfs":{"type":"layers","diff_ids":[]}}' application/vnd.oci.image.config.v1+json)"
+l1="$(put "$(head -c 100000 /dev/zero | tr '\0' a)" application/vnd.oci.image.layer.v1.tar)"
+l2="$(put "$(head -c 200000 /dev/zero | tr '\0' b)" application/vnd.oci.image.layer.v1.tar)"
+manifest="$(put "$(jq -cn --argjson c "$config" --argjson a "$l1" --argjson b "$l2" \
+  '{schemaVersion: 2, mediaType: "application/vnd.oci.image.manifest.v1+json", config: $c, layers: [$a, $b]}')" \
+  application/vnd.oci.image.manifest.v1+json)"
+jq -n --argjson m "$manifest" '{schemaVersion: 2, manifests: [$m]}' > "$t/tmpl/index.json"
+echo '{"imageLayoutVersion":"1.0.0"}' > "$t/tmpl/oci-layout"
+
+# A pigz that records every call: a layer gzipped again is a line here.
+mkdir "$t/bin"
+# shellcheck disable=SC2016 # the shim's own shell expands these
+printf '#!/bin/sh\necho "$*" >> "$PIGZ_CALLS"\nexec %s "$@"\n' "$(command -v pigz)" > "$t/bin/pigz"
+chmod +x "$t/bin/pigz"
+
+fail=0
+assert() { [ "$2" = "$3" ] || { echo "FAIL: $1 is [$2], want [$3]" >&2; fail=1; }; }
+# A copy of the template, gzipped, and the digest of the manifest it names.
+run() {
+  rm -rf "${t:?}/$1"
+  cp -R "$t/tmpl" "$t/$1"
+  env PATH="$t/bin:$PATH" PIGZ_CALLS="$t/calls" ${2:+GZIP_LAYOUT_CACHE="$2"} ${3:+GZIP_LAYOUT_REUSE="$3"} "$gzip_layout" "$t/$1"
+  jq -r '.manifests[0].digest' "$t/$1/index.json"
+}
+calls() { [ -f "$t/calls" ] && wc -l < "$t/calls" | tr -d ' ' || echo 0; }
+
+first="$(run first "$t/cache")"
+assert "pigz calls over a cold cache" "$(calls)" 2
+second="$(run second "$t/cache")"
+assert "pigz calls after the cache holds both layers" "$(calls)" 2
+third="$(run third "$t/other-cache")"
+assert "pigz calls over another cold cache" "$(calls)" 4
+plain="$(run nocache "")"
+assert "pigz calls without a cache" "$(calls)" 6
+# The map image:ci-build writes for a layer the target repository holds.
+m="$t/first/blobs/$(jq -r '.manifests[0].digest | sub(":"; "/")' "$t/first/index.json")"
+jq -c --arg a "$(jq -r .digest <<< "$l1")" --arg b "$(jq -r .digest <<< "$l2")" \
+  '{($a): {digest: .layers[0].digest, size: .layers[0].size}, ($b): {digest: .layers[1].digest, size: .layers[1].size}}' \
+  "$m" > "$t/reuse.json"
+reused="$(run reused "" "$t/reuse.json")"
+assert "pigz calls when a published image names both layers" "$(calls)" 6
+assert "the manifest a reused run names" "$reused" "$first"
+assert "blobs a reused run leaves" "$(find "$t/reused/blobs/sha256" -mindepth 1 | wc -l | tr -d ' ')" 2
+assert "the manifest a cached run names" "$second" "$first"
+assert "the manifest a cold cached run names" "$third" "$first"
+assert "the manifest a run without a cache names" "$plain" "$first"
+assert "blobs a cached run leaves" "$(find "$t/second/blobs/sha256" -mindepth 1 | wc -l | tr -d ' ')" 4
+assert "files the cache holds" "$(find "$t/cache" -mindepth 1 | wc -l | tr -d ' ')" 2
+m="$t/second/blobs/$(jq -r '.manifests[0].digest | sub(":"; "/")' "$t/second/index.json")"
+assert "layer media types a cached run leaves" "$(jq -c '[.layers[].mediaType] | unique' "$m")" \
+  '["application/vnd.oci.image.layer.v1.tar+gzip"]'
+[ "$fail" = 0 ] && echo "gzip-layout check OK" || exit 1

@@ -3,17 +3,22 @@ import { FileTooLargeError } from "./slack-gateway.js";
 import { renderSlackPostText } from "./slack-post-text.js";
 import type { SlackSender } from "./slack-sender.js";
 import type {
+  SlackMessageAction,
+  SlackMessageReplacement,
   SlackViewSubmission,
   SlackBotJoinedChannelEvent,
   SlackGateway,
   SlackGatewayHandlers,
   SlackMentionEvent,
   SlackMessage,
+  SlackMessageEditedEvent,
   SlackMessageReaction,
   SlackFileInfo,
   SlackSessionStoppedEvent,
   SlackSlashCommand,
+  SlackUpdateMessage,
   SlackUserInfo,
+  SlackEmailUser,
   SlackWorkspace,
 } from "./slack-gateway.js";
 
@@ -25,6 +30,7 @@ export interface FakeSlackChannel {
   botIsMember: boolean;
   members?: string[];
   isPrivate?: boolean;
+  isGroupDirectMessage?: boolean;
 }
 
 export type FiredSlackEvent = Omit<SlackMentionEvent, "teamId" | "sender"> & {
@@ -39,12 +45,50 @@ function firedEvent(input: FiredSlackEvent): SlackMentionEvent | null {
   if (!sender) return null;
   return { ...input, sender, teamId: input.teamId ?? FAKE_WORKSPACE };
 }
+export type FiredSlackEdit = Omit<
+  SlackMessageEditedEvent,
+  "teamId" | "sender" | "message" | "mentionAdded"
+> & {
+  user?: string;
+  sender?: SlackSender;
+  teamId?: string;
+  message?: SlackMessage;
+  mentionAdded?: boolean;
+};
+
+function firedEdit(input: FiredSlackEdit): SlackMessageEditedEvent | null {
+  const { user, ...edit } = input;
+  const sender =
+    input.sender ?? (user ? ({ kind: "person", user } as const) : null);
+  if (!sender) return null;
+  return {
+    ...edit,
+    sender,
+    teamId: input.teamId ?? FAKE_WORKSPACE,
+    mentionAdded: input.mentionAdded ?? false,
+    message: input.message ?? {
+      ts: input.ts,
+      text: input.text,
+      edited: true,
+      ...(sender.kind === "person" ? { user: sender.user } : {}),
+      ...(input.threadTs ? { threadTs: input.threadTs } : {}),
+    },
+  };
+}
+
 export type FiredSlackCommand = Omit<
   SlackSlashCommand,
   "teamId" | "triggerId"
 > & {
   teamId?: string;
   triggerId?: string;
+};
+export type FiredSlackMessageAction = Omit<
+  SlackMessageAction,
+  "teamId" | "ephemeral"
+> & {
+  ephemeral?: boolean;
+  teamId?: string;
 };
 export type FiredSlackBotJoin = Omit<SlackBotJoinedChannelEvent, "teamId"> & {
   teamId?: string;
@@ -62,11 +106,15 @@ export interface FakeSlackGateway extends SlackGateway {
   fireMention(event: FiredSlackEvent): Promise<void>;
   fireMessage(event: FiredSlackEvent): Promise<void>;
   fireDirectMessage(event: FiredSlackEvent): Promise<void>;
+  fireMessageEdited(event: FiredSlackEdit): Promise<void>;
   fireCommand(command: FiredSlackCommand): Promise<string>;
   fireBotJoinedChannel(event: FiredSlackBotJoin): Promise<void>;
   fireViewSubmission(event: SlackViewSubmission): Promise<void>;
+  fireMessageAction(event: FiredSlackMessageAction): Promise<void>;
+  readCommandMessage(): SlackMessageReplacement | null;
   fireSessionStopped(event: FiredSlackSessionStop): Promise<void>;
   readOutbound(): SlackOutboundRecord[];
+  readUpdates(): SlackUpdateMessage[];
   resetOutbound(): void;
   setChannels(channels: FakeSlackChannel[], teamId?: string): void;
   addChannelMember(channelId: string, userId: string, teamId?: string): void;
@@ -75,6 +123,8 @@ export interface FakeSlackGateway extends SlackGateway {
   setThreadedHistory(messages: SlackMessage[]): void;
   setUsers(users: SlackUserInfo[]): void;
   readUserLookups(): string[];
+  setEmailUsers(users: SlackEmailUser[]): void;
+  readEmailLookups(): string[];
   setGrantedScopes(scopes: string[] | null): void;
   setBotUserId(id: string | null): void;
   setFileBytes(urlPrivate: string, bytes: Buffer): void;
@@ -163,37 +213,51 @@ function hiddenInThread(m: SlackMessage): boolean {
 
 function channelWindowOf(
   history: SlackMessage[],
-  oldest: string | undefined,
+  range: { oldest?: string | undefined; latest?: string | undefined },
   modelsThreads: boolean,
 ): SlackMessage[] {
   const topLevel = modelsThreads
     ? history.filter((m) => !hiddenInThread(m))
     : [...history];
-  if (oldest === undefined) return [...topLevel];
+  const floor = range.oldest === undefined ? null : Number(range.oldest);
+  const ceiling = range.latest === undefined ? null : Number(range.latest);
   return topLevel.filter((m) => {
     if (m.ts === undefined) return true;
     const at = Number(m.ts);
-    const floor = Number(oldest);
-    if (!Number.isFinite(at) || !Number.isFinite(floor)) return true;
-    return at >= floor;
+    if (!Number.isFinite(at)) return true;
+    if (floor !== null && Number.isFinite(floor) && at < floor) return false;
+    if (ceiling !== null && Number.isFinite(ceiling) && at >= ceiling)
+      return false;
+    return true;
   });
 }
 
 export function createFakeSlackGateway(): FakeSlackGateway {
   let handlers: SlackGatewayHandlers | null = null;
   const outbound: SlackOutboundRecord[] = [];
+  const updates: SlackUpdateMessage[] = [];
+  let commandMessage: SlackMessageReplacement | null = null;
   const channelsByWorkspace = new Map<string, FakeSlackChannel[]>();
   let history: SlackMessage[] = [];
   let modelsThreads = false;
   let users: SlackUserInfo[] = [];
   const userLookups: string[] = [];
+  let emailUsers: SlackEmailUser[] = [];
+  const emailLookups: string[] = [];
   let nextPostTs = 100000;
   const stagedFiles = new Map<string, string>();
+  const fileShares = new Map<string, { channel: string; ts: string }>();
   let nextFileId = 1;
   let grantedScopes: Set<string> | null = null;
   let botUserId: string | null = "U-BOT";
   const messageReactions = new Map<string, SlackMessageReaction[]>();
   const messagesByRef = new Map<string, SlackMessage & { ts: string }>();
+  const withOrigin = <T extends SlackMessage>(message: T): T =>
+    message.origin === undefined &&
+    botUserId !== null &&
+    message.user === botUserId
+      ? { ...message, origin: "own" }
+      : message;
   const fileBytes = new Map<string, Buffer>();
   const fileInfos = new Map<string, SlackFileInfo>();
 
@@ -239,12 +303,28 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       messagesByRef.set(`${args.channel}:${ts}`, {
         ts,
         text: args.text,
+        origin: "own",
         ...(botUserId ? { user: botUserId } : {}),
         ...(args.threadTs !== undefined ? { threadTs: args.threadTs } : {}),
         ...(args.blocks ? { blocks: args.blocks } : {}),
         ...(args.metadata ? { metadata: args.metadata } : {}),
       });
       return { ts };
+    },
+
+    async updateMessage(args) {
+      const key = `${args.channel}:${args.ts}`;
+      const message = messagesByRef.get(key);
+      if (!message) throw new Error("message_not_found");
+      updates.push(args);
+      messagesByRef.set(key, {
+        ...message,
+        text: args.text,
+        blocks: args.blocks,
+        metadata: args.metadata,
+        ...(args.fileIds ? { fileIds: args.fileIds } : {}),
+        edited: true,
+      });
     },
 
     async deleteMessage() {
@@ -298,33 +378,25 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async getThreadReplies(args) {
-      return threadPageOf(history, args, modelsThreads);
+      const page = threadPageOf(history, args, modelsThreads);
+      return { ...page, messages: page.messages.map(withOrigin) };
     },
 
     async getMessage(args) {
-      return messagesByRef.get(`${args.channel}:${args.ts}`) ?? null;
+      const found = messagesByRef.get(`${args.channel}:${args.ts}`);
+      return found ? withOrigin(found) : null;
     },
 
     async getChannelHistory(args) {
       const newestFirst = channelWindowOf(
         history,
-        args.oldest,
+        { oldest: args.oldest, latest: args.latest },
         modelsThreads,
       ).reverse();
       return {
-        messages: newestFirst.slice(0, args.limit),
+        messages: newestFirst.slice(0, args.limit).map(withOrigin),
         hasMore: newestFirst.length > args.limit,
       };
-    },
-
-    async uploadFile(args) {
-      outbound.push({
-        kind: "upload",
-        teamId: args.teamId,
-        channelId: args.channelId,
-        filename: args.filename,
-        ...(args.threadTs ? { threadTs: args.threadTs } : {}),
-      });
     },
 
     async reserveFile(args) {
@@ -336,7 +408,19 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async sendFileBytes() {},
 
     async shareFile(args) {
+      if (!args.channelId) return;
       const text = renderSlackPostText({ blocks: args.blocks });
+      const ts = `${Math.floor(Date.now() / 1000)}.${nextPostTs++}`;
+      fileShares.set(args.fileId, { channel: args.channelId, ts });
+      messagesByRef.set(`${args.channelId}:${ts}`, {
+        ts,
+        text: text ?? "",
+        origin: "own",
+        ...(botUserId ? { user: botUserId } : {}),
+        ...(args.threadTs !== undefined ? { threadTs: args.threadTs } : {}),
+        ...(args.blocks ? { blocks: args.blocks } : {}),
+        fileIds: [args.fileId],
+      });
       outbound.push({
         kind: "upload",
         teamId: args.teamId,
@@ -345,6 +429,11 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         ...(args.threadTs ? { threadTs: args.threadTs } : {}),
         ...(text ? { text } : {}),
       });
+    },
+
+    async fileShareTs(fileId, channelId) {
+      const share = fileShares.get(fileId);
+      return share?.channel === channelId ? share.ts : null;
     },
 
     async downloadFile(urlPrivate, maxBytes) {
@@ -389,8 +478,8 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         ? {
             kind: "found",
             isMember: channel.botIsMember,
-            isDirectMessage: false,
-            isGroupDirectMessage: false,
+            isDirectMessage: channel.isGroupDirectMessage ?? false,
+            isGroupDirectMessage: channel.isGroupDirectMessage ?? false,
             name: channel.name,
             directMessageUser: null,
           }
@@ -417,6 +506,15 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       return users.find((u) => u.id === userId) ?? null;
     },
 
+    /* UNIT_BOUNDARY_DESCRIPTION: The fake answers with what a test configured,
+     * not with a filtered result: a mismatch of mailbox, workspace or
+     * organization must reach the caller's own refusals instead of being
+     * tidied away here. */
+    async lookupUserByEmail(email, teamId) {
+      emailLookups.push(`${teamId}|${email}`);
+      return emailUsers[0] ?? null;
+    },
+
     async getMessageReactions(channel, ts) {
       return messageReactions.get(`${channel}:${ts}`) ?? null;
     },
@@ -439,8 +537,30 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       if (event) await requireHandlers().onMessage(event);
     },
 
+    async fireMessageEdited(input) {
+      const event = firedEdit(input);
+      if (event) await requireHandlers().onMessageEdited(event);
+    },
+
     async fireViewSubmission(event) {
       await requireHandlers().onViewSubmission(event);
+    },
+
+    async fireMessageAction(input) {
+      await requireHandlers().onMessageAction(
+        {
+          ...input,
+          ephemeral: input.ephemeral ?? true,
+          teamId: input.teamId ?? FAKE_WORKSPACE,
+        },
+        async (message) => {
+          commandMessage = message;
+        },
+      );
+    },
+
+    readCommandMessage() {
+      return commandMessage;
     },
 
     async fireSessionStopped(input) {
@@ -475,7 +595,11 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         async (response) => {
           ackText = response?.text ?? "";
         },
-        async (text) => {
+        async (text, blocks) => {
+          if (blocks) {
+            commandMessage = { text, blocks };
+            return;
+          }
           outbound.push({
             kind: "ephemeral",
             teamId: command.teamId,
@@ -486,6 +610,10 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         },
       );
       return ackText;
+    },
+
+    readUpdates() {
+      return [...updates];
     },
 
     readOutbound() {
@@ -534,6 +662,14 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     readUserLookups() {
       return [...userLookups];
+    },
+
+    setEmailUsers(next) {
+      emailUsers = [...next];
+    },
+
+    readEmailLookups() {
+      return [...emailLookups];
     },
 
     async getGrantedScopes() {

@@ -27,14 +27,15 @@ import type { BootstrapContext, BootstrapError } from "./bootstrap.js";
 export const DEFAULT_RUN_TIMEOUT_SECONDS = 3600;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the runtime's own refusal names the web app's
- * Providers page; the CLI adds the commands that do the same from here.
+ * UNIT_BOUNDARY_DESCRIPTION: the runtime refuses for lack of a model only
+ * when no provider the agent holds serves the session, so the CLI adds the
+ * command that grants one from here.
  */
-export function noModelHint(error: { data?: unknown }): string {
+function noModelHint(error: { data?: unknown }): string {
   const reason = (error.data as { platform?: { reason?: unknown } } | undefined)
     ?.platform?.reason;
   return reason === NO_MODEL_REASON
-    ? "\nhint: list your model providers with `dam connection list`, then grant one with `dam agent update <agent> --provider <connection>`"
+    ? "\nhint: grant a model provider from `dam connection list` with `dam agent update <agent> --provider <connection>`"
     : "";
 }
 

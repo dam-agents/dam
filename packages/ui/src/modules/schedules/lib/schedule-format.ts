@@ -1,4 +1,9 @@
-import { nextUtcMidnight, OnceResult, rruleToText } from "api-server-api";
+import {
+  detectTimezone,
+  nextUtcMidnight,
+  OnceResult,
+  rruleToText,
+} from "api-server-api";
 import cronstrue from "cronstrue";
 
 import { sameLocalDay } from "@/lib/format-time";
@@ -35,7 +40,10 @@ export function cronToText(cron: string): string {
   }
 }
 
-export function scheduleCadenceText(schedule: Schedule): string {
+export function scheduleCadenceText(
+  schedule: Schedule,
+  viewerZone: string = detectTimezone(),
+): string {
   switch (schedule.type) {
     case "once": {
       const when = schedule.at
@@ -47,10 +55,17 @@ export function scheduleCadenceText(schedule: Schedule): string {
         return `${when} · reports back to the session that scheduled it`;
       return when;
     }
-    case "rrule":
-      return schedule.rrule ? rruleToText(schedule.rrule) : "";
+    case "rrule": {
+      if (!schedule.rrule) return "";
+      const cadence = rruleToText(schedule.rrule);
+      /* UNIT_BOUNDARY_DESCRIPTION: the cadence's time is the schedule's own, so its zone is named whenever that is not the one the reader's clock runs on; a cron runs in UTC. */
+      const zone = schedule.timezone;
+      return zone && zone !== viewerZone ? `${cadence} (${zone})` : cadence;
+    }
     case "cron":
-      return schedule.cron ?? "";
+      return schedule.cron
+        ? `${cronToText(schedule.cron)} (${CRON_TIMEZONE})`
+        : "";
   }
 }
 

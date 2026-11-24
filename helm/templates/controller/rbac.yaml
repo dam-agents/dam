@@ -93,7 +93,7 @@ rules:
     resources: ["serviceaccounts"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # per-agent Istio AuthorizationPolicies (gateway admission,
-  # harness path-prefix at the waypoint, ext-authz Service principal).
+  # harness path-prefix at the waypoint, an unenforced ext-authz policy).
   - apiGroups: ["security.istio.io"]
     resources: ["authorizationpolicies"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -126,7 +126,7 @@ rules:
   - apiGroups: [""]
     resources: ["pods/resize"]
     verbs: ["update", "patch"]
-  # watch: a runner's pod becoming ready requeues that owner's vm agents.
+  # watch: a runner's pod becoming ready requeues that owner's agents.
   # patch: a settled roll's annotations are cleared as one merge patch.
   - apiGroups: ["apps"]
     resources: ["deployments"]
@@ -149,7 +149,7 @@ rules:
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # A vm agent on a runner outside the cluster (virtualization.runner.hostAddress)
+  # An agent on a runner outside the cluster (virtualization.runner.hostAddress)
   # has no runner pod for its Service to select; the controller names the
   # runner's address in the Service's own EndpointSlice instead.
   - apiGroups: ["discovery.k8s.io"]

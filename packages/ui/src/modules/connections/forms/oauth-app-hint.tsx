@@ -7,17 +7,18 @@ import { externalLinkProps } from "@/lib/external-link";
 export function OAuthAppHint({
   callbackUrl,
   setupUrl,
+  where = "at the provider",
 }: {
   callbackUrl?: string;
   setupUrl?: string;
+  where?: string;
 }) {
   if (!callbackUrl && !setupUrl) return null;
 
   return (
     <Callout tone="muted" className="flex flex-col gap-2">
       <p className="text-xs text-muted-foreground">
-        Register an OAuth app at the provider, then paste its client credentials
-        below.
+        Register an OAuth app {where}, then paste its client credentials below.
         {setupUrl && (
           <>
             {" "}

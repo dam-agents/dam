@@ -26,6 +26,24 @@
           "ref": {
             "type": "string",
             "minLength": 1
+          },
+          "publisher": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "url": {
+                "type": "string",
+                "format": "uri",
+                "pattern": "^https://"
+              }
+            },
+            "required": [
+              "name"
+            ]
           }
         }
       }

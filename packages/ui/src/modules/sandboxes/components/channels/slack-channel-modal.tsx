@@ -114,6 +114,24 @@ export function SlackChannelModal({
             )}
           />
 
+          <Controller
+            control={control}
+            name="history"
+            render={({ field }) => (
+              <ChannelSwitchCard
+                label="Channel history"
+                checked={field.value}
+                onChange={field.onChange}
+              >
+                The agent can read the channel's older messages and its threads
+                when an answer needs them, without anyone's Slack account. What
+                it reads lands in its sessions, which you can see. It is set per
+                agent and can be turned off anytime — here or with the in-chat
+                history command.
+              </ChannelSwitchCard>
+            )}
+          />
+
           <div className="flex w-full flex-col gap-3 rounded-md border border-border bg-background px-3 py-2.5">
             <ToggleRow
               className="gap-3"

@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import type { ChannelConfig } from "api-server-api";
 import { ChannelType } from "api-server-api";
-import { type AgentView, displayState } from "../domain/agent-view.js";
+import type { AgentView } from "../domain/agent-view.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
 import {
@@ -24,6 +24,12 @@ import {
   type KitService,
 } from "../../kit/index.js";
 import type { KitUpdateStatus } from "api-server-api";
+
+const RESTART_REASON: Record<string, string> = {
+  OutOfMemory: "out of memory",
+  HomeVolumeFull: "its storage was full",
+  GuestStoppedAnswering: "it stopped answering",
+};
 
 export function buildGetCommand(deps: {
   compatService: CompatService;
@@ -97,7 +103,7 @@ function renderAgent(
     ["ID", agent.id],
     ["TEMPLATE", agent.templateId ?? "<custom>"],
     ["IMAGE", agent.image],
-    ["STATE", displayState(agent)],
+    ["STATE", agent.state],
     ["AVATAR", renderAvatar(agent.avatar)],
   ];
   if (agent.description) entries.push(["DESCRIPTION", agent.description]);
@@ -107,6 +113,12 @@ function renderAgent(
   }
   entries.push(["CHANNELS", renderChannels(agent.channels)]);
   entries.push(...modelEntries(models));
+  const restart = agent.podTerminationReason
+    ? agent.podTerminationReason
+    : agent.podRestartReason
+      ? (RESTART_REASON[agent.podRestartReason] ?? agent.podRestartReason)
+      : null;
+  if (restart !== null) entries.push(["LAST RESTART", restart]);
   if (agent.state === "error" && agent.error)
     entries.push(["ERROR", agent.error]);
   return renderEntries(entries);

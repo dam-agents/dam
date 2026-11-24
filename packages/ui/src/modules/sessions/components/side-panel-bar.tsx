@@ -72,7 +72,10 @@ export function SidePanelTabButtons({
             "relative text-muted-foreground",
             rail
               ? "h-12 w-12 rounded-none hover:bg-transparent focus-visible:ring-inset focus-visible:ring-offset-0"
-              : cn("[&_svg]:size-4", active === tab && "bg-muted"),
+              : cn(
+                  "h-8 w-8 rounded-lg hover:bg-muted hover:text-foreground [&_svg]:size-4",
+                  active === tab && "bg-muted",
+                ),
             active === tab && "text-foreground",
             rail &&
               active === tab &&

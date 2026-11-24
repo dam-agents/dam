@@ -7,9 +7,11 @@ import {
   isProtectedAgentEnvName,
   type Agent,
   type AgentDefaultProvider,
+  type AgentStart,
   type AgentsService,
   type AgentWithAccess,
   type AgentCreateInput,
+  type ChildInheritance,
   type EgressPreset,
   type AgentUpdateInput,
   type EnvVar,
@@ -25,7 +27,9 @@ import {
   type BindSlackChannelResult,
   type ConnectSlackError,
   type ConnectSlackResult,
+  type SlackBindingModes,
   type UnbindTelegramChatResult,
+  type SessionPair,
   type AgentBackgroundWork,
   type RuntimeFleetAgent,
   type TemplateUpdate,
@@ -603,6 +607,8 @@ export function createAgentsService(deps: {
   agentIdleTimeoutMinutes: number;
   owner: string | undefined;
   actor: string | undefined;
+  /** UNIT_BOUNDARY_DESCRIPTION: who the actor is for the security log: a person, or the platform's own sweep acting for the owner, so a delete the platform made never reads as one the owner made. */
+  actorKind?: "user" | "system";
   readTemplateSpec: ReadTemplateSpec;
   lastHelloAt?: (agentId: string) => Promise<Date | null>;
   presetSeeder?: PresetSeeder;
@@ -617,18 +623,27 @@ export function createAgentsService(deps: {
   defaultHarness?: string;
   telemetry?: boolean;
   storageGate?: StorageGatePort;
-  /** UNIT_BOUNDARY_DESCRIPTION: the owner's default for new agents: its harness, the Connection a new Agent on that harness is granted in place of the harness's provider order, and the binding of the Agent's chat default to it, which answers why it did not bind; null while the owner has none to offer. */
-  defaultProfile?: () => Promise<{
-    name: string;
+  /** UNIT_BOUNDARY_DESCRIPTION: what a new Agent starts on: the owner's default profile (its name), else the base default (no name); its harness, the Connection a new Agent on that harness is granted in place of the harness's provider order, and the binding of the Agent's chat default to it, which answers why it did not bind; null while there is none to offer. */
+  newAgentDefault?: () => Promise<{
+    name: string | null;
     model: string;
     harness: string;
     connectionId: string;
     bind: (agentId: string) => Promise<string | null>;
   } | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: where a child Agent's inheritance from the Agent that launched it is recorded at create, before its grants are applied, so a change of the parent's grants made meanwhile already reaches it. */
+  inheritance?: {
+    record(agentId: string, inheritance: ChildInheritance): Promise<void>;
+  };
+  /* UNIT_BOUNDARY_DESCRIPTION: the rules a child whose egress is its own starts with, written once it exists. */
+  childEgress?: {
+    seed(agentId: string, inheritance: ChildInheritance): Promise<void>;
+  };
   grantProvisioner?: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
       providerConnectionId?: string;
+      platform?: boolean;
     }): Promise<{ grantedConnectionIds: string[] }>;
     defaultProviders(
       connectionIds: string[],
@@ -643,8 +658,25 @@ export function createAgentsService(deps: {
     }>;
     applyAfterCreate(
       agentId: string,
-      sel: { connectionIds: string[] },
+      sel: { connectionIds: string[]; platform?: boolean },
     ): Promise<void>;
+    /* UNIT_BOUNDARY_DESCRIPTION: the harnesses of the catalog each of the given model-provider Connections runs, in catalog order; a Connection that is no provider is absent. */
+    providerHarnesses(
+      connectionIds: readonly string[],
+    ): Promise<Map<string, string[]>>;
+  };
+  /* UNIT_BOUNDARY_DESCRIPTION: the chat default a create sets before the new Agent's first hello: the model it picks on a provider for a harness (null while that provider has not listed one), the check of a pair the create names against the Connections it grants, and the save. */
+  startPair?: {
+    pick(harness: string, connectionId: string): Promise<string | null>;
+    check(
+      pair: {
+        harness: string;
+        model: string;
+        settings?: Record<string, string>;
+      },
+      grantedConnectionIds: readonly string[],
+    ): Promise<SessionPair>;
+    save(agentId: string, pair: SessionPair): Promise<void>;
   };
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
   listChannelsByAgent: (
@@ -690,6 +722,7 @@ export function createAgentsService(deps: {
       owner: string;
       teamId: string;
       ambient: boolean;
+      history: boolean;
       isDefault: boolean;
     }[]
   >;
@@ -743,6 +776,114 @@ export function createAgentsService(deps: {
         code: "CONFLICT",
         message: `you already have an agent named "${name}"`,
       });
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the harness the default Template boots a create on that names none: one the provider it names runs, the default for new agents' harness first, then the install's, then the provider's first in catalog order; without a named provider, the default's harness, else the install's. */
+  async function defaultTemplateHarness(
+    providerConnectionId: string | undefined,
+    profileHarness: string | undefined,
+  ): Promise<string | undefined> {
+    const fallback = profileHarness ?? deps.defaultHarness;
+    if (providerConnectionId === undefined || !deps.grantProvisioner)
+      return fallback;
+    const runs =
+      (
+        await deps.grantProvisioner
+          .providerHarnesses([providerConnectionId])
+          .catch(() => new Map<string, string[]>())
+      ).get(providerConnectionId) ?? [];
+    return (
+      [profileHarness, deps.defaultHarness, ...runs].find(
+        (h): h is string => h !== undefined && runs.includes(h),
+      ) ?? fallback
+    );
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the chat default a create sets itself, checked before anything is written: the model it names, else, for a Template create that names its provider, that provider's preferred model for the harness. Null leaves the default to the default for new agents or to the first hello's conversion. */
+  async function chatDefaultAtCreate(
+    input: AgentCreateInput,
+    harness: string | null,
+    namedProvider: string | undefined,
+    grantedConnectionIds: readonly string[],
+    fromTemplate: boolean,
+  ): Promise<SessionPair | null> {
+    const asked = input.model !== undefined || input.settings !== undefined;
+    if (asked && !deps.startPair)
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "this server cannot set the model a new agent starts on; create it, then set the model with an update",
+      });
+    if (asked && harness === null)
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "a create that names its model or settings names its harness or a Template too",
+      });
+    if (!deps.startPair || harness === null) return null;
+    const picked =
+      input.model === undefined &&
+      namedProvider !== undefined &&
+      fromTemplate &&
+      !input.noDefaultProvider
+        ? await deps.startPair
+            .pick(harness, namedProvider)
+            .catch((err: unknown) => {
+              getLogger().warn(
+                { err },
+                "agent create: the named provider's models could not be read; the first hello converts the default instead",
+              );
+              return null;
+            })
+        : null;
+    const model = input.model ?? picked;
+    if (model === null) {
+      if (input.settings !== undefined)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "name the model the settings go with",
+        });
+      return null;
+    }
+    if (input.model === undefined && input.settings === undefined)
+      return { harness, provider: namedProvider ?? null, model };
+    return deps.startPair.check(
+      {
+        harness,
+        model,
+        ...(input.settings !== undefined && { settings: input.settings }),
+      },
+      grantedConnectionIds,
+    );
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: what a create answers its Agent starts on: its harness, its chat default's model, and each model provider it was granted with what chose it and the harnesses it runs, so a caller sees a provider that cannot run the harness without asking again. */
+  async function startsOnOf(
+    harness: string | null,
+    model: string | null,
+    grantedConnectionIds: readonly string[],
+    named: ReadonlySet<string>,
+    defaultProvider: AgentDefaultProvider | undefined,
+  ): Promise<AgentStart> {
+    const runs = await deps
+      .grantProvisioner!.providerHarnesses(grantedConnectionIds)
+      .catch(() => new Map<string, string[]>());
+    return {
+      harness,
+      model,
+      providers: grantedConnectionIds.flatMap((connectionId) => {
+        const harnesses = runs.get(connectionId);
+        if (!harnesses) return [];
+        const source: AgentStart["providers"][number]["source"] = named.has(
+          connectionId,
+        )
+          ? "named"
+          : defaultProvider?.connectionId === connectionId
+            ? defaultProvider.source
+            : "harness";
+        return [{ connectionId, source, harnesses }];
+      }),
+    };
   }
 
   async function safeStatus(id: string): Promise<ContributionsStatus> {
@@ -947,7 +1088,7 @@ export function createAgentsService(deps: {
   const connectSlackImpl = async (
     id: string,
     slackChannelId: string,
-    ambient?: boolean,
+    modes: SlackBindingModes,
     knownWorkspace?: string,
     customEmoji?: string[] | null,
   ): Promise<SlackConnectResult> => {
@@ -966,7 +1107,8 @@ export function createAgentsService(deps: {
     if (workspace.kind !== "resolved")
       return err(unresolvedWorkspace(workspace));
 
-    const requestedAmbient = ambient === true;
+    const requestedAmbient = modes.ambient ?? existing?.ambient ?? false;
+    const requestedHistory = modes.history ?? existing?.history ?? false;
 
     const txResult = await deps.unitOfWork(async (tx) => {
       try {
@@ -975,6 +1117,7 @@ export function createAgentsService(deps: {
           slackChannelId,
           ...(workspace.teamId ? { teamId: workspace.teamId } : {}),
           ...(requestedAmbient ? { ambient: true } : {}),
+          ...(requestedHistory ? { history: true } : {}),
           ...(customEmoji !== undefined ? { customEmoji } : {}),
         });
       } catch (e) {
@@ -1025,6 +1168,19 @@ export function createAgentsService(deps: {
         agentId: id,
         result: "success",
         detail: { slackChannelId, ambient: requestedAmbient },
+      });
+    }
+
+    const hadHistory = existing?.history === true;
+    if (hadHistory !== requestedHistory) {
+      securityLog("info", "channel.history_toggled", {
+        category: "authz-list",
+        actor: deps.actor ?? null,
+        actorKind: "user",
+        surface: "slack",
+        agentId: id,
+        result: "success",
+        detail: { slackChannelId, history: requestedHistory },
       });
     }
 
@@ -1309,16 +1465,16 @@ export function createAgentsService(deps: {
       let spec: Record<string, unknown>;
       let templateId: string | undefined;
       let templateProviders: readonly string[] | undefined;
-      /* UNIT_BOUNDARY_DESCRIPTION: a kit that names its model or its providers and an Environment decide their own default, so the owner's default profile stays out of them. */
-      const profileDefault =
-        deps.defaultProfile &&
+      /* UNIT_BOUNDARY_DESCRIPTION: a kit that names its model or its providers and an Environment decide their own default, so the default for new agents stays out of them. */
+      const newDefault =
+        deps.newAgentDefault &&
         input.starterKitDefaultModel === undefined &&
         input.starterKitProviders === undefined &&
         input.environmentOf === undefined
-          ? await deps.defaultProfile().catch((err: unknown) => {
+          ? await deps.newAgentDefault().catch((err: unknown) => {
               getLogger().warn(
                 { err },
-                "agent create: the default profile could not be read; the harness's provider order decides",
+                "agent create: the default for new agents could not be read; the harness's provider order decides",
               );
               return null;
             })
@@ -1355,7 +1511,10 @@ export function createAgentsService(deps: {
         if (Object.hasOwn(RETIRED_TEMPLATE_HARNESS, requestedTemplate))
           spec.harness ??= RETIRED_TEMPLATE_HARNESS[requestedTemplate];
         if (requestedTemplate === DEFAULT_TEMPLATE_ID)
-          spec.harness ??= profileDefault?.harness ?? deps.defaultHarness;
+          spec.harness ??= await defaultTemplateHarness(
+            input.noDefaultProvider ? undefined : input.providerConnectionId,
+            newDefault?.harness,
+          );
         templateId = requestedTemplate;
         templateProviders = tmpl.spec.providers;
       } else {
@@ -1388,12 +1547,28 @@ export function createAgentsService(deps: {
         spec.environmentOf = input.environmentOf;
         delete spec.harness;
       }
+      if (input.linkFrom !== undefined) spec.linkFrom = input.linkFrom;
       if (input.requireConnectionAddress !== false)
         spec.requireConnectionAddress = true;
+      /* UNIT_BOUNDARY_DESCRIPTION: a child launched by an agent with web search control has its own gateway, so it carries the control too; without it, a sub-agent or an Environment would search where its launcher may not. */
+      const launcher = input.inheritance?.parentAgentId;
+      if (
+        launcher !== undefined &&
+        (await deps.repo.get(launcher))?.spec.webSearchControl === true
+      )
+        spec.webSearchControl = true;
 
       const providerConnectionId = input.providerConnectionId;
-      const startsOnProfile =
-        profileDefault?.harness === spec.harness ? profileDefault : null;
+      /* UNIT_BOUNDARY_DESCRIPTION: a create that names its provider, or the model it starts on, chose for itself, so the default for new agents decides only where it names that same provider and the create names no model; a sub-agent's inherited provider is the platform's choice, not its caller's, and keeps the rule it had. */
+      const startsOnDefault =
+        newDefault?.harness === spec.harness &&
+        (providerConnectionId === undefined ||
+          input.noDefaultProvider === true ||
+          providerConnectionId === newDefault?.connectionId) &&
+        input.model === undefined &&
+        input.settings === undefined
+          ? newDefault
+          : null;
       const ordered =
         providerConnectionId === undefined &&
         templateId !== undefined &&
@@ -1412,10 +1587,10 @@ export function createAgentsService(deps: {
             )) ?? null)
           : null;
       const orderedProviders = ordered?.ids ?? [];
-      /* UNIT_BOUNDARY_DESCRIPTION: one provider either way (#5578): the default profile's in place of the first in harness order, so the chat default exists before the first hello and the onboarding turn has a model. */
+      /* UNIT_BOUNDARY_DESCRIPTION: one provider either way (#5578): the default's in place of the first in harness order, so the chat default exists before the first hello and the onboarding turn has a model. */
       const defaultProviders =
-        orderedProviders.length > 0 && startsOnProfile
-          ? [startsOnProfile.connectionId]
+        orderedProviders.length > 0 && startsOnDefault
+          ? [startsOnDefault.connectionId]
           : orderedProviders;
       const grantSel = {
         connectionIds: Array.from(
@@ -1426,6 +1601,8 @@ export function createAgentsService(deps: {
           ]),
         ),
         providerConnectionId,
+        /* UNIT_BOUNDARY_DESCRIPTION: a create the platform makes for the person, not one they asked for, so a grant it carries is not held to the flag that offers that Connection to people. */
+        ...(input.platformGrants ? { platform: true as const } : {}),
       };
       if (input.providerConnectionId && !deps.grantProvisioner) {
         throw new TRPCError({
@@ -1439,6 +1616,15 @@ export function createAgentsService(deps: {
         if (g.grantedConnectionIds.length)
           spec.grantedConnectionIds = g.grantedConnectionIds;
       }
+      const startHarness =
+        typeof spec.harness === "string" ? spec.harness : null;
+      const startPair = await chatDefaultAtCreate(
+        input,
+        startHarness,
+        startsOnDefault === null ? providerConnectionId : undefined,
+        grantSel.connectionIds,
+        templateId !== undefined,
+      );
 
       if (deps.owner === undefined) {
         throw new TRPCError({
@@ -1448,7 +1634,8 @@ export function createAgentsService(deps: {
       }
       const owner = deps.owner;
       await assertOwnSecretRef(input.secretRef, owner);
-      await assertNameFree(input.name, owner);
+      /* UNIT_BOUNDARY_DESCRIPTION: the id a caller names is its own — a platform resume of an Agent an earlier attempt already wrote — so that Agent's own name is not evidence the name is taken. */
+      await assertNameFree(input.name, owner, input.id);
       const agentId = input.id ?? generateK8sName("agent");
 
       if (input.registryCredential) {
@@ -1489,21 +1676,28 @@ export function createAgentsService(deps: {
           Object.keys(createAnnotations).length ? createAnnotations : undefined,
         );
       } catch (e) {
-        if (input.registryCredential) {
-          try {
-            await deps.registrySecretPort.delete(agentId);
-          } catch (cleanupErr) {
-            securityLog("error", "agent.create.pull_secret_orphaned", {
-              category: "resource",
-              actor: deps.actor ?? null,
-              actorKind: "user",
-              result: "failure",
-              reason:
-                cleanupErr instanceof Error ? cleanupErr.message : "unknown",
-            });
+        /* UNIT_BOUNDARY_DESCRIPTION: a create the platform resumes — the same id asked for again after an earlier attempt wrote the row and then failed on its bookkeeping — finishes that Agent from here rather than failing on the row it already has. Only a caller that names the id reaches this, and no API caller can: the id is the platform's own. The steps below are written to run again. */
+        const resumed = input.id
+          ? await deps.repo.get(agentId, owner).catch(() => null)
+          : null;
+        if (resumed === null) {
+          if (input.registryCredential) {
+            try {
+              await deps.registrySecretPort.delete(agentId);
+            } catch (cleanupErr) {
+              securityLog("error", "agent.create.pull_secret_orphaned", {
+                category: "resource",
+                actor: deps.actor ?? null,
+                actorKind: "user",
+                result: "failure",
+                reason:
+                  cleanupErr instanceof Error ? cleanupErr.message : "unknown",
+              });
+            }
           }
+          throw e;
         }
-        throw e;
+        infra = resumed;
       }
 
       const userEnv = dropProtectedEnvs([...templateEnv, ...(input.env ?? [])]);
@@ -1517,6 +1711,8 @@ export function createAgentsService(deps: {
           owner,
         );
       }
+      if (input.inheritance && input.inheritance.egressFrom !== "parent")
+        await deps.childEgress?.seed(infra.id, input.inheritance);
 
       const createdAt = new Date();
       await deps.runtimeMutator.bump(infra.id, [
@@ -1534,27 +1730,47 @@ export function createAgentsService(deps: {
           ? [
               agentInstructionsEvent(
                 infra.id,
-                AGENT_INSTRUCTIONS_TEMPLATE,
+                input.instructions ?? AGENT_INSTRUCTIONS_TEMPLATE,
                 createdAt,
               ),
             ]
           : []),
       ]);
 
+      if (input.inheritance)
+        await deps.inheritance?.record(infra.id, input.inheritance);
       if (deps.grantProvisioner && hasInitialGrants) {
         await deps.grantProvisioner.applyAfterCreate(infra.id, grantSel);
       }
 
-      if (startsOnProfile) {
-        const missed = await startsOnProfile
+      let startModel: string | null = startsOnDefault?.model ?? null;
+      if (startPair) {
+        startModel = await deps
+          .startPair!.save(infra.id, startPair)
+          .then(() => startPair.model)
+          .catch((err: unknown) => {
+            getLogger().warn(
+              {
+                agentId: infra.id,
+                reason: err instanceof Error ? err.message : String(err),
+              },
+              "agent create: the chat default the create named was not saved; its first hello converts the default instead",
+            );
+            return null;
+          });
+      }
+
+      if (startsOnDefault) {
+        const missed = await startsOnDefault
           .bind(infra.id)
           .catch((err: unknown) =>
             err instanceof Error ? err.message : String(err),
           );
+        if (missed) startModel = null;
         if (missed)
           getLogger().warn(
             { agentId: infra.id, reason: missed },
-            "agent create: the new agent does not start on the default profile; its first hello converts the default instead",
+            "agent create: the new agent does not start on the default for new agents; its first hello converts the default instead",
           );
       }
 
@@ -1572,15 +1788,35 @@ export function createAgentsService(deps: {
       if (defaultProviders[0] !== undefined)
         agent.defaultProvider = {
           connectionId: defaultProviders[0],
-          source: startsOnProfile ? "profile" : (ordered?.source ?? "harness"),
-          profile: startsOnProfile
+          source: startsOnDefault
+            ? startsOnDefault.name === null
+              ? "default"
+              : "profile"
+            : (ordered?.source ?? "harness"),
+          profile: startsOnDefault
             ? {
-                name: startsOnProfile.name,
-                model: startsOnProfile.model,
-                harness: startsOnProfile.harness,
+                name: startsOnDefault.name,
+                model: startsOnDefault.model,
+                harness: startsOnDefault.harness,
               }
             : null,
         };
+      if (
+        deps.grantProvisioner &&
+        templateId !== undefined &&
+        !input.noDefaultProvider &&
+        spec.environmentOf === undefined
+      )
+        agent.startsOn = await startsOnOf(
+          startHarness,
+          startModel,
+          grantSel.connectionIds,
+          new Set([
+            ...(input.connectionIds ?? []),
+            ...(providerConnectionId ? [providerConnectionId] : []),
+          ]),
+          agent.defaultProvider,
+        );
       securityLog("info", "agent.create", {
         category: "resource",
         actor: deps.actor ?? null,
@@ -1638,37 +1874,41 @@ export function createAgentsService(deps: {
         patch.requireConnectionAddress = input.requireConnectionAddress || null;
       if (input.whisper !== undefined)
         patch.whispersOff = input.whisper ? null : true;
+      if (input.webSearchControl !== undefined)
+        patch.webSearchControl = input.webSearchControl || null;
       const infra =
         Object.keys(patch).length > 0
           ? await deps.repo.updateSpec(input.id, deps.owner, patch)
           : await deps.repo.get(input.id, deps.owner);
       if (!infra) return null;
 
+      let runtimeStateChanged = input.webSearchControl !== undefined;
       let env = input.env;
       if (env !== undefined) {
         env = dropProtectedEnvs(env);
         if (input.name !== undefined)
           env = renamedTelemetryIdentity(env, input.name) ?? env;
         await deps.agentEnvRepo.replace(input.id, env);
-        await deps.runtimeMutator.bump(input.id, []);
-        await deps.runtimeMutator.enqueueAfterCommit(input.id);
+        runtimeStateChanged = true;
       } else if (input.name !== undefined) {
         const refreshed = renamedTelemetryIdentity(
           await deps.agentEnvRepo.list(input.id),
           input.name,
         );
         if (refreshed) await deps.agentEnvRepo.replace(input.id, refreshed);
-        if (refreshed || renamed) {
-          await deps.runtimeMutator.bump(input.id, []);
-          await deps.runtimeMutator.enqueueAfterCommit(input.id);
-        }
+        runtimeStateChanged ||= refreshed !== null || renamed;
+      }
+      if (runtimeStateChanged) {
+        await deps.runtimeMutator.bump(input.id, []);
+        await deps.runtimeMutator.enqueueAfterCommit(input.id);
       }
 
       if (
         input.env !== undefined ||
         input.secretRef !== undefined ||
         input.requireConnectionAddress !== undefined ||
-        input.whisper !== undefined
+        input.whisper !== undefined ||
+        input.webSearchControl !== undefined
       ) {
         securityLog("info", "agent.update", {
           category: "resource",
@@ -1679,6 +1919,9 @@ export function createAgentsService(deps: {
           detail: {
             secretRefChanged: input.secretRef !== undefined,
             ...(input.whisper !== undefined ? { whisper: input.whisper } : {}),
+            ...(input.webSearchControl !== undefined
+              ? { webSearchControl: input.webSearchControl }
+              : {}),
             ...(input.requireConnectionAddress !== undefined
               ? { requireConnectionAddress: input.requireConnectionAddress }
               : {}),
@@ -1705,7 +1948,7 @@ export function createAgentsService(deps: {
           securityLog("warn", "agent.delete.cleanup_failed", {
             category: "resource",
             actor: deps.actor ?? null,
-            actorKind: "user",
+            actorKind: deps.actorKind ?? "user",
             agentId: id,
             result: "failure",
             reason: err instanceof Error ? err.message : "unknown",
@@ -1715,7 +1958,7 @@ export function createAgentsService(deps: {
       securityLog("info", "agent.delete", {
         category: "resource",
         actor: deps.actor ?? null,
-        actorKind: "user",
+        actorKind: deps.actorKind ?? "user",
         agentId: id,
         result: "success",
       });
@@ -1799,28 +2042,6 @@ export function createAgentsService(deps: {
       return project(infra);
     },
 
-    async setDisabled(id, disabled) {
-      if (!(await ownsOrDeny(id, "agent.setDisabled")))
-        return err({ type: "AgentNotFound" });
-      const current = await deps.repo.get(id, deps.owner);
-      if (!current) return err({ type: "AgentNotFound" });
-      const infra = await deps.repo.setDisabled(id, disabled);
-      if (!infra) return err({ type: "AgentNotFound" });
-      securityLog("info", disabled ? "agent.disable" : "agent.enable", {
-        category: "privileged",
-        actor: deps.actor ?? null,
-        actorKind: "user",
-        agentId: id,
-        result: "success",
-      });
-      emit({
-        type: EventType.AgentUpdated,
-        agentId: id,
-        ...(deps.owner ? { ownerSub: deps.owner } : {}),
-      });
-      return ok(await project(infra));
-    },
-
     async upgrade(id, expectedToImage) {
       const result = await executeTemplateUpgrade({
         actor: deps.actor,
@@ -1845,19 +2066,44 @@ export function createAgentsService(deps: {
       await deps.repo.ensureReady(id, opts);
     },
 
-    async connectSlack(id, slackChannelId, ambient, customEmoji, options) {
+    async connectSlack(id, slackChannelId, modes, customEmoji, options) {
       if (!(await deps.repo.get(id, deps.owner)))
         return err({ type: "AgentNotFound" });
       const bindings = await deps.findSlackBindings(slackChannelId);
-      const alreadyHere = bindings.some((b) => b.agentId === id);
-      if (alreadyHere)
+      const existing = bindings.find((b) => b.agentId === id);
+      if (existing) {
+        if (modes?.history === true && !existing.history) {
+          const workspace = existing.teamId
+            ? ({ kind: "resolved", teamId: existing.teamId } as const)
+            : await deps.resolveSlackWorkspace(slackChannelId);
+          if (workspace.kind !== "resolved")
+            return err(unresolvedWorkspace(workspace));
+          const reader = await connectorInConversation(
+            slackChannelId,
+            workspace.teamId,
+          );
+          if (!reader.ok) {
+            securityLog("warn", "channel.connect_refused", {
+              category: "channel",
+              actor: deps.actor ?? null,
+              actorKind: "user",
+              surface: "slack",
+              agentId: id,
+              result: "failure",
+              reason: reader.error.type,
+              detail: { slackChannelId, turningOn: "history" },
+            });
+            return err(reader.error);
+          }
+        }
         return connectSlackImpl(
           id,
           slackChannelId,
-          ambient,
+          modes ?? {},
           undefined,
           customEmoji,
         );
+      }
       const workspace = await deps.resolveSlackWorkspace(slackChannelId);
       if (workspace.kind !== "resolved")
         return err(unresolvedWorkspace(workspace));
@@ -1881,7 +2127,7 @@ export function createAgentsService(deps: {
       const connected = await connectSlackImpl(
         id,
         slackChannelId,
-        ambient,
+        modes ?? {},
         workspace.teamId,
         customEmoji,
       );
@@ -2050,7 +2296,7 @@ export function createAgentsService(deps: {
         getAgent: namedAgent,
         findChannelBindings: deps.findSlackBindings,
         connectShared: (id, slackChannelId, teamId) =>
-          connectSlackImpl(id, slackChannelId, undefined, teamId),
+          connectSlackImpl(id, slackChannelId, {}, teamId),
         binding,
       })(agentId, flowId);
     },

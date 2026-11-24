@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { sessionSettingsSchema } from "../harness-config/session-settings.js";
+import {
+  sessionSettingsSchema,
+  toolApprovalSchema,
+} from "../harness-config/session-settings.js";
 import { startupItemDeclarationSchema } from "../processes/schemas.js";
 import { SOURCE_FETCH_MODES } from "../skills/source-fetch.js";
 import {
@@ -29,6 +32,7 @@ export const eventKind = z.enum([
   "satellite-outcome",
   "sub-agent-outcome",
   "invocation-script",
+  "invocation-cancel",
   "session-message",
   "session-defaults",
   "startup-items",
@@ -157,7 +161,9 @@ export const SESSION_REF_HEADER = "x-platform-session-ref";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the field the api-server sets in the answer to
  * an accepted report_result, which the target's runtime reads in the tool
- * output to learn its run has a result.
+ * output to learn its run has a result. The answer to an accepted ask_owner
+ * carries it too: that run has ended as well, on a question for its owner,
+ * and its turn ending without a result is no failure.
  */
 export const RESULT_ACCEPTED_FIELD = "invocationResultAccepted";
 export const PLATFORM_MCP_ENTRY_NAME = "platform-outbound";
@@ -178,6 +184,7 @@ export const triggerEventPayload = z.object({
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
   once: z.literal(true).optional(),
   invocation: z.literal(true).optional(),
+  invocationSession: z.string().min(1).optional(),
   origin: onceOrigin.optional(),
   harness: z.string().min(1).optional(),
   provider: z.string().min(1).optional(),
@@ -207,6 +214,7 @@ export const sessionDefaultsEventPayload = z.object({
   chat: sessionDefaultPair.nullable(),
   channel: sessionDefaultPair.nullable(),
   scheduled: sessionDefaultPair.nullable(),
+  toolApproval: toolApprovalSchema.nullish().catch(null),
 });
 export type SessionDefaultsEventPayload = z.infer<
   typeof sessionDefaultsEventPayload
@@ -239,6 +247,7 @@ export const eventReportInput = z.object({
   outcome: eventOutcome,
   detail: z.string().max(2_000).optional(),
   stage: eventStage.optional(),
+  sessionId: z.string().min(1).optional(),
 });
 export type EventReportInput = z.infer<typeof eventReportInput>;
 
@@ -414,6 +423,27 @@ export const invocationScriptEvent = z.object({
 });
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: ends one run of a sub-agent that may still be
+ * working after the platform failed it: the turn of the session that run
+ * started or continued is cancelled, or its script is killed. Other runs in
+ * the machine go on.
+ */
+export const invocationCancelEventPayload = z.object({
+  run: z.string().min(1),
+});
+export type InvocationCancelEventPayload = z.infer<
+  typeof invocationCancelEventPayload
+>;
+
+export const invocationCancelEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("invocation-cancel"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: invocationCancelEventPayload,
+});
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: a message one of the agent's Sessions sends into
  * another of its Sessions through the send_session_message tool. `from` names
  * the sending Session as the platform resolved it, never as the sender wrote
@@ -454,6 +484,7 @@ export const event = z.discriminatedUnion("kind", [
   satelliteOutcomeEvent,
   subAgentOutcomeEvent,
   invocationScriptEvent,
+  invocationCancelEvent,
   sessionMessageEvent,
   sessionDefaultsEvent,
   startupItemsEvent,

@@ -29,6 +29,8 @@ function allowPlatformLinks(url: string): string {
     : defaultUrlTransform(url);
 }
 
+export const CAPPED_CODE_BLOCK = "[&_pre]:max-h-[70vh] [&_pre]:overflow-auto";
+
 const REMARK_PLUGINS = [remarkGfm];
 const REHYPE_PLUGINS = [rehypeHighlight];
 

@@ -10,6 +10,7 @@ export function SidebarSection({
   title,
   open,
   onToggle,
+  onClose,
   headerRight,
   className,
   headerClassName,
@@ -21,6 +22,7 @@ export function SidebarSection({
   title: string;
   open: boolean;
   onToggle?: () => void;
+  onClose?: () => void;
   headerRight?: ReactNode;
   className?: string;
   headerClassName?: string;
@@ -57,7 +59,7 @@ export function SidebarSection({
           </h2>
         )}
         {headerRight}
-        <SidePanelCloseButton />
+        <SidePanelCloseButton onClose={onClose} />
       </div>
       {}
       <div className="flex flex-1 min-h-0 flex-col overflow-hidden">

@@ -1,13 +1,20 @@
 import { useMutation } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
+import { egressRulesKeys } from "../../egress-rules/api/queries.js";
 import { approvalsKeys } from "./queries.js";
+
+// UNIT_BOUNDARY_DESCRIPTION: a verdict can write a network rule, and approving a rule for all of an agent's sub-agents and Environments also turns on that agent's switch for their network access, so the agent's rules and that switch are read again too, not left at their cached value.
+const AFTER_VERDICT = [approvalsKeys.all, egressRulesKeys.all];
+
+// UNIT_BOUNDARY_DESCRIPTION: an always or never answer to a held web search writes the agent's web search rule, so the rule shown in its network settings is read again too.
+const AFTER_PERMANENT_VERDICT = [...AFTER_VERDICT, trpc.webSearch.pathKey()];
 
 export function useApproveOnce() {
   return useMutation({
     ...trpc.approvals.approveOnce.mutationOptions(),
     meta: {
-      invalidates: [approvalsKeys.all, trpc.spend.status.queryKey()],
+      invalidates: [...AFTER_VERDICT, trpc.spend.status.queryKey()],
       errorToast: "Couldn't approve",
     },
   });
@@ -17,7 +24,7 @@ export function useApprovePermanent() {
   return useMutation({
     ...trpc.approvals.approvePermanent.mutationOptions(),
     meta: {
-      invalidates: [approvalsKeys.all],
+      invalidates: AFTER_PERMANENT_VERDICT,
       errorToast: "Couldn't approve permanently",
     },
   });
@@ -27,8 +34,18 @@ export function useApproveHost() {
   return useMutation({
     ...trpc.approvals.approveHost.mutationOptions(),
     meta: {
-      invalidates: [approvalsKeys.all],
+      invalidates: AFTER_VERDICT,
       errorToast: "Couldn't allow host",
+    },
+  });
+}
+
+export function useApproveForChildren() {
+  return useMutation({
+    ...trpc.approvals.approveForChildren.mutationOptions(),
+    meta: {
+      invalidates: AFTER_VERDICT,
+      errorToast: "Couldn't allow",
     },
   });
 }
@@ -37,7 +54,7 @@ export function useDenyForever() {
   return useMutation({
     ...trpc.approvals.denyForever.mutationOptions(),
     meta: {
-      invalidates: [approvalsKeys.all],
+      invalidates: AFTER_PERMANENT_VERDICT,
       errorToast: "Couldn't deny",
     },
   });

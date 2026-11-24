@@ -12,7 +12,6 @@ const fake = vi.hoisted(() => ({
 
 vi.mock("../../hooks/use-is-desktop.js", () => ({
   useIsDesktop: () => fake.wide,
-  useIsWideDesktop: () => fake.wide,
 }));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) =>

@@ -93,7 +93,7 @@ snapshots:
   argparse@3.0.4: {}
 
   fdir@6.5.0(picomatch@4.0.7):
-    dependencies:
+    optionalDependencies:
       picomatch: 4.0.7
 
   js-yaml@4.3.2:

@@ -1,0 +1,236 @@
+#!/usr/bin/env bash
+#MISE description="Upgrade a release tag's database to this checkout's migrations on a throwaway Postgres, and roll it back"
+#USAGE arg "[tag]" help="Release tag to upgrade from (default: v0.2.26); its history must be a real install's"
+# Phase 1s of the 0.3.0 upgrade rehearsal (release prep, 2026-11), and the
+# `upgrade-from-release` CI lane: an install's Drizzle history, its rows and its
+# rollback, without a cluster.
+#
+#   1. Start a throwaway Postgres from mise and provision it as an operator
+#      provisions an external database: a non-superuser `platform` owning the
+#      databases, plus `platform_controller` and `usage_readers`.
+#   2. `git worktree` the release tag, fetching it first when this clone does not
+#      have it, and apply its own migrations with the release's own migrator
+#      (packages/db/src/migrate.ts runMigrations), so
+#      `drizzle.__drizzle_migrations` holds that release's history exactly.
+#   3. Load the synthetic rows of upgrade-rehearsal-seed.sql, one per shape the
+#      newer migrations rewrite or delete, and snapshot the counts and the rows.
+#   4. Run this checkout's migrator over it, run the two grant reconcilers the
+#      api-server runs next, snapshot again, and assert every count delta, every
+#      preserved row and every post-upgrade shape (upgrade-rehearsal-assert.sql).
+#   5. Rollback half: pg_dump before the upgrade, restore into a fresh database,
+#      check the release's migrator finds nothing pending, and check the restored
+#      rows project identically to the snapshot taken before the upgrade.
+#
+# Needs a PostgreSQL tool from mise (`mise install postgres@18`) and the network
+# once per release: the tag is fetched from origin when this clone lacks it (a CI
+# clone is shallow and carries no release tags), and the release worktree
+# installs its own lockfile — from the pnpm store when it is warm, from the
+# registry when it is not.
+set -euo pipefail
+
+from_tag="${usage_tag:-v0.2.26}"
+repo="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+scripts="$repo/packages/db/scripts"
+work=""
+
+cleanup() {
+  set +e
+  [ -n "$work" ] || return 0
+  pg_ctl -D "$work/pgdata" -m immediate stop >/dev/null 2>&1
+  git -C "$repo" worktree remove --force "$work/release" >/dev/null 2>&1
+  rm -rf "$work"
+}
+trap cleanup EXIT
+
+pgbin=""
+for major in 18 17 16; do
+  if dir="$(mise where "postgres@$major" 2>/dev/null)" && [ -x "$dir/bin/postgres" ]; then
+    pgbin="$dir/bin"
+    break
+  fi
+done
+if [ -z "$pgbin" ]; then
+  echo "no PostgreSQL from mise: install one with 'mise install postgres@18'" >&2
+  exit 1
+fi
+export PATH="$pgbin:$PATH"
+
+work="$(mktemp -d)"
+port() { python3 -c 'import socket
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()'; }
+psql_() { psql -h 127.0.0.1 -p "$port" -U platform -v ON_ERROR_STOP=1 -q "$@"; }
+url() { echo "postgres://platform@127.0.0.1:$port/$1"; }
+createdb_() {
+  psql -h 127.0.0.1 -p "$port" -U postgres -v ON_ERROR_STOP=1 -q -d postgres \
+    -c "CREATE DATABASE $1 OWNER platform"
+}
+step() { echo; echo "== $*"; }
+
+migrate_with() {
+  local checkout="$1" database="$2" log="$3"
+  if [ ! -x "$checkout/packages/api-server/node_modules/.bin/tsx" ]; then
+    echo "$checkout has no installed dependencies: run 'mise install' there" >&2
+    exit 1
+  fi
+  if ! "$checkout/packages/api-server/node_modules/.bin/tsx" \
+      "$checkout/packages/db/scripts/upgrade-rehearsal-migrate.ts" \
+      "$(url "$database")" "$checkout/packages/db/drizzle" >"$log" 2>&1; then
+    echo "migrations of $checkout failed:" >&2
+    cat "$log" >&2
+    exit 1
+  fi
+}
+
+step "PostgreSQL $("$pgbin/postgres" --version)"
+initdb -D "$work/pgdata" -U postgres --auth=trust >"$work/initdb.log" 2>&1 ||
+  { cat "$work/initdb.log" >&2; exit 1; }
+# A fixed port is taken only while postgres binds it, so retry a lost race.
+for attempt in 1 2 3 4 5; do
+  port="$(port)"
+  if pg_ctl -D "$work/pgdata" \
+      -o "-p $port -c listen_addresses=127.0.0.1 -c fsync=off -c synchronous_commit=off" \
+      -l "$work/postgres.log" -w start >/dev/null 2>&1; then
+    break
+  fi
+  if [ "$attempt" = 5 ]; then
+    echo "postgres did not start:" >&2
+    cat "$work/postgres.log" >&2
+    exit 1
+  fi
+  rm -f "$work/postgres.log"
+done
+
+# The roles an operator creates by hand for an external database: the chart's
+# role Job is gated on the bundled Postgres, so an external install never gets
+# these from it (docs/architecture/persistence.md).
+psql -h 127.0.0.1 -p "$port" -U postgres -v ON_ERROR_STOP=1 -q -d postgres <<'SQL'
+CREATE ROLE platform LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
+CREATE ROLE platform_controller LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
+CREATE ROLE usage_readers NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
+SQL
+echo "running as: $(psql_ -d postgres -tA -c "SELECT current_user || ' super=' || rolsuper || ' createdb=' || rolcreatedb || ' createrole=' || rolcreaterole || ' search_path=' || current_setting('search_path') FROM pg_roles WHERE rolname = current_user")"
+
+step "release worktree at $from_tag"
+if git -C "$repo" rev-parse -q --verify "refs/tags/$from_tag" >/dev/null; then
+  echo "tag $from_tag is in this clone"
+else
+  echo "tag $from_tag is not in this clone: fetching it from origin"
+  git -C "$repo" fetch origin tag "$from_tag" --no-tags >"$work/fetch.log" 2>&1 ||
+    { cat "$work/fetch.log" >&2; echo "cannot fetch $from_tag: pass a tag on origin, or fetch it yourself" >&2; exit 1; }
+fi
+git -C "$repo" worktree add --detach "$work/release" "$from_tag" >"$work/worktree.log" 2>&1 ||
+  { cat "$work/worktree.log" >&2; exit 1; }
+# `db` for the migrator's own dependencies, `api-server` for the tsx that runs
+# its TypeScript. Both sides then migrate with their own code and lockfile.
+(cd "$work/release" && pnpm install --frozen-lockfile --filter db --filter api-server >"$work/install.log" 2>&1) ||
+  { cat "$work/install.log" >&2; exit 1; }
+mkdir -p "$work/release/packages/db/scripts"
+cp "$scripts/upgrade-rehearsal-migrate.ts" "$work/release/packages/db/scripts/"
+echo "$(git -C "$work/release" rev-parse --short HEAD) $(git -C "$work/release" describe --tags --always)"
+
+step "$from_tag migrator on an empty database"
+createdb_ rehearsal
+migrate_with "$work/release" rehearsal "$work/release-migrate.log"
+# 0105..0109 as they are on that release. On v0.2.26 these are prod's own last
+# five rows (read-only, 2026-11-10), so a match proves this install's migration
+# cutoff is prod's, including the release line's 0109 that main re-runs as 0119.
+# It says nothing about roles, ownership or the rest of the history.
+prod_history='4f423d27228abcefbcb1293125b944f5f62e3f4a2e8101131838256b8160e4ed|1792751329597
+35482ad56e2803262083c25bec869e2922c59f787093c3bdb150a4d519f086b4|1792751329596
+22a7c0bc01de415ed51fa510d8ba2bcdce8fe05f03110bf3c621833d557d7604|1792741121602
+d2cb9a2891ca76b8385851506a46d37e3cc9773e836156ad93dbe7f023271a5a|1792737463898
+5d508506c842ee1f3e3a40a24b72bd482251cadf445d0452860a9721a5a3516a|1792703196579'
+release_migrations="$(psql_ -d rehearsal -tA -c 'SELECT count(*) FROM drizzle.__drizzle_migrations')"
+last_five="$(psql_ -d rehearsal -tA -F'|' -c 'SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at DESC LIMIT 5')"
+echo "applied: $release_migrations"
+echo "$last_five"
+if [ "$from_tag" = v0.2.26 ]; then
+  if [ "$last_five" != "$prod_history" ]; then
+    echo "seeded history differs from prod's last five __drizzle_migrations rows:" >&2
+    diff <(echo "$prod_history") <(echo "$last_five") >&2 || true
+    exit 1
+  fi
+  echo "ok: the seeded history is prod's, row for row"
+fi
+
+step "seed, counts and rows"
+psql_ -d rehearsal -f "$scripts/upgrade-rehearsal-seed.sql"
+psql_ -d rehearsal -c 'CREATE TABLE rehearsal_snapshot (label text NOT NULL, name text NOT NULL, n bigint NOT NULL)'
+psql_ -d rehearsal -c 'CREATE TABLE rehearsal_rows (label text NOT NULL, class text NOT NULL, key text NOT NULL, payload jsonb NOT NULL, PRIMARY KEY (label, class, key))'
+psql_ -d rehearsal -v label=before -f "$scripts/upgrade-rehearsal-snapshot.sql"
+psql_ -d rehearsal -v label=before -f "$scripts/upgrade-rehearsal-rows.sql"
+echo "rows seeded: $(psql_ -d rehearsal -tA -c "SELECT string_agg(format('%s=%s', name, n), ' ' ORDER BY name) FROM rehearsal_snapshot WHERE name IN ('connections', 'connection_grants', 'invocations', 'user_features', 'environment_access_lists', 'spend_calls')")"
+echo "rows snapshotted: $(psql_ -d rehearsal -tA -c "SELECT string_agg(format('%s=%s', class, n), ' ' ORDER BY class) FROM (SELECT class, count(*) AS n FROM rehearsal_rows WHERE label = 'before' GROUP BY class) c")"
+
+step "pre-upgrade dump, for the rollback half"
+pg_dump -h 127.0.0.1 -p "$port" -U platform -Fc -f "$work/pre-upgrade.dump" rehearsal
+echo "$(du -h "$work/pre-upgrade.dump" | cut -f1) dump"
+
+step "this checkout's migrator over the release's data"
+expected_total="$(python3 - "$work/release/packages/db/drizzle/meta/_journal.json" "$repo/packages/db/drizzle/meta/_journal.json" <<'PY'
+import json, sys
+release = json.load(open(sys.argv[1]))["entries"]
+main = json.load(open(sys.argv[2]))["entries"]
+newest = max(e["when"] for e in release)
+print(len(release) + sum(1 for e in main if e["when"] > newest))
+PY
+)"
+migrate_with "$repo" rehearsal "$work/main-migrate.log"
+applied="$(psql_ -d rehearsal -tA -c 'SELECT count(*) FROM drizzle.__drizzle_migrations')"
+if [ "$applied" != "$expected_total" ]; then
+  echo "expected $expected_total applied migrations, found $applied" >&2
+  exit 1
+fi
+echo "applied: $applied (the release's $release_migrations plus $((expected_total - release_migrations)) from this checkout)"
+# 0119 already ran on the release line as its 0109 (#6203): its two guarded
+# statements must report these two notices, or the upgrade took the wrong path.
+if ! grep -q 'column "stamped_session_id" of relation "spend_calls" already exists, skipping' "$work/main-migrate.log"; then
+  echo "0119 did not re-run its guarded ADD COLUMN: is the release's 0109 the spend backport?" >&2
+  exit 1
+fi
+if ! grep -q 'relation "spend_calls_unbooked_idx" already exists, skipping' "$work/main-migrate.log"; then
+  echo "0119 did not re-run its guarded CREATE INDEX" >&2
+  exit 1
+fi
+echo "ok: 0119 re-ran as a no-op over the release's 0109 (column and index already there)"
+
+step "the api-server's boot grant reconcilers"
+"$repo/packages/api-server/node_modules/.bin/tsx" \
+  "$scripts/upgrade-rehearsal-bootstrap.ts" "$(url rehearsal)"
+
+step "second run: nothing is pending"
+migrate_with "$repo" rehearsal "$work/main-migrate-again.log"
+again="$(psql_ -d rehearsal -tA -c 'SELECT count(*) FROM drizzle.__drizzle_migrations')"
+if [ "$again" != "$applied" ]; then
+  echo "a second migrator run added $((again - applied)) rows" >&2
+  exit 1
+fi
+echo "ok: still $again"
+
+step "counts, rows and assertions"
+[ -z "${REHEARSAL_MUTATION_SQL:-}" ] || psql_ -d rehearsal -c "$REHEARSAL_MUTATION_SQL"
+psql_ -d rehearsal -v label=after -f "$scripts/upgrade-rehearsal-snapshot.sql"
+psql_ -d rehearsal -f "$scripts/upgrade-rehearsal-assert.sql"
+echo "ok: every count delta, preserved row and post-upgrade shape matches its migration"
+psql_ -d rehearsal -c "SELECT b.name, b.n AS before, a.n AS after, a.n - b.n AS delta
+  FROM rehearsal_snapshot b JOIN rehearsal_snapshot a USING (name)
+  WHERE b.label = 'before' AND a.label = 'after' AND b.n <> a.n ORDER BY b.name"
+
+step "rollback half: restore the dump"
+createdb_ rollback
+pg_restore -h 127.0.0.1 -p "$port" -U platform -d rollback "$work/pre-upgrade.dump"
+migrate_with "$work/release" rollback "$work/rollback-migrate.log"
+restored="$(psql_ -d rollback -tA -c 'SELECT count(*) FROM drizzle.__drizzle_migrations')"
+if [ "$restored" != "$release_migrations" ]; then
+  echo "the $from_tag migrator found $((restored - release_migrations)) pending migrations on the restored dump" >&2
+  exit 1
+fi
+psql_ -d rollback -v label=rollback -f "$scripts/upgrade-rehearsal-snapshot.sql"
+psql_ -d rollback -v label=rollback -f "$scripts/upgrade-rehearsal-rows.sql"
+psql_ -d rollback -f "$scripts/upgrade-rehearsal-rollback-assert.sql"
+echo "ok: $restored migrations, nothing pending; every restored row and count identical to the pre-upgrade snapshot"
+
+step "done"

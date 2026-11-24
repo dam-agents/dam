@@ -93,7 +93,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .getting-started,
-  .getting-started * {
+  .getting-started *,
+  [data-testid="getting-started-celebration"],
+  [data-testid="getting-started-celebration"] * {
     animation-duration: 0.01ms !important;
     animation-delay: 0ms !important;
   }

@@ -15,6 +15,7 @@ import {
   rememberSessionPairInputSchema,
   clearSessionDefaultInputSchema,
   sessionDefaultsViewSchema,
+  setToolApprovalInputSchema,
   sessionPairInputSchema,
   sessionPairSchema,
   harnessConfigStatusInputSchema,
@@ -99,6 +100,13 @@ export const harnessConfigRouter = t.router({
     .use(agentPermission("settings", (input) => agentTarget(input.agentId)))
     .mutation(({ ctx, input }) =>
       ctx.harnessConfig.clearSessionDefault(input.agentId, input.kind),
+    ),
+
+  setToolApproval: manageAgentsProcedure
+    .input(setToolApprovalInputSchema)
+    .use(agentPermission("settings", (input) => agentTarget(input.agentId)))
+    .mutation(({ ctx, input }) =>
+      ctx.harnessConfig.setToolApproval(input.agentId, input.toolApproval),
     ),
 
   set: manageAgentsProcedure

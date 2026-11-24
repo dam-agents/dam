@@ -34,6 +34,7 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `ScheduleFired` | `schedule_fire` | schedules |
 | `ConnectionCreated` | `connection_added` | connections |
 | `ConnectionRemoved` | `connection_removed` | connections |
+| `ConnectionCredentialChanged` | _elsewhere_ | connections |
 | `FilesImported` | `files_imported` | agent-proxies/import-proxy, files |
 | `ContributionApplyFailed` | `contribution_apply_failed` | runtime-delivery |
 | `ContributionRecovered` | `contribution_recovered` | runtime-delivery |
@@ -52,7 +53,7 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `ScheduleDeleted` | _elsewhere_ | schedules |
 | `SchedulePrecheckReported` | _elsewhere_ | schedules |
 | `HarnessConfigChanged` | `harness_config_changed` | harness-config |
-| `AttentionChanged` | _elsewhere_ | attention, cost-reviews, harness-config, outage-alerts |
+| `AttentionChanged` | _elsewhere_ | assistant-schedules, attention, cost-reviews, harness-config, invocations, outage-alerts |
 | `ArtifactCreated` | _elsewhere_ | artifact-library |
 | `ArtifactUpdated` | _elsewhere_ | artifact-library |
 | `ArtifactDeleted` | `artifact_deleted` | artifact-library |
@@ -76,8 +77,10 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `IdentityLinked` | _elsewhere_ | channels |
 | `AgentOutOfMemory` | `agent_oom` | agents |
 | `AgentResourceRemoved` | _elsewhere_ | agents |
-| `AvatarUnlocked` | _elsewhere_ | getting-started |
-| `GettingStartedReset` | _elsewhere_ | getting-started |
+| `AvatarUnlocked` | _elsewhere_ | assistants, getting-started |
+| `GettingStartedReset` | _elsewhere_ | assistants |
+| `AssistantUsed` | _elsewhere_ | assistants |
+| `AssistantFirstResultRecorded` | _elsewhere_ | assistants |
 | `CostReviewStarted` | `cost_review_started` | cost-reviews |
 | `CostReviewDismissed` | `cost_review_dismissed` | cost-reviews |
 

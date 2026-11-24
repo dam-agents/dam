@@ -1,13 +1,12 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
-import { GithubStepsCallout } from "../forms/github-steps-callout.js";
+import type { ConnectionHolder } from "../hooks/use-connection-holders.js";
 import { connectionKindSubtitle } from "../lib/catalog-providers.js";
 import type {
   RowGrantControls,
   RowMaintenanceActions,
 } from "./catalog-connection-row.js";
 import { CatalogConnectionRow } from "./catalog-connection-row.js";
-import { activeInstallUrl } from "./github-app-install-hint.js";
 
 interface Props {
   connection: ConnectionView;
@@ -18,7 +17,7 @@ interface Props {
   deleting?: boolean;
   maintenance?: RowMaintenanceActions;
   onRemove?: () => void;
-  onNewChild?: () => void;
+  usedBy?: readonly ConnectionHolder[];
   bare?: boolean;
 }
 
@@ -31,18 +30,11 @@ export function ConnectionRowCard({
   deleting,
   maintenance,
   onRemove,
-  onNewChild,
+  usedBy,
   bare = false,
 }: Props) {
-  const needsInstall = activeInstallUrl(connection) !== null;
   return (
     <div className={bare ? undefined : "rounded-lg border border-border"}>
-      {needsInstall && (
-        <GithubStepsCallout
-          templateId={connection.templateId}
-          className="mx-3 mt-3"
-        />
-      )}
       <CatalogConnectionRow
         connection={connection}
         tag={connectionKindSubtitle(connection, template)}
@@ -53,7 +45,7 @@ export function ConnectionRowCard({
         deleting={deleting}
         maintenance={maintenance}
         onRemove={onRemove}
-        onNewChild={onNewChild}
+        usedBy={usedBy}
       />
     </div>
   );

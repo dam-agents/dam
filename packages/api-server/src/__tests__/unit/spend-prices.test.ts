@@ -10,12 +10,16 @@ import {
 const book = (operatorPrices: PriceBook["operatorPrices"] = []): PriceBook => ({
   operatorPrices,
   anthropicTable: [],
+  lists: [],
 });
 
 const query: PriceQuery = {
   provider: "curve-bender-deployment",
   pathModel: "rits/zai-org/glm-5-3",
   replyModel: null,
+  modelGroup: null,
+  replyCostMicros: null,
+  webSearches: 0,
 };
 
 describe("deployment CurveBender pricing", () => {

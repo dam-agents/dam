@@ -1,11 +1,13 @@
 import { t } from "./trpc.js";
 import { agentsRouter } from "./modules/agents/router.js";
+import { assistantsRouter } from "./modules/assistants/router.js";
 import { apiKeysRouter } from "./modules/api-keys/router.js";
 import { artifactLibraryRouter } from "./modules/artifact-library/router.js";
 import { budgetsRouter } from "./modules/budgets/router.js";
 import { loginTestimonialsRouter } from "./modules/login-testimonials/router.js";
 import { attentionRouter } from "./modules/attention/router.js";
 import { costReviewsRouter } from "./modules/cost-reviews/router.js";
+import { securityChecksRouter } from "./modules/security-checks/router.js";
 import { approvalsRouter } from "./modules/approvals/router.js";
 import { caseStudiesRouter } from "./modules/case-studies/router.js";
 import { channelsRouter } from "./modules/channels/router.js";
@@ -13,6 +15,7 @@ import { chatFormsRouter } from "./modules/chat-forms/router.js";
 import { connectionsRouter } from "./modules/connections/router.js";
 import { e2eRouter } from "./modules/e2e/router.js";
 import { egressRulesRouter } from "./modules/egress-rules/router.js";
+import { webSearchRouter } from "./modules/web-search/router.js";
 import { environmentsRouter } from "./modules/environments/router.js";
 import { eventsRouter } from "./modules/events/router.js";
 import { invocationsRouter } from "./modules/invocations/router.js";
@@ -31,7 +34,6 @@ import { sidebarOrderRouter } from "./modules/sidebar-order/router.js";
 import { skillsRouter } from "./modules/skills/router.js";
 import { spendRouter } from "./modules/spend/router.js";
 import { starterKitsRouter } from "./modules/starter-kits/router.js";
-import { reposRouter } from "./modules/repos/router.js";
 import { metricsRouter } from "./modules/metrics/router.js";
 import { telemetryRouter } from "./modules/telemetry/router.js";
 import { templatesRouter } from "./modules/templates/router.js";
@@ -40,8 +42,8 @@ import { usageRouter } from "./modules/usage/router.js";
 
 export const appRouter = t.router({
   templates: templatesRouter,
-  repos: reposRouter,
   agents: agentsRouter,
+  assistants: assistantsRouter,
   schedules: schedulesRouter,
   channels: channelsRouter,
   connections: connectionsRouter,
@@ -49,7 +51,9 @@ export const appRouter = t.router({
   approvals: approvalsRouter,
   attention: attentionRouter,
   costReviews: costReviewsRouter,
+  securityChecks: securityChecksRouter,
   egressRules: egressRulesRouter,
+  webSearch: webSearchRouter,
   invocations: invocationsRouter,
   environments: environmentsRouter,
   starterKits: starterKitsRouter,

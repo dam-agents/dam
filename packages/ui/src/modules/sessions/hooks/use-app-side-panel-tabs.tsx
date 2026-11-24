@@ -1,15 +1,20 @@
 import { useAttention } from "../../home/api/queries.js";
 import { useDefaultModelNotices } from "../../home/hooks/use-default-model-notices.js";
 import { useOutageAlerts } from "../../home/hooks/use-outage-alerts.js";
+import { useOwnerQuestionNotices } from "../../home/hooks/use-owner-question-notices.js";
 import { useWaitingApprovals } from "../../home/hooks/use-waiting-approvals.js";
+import { useSecurityCheckNotices } from "../../security-checks/hooks/use-security-check-notices.js";
 import type { SidePanelTabProps } from "../components/side-panel-bar.js";
 
 export function useAppSidePanelTabs(): Pick<SidePanelTabProps, "badges"> {
+  const attention = useAttention().data;
   const waiting =
     useWaitingApprovals().length +
     useDefaultModelNotices().waiting.length +
     useOutageAlerts().waiting.length +
-    ((useAttention().data?.costReviews.length ?? 0) > 0 ? 1 : 0);
+    useOwnerQuestionNotices().waiting.length +
+    useSecurityCheckNotices().waiting.length +
+    ((attention?.costReviews.length ?? 0) > 0 ? 1 : 0);
   return {
     badges: {
       approvals: {

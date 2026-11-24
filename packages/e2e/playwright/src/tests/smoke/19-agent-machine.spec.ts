@@ -23,6 +23,7 @@ import {
   writeHomeFile,
 } from "../../lib/backend.js";
 import { harnessName } from "../../lib/fixtures.js";
+import { type KeepAwake, keepAwake } from "../../lib/keep-awake.js";
 
 const markerPath = "e2e-backend-marker.txt";
 const prScope = process.env.E2E_SCOPE === "pr";
@@ -33,6 +34,8 @@ let api: ApiClient;
 const token = refreshingToken();
 let agentId = "";
 let agentName = "";
+let keeping: KeepAwake | undefined;
+const wake = () => api.agents.wake.mutate({ id: agentId });
 const marker = `home-survives-${randomUUID()}`;
 const probeService = "e2e-probe";
 const probeStopped = `/home/agent/${probeService}.stopped`;
@@ -55,12 +58,12 @@ test.beforeAll(async () => {
   api = createRefreshingApiClient(token);
   await acceptTerms(api);
   agentName = "e2e-vm-lifecycle";
-  agentId = await createAgentOn(api, agentName, harnessName, {
-    neverIdle: true,
-  });
+  agentId = await createAgentOn(api, agentName, harnessName);
+  keeping = keepAwake(wake);
 });
 
 test.afterAll(async () => {
+  await keeping?.stop();
   if (agentId) await api.agents.delete.mutate({ id: agentId });
 });
 
@@ -128,7 +131,7 @@ test("keeps /tmp and /var/tmp as directories of the root", async () => {
   expect(guest.split("\n")).toEqual(["0", "1777 root", "1777 root"]);
 });
 
-// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services. A fresh machine's runlevels hold only the image's service that runs the agent's own services, and platform-env, which serves the Environment Link only on an Environment. The test then adds a system service of its own to the default runlevel and starts it, as an agent does, after user.root, so that openrc's shutdown stops it first: the shutdown's window is shared and best-effort, and on a loaded host user.root's stop, a whole openrc of the user's own, spent it before the probe's turn; and a Startup Item, an openrc user service in ~/.config/rc that runs as root; openrc stops only a started service, and the hibernate-and-wake test reads back the service's stop and its start at the boot, and the item started again. The item records PLATFORM_GH_TOKEN_AVAILABLE, which the runtime sets and openrc's env filter drops, so only the runtime's ~/.config/rc/profile.env can give it to the item, at a start from the shell and at the boot.
+// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services. A fresh machine's runlevels hold only the image's service that runs the agent's own services; the Environment Link is platform-init's, not a service of the image. The test then adds a system service of its own to the default runlevel and starts it, as an agent does, after user.root, so that openrc's shutdown stops it first: the shutdown's window is shared and best-effort, and on a loaded host user.root's stop, a whole openrc of the user's own, spent it before the probe's turn; and a Startup Item, an openrc user service in ~/.config/rc that runs as root; openrc stops only a started service, and the hibernate-and-wake test reads back the service's stop and its start at the boot, and the item started again. The item records PLATFORM_GH_TOKEN_AVAILABLE, which the runtime sets and openrc's env filter drops, so only the runtime's ~/.config/rc/profile.env can give it to the item, at a start from the shell and at the boot.
 test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async () => {
   const guest = inGuest(
     agentId,
@@ -142,8 +145,8 @@ test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async
       agentId,
       "find /etc/runlevels -mindepth 2 -printf '%P\\n' | sort",
     ).trim(),
-    "a fresh machine starts only the agent's own services and the Environment Link",
-  ).toBe("default/platform-env\ndefault/user.root");
+    "a fresh machine starts only the agent's own services",
+  ).toBe("default/user.root");
   inGuest(
     agentId,
     [
@@ -232,7 +235,7 @@ test("keeps a file written to HOME", async () => {
   });
 });
 
-// TEST_SCENARIO: a cron schedule's fire reaches the harness. The api-server delivers it over the runtime channel, so a fire that never lands names that channel as the broken part. This spec runs alone at the end of the suite, and a pull request runs a reduced set, so both fire the schedule with run-now, which commits and delivers the same trigger, rather than wait up to a minute for the cron; the merge queue's and the nightly run's full run waits for the cron itself, so the scheduler's own fire stays covered there. The schedule's next occurrence is read either way: on the cron path it shows the fire scheduled the next occurrence, and run-now leaves the cron where it was.
+// TEST_SCENARIO: a cron schedule's fire reaches the harness. The api-server delivers it over the runtime channel, so a fire that never lands names that channel as the broken part. This spec runs alone at the end of the suite, and a pull request runs a reduced set, so both fire the schedule with run-now, which commits and delivers the same trigger, rather than wait up to a minute for the cron; the full run on a push to main and the nightly run waits for the cron itself, so the scheduler's own fire stays covered there. The schedule's next occurrence is read either way: on the cron path it shows the fire scheduled the next occurrence, and run-now leaves the cron where it was.
 test("takes a scheduled fire", async () => {
   test.setTimeout(300_000);
   const task = `e2e-backend-schedule-${randomUUID()}`;
@@ -274,10 +277,12 @@ test("takes a scheduled fire", async () => {
 // TEST_SCENARIO: sleep hibernates the agent, and wake brings it back: a stop and a boot of the same machine, and HOME is its disk, so the marker must read back and the chat must answer after the boot. The openrc service the agent added to the default runlevel ran its stop_post on the stop, and runs again after the boot.
 test("hibernates and wakes with HOME intact", async ({ page }) => {
   test.setTimeout(300_000);
+  await keeping?.stop();
   await api.agents.sleep.mutate({ id: agentId });
   await waitAgentState(api, agentId, "hibernated");
-  await api.agents.wake.mutate({ id: agentId });
+  await wake();
   await waitAgentState(api, agentId, "running");
+  keeping = keepAwake(wake);
   await expectHomeFile(token, agentId, markerPath, marker);
   const guest = inGuest(
     agentId,

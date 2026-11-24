@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { ApprovalActionsMenu } from "../../approvals/components/approval-actions-menu.js";
+import { ChildRuleRows } from "../../approvals/components/child-rule-rows.js";
 import { useApprovalActions } from "../../approvals/hooks/use-approval-actions.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import {
@@ -12,11 +13,13 @@ import {
   approvalHeadline,
   approvalHideHint,
   approvalReason,
+  childRulesGroupCopy,
 } from "../lib/approval-copy.js";
 
 interface Props {
   approval: ApprovalView;
   ids?: readonly string[];
+  members?: readonly ApprovalView[];
   agentName: string;
   avatarName: string | undefined;
   avatar: string | null | undefined;
@@ -29,6 +32,7 @@ interface Props {
 export function FeedApprovalCard({
   approval,
   ids = [approval.id],
+  members = [approval],
   agentName,
   avatarName,
   avatar,
@@ -39,7 +43,8 @@ export function FeedApprovalCard({
 }: Props) {
   const { actions, primary, inflight, hostLabel, expiredNote, openSettings } =
     useApprovalActions(approval, ids);
-  const reason = approvalReason(approval);
+  const grouped = childRulesGroupCopy(members);
+  const reason = grouped?.reason ?? approvalReason(approval);
   const { data: connections } = useAppConnections();
   const connectionName = (id: string) =>
     connections?.find((connection) => connection.id === id)?.name;
@@ -82,21 +87,27 @@ export function FeedApprovalCard({
         </button>
       </div>
 
-      <div className="mt-3 flex min-w-0 items-center gap-2 overflow-hidden rounded-md border border-border/50 bg-muted/40 px-2.5 py-1.5">
-        <span
-          className={cn(
-            "min-w-0 font-mono text-sm text-muted-foreground",
-            approval.type !== "spend_limit" && "truncate",
-          )}
-        >
-          {approvalDetail(approval, connectionName)}
-        </span>
-        {ids.length > 1 && (
-          <span className="ml-auto shrink-0 text-sm text-muted-foreground">
-            {ids.length} requests
+      {grouped ? (
+        <div className="mt-3">
+          <ChildRuleRows approvals={members} />
+        </div>
+      ) : (
+        <div className="mt-3 flex min-w-0 items-center gap-2 overflow-hidden rounded-md border border-border/50 bg-muted/40 px-2.5 py-1.5">
+          <span
+            className={cn(
+              "min-w-0 font-mono text-sm text-muted-foreground",
+              approval.type !== "spend_limit" && "truncate",
+            )}
+          >
+            {approvalDetail(approval, connectionName)}
           </span>
-        )}
-      </div>
+          {ids.length > 1 && (
+            <span className="ml-auto shrink-0 text-sm text-muted-foreground">
+              {ids.length} requests
+            </span>
+          )}
+        </div>
+      )}
 
       {reason && (
         <p

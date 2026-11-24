@@ -1,12 +1,13 @@
 import type {
   SessionCategory,
   SpendAmount,
+  SpendAwaiting,
   SpendBreakdown,
   SpendCounts,
 } from "api-server-api";
 import { UNIT_RANK } from "./units.js";
 
-export interface BreakdownRow extends SpendAmount, SpendCounts {
+export interface BreakdownRow extends SpendAmount, SpendCounts, SpendAwaiting {
   readonly day: string;
   readonly payer: string;
   readonly connectionId: string;
@@ -28,21 +29,25 @@ const SUB_AGENTS_SHOWN = 5;
 
 const callerOf = (row: BreakdownRow) => row.callingAgentId || row.payer;
 
+type Counts = SpendCounts & SpendAwaiting;
+
 const COUNT_FIELDS = [
   "calls",
   "estimatedCalls",
+  "awaitingCalls",
   "uncachedInputTokens",
   "outputTokens",
   "cacheReadTokens",
   "cacheWrite5mTokens",
   "cacheWrite1hTokens",
   "webSearches",
-] as const satisfies readonly (keyof SpendCounts)[];
+] as const satisfies readonly (keyof Counts)[];
 
-function zeroCounts(): SpendCounts {
+function zeroCounts(): Counts {
   return {
     calls: 0,
     estimatedCalls: 0,
+    awaitingCalls: 0,
     uncachedInputTokens: 0,
     outputTokens: 0,
     cacheReadTokens: 0,
@@ -52,8 +57,16 @@ function zeroCounts(): SpendCounts {
   };
 }
 
-function addCounts(into: SpendCounts, row: SpendCounts): void {
+function addCounts(into: Counts, row: Counts): void {
   for (const field of COUNT_FIELDS) into[field] += row[field];
+}
+
+function addCalls(
+  into: SpendAwaiting & { calls: number },
+  row: BreakdownRow,
+): void {
+  into.calls += row.calls;
+  into.awaitingCalls += row.awaitingCalls;
 }
 
 function group<T extends SpendAmount>(
@@ -103,10 +116,9 @@ function callingAgentEntries(
       unit: row.unit,
       costMicros: 0,
       calls: 0,
+      awaitingCalls: 0,
     }),
-    (into, row) => {
-      into.calls += row.calls;
-    },
+    addCalls,
   );
 }
 
@@ -181,10 +193,13 @@ function capSubAgents(rows: readonly BreakdownRow[]): {
       amounts: group<SpendBreakdown["otherSubAgents"]["amounts"][number]>(
         rows.filter((row) => left.has(callerOf(row))),
         () => "",
-        (row) => ({ unit: row.unit, costMicros: 0, calls: 0 }),
-        (into, row) => {
-          into.calls += row.calls;
-        },
+        (row) => ({
+          unit: row.unit,
+          costMicros: 0,
+          calls: 0,
+          awaitingCalls: 0,
+        }),
+        addCalls,
       ).sort(byUnitThenCost(() => "")),
     },
   };
@@ -284,10 +299,9 @@ export function foldBreakdown(input: {
       unit: row.unit,
       costMicros: 0,
       calls: 0,
+      awaitingCalls: 0,
     }),
-    (into, row) => {
-      into.calls += row.calls;
-    },
+    addCalls,
   ).sort(byUnitThenCost((entry) => entry.agentId));
 
   const byModel = group<Entry<"byModel">>(
@@ -332,8 +346,11 @@ export function foldBreakdown(input: {
         category: sessionTypeOf(row),
         unit: row.unit,
         costMicros: 0,
+        awaitingCalls: 0,
       }),
-      () => {},
+      (into, row) => {
+        into.awaitingCalls += row.awaitingCalls;
+      },
     ).sort(byUnitThenCost((entry) => entry.category)),
     ...(input.scope === "payer"
       ? capSubAgents(rows)

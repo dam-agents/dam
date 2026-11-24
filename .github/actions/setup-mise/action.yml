@@ -28,8 +28,8 @@ runs:
     # every mise.lock change. Keyed by the maven version mise.lock pins and by
     # this file, which pins mise, whose install layout the entry holds; per
     # arch. A change to this file falls back on the same maven version's older
-    # entry: the exact key missed in every merge group between such a change
-    # and main's next save, and each miss downloaded maven again. Only main
+    # entry: the exact key missed in every run between such a change and
+    # main's next save, and each miss downloaded maven again. Only main
     # writes it, at the end, for the reason the tool cache gives.
     - id: maven-version
       if: inputs.install_args == ''
@@ -68,7 +68,7 @@ runs:
     - shell: bash
       run: |
         [ -n "${SOURCE_DATE_EPOCH:-}" ] || echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
-    # A PR or a merge group never saves the tool cache: a branch must not
+    # A PR never saves the tool cache: a branch must not
     # write an entry main then restores. mise-action keys the cache by the
     # tools a job names, so
     # each install_args was its own entry, all of them rotating with every
@@ -76,18 +76,18 @@ runs:
     # Only the full install is cached, on x64 alone: a subset installs in
     # seconds without one (mirror-images: 3 s), and on arm64 only
     # build-images installs everything, on main.
-    # cache_save is off for a pull request and a merge group, so those saves
+    # cache_save is off for a pull request, so those saves
     # never reach this cache. The writers left are the default-branch schedules
     # and dispatches, pushes of main, and the ref's own pushes and dispatches;
     # GitHub scopes a non-default ref's entry to that ref, so a release reads
     # main's entry and its own tag's, and nothing else.
     # jactionlint ignore=cache-poisoning
-    - uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
+    - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
       with:
-        version: "2026.10.5"
+        version: "2026.11.5"
         install_args: ${{ inputs.install_args }}
         cache: ${{ inputs.cache == 'true' && inputs.install_args == '' && runner.arch == 'X64' }}
-        cache_save: ${{ github.event_name != 'pull_request' && github.event_name != 'merge_group' }}
+        cache_save: ${{ github.event_name != 'pull_request' }}
     - if: inputs.quay-username != ''
       shell: bash
       env:

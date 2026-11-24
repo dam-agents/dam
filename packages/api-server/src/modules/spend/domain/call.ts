@@ -1,4 +1,8 @@
-import { callCostMicros, type ProxyCostHeaders } from "./cost.js";
+import {
+  callCostMicros,
+  proxyCostMicros,
+  type ProxyCostHeaders,
+} from "./cost.js";
 import { lookupPrice, type PriceBook, type PriceSource } from "./prices.js";
 import { payingProvider, unitOf, type SpendUnit } from "./units.js";
 import type { NormalizedUsage } from "./usage.js";
@@ -40,6 +44,8 @@ export interface CallRecord {
   readonly path: string;
   readonly dialect: ApiDialect;
   readonly model: string | null;
+  readonly modelGroup: string | null;
+  readonly replay: boolean;
   readonly usage: RawUsage;
   readonly status: number | null;
   readonly replyBytes: number | null;
@@ -58,7 +64,8 @@ export type EstimateReason =
   | "model-unpriced"
   | "usage-missing"
   | "cost-unknown"
-  | "record-missing";
+  | "record-missing"
+  | "awaiting-price";
 
 export type CallMeasure =
   | { readonly kind: "forget" }
@@ -69,6 +76,7 @@ export type CallMeasure =
       readonly unit: SpendUnit;
       readonly model: string;
       readonly priceSource: PriceSource;
+      readonly priceModel: string;
       readonly needsReferenceCost: boolean;
       readonly estimateReasons: readonly EstimateReason[];
       readonly amounts: CallAmounts;
@@ -85,6 +93,19 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
 
   const { provider, ambiguous } = payingProvider(record.providers);
   const usage = normalizeUsage(record.dialect, record.usage);
+  const priceModel = record.modelGroup ?? record.model ?? "";
+  if (record.replay)
+    return {
+      kind: "measured",
+      provider,
+      unit: unitOf(provider),
+      model: record.model ?? UNKNOWN_MODEL,
+      priceSource: "replay",
+      priceModel,
+      needsReferenceCost: false,
+      estimateReasons: [],
+      amounts: callAmounts(usage, 0, false, false, record.durationMs),
+    };
   const outputShort =
     record.final &&
     record.dialect !== "openai-embeddings" &&
@@ -102,15 +123,22 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
     provider,
     replyModel: record.model,
     pathModel: bedrockPathModel(record.path),
+    modelGroup: record.modelGroup,
+    replyCostMicros: proxyCostMicros(record.proxyCost),
+    webSearches: metered.webSearches,
   });
-  const cost = callCostMicros(price, metered);
-  const needsReferenceCost = record.final && (cost === null || !reported);
+  const awaiting = reported && price.source === "awaiting";
+  const unanswered =
+    record.final && !reported && record.status === null && !record.replyBytes;
+  const cost = unanswered ? 0 : callCostMicros(price, metered);
+  const needsReferenceCost =
+    record.final && !unanswered && (cost === null || !reported);
   const estimateReasons = (
     [
       [outputShort && !record.complete, "stream-cut"],
       [outputShort && record.complete, "output-uncounted"],
       [ambiguous, "providers-ambiguous"],
-      [price.source === "estimate", "model-unpriced"],
+      [awaiting, "awaiting-price"],
       [record.final && !reported, "usage-missing"],
       [record.final && reported && cost === null, "cost-unknown"],
     ] as const
@@ -121,22 +149,41 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
     provider,
     unit: unitOf(provider),
     model: record.model ?? UNKNOWN_MODEL,
-    priceSource: price.source,
+    priceSource:
+      price.source === "awaiting" && !awaiting ? "estimate" : price.source,
+    priceModel,
     needsReferenceCost,
     estimateReasons,
-    amounts: {
-      costMicros: cost ?? 0,
-      uncachedInputTokens: metered.uncachedInputTokens,
-      outputTokens: metered.outputTokens,
-      cacheReadTokens: metered.cacheReadTokens,
-      cacheWrite5mTokens: metered.cacheWrite5mTokens,
-      cacheWrite1hTokens:
-        metered.cacheWrite1hTokens + metered.cacheWriteUnsplitTokens,
-      webSearches: metered.webSearches,
-      calls: 1,
-      estimatedCalls: estimated ? 1 : 0,
-      durationMs: record.durationMs,
-    },
+    amounts: callAmounts(
+      metered,
+      cost ?? 0,
+      estimated,
+      awaiting,
+      record.durationMs,
+    ),
+  };
+}
+
+function callAmounts(
+  usage: NormalizedUsage,
+  costMicros: number,
+  estimated: boolean,
+  awaiting: boolean,
+  durationMs: number,
+): CallAmounts {
+  return {
+    costMicros,
+    uncachedInputTokens: usage.uncachedInputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens,
+    cacheWrite5mTokens:
+      usage.cacheWrite5mTokens + usage.cacheWriteUnsplitTokens,
+    cacheWrite1hTokens: usage.cacheWrite1hTokens,
+    webSearches: usage.webSearches,
+    calls: 1,
+    estimatedCalls: estimated ? 1 : 0,
+    awaitingCalls: awaiting ? 1 : 0,
+    durationMs,
   };
 }
 

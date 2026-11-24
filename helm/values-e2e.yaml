@@ -6,11 +6,19 @@
 e2e:
   enabled: true
 
+# The install keeps the chart's `experimental` mode, so the assistant is on by
+# default exactly as in a release. The suite's shared users store the switch
+# off for themselves (01-auth.spec.ts, once they accepted the Terms), which
+# keeps every other lane deterministic, and 16-assistant.spec.ts signs in as its
+# own users, which have stored nothing and so keep the default.
+#
+# Two accounts of its own, so they are fresh on the first run and on every
+# rerun against the same cluster: nothing else signs in as them.
 # Only the mock image is built for the e2e cluster — disable the agent
 # templates values-local.yaml leaves enabled (default and nous). Any
 # enabled template is rendered, and cluster:install then imports its
 # dist/oci tar; in CI that image is neither pulled (only
-# controller/api-server/ui/keycloak/mock are) nor built (SKIP_IMAGE_BUILD=1),
+# controller/api-server/keycloak/mock are) nor built (SKIP_IMAGE_BUILD=1),
 # so a stray enabled template fails the load on the missing tar.
 harnessTemplates:
   default:
@@ -27,6 +35,15 @@ virtualization:
     resources:
       requests:
         cpu: 50m
+    # Every e2e owner shares one roll a runner wide, and an owner's runner that
+    # waits for a machine which never comes back holds its place for the whole
+    # settle timeout. The chart's 10m is as long as the runner release spec
+    # waits for its own reboot, so one such runner made that spec fail at
+    # random. A roll or hand-off here takes 20 s to 1 minute, so 2m still
+    # lets the slowest one settle, and bounds a stuck one well inside the
+    # spec's own timeouts.
+    rollout:
+      settleTimeout: 2m
 
 # Keycloak's first boot is the longest step of the e2e install: the chart's
 # realm import hook, and so the install, waits for it. On a CI run at the
@@ -35,6 +52,15 @@ virtualization:
 # runner's cores are mostly idle while they run. Only the limits rise: the
 # requests stay, so nothing else loses room on the single node.
 keycloak:
+  # Two accounts the assistant spec signs in as; no other spec uses them, so
+  # they hold nothing stored and the assistant stays on by default for them.
+  extraTestUsers:
+    - username: dammy-first
+      password: dammy-e2e
+      firstName: First
+    - username: dammy-owner
+      password: dammy-e2e
+      firstName: Owner
   resources:
     limits:
       cpu: "2"

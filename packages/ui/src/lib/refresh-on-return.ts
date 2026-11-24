@@ -6,6 +6,7 @@ const NO_PUSH_PATHS: readonly KeyPath[] = [
   ["connections", "list"],
   ["connections", "getAgentConnections"],
   ["connections", "getProviderBalance"],
+  ["connections", "githubAppInstallations"],
   ["connections", "listTemplates"],
   ["channels", "telegramBot"],
   ["agents", "listTelegramChats"],

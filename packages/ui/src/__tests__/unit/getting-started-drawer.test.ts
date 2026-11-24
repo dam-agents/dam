@@ -14,7 +14,6 @@ const fake = vi.hoisted(() => ({
 
 vi.mock("../../hooks/use-is-desktop.js", () => ({
   useIsDesktop: () => false,
-  useIsWideDesktop: () => false,
 }));
 vi.mock("../../store.js", async () => {
   const { useSyncExternalStore } = await import("react");

@@ -22,6 +22,13 @@ export interface ConnectionFamily {
   title: string;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a Template's declaration that its Connection is read only unless the owner gives it full access. `host` is the MCP server the gateway inspects, `readTools` are the only tools a read-only Connection may call there, and `fullAccessLabel` is the Template's own name for full access. A tool the server adds later is not in the list, so a read-only Connection cannot call it.
+export interface TemplateToolAccess {
+  host: string;
+  readTools: readonly string[];
+  fullAccessLabel: string;
+}
+
 interface TemplateCommon {
   id: string;
   name: string;
@@ -31,7 +38,17 @@ interface TemplateCommon {
   description?: string;
   iconSlug?: string;
   contributions: Contribution[];
+  toolAccess?: TemplateToolAccess;
   extras?: Record<string, unknown>;
+  hostChoices?: readonly string[];
+  retiredHosts?: readonly string[];
+}
+
+export interface OperatorHostApp {
+  host: string;
+  clientId?: string;
+  clientSecret?: string;
+  appSlug?: string;
 }
 
 export interface OAuthConnectionTemplate extends TemplateCommon {
@@ -45,9 +62,12 @@ export interface OAuthConnectionTemplate extends TemplateCommon {
   tokenEndpointAcceptJson?: boolean;
   extraAuthParams?: Record<string, string>;
   dynamicRegistration?: boolean;
+  mcpUrl?: string;
+  registrationClientName?: string;
   setupUrl?: string;
   localhostCallbackAlias?: string;
   credentialFamily?: string;
+  hostApps?: readonly OperatorHostApp[];
 }
 
 export interface ClientCredentialsConnectionTemplate extends TemplateCommon {
@@ -125,6 +145,43 @@ export interface FamilyCredsPreset {
   hasSecret: boolean;
 }
 
+export function operatorAppFor(
+  t: OAuthConnectionTemplate,
+  host: string | undefined,
+): Omit<OperatorHostApp, "host"> {
+  if (t.hostApps)
+    return t.hostApps.find((a) => host && a.host === hostnameOf(host)) ?? {};
+  return {
+    ...(t.clientId ? { clientId: t.clientId } : {}),
+    ...(t.clientSecret ? { clientSecret: t.clientSecret } : {}),
+    ...(typeof t.extras?.appSlug === "string"
+      ? { appSlug: t.extras.appSlug }
+      : {}),
+  };
+}
+
+export function hostnameOf(raw: string): string {
+  const trimmed = raw.trim();
+  try {
+    return new URL(
+      trimmed.includes("://") ? trimmed : `https://${trimmed}`,
+    ).hostname.toLowerCase();
+  } catch {
+    return trimmed.toLowerCase();
+  }
+}
+
+export function isRetiredHost(
+  t: ConnectionTemplate,
+  host: string | undefined,
+): boolean {
+  return !!host && (t.retiredHosts?.includes(hostnameOf(host)) ?? false);
+}
+
+export function isHostChoice(t: ConnectionTemplate, host: string): boolean {
+  return t.hostChoices?.includes(hostnameOf(host)) ?? false;
+}
+
 export function inheritsFamily(
   t: ConnectionTemplate,
 ): t is OAuthConnectionTemplate {
@@ -145,6 +202,7 @@ export function templateToView(
       ? { callbackUrl: applyCallbackAlias(oauthCallbackUrl, alias) }
       : {}),
     ...(familyPreset ? { credentialsFromFamily: true } : {}),
+    ...(t.hostChoices?.length ? { hostChoices: [...t.hostChoices] } : {}),
   };
   return {
     id: t.id,
@@ -157,6 +215,9 @@ export function templateToView(
     authKind: t.authKind,
     inputs: inputsFor(t, familyPreset),
     ...(Object.keys(extras).length > 0 ? { extras } : {}),
+    ...(t.toolAccess
+      ? { accessChoice: { fullAccessLabel: t.toolAccess.fullAccessLabel } }
+      : {}),
   };
 }
 
@@ -201,6 +262,7 @@ function inputsFor(
 
   switch (t.authKind) {
     case "oauth": {
+      if (t.dynamicRegistration && t.mcpUrl) return [];
       if (t.dynamicRegistration)
         return [
           required("url"),
@@ -212,12 +274,21 @@ function inputsFor(
       const urlsHavePlaceholder =
         (t.authorizationUrl?.includes("{host}") ?? false) ||
         (t.tokenUrl?.includes("{host}") ?? false);
+      const perHostApps = (t.hostApps?.length ?? 0) > 1;
       if (urlsHavePlaceholder) {
-        out.push(t.host ? overridable("host", t.host) : required("host"));
+        out.push(
+          perHostApps
+            ? required("host", { presetValue: t.hostChoices?.[0] })
+            : t.host
+              ? overridable("host", t.host)
+              : required("host"),
+        );
       }
       const clientId = t.clientId ?? familyPreset?.clientId;
       out.push(
-        clientId ? overridable("clientId", clientId) : required("clientId"),
+        clientId
+          ? overridable("clientId", perHostApps ? undefined : clientId)
+          : required("clientId"),
       );
       const hasSecret = !!t.clientSecret || (familyPreset?.hasSecret ?? false);
       out.push(
@@ -230,7 +301,7 @@ function inputsFor(
           typeof t.extras?.appSlug === "string" ? t.extras.appSlug : undefined;
         out.push(
           presetAppSlug
-            ? overridable("appSlug", presetAppSlug)
+            ? overridable("appSlug", perHostApps ? undefined : presetAppSlug)
             : optional("appSlug"),
         );
       }

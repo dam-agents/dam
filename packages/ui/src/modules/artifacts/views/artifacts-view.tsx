@@ -1,5 +1,5 @@
 import { Checkmark, Earth, Share } from "@carbon/icons-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { SlackColorIcon } from "@/components/brand-icons";
 import { Button } from "@/components/ui/button";
@@ -12,17 +12,34 @@ import {
 } from "@/components/ui/empty-hero";
 import { PageHeader } from "@/components/ui/page-header";
 
+import { useStore } from "../../../store.js";
+import { useAgentsList } from "../../agents/api/queries.js";
 import { useCreateDefaultAgent } from "../../agents/hooks/use-create-default-agent.js";
 import { useListedEnvironments } from "../../environments/api/queries.js";
+import { useOpenAgentChat } from "../../getting-started/hooks/use-open-agent-chat.js";
+import { ARTIFACT_PREFILL } from "../../getting-started/lib/tasks.js";
 import { SidePanelCloseScope } from "../../sessions/components/side-panel-close-button.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
 import { ChatArtifactsPanel } from "../components/chat-artifacts-panel.js";
 import { UploadArtifactDialog } from "../components/upload-artifact-dialog.js";
+import { useOpenArtifact } from "../hooks/use-open-artifact.js";
 
 export function ArtifactsView() {
   const artifacts = useArtifacts({}).data;
   const folders = useArtifactFolders().data;
   const environments = useListedEnvironments(true);
+  const routedArtifactId = useStore((s) => s.artifactId);
+  const openArtifact = useOpenArtifact();
+  const opened = useRef<string | null>(null);
+  useEffect(() => {
+    if (routedArtifactId === null) {
+      opened.current = null;
+      return;
+    }
+    if (opened.current === routedArtifactId) return;
+    opened.current = routedArtifactId;
+    void openArtifact(routedArtifactId);
+  }, [routedArtifactId, openArtifact]);
   if (
     artifacts?.length === 0 &&
     folders?.length === 0 &&
@@ -38,7 +55,7 @@ export function ArtifactsView() {
         <ChatArtifactsPanel
           agentId={null}
           open
-          className="h-[70dvh] overflow-hidden rounded-lg border border-border"
+          className="rounded-lg border border-border"
         />
       </SidePanelCloseScope>
     </>
@@ -47,6 +64,8 @@ export function ArtifactsView() {
 
 function ArtifactsEmpty() {
   const defaultAgent = useCreateDefaultAgent();
+  const hasAgent = useAgentsList().length > 0;
+  const openChat = useOpenAgentChat();
   const [uploading, setUploading] = useState(false);
   const bars = [30, 55, 45, 80, 60, 90, 70];
   return (
@@ -55,13 +74,19 @@ function ArtifactsEmpty() {
         title="Artifacts"
         actions={
           <>
-            <Button
-              size="lg"
-              onClick={() => void defaultAgent.create()}
-              disabled={!defaultAgent.ready}
-            >
-              Create agent
-            </Button>
+            {hasAgent ? (
+              <Button size="lg" onClick={() => void openChat(ARTIFACT_PREFILL)}>
+                Ask an agent for one
+              </Button>
+            ) : (
+              <Button
+                size="lg"
+                onClick={() => void defaultAgent.create()}
+                disabled={!defaultAgent.ready}
+              >
+                Create agent
+              </Button>
+            )}
             <Button
               size="lg"
               variant="outline"

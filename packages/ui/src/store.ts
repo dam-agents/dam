@@ -20,6 +20,10 @@ import {
   type GettingStartedSlice,
 } from "./modules/getting-started/store.js";
 import {
+  createOwnerQuestionsSlice,
+  type OwnerQuestionsSlice,
+} from "./modules/invocations/store.js";
+import {
   createDialogSlice,
   type DialogSlice,
 } from "./modules/platform/store/dialog.js";
@@ -39,6 +43,10 @@ import {
   createProcessesSlice,
   type ProcessesSlice,
 } from "./modules/processes/store.js";
+import {
+  type AgentSettingsSlice,
+  createAgentSettingsSlice,
+} from "./modules/sandboxes/store.js";
 import {
   claimDraftsFor,
   flushDraftsOnHide,
@@ -74,7 +82,9 @@ export type PlatformStore = DialogSlice &
   GettingStartedSlice &
   ProcessesSlice &
   SidePanelSlice &
-  SpendSlice;
+  SpendSlice &
+  AgentSettingsSlice &
+  OwnerQuestionsSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
@@ -93,6 +103,8 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createProcessesSlice(...a),
   ...createSidePanelSlice(...a),
   ...createSpendSlice(...a),
+  ...createAgentSettingsSlice(...a),
+  ...createOwnerQuestionsSlice(...a),
 }));
 
 let draftSyncStarted = false;

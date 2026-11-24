@@ -31,7 +31,7 @@ The launcher's workarounds are sandbox-only on purpose: each turns on only when 
 curl -fsSL https://mise.run | sh && export PATH="$HOME/.local/bin:$PATH"
 mise trust -a && mise install
 export IS_SANDBOX=1                        # every cluster:* / e2e:* task reads it
-.agents/skills/ccweb/scripts/pull-images   # api-server ui controller keycloak mock
+.agents/skills/ccweb/scripts/pull-images   # api-server controller keycloak mock
 K3S_LAUNCHER="$PWD/.agents/skills/ccweb/scripts/k3s-launcher" SKIP_IMAGE_BUILD=1 mise run e2e:install
 ```
 
@@ -46,9 +46,9 @@ It is idempotent: re-run after fixing whatever stopped it.
 No image build runs a container, so each builds here as on any Linux host; [`pull-images`](scripts/pull-images) is faster for images your change leaves alone.
 
 - **Unchanged code:** `pull-images` pulls CI's images.
-  api-server, ui and controller come from the newest main commit at or behind your merge base.
+  api-server and controller come from the newest main commit at or behind your merge base.
   keycloak and agents come via `image:resolve`.
-- **Changed controller, ui, api-server or keycloak:** `mise run //packages/<pkg>:oci` (keycloak's package is `keycloak-theme`), then `mise run cluster:import -- "$(.mise/tasks/image/resolve tar-path <component>)"`.
+- **Changed controller, api-server or keycloak:** `mise run //packages/<pkg>:oci` (keycloak's package is `keycloak-theme`), then `mise run cluster:import -- "$(.mise/tasks/image/resolve tar-path <component>)"`.
 - **Image gone from the node** (`ErrImageNeverPull` / `ImagePullBackOff` on `platform-*:latest`, typically after an eviction GC): pull it straight into containerd and re-tag it, e.g. `k3s ctr -n k8s.io images pull --platform linux/amd64 quay.io/dam-agents/mock:<tag> && k3s ctr -n k8s.io images tag --force quay.io/dam-agents/mock:<tag> docker.io/library/platform-mock:latest`.
 
 ## Disk

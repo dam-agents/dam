@@ -1,5 +1,6 @@
 import { Close, Search } from "@carbon/icons-react";
 import type { ConnectionTemplateView, StarterKitView } from "api-server-api";
+import type { ReactNode } from "react";
 import { useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ import {
   sortKits,
 } from "../lib/catalog-cards.js";
 import { KitCategoryTag } from "./kit-category-tag.js";
+import { KitPublisher } from "./kit-publisher.js";
 
 type Filter = StarterKitView["category"] | "all";
 
@@ -69,6 +71,9 @@ export function KitCard({
           </h3>
           <KitCategoryTag category={kit.category} />
         </div>
+        {kit.publisher && (
+          <KitPublisher publisher={kit.publisher} surface="tile" />
+        )}
         <p className="flex-1 text-sm text-muted-foreground">
           {kit.tagline ?? kit.description}
         </p>
@@ -118,45 +123,50 @@ export function KitFilterBar({
   filter,
   onFilterChange,
   tabs,
+  action,
 }: {
   query: string;
   onQueryChange: (q: string) => void;
   filter: Filter;
   onFilterChange: (f: Filter) => void;
   tabs: readonly { value: Filter; label: string }[];
+  action?: ReactNode;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
     <>
-      <div className="relative mb-4">
-        <Search
-          size={16}
-          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-        />
-        <Input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          placeholder="Search starter kits…"
-          aria-label="Search starter kits"
-          className="pl-9 pr-9"
-        />
-        {query && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Clear search"
-            tooltip="Clear search"
-            onClick={() => {
-              onQueryChange("");
-              inputRef.current?.focus();
-            }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
-          >
-            <Close size={16} />
-          </Button>
-        )}
+      <div className="mb-4 flex gap-3">
+        <div className="relative min-w-0 flex-1">
+          <Search
+            size={16}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
+            placeholder="Search starter kits…"
+            aria-label="Search starter kits"
+            className="pl-9 pr-9"
+          />
+          {query && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Clear search"
+              tooltip="Clear search"
+              onClick={() => {
+                onQueryChange("");
+                inputRef.current?.focus();
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+            >
+              <Close size={16} />
+            </Button>
+          )}
+        </div>
+        {action}
       </div>
       {tabs.length > 2 && (
         <Tabs

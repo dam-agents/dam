@@ -1,3 +1,11 @@
+import {
+  createChildEgressRequests,
+  type ChildEgressRequests,
+} from "./services/child-egress-requests.js";
+import {
+  createChildEgressRelease,
+  type ChildEgressRelease,
+} from "./services/child-egress-release.js";
 import type { Db } from "db";
 import type {
   ApprovalsService,
@@ -11,9 +19,18 @@ import {
 import { emit, EventType } from "../../events.js";
 import {
   createApprovalsService,
+  type ChildEgressAnswered,
   type EgressRuleWriter,
+  type WebSearchRuleWriter,
   type WrapperFrameSender,
 } from "./services/approvals-service.js";
+import {
+  createWebSearchGate,
+  type ModelCallBody,
+  type ScheduledSessions,
+  type WebSearchControl,
+  type WebSearchRules,
+} from "./services/web-search-gate.js";
 import {
   createApprovalsRelayService,
   type ApprovalsRelayService,
@@ -26,7 +43,12 @@ import {
   type ExtAuthzDecision,
   type ExtAuthzGate,
   type AgentIdentityResolver,
+  type WaitingRuleSpeaksFor,
 } from "./services/ext-authz-gate.js";
+import {
+  createReadOnlyGate,
+  type ReadOnlyConnections,
+} from "./services/read-only-gate.js";
 import {
   createSpendLimitQuestions,
   type SpendLimitQuestions,
@@ -37,6 +59,7 @@ import {
   type DeliverySweeper,
 } from "./services/delivery-sweeper.js";
 import { startWakeHeldCallsSaga } from "./sagas/wake-held-calls.js";
+export { startChildEgressAnsweredSaga } from "./sagas/child-egress-answered.js";
 import { createToolApprovalReports } from "./services/tool-approval-reports.js";
 import {
   createEgressProposals,
@@ -53,7 +76,12 @@ interface ComposeApprovalsServiceDeps {
   agentBinding: readonly string[] | "*";
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   egressRuleWriter: EgressRuleWriter;
+  webSearchRuleWriter: WebSearchRuleWriter;
   wrapperFrameSender: WrapperFrameSender;
+  childEgressSwitch?: {
+    turnOnForRootOf(driverId: string, decidedBy: string): Promise<void>;
+  };
+  childEgressAnswered?: ChildEgressAnswered;
 }
 
 export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
@@ -63,12 +91,15 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
   const service = createApprovalsService({
     repo,
     egressRuleWriter: deps.egressRuleWriter,
+    webSearchRuleWriter: deps.webSearchRuleWriter,
     wrapperFrameSender: deps.wrapperFrameSender,
     isAgentOwnedBy: deps.isAgentOwnedBy,
     ownerSub: deps.ownerSub,
     actor: deps.actor,
     actorEmail: deps.actorEmail,
     agentBinding: deps.agentBinding,
+    childEgressSwitch: deps.childEgressSwitch,
+    childEgressAnswered: deps.childEgressAnswered,
   });
   return { service };
 }
@@ -79,11 +110,18 @@ interface ComposeApprovalsSystemDeps {
   identityResolver: AgentIdentityResolver;
   ruleMatcher: EgressRuleMatcher;
   providerScopes: ProviderScopes;
+  readOnlyConnections: ReadOnlyConnections;
   attendance: EgressAttendance;
   spend: SpendCheck;
+  webSearch: {
+    control: WebSearchControl;
+    rules: WebSearchRules;
+    sessions: ScheduledSessions;
+  };
   wrapperFrameSender: WrapperFrameSender;
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
+  waitingRuleSpeaksFor: WaitingRuleSpeaksFor;
 }
 
 export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
@@ -104,8 +142,17 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     attendance: deps.attendance,
     spend: deps.spend,
     questions: createSpendLimitQuestions({ repo }),
+    webSearch: createWebSearchGate({
+      repo,
+      bus: deps.bus,
+      attendance: deps.attendance,
+      holdSeconds: deps.holdSeconds,
+      ...deps.webSearch,
+    }),
+    readOnly: createReadOnlyGate({ connections: deps.readOnlyConnections }),
     holdSeconds: deps.holdSeconds,
     platformAllowedAuthorities: deps.platformAllowedAuthorities,
+    waitingRuleSpeaksFor: deps.waitingRuleSpeaksFor,
   });
   const sweeper = createDeliverySweeper({
     repo,
@@ -173,14 +220,67 @@ export function composeEgressProposals(deps: {
   });
 }
 
+export function composeChildEgressRelease(deps: {
+  db: Db;
+  writer: EgressRuleWriter;
+  rootOf: (agentId: string) => Promise<string | null>;
+  answered?: ChildEgressAnswered;
+}): ChildEgressRelease {
+  return createChildEgressRelease({
+    repo: createApprovalsRepository(deps.db),
+    writer: deps.writer,
+    rootOf: deps.rootOf,
+    ...(deps.answered && { answered: deps.answered }),
+  });
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the requests a child's rules wait on with its owner, each with its host and request id, for a launch or an update to name them to the driver.
+export function childEgressWaiting(
+  db: Db,
+): (childId: string) => Promise<{ host: string; id: string }[]> {
+  const repo = createApprovalsRepository(db);
+  return async (childId) =>
+    (await repo.listPendingChildEgressRequests(childId)).flatMap((row) =>
+      row.payload.kind === "egress_proposal"
+        ? [{ host: row.payload.host, id: row.id }]
+        : [],
+    );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: which of the agents named have a rule their driver set that waits for the owner.
+export function childEgressWaitingAmong(
+  db: Db,
+): (agentIds: readonly string[]) => Promise<Set<string>> {
+  const repo = createApprovalsRepository(db);
+  return async (agentIds) =>
+    new Set(await repo.listAgentsWithPendingChildEgressRequests(agentIds));
+}
+
+export function composeChildEgressRequests(deps: {
+  db: Db;
+  ownerOf: (agentId: string) => Promise<string | null>;
+  nameOf: (agentId: string) => Promise<string | null>;
+  isEnvironment: (agentId: string) => Promise<boolean>;
+}): ChildEgressRequests {
+  return createChildEgressRequests({
+    repo: createApprovalsRepository(deps.db),
+    ownerOf: deps.ownerOf,
+    nameOf: deps.nameOf,
+    isEnvironment: deps.isEnvironment,
+  });
+}
+
 export function listPendingApprovalAgentIds(db: Db): Promise<string[]> {
   return createApprovalsRepository(db).listDistinctAgentIds();
 }
 
 export type {
+  ChildEgressRequests,
   EgressProposals,
   ApprovalsRelayService,
   ExtAuthzDecision,
+  WebSearchRuleWriter,
+  ModelCallBody,
   ExtAuthzGate,
   SpendLimitQuestions,
   WrapperFrameSender,

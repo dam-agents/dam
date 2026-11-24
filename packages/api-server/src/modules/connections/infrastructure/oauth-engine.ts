@@ -8,6 +8,7 @@ export interface OAuthProvider {
   clientId: string;
   clientSecret?: string;
   scopes?: string[];
+  resource?: string;
   tokenEndpointAcceptJson?: boolean;
   extraAuthParams?: Record<string, string>;
 }
@@ -212,6 +213,9 @@ export function createOAuthEngine(opts: CreateOAuthEngineOptions): OAuthEngine {
       for (const [k, v] of Object.entries(provider.extraAuthParams ?? {})) {
         authUrl.searchParams.set(k, v);
       }
+      if (provider.resource) {
+        authUrl.searchParams.set("resource", provider.resource);
+      }
       return { authUrl: authUrl.toString(), state };
     },
 
@@ -236,6 +240,9 @@ export function createOAuthEngine(opts: CreateOAuthEngineOptions): OAuthEngine {
       if (pending.provider.clientSecret) {
         params.set("client_secret", pending.provider.clientSecret);
       }
+      if (pending.provider.resource) {
+        params.set("resource", pending.provider.resource);
+      }
       return postTokenEndpoint(pending.provider, params);
     },
 
@@ -247,6 +254,9 @@ export function createOAuthEngine(opts: CreateOAuthEngineOptions): OAuthEngine {
       });
       if (provider.clientSecret) {
         params.set("client_secret", provider.clientSecret);
+      }
+      if (provider.resource) {
+        params.set("resource", provider.resource);
       }
       return postTokenEndpoint(provider, params);
     },

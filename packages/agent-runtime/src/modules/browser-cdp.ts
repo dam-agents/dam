@@ -5,7 +5,11 @@ const CONNECT_TIMEOUT_MS = 10_000;
 const VISIBILITY_POLL_MS = 1_000;
 const VISIBILITY_TIMEOUT_MS = 2_000;
 export const NEW_TAB_URL = "about:blank";
-export const START_PAGE_URL = "chrome://newtab/";
+export const START_PAGE_URLS = new Set([
+  "chrome://newtab/",
+  "chrome://new-tab-page/",
+  "chrome://new-tab-page-third-party/",
+]);
 
 export interface PageState {
   url: string;
@@ -308,7 +312,9 @@ export const watchPages: WatchPages = ({
       const r = await call("Target.getTargets");
       const infos = (r.targetInfos ?? []) as Record<string, unknown>[];
       const pageInfos = infos.filter((info) => info.type === "page");
-      const start = pageInfos.find((info) => info.url === START_PAGE_URL);
+      const start = pageInfos.find((info) =>
+        START_PAGE_URLS.has(String(info.url)),
+      );
       if (!start || pageInfos.length < 2) return;
       const targetId = String(start.targetId);
       closing.add(targetId);

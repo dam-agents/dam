@@ -4,14 +4,14 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@playwright/test": "^1.64.1",
-    "@trpc/client": "^11.19.0",
-    "@trpc/server": "^11.19.0",
+    "@playwright/test": "^1.65.0",
+    "@trpc/client": "^11.25.2",
+    "@trpc/server": "^11.25.2",
     "api-server-api": "workspace:*",
     "platform-ui": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "dev-config": "workspace:*",
     "typescript": "^6.0.3"
   }

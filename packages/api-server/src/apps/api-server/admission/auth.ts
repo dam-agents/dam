@@ -14,6 +14,7 @@ import { emit, EventType } from "../../../events.js";
 import {
   isApiKeyToken,
   type ApiKeyValidationFailure,
+  type OwnerActiveState,
   type ValidatedApiKey,
 } from "../../../modules/api-keys/index.js";
 
@@ -45,6 +46,16 @@ class UnauthorizedError extends Error {
   constructor(public readonly reason: string) {
     super(`Unauthorized: ${reason}`);
     this.name = "UnauthorizedError";
+  }
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the identity provider could not say whether a key's owner may still act. It is refused as retryable rather than admitted, because an API key outlives the sign-in that made it. */
+class OwnerDirectoryUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super("Authentication unavailable: the owner directory did not answer", {
+      cause,
+    });
+    this.name = "OwnerDirectoryUnavailableError";
   }
 }
 
@@ -84,7 +95,7 @@ export interface AuthDeps {
   verifyApiKey?: (
     token: string,
   ) => Promise<Result<ValidatedApiKey, ApiKeyValidationFailure>>;
-  verifyOwnerActive?: (sub: string) => Promise<boolean>;
+  verifyOwnerActive?: (sub: string) => Promise<OwnerActiveState>;
 }
 
 export interface VerifiedPrincipal {
@@ -151,7 +162,9 @@ export function createAuth(config: AuthConfig, deps: AuthDeps = {}) {
     const key = result.value;
     if (deps.verifyOwnerActive) {
       const active = await deps.verifyOwnerActive(key.ownerSub);
-      if (!active) throw new UnauthorizedError("owner inactive");
+      if (active === "unknown")
+        throw new OwnerDirectoryUnavailableError("owner directory");
+      if (active === "inactive") throw new UnauthorizedError("owner inactive");
     }
 
     return {
@@ -345,6 +358,13 @@ export async function authenticatePrincipal(
   try {
     principal = await verify(token);
   } catch (err) {
+    if (err instanceof OwnerDirectoryUnavailableError) {
+      logDenial(site, "auth-unavailable", {
+        actor: null,
+        reason: "owner-directory-unavailable",
+      });
+      return { ok: false, kind: "auth-unavailable" };
+    }
     if (err instanceof AuthUnavailableError) {
       logDenial(site, "auth-unavailable", {
         actor: null,

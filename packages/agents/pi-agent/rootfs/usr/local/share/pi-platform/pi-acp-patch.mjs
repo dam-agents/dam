@@ -4,6 +4,8 @@ import { registerHooks } from "node:module";
 const PATCHED_VERSION = "0.0.34";
 const UPSTREAM_GAPS =
   "pi-acp keeps concurrent sessions apart (https://github.com/svkozak/pi-acp/issues/152), " +
+  "replays a loaded session without its thinking or its tool calls' arguments " +
+  "(https://github.com/svkozak/pi-acp/pull/144 covers the arguments alone), " +
   "can turn off its update notice (https://github.com/svkozak/pi-acp/issues/72), " +
   "reports a reply cut at the output limit as max_tokens, " +
   "fails a turn whose model request failed (https://github.com/svkozak/pi-acp/issues/135), " +
@@ -20,6 +22,7 @@ const endings = new WeakMap();
 const settledRuns = new WeakSet();
 const sessionRefs = new Map();
 const lastRepliesOfTurns = new WeakMap();
+const callArgumentsOfTurns = new WeakMap();
 
 function dropOwnImport() {
   const rest = (process.env.NODE_OPTIONS ?? "")
@@ -212,6 +215,46 @@ function replayMeta(message, messages) {
     : {};
 }
 
+function callArguments(message, messages) {
+  let argumentsByCall = callArgumentsOfTurns.get(messages);
+  if (!argumentsByCall) {
+    argumentsByCall = new Map();
+    for (const m of messages) {
+      if (m?.role !== "assistant" || !Array.isArray(m.content)) continue;
+      for (const block of m.content) {
+        if (block?.type === "toolCall" && block.id)
+          argumentsByCall.set(block.id, block.arguments);
+      }
+    }
+    callArgumentsOfTurns.set(messages, argumentsByCall);
+  }
+  return argumentsByCall.get(message?.toolCallId);
+}
+
+function fileTitle(toolName, args, cwd) {
+  if (toolName !== "write" && toolName !== "edit") return undefined;
+  const path = args?.path;
+  if (typeof path !== "string" || !path) return undefined;
+  const dir = cwd && !cwd.endsWith("/") ? `${cwd}/` : cwd;
+  return dir && path.startsWith(dir) ? path.slice(dir.length) : path;
+}
+
+async function replayThinking(agent, sessionId, message) {
+  if (!Array.isArray(message?.content)) return;
+  for (const block of message.content) {
+    if (block?.type !== "thinking" || typeof block.thinking !== "string")
+      continue;
+    if (!block.thinking.trim() || block.redacted) continue;
+    await agent.conn.sessionUpdate({
+      sessionId,
+      update: {
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: block.thinking },
+      },
+    });
+  }
+}
+
 function sessionRefOf(mcpServers) {
   for (const server of Array.isArray(mcpServers) ? mcpServers : []) {
     const header = (Array.isArray(server?.headers) ? server.headers : []).find(
@@ -323,6 +366,81 @@ const edits = [
     count: 1,
   },
   {
+    find: '      if (role === "assistant") {\n',
+    replace:
+      '      if (role === "assistant") {\n' +
+      `        await ${HELPERS}.replayThinking(this, session.sessionId, m);\n`,
+    count: 1,
+  },
+  {
+    find: "              title: bashCommand(m) ?? toolName,\n",
+    replace: `              title: bashCommand(m) ?? bashCommand(${HELPERS}.callArguments(m, messages)) ?? toolName,\n`,
+    count: 1,
+  },
+  {
+    find:
+      "            title: toolName,\n" +
+      '            kind: toolName === "read" ? "read" : toolName === "write" || toolName === "edit" ? "edit" : "other",\n',
+    replace:
+      `            title: ${HELPERS}.fileTitle(toolName, ${HELPERS}.callArguments(m, messages), params.cwd) ?? toolName,\n` +
+      '            kind: toolName === "read" ? "read" : toolName === "write" || toolName === "edit" ? "edit" : "other",\n',
+    count: 1,
+  },
+  {
+    find:
+      "                title: toolName,\n" +
+      "                kind: toToolKind(toolName),\n" +
+      "                status,\n",
+    replace:
+      `                title: ${HELPERS}.fileTitle(toolName, rawInput, this.cwd) ?? toolName,\n` +
+      "                kind: toToolKind(toolName),\n" +
+      "                status,\n",
+    count: 1,
+  },
+  {
+    find:
+      '                sessionUpdate: "tool_call_update",\n' +
+      "                toolCallId,\n" +
+      "                status,\n" +
+      "                locations,\n" +
+      "                rawInput\n",
+    replace:
+      '                sessionUpdate: "tool_call_update",\n' +
+      "                toolCallId,\n" +
+      `                title: ${HELPERS}.fileTitle(toolName, rawInput, this.cwd),\n` +
+      "                status,\n" +
+      "                locations,\n" +
+      "                rawInput\n",
+    count: 1,
+  },
+  {
+    find:
+      "            title: toolName,\n" +
+      "            kind: toToolKind(toolName),\n" +
+      '            status: "in_progress",\n',
+    replace:
+      `            title: ${HELPERS}.fileTitle(toolName, args, this.cwd) ?? toolName,\n` +
+      "            kind: toToolKind(toolName),\n" +
+      '            status: "in_progress",\n',
+    count: 1,
+  },
+  {
+    find:
+      '            sessionUpdate: "tool_call_update",\n' +
+      "            toolCallId,\n" +
+      '            status: "in_progress",\n' +
+      "            locations,\n" +
+      "            rawInput: args\n",
+    replace:
+      '            sessionUpdate: "tool_call_update",\n' +
+      "            toolCallId,\n" +
+      `            title: ${HELPERS}.fileTitle(toolName, args, this.cwd),\n` +
+      '            status: "in_progress",\n' +
+      "            locations,\n" +
+      "            rawInput: args\n",
+    count: 1,
+  },
+  {
     find:
       "        const text = normalizePiAssistantText(m?.content);\n" +
       "        if (text) {\n" +
@@ -412,8 +530,11 @@ globalThis[Symbol.for("platform.pi-acp-patch")] = {
   endTurn,
   cutReply,
   replayMeta,
+  callArguments,
+  fileTitle,
   piEnv,
   rememberSessionRef,
+  replayThinking,
   trackRun,
   runStarted,
   extMethod,

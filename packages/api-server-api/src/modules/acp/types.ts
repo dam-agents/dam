@@ -148,6 +148,7 @@ export const platformTurnEndedParamsSchema = z.object({
   stopReason: z.string().min(1).optional(),
   error: platformTurnErrorSchema.optional(),
   model: z.string().min(1).optional(),
+  chatFormFix: z.number().int().min(1).optional(),
 });
 export type PlatformTurnEndedParams = z.infer<
   typeof platformTurnEndedParamsSchema

@@ -1,0 +1,10 @@
+#!/bin/sh
+# Every session's conversation runs in its own `claude` process under the ACP
+# adapter, and Claude Code reads ~/.claude/mcp-needs-auth-cache.json once, at
+# that process's start: it then skips a cached server for 15 minutes. One mesh
+# blip answers the platform's MCP server with a 403, and every session for the
+# next 15 minutes then runs without the platform's tools. harness-chat points
+# CLAUDE_CODE_EXECUTABLE here, so each of those processes prunes the platform's
+# own servers from the cache before Claude Code reads it.
+node /usr/local/lib/forget-platform-mcp-auth.mjs
+exec "${PLATFORM_CLAUDE_CLI:-claude}" "$@"

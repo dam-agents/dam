@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { EnvVar } from "api-server-api";
+import { isTelemetryIdentityEnv } from "api-server-api";
 import {
   seedTelemetryIdentity,
   renamedTelemetryIdentity,
@@ -74,5 +75,26 @@ describe("renamedTelemetryIdentity", () => {
 
   it("returns null when the name is already current (no needless env bump)", () => {
     expect(renamedTelemetryIdentity(withAttr, "old-name")).toBeNull();
+  });
+});
+
+describe("isTelemetryIdentityEnv", () => {
+  it("recognises the row the platform seeds", () => {
+    const row = seedTelemetryIdentity(telemetryEnv, "calm-harbor", false).find(
+      (e) => e.name === "OTEL_RESOURCE_ATTRIBUTES",
+    );
+    expect(row && isTelemetryIdentityEnv(row)).toBe(true);
+  });
+
+  it("leaves a variable the user set under the same name alone", () => {
+    expect(
+      isTelemetryIdentityEnv({
+        name: "OTEL_RESOURCE_ATTRIBUTES",
+        value: "team=blue",
+      }),
+    ).toBe(false);
+    expect(
+      isTelemetryIdentityEnv({ name: "FOO", value: "platform.agent.name=x" }),
+    ).toBe(false);
   });
 });

@@ -62,6 +62,8 @@ type bootstrapParams struct {
 	RepairGeneration       int
 	// UNIT_BOUNDARY_DESCRIPTION: the epoch this agent's credential key set last changed at. It is folded into the health revision, which is what makes a repair's receipt belong to the arrival it repairs: a rendering can return to a content hash it had before, but not to an epoch it has left.
 	ArrivalEpoch int
+	// UNIT_BOUNDARY_DESCRIPTION: whether the outer listener admits only connections from outside the pod. Every agent of an owner shares the pod's loopback and its own address, so a connection from either is a sibling re-entering through the forward proxy, never a machine.
+	ExternalSourceOnly bool
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a Lua filter's script is its parameters followed by a fixed body. An owner gateway renders every metered chain of every agent, and the bodies are most of each chain's size, so there the body is a file of the gateway's own directory, read once per Lua state, and the parameters become that state's globals. Every Lua filter has a state of its own, so one chain's globals never reach another's.
@@ -239,6 +241,17 @@ func buildOuterListener(p bootstrapParams) ev {
 	}
 	if p.Transparent {
 		acceptTransparentTLS(listener, p)
+	}
+	if p.ExternalSourceOnly {
+		for _, c := range listener["filter_chains"].([]any) {
+			chain := c.(ev)
+			match, ok := chain["filter_chain_match"].(ev)
+			if !ok {
+				match = ev{}
+				chain["filter_chain_match"] = match
+			}
+			match["source_type"] = "EXTERNAL"
+		}
 	}
 	return listener
 }
@@ -425,7 +438,7 @@ func buildTerminatingChain(p bootstrapParams, c envoyHostChain) ev {
 					"name":                      "default",
 					"domains":                   []any{"*"},
 					"routes":                    buildChainForwardRoutes(c),
-					"request_headers_to_remove": chainHeadersToRemove(p),
+					"request_headers_to_remove": chainHeadersToRemoveFor(p, c),
 				},
 			},
 		},
@@ -495,15 +508,33 @@ func chainHeadersToRemove(p bootstrapParams) []any {
 	return headers
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: a chain whose upstream is the api-server itself also drops the client address headers, which no upstream of an agent's choosing is told and which the api-server would otherwise believe: its audit log reads the first X-Forwarded-For as the caller's address, so a holder of this Connection could write an address of their choosing into it. The Agent Key chain drops them for the same reason, as the ingress does. */
+func chainHeadersToRemoveFor(p bootstrapParams, c envoyHostChain) []any {
+	headers := chainHeadersToRemove(p)
+	if c.InCluster {
+		headers = append(headers, "x-forwarded-for", "x-real-ip")
+	}
+	return headers
+}
+
 func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 	var filters []any
 	if len(c.ConnectionIDs()) > 0 {
 		filters = append(filters, connectionAddressHTTPFilter(p, c))
 	}
+	extAuthz := extAuthzHTTPFilter(p)
+	if c.Metered() && c.WebSearchControl {
+		extAuthz = withWholeRequestBody(extAuthz, modelCallBodyLimitBytes)
+	} else if c.CheckBody {
+		extAuthz = withWholeRequestBody(extAuthz, connectionBodyLimitBytes)
+	}
+	if p.checksAnyBody() {
+		extAuthz = withServerName(extAuthz)
+	}
 	if c.Metered() {
-		filters = append(filters, spendMeterHTTPFilter(p, c), withSpendMetadata(extAuthzHTTPFilter(p)))
+		filters = append(filters, spendMeterHTTPFilter(p, c), withSpendMetadata(extAuthz))
 	} else {
-		filters = append(filters, extAuthzHTTPFilter(p))
+		filters = append(filters, extAuthz)
 	}
 	for _, cred := range c.Credentials {
 		sdsFile, sdsDir := p.credentialFile(cred.VolumeName, cred.SDSFileKey)
@@ -926,7 +957,7 @@ func agentKeyHCM(p bootstrapParams, c envoyHostChain, statPrefix string) ev {
 		"@type":           "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
 		"stat_prefix":     statPrefix,
 		"upgrade_configs": []any{ev{"upgrade_type": "websocket"}},
-		"http_filters":    []any{extAuthzHTTPFilter(p), injector, routerHTTPFilter()},
+		"http_filters":    []any{agentKeyExtAuthz(p), injector, routerHTTPFilter()},
 		"route_config": ev{
 			"name": "forward_" + c.ChainID,
 			"virtual_hosts": []any{
@@ -1050,7 +1081,7 @@ func buildClusters(p bootstrapParams) []any {
 	}
 	for _, c := range p.Chains {
 		if c.Credentialed() {
-			clusters = append(clusters, buildUpstreamCluster(c, p.UpstreamTrustedCA))
+			clusters = append(clusters, buildUpstreamCluster(c, p.UpstreamTrustedCA, p.APIServerHost, p.APIServerPort))
 		}
 	}
 	if p.Telemetry {
@@ -1134,7 +1165,11 @@ func pinnedTCPCluster(name, host string, port int) ev {
 	}
 }
 
-func buildUpstreamCluster(c envoyHostChain, trustedCA string) ev {
+/* UNIT_BOUNDARY_DESCRIPTION: a chain marked in-cluster dials the api-server's public Service by name and port, plain TCP — the ambient mesh carries it, as it carries the Agent Key chain — instead of the host the Agent named, so no Host, SNI or DNS answer can send the install's key anywhere else. */
+func buildUpstreamCluster(c envoyHostChain, trustedCA string, apiserverHost string, apiserverPort int) ev {
+	if c.InCluster {
+		return pinnedTCPCluster(c.UpstreamCluster, apiserverHost, apiserverPort)
+	}
 	if c.UpstreamCAFile != "" {
 		trustedCA = c.UpstreamCAFile
 	}
@@ -1230,6 +1265,44 @@ func extAuthzHTTPFilter(p bootstrapParams) ev {
 			},
 		},
 	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the largest body of a model call the gateway sends to the ext_authz check for web search control: the Messages API's own request limit, under the 33 MiB the api-server accepts in one gRPC message. The check needs the whole body, because a body read in part could carry its web search tool past the part that was read, so a larger body is answered 413 at the gateway and never reaches the provider.
+const modelCallBodyLimitBytes = 32 << 20
+
+// UNIT_BOUNDARY_DESCRIPTION: the largest request body the gateway sends to the ext_authz check for a Connection that asks for its body to be checked. Such a body is one tool call of an MCP client, a few kilobytes, and the check reads every byte of it, so the limit is far under a model call's. A larger body is answered 413 at the gateway and never reaches the upstream, because a body read in part could hide a tool call past the part that was read.
+const connectionBodyLimitBytes = 4 << 20
+
+func withWholeRequestBody(extAuthz ev, limitBytes int) ev {
+	extAuthz["typed_config"].(ev)["with_request_body"] = ev{
+		"max_request_bytes":     limitBytes,
+		"allow_partial_message": false,
+		"pack_as_bytes":         true,
+	}
+	return extAuthz
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: makes a chain's check carry the server name of the TLS session the request came on. The chain and its credential are chosen by that name, while the Host header is whatever the agent wrote, so a check that limits what a Connection may do must read the name the agent cannot forge.
+func withServerName(extAuthz ev) ev {
+	extAuthz["typed_config"].(ev)["include_tls_session"] = true
+	return extAuthz
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether any chain of this agent checks a body. Then every TLS chain of the agent sends its server name, not only the checked one. The api-server refuses a TLS request without a server name from an agent that holds a read-only Connection, because such a request comes from a gateway that has not restarted onto the check, where a forged Host could hide the checked host. An agent with no checked chain renders what it rendered before.
+func (p bootstrapParams) checksAnyBody() bool {
+	for _, c := range p.Chains {
+		if c.CheckBody {
+			return true
+		}
+	}
+	return false
+}
+
+func agentKeyExtAuthz(p bootstrapParams) ev {
+	if p.checksAnyBody() {
+		return withServerName(extAuthzHTTPFilter(p))
+	}
+	return extAuthzHTTPFilter(p)
 }
 
 func extAuthzDisabledPerRoute() ev {

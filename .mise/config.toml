@@ -1,6 +1,6 @@
 # 2026.10.4 (2026-10-07) is under the 7-day floor: it builds pipx venvs on
 # mise's own Python, not whichever one uv finds. Floor passes 2026-10-14.
-min_version = "2026.10.5"
+min_version = "2026.11.5"
 monorepo_root = true
 
 [monorepo]
@@ -27,22 +27,16 @@ repo_root = "{{config_root}}"
 # by publication (the Red Hat catalog's push_date) rather than the build label,
 # which issue #5291's tag-to-digest comparison ignores:
 #   core-runtime:latest   built 2026-10-25T06:02Z, eligible 2026-11-01T06:02Z
-# The other two tags name builds that are still under the floor (nodejs built
-# 2026-10-29, nginx 2026-10-27), so those pins wait for the next run.
+# nodejs's tag names a build still under the floor (2026-10-29), so that pin
+# waits for the next run.
 base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:c46573a1d159c05370bada02d6049f38fbdcfa6418c0868ad404f4b92743475c"
 base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:4163796d8b7f28021178093d31cb97c05336fd3f3a4d7006603a7fef29e997e7"
-# The 26.8.1 tag was rebuilt on 2026-10-31T10:43Z with a current base OS: it
-# clears the OpenJDK, ca-certificates and pcre2 findings of the 2026-10-13
-# build this pin held, so it carries a dated exception that ends
-# 2026-11-07T10:43Z. Keycloak's own libraries (mariadb-java-client,
+# Keycloak 26.8.2 (released 2026-11-05) fixes some thirty Keycloak CVEs and
+# the glibc and libgcc findings of the 26.8.1 build. Its image was rebuilt on
+# 2026-11-12T13:31Z, so this pin carries a dated exception to the 7-day floor
+# that ends 2026-11-19T13:31Z. Keycloak's own libraries (mariadb-java-client,
 # opentelemetry-api, guava) still wait on a newer upstream release.
-base_image_keycloak = "quay.io/keycloak/keycloak:26.8.1@sha256:3f3c5f8e03c614774b4bd9173b88391fefa4153bfc010d8012d59ad825377332"
-# nginx 1.30.6's floor exception is spent: this build was pushed
-# 2026-10-15T06:51:53Z, so it has been eligible since 2026-10-22T06:51:53Z. It
-# fixes CVE-2026-15176, CVE-2026-93479, CVE-2026-95101, CVE-2026-97629 and
-# CVE-2026-97205. The digest the tag names now is another build of the same
-# 1.30.6, built 2026-10-27T15:18Z, so it qualifies from 2026-11-03.
-base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:63ef79903a967e6bf45ed76e7c5f8bf28fb7457931162e0d645e75bcdeee0c49"
+base_image_keycloak = "quay.io/keycloak/keycloak:26.8.2@sha256:c68e286cacd87b942ac1939a0a1481461109d6acd3a57dc496969a319a76bbf0"
 base_image_debian = "mirror.gcr.io/library/debian:trixie-slim"
 
 [deps.pnpm]
@@ -57,7 +51,7 @@ auto = true
 "conda:pigz" = "latest"
 "github:Boshen/cargo-shear" = "latest"
 # panache formats Markdown with semantic line breaks; config in panache.toml.
-"github:jolars/panache" = "3.17.0"
+"github:jolars/panache" = "3.17.2"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 "go:honnef.co/go/tools/cmd/staticcheck" = "latest"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.23.0"
@@ -70,7 +64,7 @@ gum = "latest"
 helm = "latest"
 # 2.4.0 (2026-10-29) is under the 7-day floor until 2026-11-05; 2.3.0 is the
 # newest release past it. The check is check:actions.
-jactionlint = "2.3.0"
+jactionlint = "2.5.0"
 java = "temurin-25"
 jq = "latest"
 kubeconform = "latest"
@@ -93,7 +87,7 @@ uv = "latest"
 yq = "latest"
 # check:zizmor runs it beside jactionlint: the default profile leaves parts of
 # some zizmor audits out, the dynamic-matrix injection among them.
-zizmor = "1.31.1"
+zizmor = "1.32.0"
 
 # Cargo runs through mr boxington, which is what makes a build here restore the
 # crates another checkout or worktree already compiled. This is the wrapper
@@ -115,7 +109,7 @@ env = { MBX_CARGO_SHIM_MODE = "1" }
 # matrix.json's timestamps are not publish dates, so `/up` applies the 7-day
 # rule by hand. Mend builds no macos-x64 CLI.
 [tools."http:mend"]
-version = "26.9.2.4" # 26.9.2-hf1
+version = "26.10.1.6" # 26.10.1
 lazy = true
 lazy_bins = "mend"
 

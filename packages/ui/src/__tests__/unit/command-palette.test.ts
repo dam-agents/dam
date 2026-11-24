@@ -14,7 +14,6 @@ const owner = (id: string, name: string) =>
     name,
     avatar: null,
     state: "running",
-    disabled: false,
     overBudget: false,
     access: {
       role: "owner",

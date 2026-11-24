@@ -25,6 +25,7 @@ export interface ComposeSkillsOptions {
   skillPaths: string[];
   pristineSkillPaths: string[];
   githubToken: () => string;
+  spawnEnv: () => NodeJS.ProcessEnv;
   reconcile?: ReconcileOptions;
   log: (msg: string) => void;
 }
@@ -44,7 +45,7 @@ export function composeSkills(opts: ComposeSkillsOptions): SkillsComposition {
     token: opts.githubToken,
     log: opts.log,
   });
-  const git = createGitProtocolClient();
+  const git = createGitProtocolClient({ env: opts.spawnEnv });
   const repo = createLocalSkillRepository();
   const service = createSkillsService({
     github,

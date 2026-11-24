@@ -6,6 +6,7 @@ export type SlackCredentialState = "active" | "rejected";
 export interface SlackInstall {
   teamId: string;
   teamName: string | null;
+  enterpriseId: string | null;
   secretPath: string;
   secretField: string;
   installedBy: string | null;
@@ -16,6 +17,7 @@ function toInstall(row: typeof slackInstalls.$inferSelect): SlackInstall {
   return {
     teamId: row.teamId,
     teamName: row.teamName,
+    enterpriseId: row.enterpriseId,
     secretPath: row.secretPath,
     secretField: row.secretField,
     installedBy: row.installedBy,
@@ -48,6 +50,7 @@ export function upsertSlackInstall(db: Db) {
   return async (install: {
     teamId: string;
     teamName: string | null;
+    enterpriseId: string | null;
     secretPath: string;
     secretField: string;
     installedBy: string | null;
@@ -59,6 +62,7 @@ export function upsertSlackInstall(db: Db) {
         target: slackInstalls.teamId,
         set: {
           teamName: install.teamName,
+          enterpriseId: install.enterpriseId,
           secretPath: install.secretPath,
           secretField: install.secretField,
           installedBy: install.installedBy,

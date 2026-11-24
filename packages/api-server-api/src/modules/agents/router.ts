@@ -30,7 +30,7 @@ import {
   agentSetEnvInputSchema,
   agentSetSecretRefInputSchema,
   agentSetWhisperInputSchema,
-  agentSetDisabledInputSchema,
+  agentSetWebSearchControlInputSchema,
   agentSleepInputSchema,
   agentUpgradeInputSchema,
   agentWakeInputSchema,
@@ -147,6 +147,7 @@ export const agentsRouter = t.router({
         ...(agent.defaultProvider && {
           defaultProvider: agent.defaultProvider,
         }),
+        ...(agent.startsOn && { startsOn: agent.startsOn }),
       };
     }),
 
@@ -177,6 +178,11 @@ export const agentsRouter = t.router({
     .use(agentPermission("channels", (input) => agentTarget(input.id)))
     .mutation(({ ctx, input }) => updated(ctx, input)),
 
+  setWebSearchControl: manageAgentsProcedure
+    .input(agentSetWebSearchControlInputSchema)
+    .use(agentPermission("egressRules", (input) => agentTarget(input.id)))
+    .mutation(({ ctx, input }) => updated(ctx, input)),
+
   delete: manageAgentsProcedure
     .input(agentDeleteInputSchema)
     .use(agentPermission("delete", (input) => agentTarget(input.id)))
@@ -195,13 +201,8 @@ export const agentsRouter = t.router({
     .use(agentPermission("lifecycle", (input) => agentTarget(input.id)))
     .mutation(async ({ ctx, input }) => {
       const res = await ctx.agents.wake(input.id);
-      if (res.ok) return toAgentView(res.value);
-      if (res.error.type === "AgentNotFound")
-        throw new TRPCError({ code: "NOT_FOUND" });
-      throw new TRPCError({
-        code: "CONFLICT",
-        message: "This agent is disabled; enable it to wake it",
-      });
+      if (!res.ok) throw new TRPCError({ code: "NOT_FOUND" });
+      return toAgentView(res.value);
     }),
 
   retryWorkspace: manageAgentsProcedure
@@ -220,15 +221,6 @@ export const agentsRouter = t.router({
       const agent = await ctx.agents.sleep(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toAgentView(agent);
-    }),
-
-  setDisabled: manageAgentsProcedure
-    .input(agentSetDisabledInputSchema)
-    .use(agentPermission("lifecycle", (input) => agentTarget(input.id)))
-    .mutation(async ({ ctx, input }) => {
-      const res = await ctx.agents.setDisabled(input.id, input.disabled);
-      if (res.ok) return toAgentView(res.value);
-      throw new TRPCError({ code: "NOT_FOUND" });
     }),
 
   upgrade: manageAgentsProcedure
@@ -266,7 +258,7 @@ export const agentsRouter = t.router({
       const res = await ctx.agents.connectSlack(
         input.id,
         input.slackChannelId,
-        input.ambient,
+        { ambient: input.ambient, history: input.history },
         input.customEmoji,
       );
       if (res.ok) return toAgentView(res.value);

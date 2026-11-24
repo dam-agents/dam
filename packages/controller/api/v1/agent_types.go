@@ -16,6 +16,7 @@ import (
 // +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.nodeSelector)",message="nodeSelector places a pod and is invalid on the vm backend, whose machine is placed with its owner's VM runner"
 // +kubebuilder:validation:XValidation:rule="!has(self.environmentOf) || (has(self.backend) && self.backend.type == 'vm')",message="an Environment runs on the vm backend"
 // +kubebuilder:validation:XValidation:rule="has(self.environmentOf) == has(oldSelf.environmentOf)",message="environmentOf is set at create and never added or removed"
+// +kubebuilder:validation:XValidation:rule="has(self.linkFrom) == has(oldSelf.linkFrom)",message="linkFrom is set at create and never added or removed"
 type AgentSpec struct {
 	// Image is the agent container image.
 	Image string `json:"image"`
@@ -103,6 +104,15 @@ type AgentSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="environmentOf cannot change"
 	EnvironmentOf string `json:"environmentOf,omitempty"`
 
+	// LinkFrom names the one Agent that may open the agent-to-agent link into
+	// this one's machine: an Environment's owning Agent, or a sub-agent's
+	// driver. Set at create, never changed; the guest reads it as
+	// PLATFORM_LINK_FROM. An Environment created before the field accepts from
+	// its EnvironmentOf.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="linkFrom cannot change"
+	LinkFrom string `json:"linkFrom,omitempty"`
+
 	// SecretRef names a K8s Secret whose keys are envFrom-projected into the
 	// agent container (operator-supplied envs).
 	// +optional
@@ -166,6 +176,13 @@ type AgentSpec struct {
 	// not replace.
 	// +optional
 	RequireConnectionAddress bool `json:"requireConnectionAddress,omitempty"`
+	// WebSearchControl makes the agent's gateway read the whole body of every
+	// request on a model-provider chain and send it to the ext_authz check, so
+	// a Messages API request that declares a native web search tool is held
+	// for the owner's approval. A body larger than the gateway reads is
+	// refused rather than passed. Off, the gateway reads no body.
+	// +optional
+	WebSearchControl bool `json:"webSearchControl,omitempty"`
 }
 
 // Backend is a discriminated union selecting the agent's isolation substrate
@@ -288,6 +305,15 @@ const (
 // scaled down) from one still starting — both report Ready=False.
 const ReasonHibernated = "Hibernated"
 
+// ReasonContainerBackendRemoved is stamped on Ready for an Agent whose spec still
+// asks for the container backend, which this release neither runs nor can move:
+// its machine would boot on a home its data is not on, while the volume that
+// holds the home stays unread. The controller reconciles nothing for such an
+// Agent, and only an operator's runtime migration on the release before this one
+// moves it. An Agent whose spec names no backend counts as one of them, since
+// that is how a release before this one wrote a container Agent.
+const ReasonContainerBackendRemoved = "ContainerBackendRemoved"
+
 // ReasonMachineStopping is stamped on AgentPodReady of a vm agent whose
 // hibernation has begun but whose machine the runner is still stopping. The
 // runner answers a stop before the guest has powered off, so the agent is not
@@ -326,7 +352,7 @@ const ReasonAwaitingWarmUp = "AwaitingWarmUp"
 // for room and that refusal already hibernated one of the owner's idle agents
 // for it. The room those machines hold frees within seconds, so the start is
 // not ReasonOverBudget: a wake waits for it the way it waits for any start in
-// progress, and the owner is not asked to disable an agent for room the
+// progress, and the owner is not asked to delete an agent for room the
 // platform is making. The wait is bounded: a start nothing has freed room for in
 // the last memoryReclaimWait is a refusal again, and reads ReasonOverBudget.
 const ReasonAwaitingMemory = "AwaitingMemory"
@@ -454,7 +480,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=20
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=22
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

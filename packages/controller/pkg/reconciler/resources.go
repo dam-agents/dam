@@ -114,7 +114,16 @@ func agentPlatformEnv(name string, cfg *config.Config, agentHome, proxyAddr stri
 const (
 	requireConnectionAddressEnv = "PLATFORM_REQUIRE_CONNECTION_ADDRESS"
 	environmentOfEnv            = "PLATFORM_ENVIRONMENT_OF"
+	linkFromEnv                 = "PLATFORM_LINK_FROM"
 )
+
+// UNIT_BOUNDARY_DESCRIPTION: the one Agent that may open the link into this Agent's machine: the one its spec names, or, for an Environment created before linkFrom existed, its owning Agent.
+func linkFrom(spec *apiv1.AgentSpec) string {
+	if spec.LinkFrom != "" {
+		return spec.LinkFrom
+	}
+	return spec.EnvironmentOf
+}
 
 func requireConnectionAddressValue(spec *apiv1.AgentSpec) string {
 	if spec.RequireConnectionAddress {

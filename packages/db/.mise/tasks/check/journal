@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 //MISE description="drizzle skips a migration older than the newest applied one, so journal timestamps must increase with index"
-//MISE sources=["drizzle/meta/_journal.json"]
+//MISE sources=["drizzle/meta/_journal.json", "drizzle/*.sql"]
 //MISE outputs=[]
 //MISE cache.enabled=true
 // UNIT_BOUNDARY_DESCRIPTION: drizzle's migrator records the newest applied
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 const journal = JSON.parse(
   readFileSync(
@@ -25,6 +25,18 @@ for (const [position, entry] of entries.entries()) {
         `   An installation that applied ${previous.tag} would skip this one. Regenerate it after ${previous.tag}.`,
     );
 }
+const sql = new URL("../../../drizzle/", import.meta.url);
+const files = readdirSync(sql)
+  .filter((name) => name.endsWith(".sql"))
+  .map((name) => name.slice(0, -4));
+const missing = files.filter(
+  (name) => !entries.some((entry) => entry.tag === name),
+);
+if (missing.length > 0)
+  throw new Error(
+    `❌ ${missing.join(", ")} has a .sql and no journal entry, so drizzle never applies it.\n` +
+      `   Add it to meta/_journal.json or regenerate it.`,
+  );
 console.log(
-  `✅ Journal timestamps increase with index across ${entries.length} migrations.`,
+  `✅ Journal timestamps increase with index across ${entries.length} migrations, and every .sql has one.`,
 );

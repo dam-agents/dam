@@ -1,7 +1,7 @@
 import { Launch } from "@carbon/icons-react";
 import type { ConnectionView } from "api-server-api";
+import type { ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
 import { externalLinkProps } from "@/lib/external-link";
 
 import { getBrand } from "../../../brand.js";
@@ -19,18 +19,26 @@ export function activeInstallUrl(
   return githubAppInstallUrl(connection);
 }
 
-export function GithubAppInstallButton({
-  connection,
+export const INSTALL_REACH = "on each account whose repositories agents need";
+
+export function GithubAppInstallLink({
+  url,
+  testId,
+  children,
 }: {
-  connection: InstallHintConnection;
+  url: string;
+  testId?: string;
+  children?: ReactNode;
 }) {
-  const url = activeInstallUrl(connection);
-  if (!url) return null;
   return (
-    <Button asChild size="sm" className="shrink-0">
-      <a href={url} {...externalLinkProps}>
-        Install {getBrand().name} app <Launch size={13} aria-hidden />
-      </a>
-    </Button>
+    <a
+      href={url}
+      {...externalLinkProps}
+      data-testid={testId}
+      className="font-medium text-accent underline-offset-2 hover:underline"
+    >
+      {children ?? `Install the ${getBrand().name} app`}
+      <Launch size={12} aria-hidden className="ml-1 inline align-[-1px]" />
+    </a>
   );
 }

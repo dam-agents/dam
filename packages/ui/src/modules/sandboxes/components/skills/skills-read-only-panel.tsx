@@ -12,7 +12,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-import { AgentSleepingCallout } from "../../../agents/components/agent-sleeping-callout.js";
+import { AgentStartingCallout } from "../../../agents/components/agent-starting-callout.js";
+import { useAutoWakeOnOpen } from "../../../agents/hooks/use-auto-wake-on-open.js";
 import type { SkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import type { SkillsSurface } from "../../hooks/use-skills-surface.js";
 import { AddSourceRow } from "./skill-sources-section.js";
@@ -60,21 +61,21 @@ function SnapshotRow({
 }
 
 export function SkillsReadOnlyPanel({
+  agentId,
   surface,
   derived,
   mode,
   comingUp,
-  disabledNotice,
   onStart,
   onAddSource,
   onRemove,
   onManageConnections,
 }: {
+  agentId: string | null;
   surface: SkillsSurface;
   derived: SkillsDerivations;
   mode: "never-run" | "stopped";
   comingUp: boolean;
-  disabledNotice?: ReactNode;
   onStart: () => void;
   onAddSource?: () => void;
   onRemove?: (source: SkillSource) => void;
@@ -90,8 +91,9 @@ export function SkillsReadOnlyPanel({
     errorBySource,
   } = surface;
   const { snapshotOnCount, snapshotRows } = derived;
+  useAutoWakeOnOpen(agentId);
 
-  const startButton = !disabledNotice && (
+  const startButton = (
     <Button size="sm" disabled={comingUp} onClick={onStart}>
       {comingUp ? <Spinner size={14} /> : <Play size={14} />}
       {comingUp ? "Starting…" : "Start agent"}
@@ -100,22 +102,24 @@ export function SkillsReadOnlyPanel({
 
   return (
     <div className="flex flex-col gap-8">
-      {disabledNotice ??
-        (mode === "never-run" ? (
-          <Notice
-            icon={Information}
-            title="This agent hasn’t run yet"
-            action={startButton}
-          >
-            — its skills are resolved when it starts, so there&rsquo;s nothing
-            recorded to show. Start it once and this page fills in.
-          </Notice>
-        ) : (
-          <AgentSleepingCallout comingUp={comingUp} onStart={onStart}>
-            — its skills are read-only until it wakes. Wake the agent to change
-            them.
-          </AgentSleepingCallout>
-        ))}
+      {mode === "never-run" ? (
+        <Notice
+          icon={Information}
+          title="This agent hasn’t run yet"
+          action={startButton}
+        >
+          — its skills are resolved when it starts, so there&rsquo;s nothing
+          recorded to show. Start it once and this page fills in.
+        </Notice>
+      ) : (
+        <AgentStartingCallout
+          agentId={agentId}
+          comingUp={comingUp}
+          onStart={onStart}
+        >
+          — its skills are read-only until it is running.
+        </AgentStartingCallout>
+      )}
 
       {mode === "never-run" ? (
         <section>

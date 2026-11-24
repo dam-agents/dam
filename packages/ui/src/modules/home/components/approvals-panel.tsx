@@ -6,6 +6,7 @@ import { SideDrawer, SideDrawerHeader } from "@/components/ui/side-drawer";
 import { useNow } from "@/hooks/use-now";
 
 import { timeAgo } from "../../../lib/format-time.js";
+import { useStore } from "../../../store.js";
 import { useDenyApprovals } from "../../approvals/hooks/use-deny-approvals.js";
 import { deniableApprovalIds } from "../../approvals/lib/deny-all.js";
 import {
@@ -14,17 +15,27 @@ import {
 } from "../../approvals/lib/group-approvals.js";
 import { FeedCostReviewCard } from "../../cost-reviews/components/feed-cost-review-card.js";
 import { useCostReviewOffers } from "../../cost-reviews/hooks/use-cost-review-offers.js";
+import { FeedSecurityCheckCard } from "../../security-checks/components/feed-security-check-card.js";
+import { useSecurityCheckNotices } from "../../security-checks/hooks/use-security-check-notices.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
+import { useOpenSession } from "../../sessions/hooks/use-open-session.js";
 import { useFeed } from "../api/queries.js";
 import { useDefaultModelNotices } from "../hooks/use-default-model-notices.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
 import { useOutageAlerts } from "../hooks/use-outage-alerts.js";
+import { useOwnerQuestionNotices } from "../hooks/use-owner-question-notices.js";
 import { useStickyResolved } from "../hooks/use-sticky-resolved.js";
-import { ALL_AGENTS_SUBJECT, countsAllAgents } from "../lib/approval-copy.js";
+import {
+  ALL_AGENTS_SUBJECT,
+  approvalSubjectId,
+  approvalSubjectName,
+  countsAllAgents,
+} from "../lib/approval-copy.js";
 import { FeedApprovalCard } from "./feed-approval-card.js";
 import { FeedCardSkeleton } from "./feed-card-skeleton.js";
 import { FeedDefaultModelCard } from "./feed-default-model-card.js";
 import { FeedOutageAlertCard } from "./feed-outage-alert-card.js";
+import { FeedOwnerQuestionCard } from "./feed-owner-question-card.js";
 
 const MINUTE_MS = 60_000;
 
@@ -36,6 +47,8 @@ function useApprovals() {
   const defaultModels = useDefaultModelNotices();
   const outageAlerts = useOutageAlerts();
   const costReviews = useCostReviewOffers();
+  const ownerQuestions = useOwnerQuestionNotices();
+  const securityChecks = useSecurityCheckNotices();
   const now = useNow(MINUTE_MS);
 
   const approvals = sticky
@@ -64,6 +77,8 @@ function useApprovals() {
     defaultModels,
     outageAlerts,
     costReviews,
+    ownerQuestions,
+    securityChecks,
     loadingFeed,
     now,
   };
@@ -88,10 +103,66 @@ function DenyAllButton({ view }: { view: ApprovalsView }) {
   );
 }
 
-function ApprovalsList({ view }: { view: ApprovalsView }) {
+function ApprovalsList({
+  view,
+  onNavigate,
+}: {
+  view: ApprovalsView;
+  onNavigate?: () => void;
+}) {
   const { approvals, groups, groupKeyOf, agentOf, sticky, dismiss, now } = view;
+  const openSession = useOpenSession();
+  const openAgent = useStore((s) => s.selectAgent);
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+      {view.ownerQuestions.waiting.length > 0 && (
+        <div className="mb-1 flex flex-col gap-1">
+          {view.ownerQuestions.waiting.map((group) => {
+            const agentId = group[0]!.agentId;
+            const agent = agentOf(agentId);
+            return (
+              <FeedOwnerQuestionCard
+                key={agentId}
+                notices={group}
+                agentName={agent?.name ?? agentId}
+                avatarName={agent?.name}
+                avatar={agent?.avatar}
+                onDismiss={() => view.ownerQuestions.dismiss(group)}
+                onOpen={(notice) => {
+                  if (notice.sessionId)
+                    openSession(notice.agentId, notice.sessionId);
+                  else openAgent(notice.agentId);
+                  onNavigate?.();
+                }}
+              />
+            );
+          })}
+        </div>
+      )}
+      {view.securityChecks.waiting.length > 0 && (
+        <div className="mb-1 flex flex-col gap-1">
+          {view.securityChecks.waiting.map((notice) => {
+            const agent = agentOf(notice.agentId);
+            return (
+              <FeedSecurityCheckCard
+                key={notice.id}
+                notice={notice}
+                agentName={agent?.name ?? notice.agentId}
+                avatarName={agent?.name}
+                avatar={agent?.avatar}
+                now={now}
+                onDismiss={() => view.securityChecks.dismiss(notice)}
+                onOpen={() => {
+                  if (notice.sessionId)
+                    openSession(notice.agentId, notice.sessionId);
+                  else openAgent(notice.agentId);
+                  onNavigate?.();
+                }}
+              />
+            );
+          })}
+        </div>
+      )}
       {view.outageAlerts.waiting.length > 0 && (
         <div className="mb-1 flex flex-col gap-1">
           {view.outageAlerts.waiting.map((alert) => (
@@ -133,6 +204,8 @@ function ApprovalsList({ view }: { view: ApprovalsView }) {
       ) : approvals.length === 0 ? (
         view.defaultModels.waiting.length === 0 &&
         view.outageAlerts.waiting.length === 0 &&
+        view.ownerQuestions.waiting.length === 0 &&
+        view.securityChecks.waiting.length === 0 &&
         view.costReviews.offers.length === 0 &&
         view.costReviews.startingAgentId === null && (
           <EmptyState bordered={false}>No approvals waiting.</EmptyState>
@@ -142,14 +215,21 @@ function ApprovalsList({ view }: { view: ApprovalsView }) {
           {groups.map((group) => {
             const item = group[0]!;
             const allAgents = countsAllAgents(item.approval);
-            const agent = allAgents ? undefined : agentOf(item.agentId);
+            const subjectId = approvalSubjectId(item.approval);
+            const agent = allAgents ? undefined : agentOf(subjectId);
             return (
               <FeedApprovalCard
                 key={groupKeyOf(item)}
                 approval={item.approval}
                 ids={group.map((member) => member.approval.id)}
+                members={group.map((member) => member.approval)}
                 agentName={
-                  allAgents ? ALL_AGENTS_SUBJECT : (agent?.name ?? item.agentId)
+                  allAgents
+                    ? ALL_AGENTS_SUBJECT
+                    : (approvalSubjectName(
+                        item.approval,
+                        (id) => agentOf(id)?.name,
+                      ) ?? subjectId)
                 }
                 avatarName={agent?.name}
                 avatar={agent?.avatar}
@@ -201,7 +281,7 @@ export function ApprovalsDrawer({ onClose }: { onClose: () => void }) {
       <SideDrawerHeader title="Approvals" onClose={requestClose}>
         <DenyAllButton view={view} />
       </SideDrawerHeader>
-      <ApprovalsList view={view} />
+      <ApprovalsList view={view} onNavigate={onClose} />
     </SideDrawer>
   );
 }

@@ -46,6 +46,16 @@ it("refreshes the list and only the named agent's harnessConfig", async () => {
   expect([list.calls(), statusA.calls(), statusB.calls()]).toEqual([2, 2, 1]);
 });
 
+// TEST_SCENARIO: the assistant's used mark is announced as an agents hint, because a Session started in another tab, or a turn from a channel, marks it used without this tab sending anything; that hint must refetch the record so the greeting and the first landing stop offering a chat the person has already used.
+it("refreshes the assistant's record on an agents hint", async () => {
+  const state = counter();
+  await watch(trpc.assistants.state.queryKey(), state.fn);
+
+  await invalidateForLiveEvent({ topic: "agents", agentId: "A" });
+
+  expect(state.calls()).toBe(2);
+});
+
 // TEST_SCENARIO: an Environment is created as an Agent, so its create and delete arrive as an agents hint; that hint must refetch the owning agent's Environments too, since their list decides whether the Environments surfaces show at all and a new one must appear without waiting for the next poll.
 it("refreshes the Environments on an agents hint", async () => {
   const environments = counter();
@@ -111,6 +121,7 @@ it("refreshes every live family on a sync hint", async () => {
       agentId: "A",
     }),
     "getting started": trpc.gettingStarted.progress.queryKey(),
+    "assistant state": trpc.assistants.state.queryKey(),
   };
   const counters = Object.fromEntries(
     Object.keys(families).map((name) => [name, counter()]),

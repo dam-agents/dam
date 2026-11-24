@@ -69,10 +69,6 @@ describe("terminalDropRetries", () => {
       { kind: "closed", code: 1011, reason: "agent not ready: stopped" },
     ],
     [
-      "a disabled agent",
-      { kind: "closed", code: 1011, reason: "agent not ready: disabled" },
-    ],
-    [
       "a hibernated agent nobody woke",
       {
         kind: "closed",

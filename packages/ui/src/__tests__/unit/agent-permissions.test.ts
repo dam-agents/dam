@@ -42,9 +42,14 @@ const lockedFor = (access: AgentAccess) =>
   SECTIONS.map((e) => e.section).filter((s) => isLockedSection(access, s));
 
 describe("locked sections", () => {
-  // TEST_SCENARIO: AC-5. An editor sees a lock on People, Connections and Channels, and on no other section.
+  // TEST_SCENARIO: AC-5. An editor sees a lock on People, Connections and Channels, and on Browser while they may not use the Agent's sessions, whose side panels the browser is one of; on no other section.
   it("locks only the owner's sections for an editor", () => {
-    expect(lockedFor(EDITOR)).toEqual(["people", "connections", "channels"]);
+    expect(lockedFor(EDITOR)).toEqual([
+      "people",
+      "connections",
+      "browser",
+      "channels",
+    ]);
   });
 
   // TEST_SCENARIO: AC-10. The owner's page is unchanged: no section carries a lock.
@@ -66,7 +71,7 @@ describe("locked sections", () => {
         }),
       ),
     );
-    expect(html.match(/data-testid="section-lock"/g)).toHaveLength(3);
+    expect(html.match(/data-testid="section-lock"/g)).toHaveLength(4);
     expect(html).toContain("Only the owner changes this");
   });
 });

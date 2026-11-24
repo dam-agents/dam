@@ -5,6 +5,7 @@ export const brandSchema = z.object({
   short: z.string(),
   title: z.string(),
   vendor: z.string(),
+  assistantName: z.string().default("Assistant"),
   theme: z.object({
     light: z.object({
       accent: z.string(),

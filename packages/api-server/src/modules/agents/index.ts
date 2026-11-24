@@ -5,6 +5,12 @@ export {
   composePublicAgentPage,
   attachProviderToBareAgents,
   connectionGrantProvisioner,
+  childrenMirroringConnections,
+  inheritanceCleanup,
+  nearestOwnEgress,
+  inheritanceOf,
+  ownEgressAgentIds,
+  childEgressGrants,
 } from "./compose.js";
 export type {
   AgentCleanupHook,
@@ -33,6 +39,7 @@ export { createKeycloakUserDirectory } from "./infrastructure/keycloak-user-dire
 export type { InfraAgent } from "./infrastructure/agent-mappers.js";
 export { createAgentSweep } from "./services/agent-sweep.js";
 export { createImageUpdate } from "./services/image-update.js";
+export { createIdleOverrideSweep } from "./services/idle-override-sweep.js";
 export { agentServiceIsIdle } from "./infrastructure/agent-service-status-client.js";
 export {
   AgentWakeTimeoutError,
@@ -53,6 +60,10 @@ export {
 } from "./domain/out-of-memory.js";
 export type { AgentsInstallSettings } from "./compose.js";
 export { createInputFromSetup } from "./domain/agent-setup.js";
+export {
+  environmentCreateInput,
+  subAgentCreateInput,
+} from "./domain/child-launch.js";
 export { agentStreamable } from "./domain/streamable.js";
 export { type PublicAgentPageService } from "./services/public-agent-page-service.js";
 export { createPublicAgentRoutes } from "./infrastructure/public-agent-routes.js";
@@ -70,5 +81,7 @@ export {
   findSlackChannelsByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
+  setSlackChannelHistory,
+  hasSlackChannelHistory,
   setSlackChannelDefault,
 } from "./infrastructure/channel-bindings-repository.js";

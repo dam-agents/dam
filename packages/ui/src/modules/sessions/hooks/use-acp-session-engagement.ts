@@ -10,20 +10,24 @@ export function useAcpSessionEngagement(selectedAgent: string | null): {
   clear: () => void;
 } {
   const engagedSessionIdRef = useRef<string | null>(null);
+  const clearedRef = useRef(0);
 
   const engage = useCallback(
     async (conn: ClientConnection): Promise<string | null> => {
       if (!selectedAgent) return null;
-      const boundSessionId = engagedSessionIdRef.current;
-      if (boundSessionId) return boundSessionId;
-
       const sid = useStore.getState().sessionId;
+      const boundSessionId = engagedSessionIdRef.current;
+      if (boundSessionId && (sid === null || boundSessionId === sid))
+        return boundSessionId;
       if (!sid) return null;
+
+      const cleared = clearedRef.current;
       await conn.agent.request("session/resume", {
         sessionId: sid,
         cwd: ".",
         mcpServers: [],
       });
+      if (cleared !== clearedRef.current) return null;
       engagedSessionIdRef.current = sid;
       return sid;
     },
@@ -36,6 +40,7 @@ export function useAcpSessionEngagement(selectedAgent: string | null): {
 
   const clear = useCallback(() => {
     engagedSessionIdRef.current = null;
+    clearedRef.current += 1;
   }, []);
 
   return { engagedSessionIdRef, engage, bind, clear };

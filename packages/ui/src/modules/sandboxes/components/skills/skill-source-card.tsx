@@ -63,6 +63,8 @@ export function SkillSourceCard({
   onOpenSkill,
   onToggleAll,
   onManageConnections,
+  compact = false,
+  hideSwitches = false,
 }: {
   source: SkillSource;
   surface: SkillsSurface;
@@ -72,6 +74,9 @@ export function SkillSourceCard({
   onOpenSkill: (skill: Skill) => void;
   onToggleAll: (on: boolean, scope?: Skill[]) => void;
   onManageConnections?: () => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: the + menu's compact card, as the design draws it: the source's name, how many of its skills are on, and its path, with no scan time, bulk switch or source menu. */
+  compact?: boolean;
+  hideSwitches?: boolean;
 }) {
   const {
     skillsBySource,
@@ -149,45 +154,49 @@ export function SkillSourceCard({
           )
         }
       >
-        <div className="flex shrink-0 items-center gap-2">
-          {scannedAt && (
-            <ScanFreshness
+        {!compact && (
+          <div className="flex shrink-0 items-center gap-2">
+            {scannedAt && (
+              <ScanFreshness
+                scannedAt={scannedAt}
+                rescanning={revalidating}
+                onRescan={() => void surface.refreshSource(source.id)}
+              />
+            )}
+            {!scannedAt && loading && (
+              <Spinner size={14} label="Scanning this source" />
+            )}
+            {loaded && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={
+                  mutationsDisabled || bulkBusy || bulkList.length === 0
+                }
+                onClick={() =>
+                  onToggleAll(!bulkAllOn, filtering ? visible : undefined)
+                }
+              >
+                {bulkBusy && <Spinner size={14} />}
+                {filtering
+                  ? `${bulkAllOn ? "Disable" : "Enable"} ${bulkList.length} matching`
+                  : bulkAllOn
+                    ? "Disable all"
+                    : "Enable all"}
+              </Button>
+            )}
+            <SkillSourceActions
+              source={source}
               scannedAt={scannedAt}
-              rescanning={revalidating}
+              busy={loading || revalidating}
               onRescan={() => void surface.refreshSource(source.id)}
+              onRemove={onRemove}
+              onHide={onHide}
+              hideBlocker={hideBlocker}
+              hideDisabled={mutationsDisabled}
             />
-          )}
-          {!scannedAt && loading && (
-            <Spinner size={14} label="Scanning this source" />
-          )}
-          {loaded && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={mutationsDisabled || bulkBusy || bulkList.length === 0}
-              onClick={() =>
-                onToggleAll(!bulkAllOn, filtering ? visible : undefined)
-              }
-            >
-              {bulkBusy && <Spinner size={14} />}
-              {filtering
-                ? `${bulkAllOn ? "Disable" : "Enable"} ${bulkList.length} matching`
-                : bulkAllOn
-                  ? "Disable all"
-                  : "Enable all"}
-            </Button>
-          )}
-          <SkillSourceActions
-            source={source}
-            scannedAt={scannedAt}
-            busy={loading || revalidating}
-            onRescan={() => void surface.refreshSource(source.id)}
-            onRemove={onRemove}
-            onHide={onHide}
-            hideBlocker={hideBlocker}
-            hideDisabled={mutationsDisabled}
-          />
-        </div>
+          </div>
+        )}
       </SkillSourceHeader>
 
       {!loaded && !error && <SkillRowsSkeleton />}
@@ -222,6 +231,7 @@ export function SkillSourceCard({
               onToggle={() => void surface.toggle(skill)}
               onUpdate={() => void surface.update(skill)}
               onOpen={() => onOpenSkill(skill)}
+              hideSwitch={hideSwitches}
             />
           );
         })}

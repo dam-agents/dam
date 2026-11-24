@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TelegramUser } from "@chat-adapter/telegram";
-import { AcpModelRefusedError } from "../../core/acp-client.js";
+import {
+  AcpModelCallFailedError,
+  AcpModelRefusedError,
+} from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
 import { telegramWorkerHarness } from "../helpers/telegram-worker.js";
 
@@ -138,6 +141,30 @@ describe("telegram worker turns", () => {
       expect(h.posts.join("\n")).toContain("The model refused this message"),
     );
     expect(h.posts.join("\n")).not.toContain("new thread");
+  });
+
+  /**
+   * TEST_SCENARIO: The model provider rejects the agent's model call. The chat
+   * gets the same reply a Slack thread does: the call failed, the provider's
+   * words, and where the owner checks the provider.
+   */
+  it("tells the chat the model call failed", async () => {
+    const h = await started(
+      telegramWorkerHarness({
+        turn: () =>
+          Promise.reject(
+            new AcpModelCallFailedError("s-chat", "rejected", "API Error: 403"),
+          ),
+      }),
+    );
+
+    h.sendDirect(JANE, "a question");
+
+    await vi.waitFor(() =>
+      expect(h.posts.join("\n")).toContain("model call was refused"),
+    );
+    expect(h.posts.join("\n")).toContain("“API Error: 403”");
+    expect(h.posts.join("\n")).toContain("?s=s-chat");
   });
 
   /**

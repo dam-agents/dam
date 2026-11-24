@@ -9,7 +9,6 @@ import {
 import { proxyCostDifference } from "../domain/cost.js";
 import {
   amountsDelta,
-  dayCountersOf,
   daysBefore,
   isZero,
   mapAmounts,
@@ -20,10 +19,13 @@ import {
   type CallAmounts,
   type SpendRow,
 } from "../domain/ledger.js";
-import type { PriceBook } from "../domain/prices.js";
+import { LISTED_PROVIDERS, type PriceBook } from "../domain/prices.js";
+import { AWAITING_SOURCE } from "../domain/reprice.js";
 import { payingProvider, unitOf } from "../domain/units.js";
 import type { CallMeta, CallStates } from "../infrastructure/call-states.js";
 import type { DayCounters } from "../infrastructure/day-counters.js";
+import type { PriceMetrics } from "../infrastructure/price-metrics.js";
+import { createCountDay } from "./count-day.js";
 import type { SpendLedger } from "../infrastructure/spend-ledger.js";
 
 export interface AgentOwners {
@@ -40,6 +42,13 @@ interface SettledAt {
   readonly startedAt: Date;
   readonly routerCallId?: string | null;
   readonly sessionId?: string | null;
+  readonly priceSource: string;
+  readonly priceModel: string;
+  readonly estimateReasons: readonly string[];
+}
+
+export interface PriceRequests {
+  requestRead(connectionId: string): void;
 }
 
 export interface SpendIngest {
@@ -80,32 +89,18 @@ export async function checkedSession(
 }
 
 export function createSpendIngest(deps: {
-  priceBook: PriceBook;
+  priceBook: () => PriceBook;
   calls: CallStates;
   ledger: SpendLedger;
   counters: DayCounters;
   owners: AgentOwners;
   sessions: SessionOwnership;
+  metrics: PriceMetrics;
+  prices: PriceRequests;
 }): SpendIngest {
   const log = () => getLogger();
 
-  const countDay = async (row: SpendRow, deltaMicros: number) => {
-    for (const counter of dayCountersOf(row)) {
-      try {
-        if (await deps.counters.addIfPresent(counter, deltaMicros)) continue;
-        await deps.counters.setIfMissing(
-          counter,
-          await deps.ledger.total(counter),
-        );
-      } catch (err) {
-        log().warn(
-          { counter, reason: formatError(err) },
-          "spend.counter_write_failed",
-        );
-        await deps.counters.drop(counter).catch(() => {});
-      }
-    }
-  };
+  const countDay = createCountDay(deps);
 
   const putCall = (
     callId: string,
@@ -137,6 +132,9 @@ export function createSpendIngest(deps: {
         webSearches: amounts.webSearches,
         durationMs: amounts.durationMs,
         estimated: amounts.estimatedCalls > 0,
+        priceSource: call.priceSource,
+        priceModel: call.priceModel,
+        estimateReasons: call.estimateReasons,
       })
       .catch((err: unknown) =>
         log().warn(
@@ -155,9 +153,13 @@ export function createSpendIngest(deps: {
     const applied = await deps.calls.apply(callId, row, amounts, final);
     if (!applied) return false;
     const delta = amountsDelta(amounts, applied.previous);
-    if (!isZero(delta)) {
+    if (final || !isZero(delta)) {
       try {
-        await deps.ledger.add(applied.row, delta, amounts.costMicros);
+        await deps.ledger.add(
+          applied.row,
+          delta,
+          final ? amounts.costMicros : 0,
+        );
       } catch (err) {
         await deps.calls.restore(callId, applied).catch(() => {});
         throw err;
@@ -178,9 +180,11 @@ export function createSpendIngest(deps: {
         from,
         to: row.day,
       });
+    const today = await within(row.day);
     const highest =
-      (await within(row.day)) ??
-      (await within(daysBefore(row.day, REFERENCE_DAYS - 1)));
+      today !== null && today > 0
+        ? today
+        : await within(daysBefore(row.day, REFERENCE_DAYS - 1));
     if (highest === null) {
       log().warn(
         { payer: row.payer, connectionId: row.connectionId, day: row.day },
@@ -242,15 +246,22 @@ export function createSpendIngest(deps: {
     if (!state || state.final) return;
     if (state.row) {
       const amounts = { ...state.amounts, estimatedCalls: 1 };
+      const awaiting = amounts.awaitingCalls > 0;
+      const reasons: EstimateReason[] = awaiting
+        ? ["awaiting-price", "record-missing"]
+        : ["record-missing"];
       const settled = await settle(callId, state.row, amounts, true, {
         startedAt:
           state.meta?.startedAt ?? new Date(`${state.row.day}T00:00:00Z`),
         routerCallId: state.meta?.routerCallId ?? null,
         sessionId: state.meta?.sessionId ?? null,
+        priceSource: awaiting ? AWAITING_SOURCE : "estimate",
+        priceModel: state.row.model,
+        estimateReasons: reasons,
       });
       if (settled)
         logEstimate(callId, state.row, amounts, {
-          reasons: ["record-missing"],
+          reasons,
           referenceCost: false,
         });
       return;
@@ -284,6 +295,9 @@ export function createSpendIngest(deps: {
       startedAt: state.meta.startedAt,
       routerCallId: state.meta.routerCallId ?? null,
       sessionId: state.meta.sessionId ?? null,
+      priceSource: "estimate",
+      priceModel: "",
+      estimateReasons: ["record-missing", "usage-missing"],
     });
     if (settled)
       logEstimate(callId, row, estimate, {
@@ -349,7 +363,7 @@ export function createSpendIngest(deps: {
           callingAgentId: record.agentId,
           sessionId: record.sessionId,
         });
-      const measure = measureCall(record, deps.priceBook);
+      const measure = measureCall(record, deps.priceBook());
       if (measure.kind === "skip") {
         await deps.calls
           .heard(record.callId)
@@ -391,13 +405,35 @@ export function createSpendIngest(deps: {
       const amounts = measure.needsReferenceCost
         ? { ...measure.amounts, costMicros: await referenceCost(row) }
         : measure.amounts;
-      const settled = await settle(
-        record.callId,
-        row,
-        amounts,
-        record.final,
-        record,
-      );
+      const awaiting = measure.priceSource === "awaiting";
+      const settled = await settle(record.callId, row, amounts, record.final, {
+        ...record,
+        priceSource: measure.priceSource,
+        priceModel: measure.priceModel,
+        estimateReasons: measure.estimateReasons,
+      });
+      if (
+        awaiting &&
+        record.final &&
+        record.connectionId &&
+        LISTED_PROVIDERS.includes(measure.provider)
+      )
+        deps.prices.requestRead(record.connectionId);
+      if (settled && awaiting) {
+        deps.metrics.awaitingPrice({
+          provider: measure.provider,
+          model: measure.priceModel,
+        });
+        log().info(
+          {
+            callId: record.callId,
+            connectionId: row.connectionId,
+            provider: measure.provider,
+            model: measure.priceModel,
+          },
+          "spend.call_awaiting_price",
+        );
+      }
       if (settled && measure.estimateReasons.length > 0)
         logEstimate(record.callId, row, amounts, {
           reasons: measure.estimateReasons,
@@ -415,35 +451,47 @@ export function createSpendIngest(deps: {
             sessionId: record.sessionId,
             harness: record.harness,
             durationMs: record.durationMs,
+            modelGroup: record.modelGroup,
+            replay: record.replay,
+            proxyCostBody: record.proxyCost.body,
           },
           "spend.call_recorded",
         );
 
-      const uncached =
-        amounts.cacheReadTokens +
-          amounts.cacheWrite5mTokens +
-          amounts.cacheWrite1hTokens ===
-        0;
       const difference =
-        record.final && measure.unit === "usd" && uncached
+        record.final &&
+        measure.unit === "usd" &&
+        !record.replay &&
+        measure.priceSource !== "reply"
           ? proxyCostDifference(amounts.costMicros, record.proxyCost)
           : null;
-      if (difference !== null && difference > PROXY_COST_TOLERANCE) {
-        log().warn(
-          {
-            provider: measure.provider,
-            model: measure.model,
-            costMicros: amounts.costMicros,
-            proxyCost: record.proxyCost.cost,
-            proxyCostOriginal: record.proxyCost.original,
-            proxyCostDiscount: record.proxyCost.discount,
-            proxyCostMargin: record.proxyCost.margin,
-            uncachedInputTokens: amounts.uncachedInputTokens,
-            outputTokens: amounts.outputTokens,
-          },
-          "spend.proxy_cost_mismatch",
-        );
-      }
+      if (difference === null) return;
+      const labels = {
+        provider: measure.provider,
+        model: record.modelGroup ?? measure.model,
+      };
+      deps.metrics.proxyCostCompared(labels);
+      if (difference <= PROXY_COST_TOLERANCE) return;
+      deps.metrics.proxyCostDiffers(labels);
+      log().warn(
+        {
+          provider: measure.provider,
+          model: measure.model,
+          modelGroup: record.modelGroup,
+          costMicros: amounts.costMicros,
+          proxyCost: record.proxyCost.cost,
+          proxyCostOriginal: record.proxyCost.original,
+          proxyCostDiscount: record.proxyCost.discount,
+          proxyCostMargin: record.proxyCost.margin,
+          proxyCostBody: record.proxyCost.body,
+          uncachedInputTokens: amounts.uncachedInputTokens,
+          outputTokens: amounts.outputTokens,
+          cacheReadTokens: amounts.cacheReadTokens,
+          cacheWrite5mTokens: amounts.cacheWrite5mTokens,
+          cacheWrite1hTokens: amounts.cacheWrite1hTokens,
+        },
+        "spend.proxy_cost_mismatch",
+      );
     },
 
     async settleUnrecordedCalls() {

@@ -57,6 +57,9 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
 
 const GHE_HOST_HINT = "The hostname of your GitHub Enterprise instance";
 
+export const GHE_HOST_CHOICE_HINT =
+  "The GitHub Enterprise host your organization's repositories are on";
+
 const TEMPLATE_FIELD_PLACEHOLDERS: Record<string, Record<string, string>> = {
   "github-enterprise": { host: "github.ibm.com" },
   "github-enterprise-pat": { host: "github.ibm.com" },

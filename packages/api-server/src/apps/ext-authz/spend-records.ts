@@ -20,6 +20,9 @@ const PROXY_COST_HEADERS = {
   discount: "x-litellm-response-cost-discount-amount",
   margin: "x-litellm-response-cost-margin-amount",
 } as const;
+const MODEL_GROUP_HEADER = "x-litellm-model-group";
+const CACHE_KEY_HEADER = "x-litellm-cache-key";
+const MODEL_GROUP = /^[ -~]{1,256}$/;
 
 export interface SpendRecordStreams {
   service: AccessLogServiceServer;
@@ -91,15 +94,20 @@ function callRecordOf(
   if (!spend) return null;
   const startedAt = common?.startTime ?? new Date();
   const headers = entry.response?.responseHeaders ?? {};
+  const { replyCost, ...metadata } = spend;
+  const modelGroup = headers[MODEL_GROUP_HEADER];
   return {
-    ...spend,
+    ...metadata,
     agentId,
+    modelGroup: modelGroup && MODEL_GROUP.test(modelGroup) ? modelGroup : null,
+    replay: !!headers[CACHE_KEY_HEADER],
     status: entry.response?.responseCode || null,
     proxyCost: {
       cost: headers[PROXY_COST_HEADERS.cost] ?? null,
       original: headers[PROXY_COST_HEADERS.original] ?? null,
       discount: headers[PROXY_COST_HEADERS.discount] ?? null,
       margin: headers[PROXY_COST_HEADERS.margin] ?? null,
+      body: replyCost,
     },
     final: common?.accessLogType !== AccessLogType.DownstreamPeriodic,
     refusedByGate:

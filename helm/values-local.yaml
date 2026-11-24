@@ -1,12 +1,6 @@
 # Local dev: images built by each package's :oci task and loaded into k3s directly.
 # Used via: helm install -f values-local.yaml
 
-ui:
-  image:
-    repository: platform-ui
-    tag: latest
-    pullPolicy: Never
-
 apiServer:
   image:
     repository: platform-api-server
@@ -154,7 +148,6 @@ starterKits:
       adaevolve: { enabled: false, image: platform-skydiscover:latest }
       evox: { enabled: false, image: platform-skydiscover:latest }
       k-search: { enabled: false, image: platform-k-search:latest }
-      micro-manager: { enabled: true }
 
 # Environment endpoints at `<endpoint>-<environment>.env.localhost:4444`.
 environments:

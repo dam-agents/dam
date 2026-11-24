@@ -13,7 +13,7 @@ Without it the operator wires the agent by hand from README and pastes the ONBOA
 | Required connections              | the operator reads README and grants them                                   | `connections:` — apply refuses before anything is created when one is missing                                                             |
 | Fixed env vars                    | the operator sets them on the agent                                         | `env:`                                                                                                                                    |
 | Schedules                         | ONBOARDING creates each one over MCP                                        | `schedules:` — apply creates them; suggested ones arrive disabled; ONBOARDING still re-registers each with its `model` and `sessionTitle` |
-| Size, hibernation                 | install defaults                                                            | `resources:`, `hibernationTimeoutMin:`                                                                                                    |
+| Size                              | install defaults                                                            | `resources:`                                                                                                                              |
 | First turn                        | the operator pastes the ONBOARDING.md link                                  | the platform composes the briefing and opens the session itself                                                                           |
 | Idle scheduled fire               | a turn wakes, runs the pre-flight, reads `nothing_to_do`, ends              | the `precheck` declines and **no model is woken at all**                                                                                  |
 
@@ -130,7 +130,6 @@ All optional; declare only what the design needs.
 | `resources: {storage, note}`             | the workload needs more disk than the install default; `note` says why. `storage` is fixed at create, and CPU and memory are the owner's pool, so a kit names neither                                          |
 | `egressRules: [{host, verdict, …}]`      | hosts the job always needs beyond the preset, or must never reach (`verdict: deny`); same shape as a rule written by hand                                                                                      |
 | `egressPreset: none \| trusted \| all`   | the agent's web access at create. Omit for the platform default (`trusted`); `none` for a job that needs no network beyond its connections, `all` only when the job browses arbitrary sites                    |
-| `hibernationTimeoutMin`                  | a heartbeat finer than the install's idle timeout, so the agent is not paid for round-trip wake-ups                                                                                                            |
 | `requireConnectionAddress: true`         | the agent runs tools (Docker containers, nested agents) that call the same services with their own credentials or none, so its gateway must inject only requests that name a connection and leave theirs alone |
 | `env: [{name, value}]`                   | a **fixed** value every deployment shares. Instance values belong in the config dialog, never here                                                                                                             |
 | `bundledSkills: {path}`                  | the design bundles a skill — a scan root (`.agents/skills`); declared for display, the platform installs nothing                                                                                               |
@@ -163,5 +162,6 @@ kits:
   # - ref: v1.0.0      # optional; unpinned means the refresh job follows the default branch
 ```
 
+An entry for a kit the platform team does not publish names who does, with `publisher: { name: <name>, url: <https page> }` (`url` optional); the tile and kit modal show it, and an entry naming no one reads as the team's kit.
 The refresh job periodically re-reads every catalog and resolves each entry to a commit, so a new entry reaches the install without a redeploy, and an unpinned catalog still yields exact, immutable kits.
 The operator picks the catalog; the install's `starterKits.catalogs` names them (`curated` by default).

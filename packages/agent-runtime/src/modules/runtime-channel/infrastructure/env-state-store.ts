@@ -82,6 +82,10 @@ export function layerEnvOf(
 export function createEnvStateStore(
   agentHome: string,
   defaultHarness: string,
+  connectionEnv: (
+    harness: string,
+    providers: EnvLayer[],
+  ) => Record<string, string>,
 ): EnvStateStore {
   const path = join(agentHome, ".platform", "runtime-env.json");
   const doc = openJsonFile(path, {
@@ -109,6 +113,7 @@ export function createEnvStateStore(
     providers: () => state().providers.map((p) => p.id),
     forLease: (lease) => leaseEnvOf(state(), lease),
     layerEnvFor: (lease) => layerEnvOf(state(), lease),
+    connectionEnvFor: (harness) => connectionEnv(harness, state().providers),
     write: (next) => doc.write({ _note: RUNTIME_ENV_NOTE, ...next }),
     ready: () => existsSync(path),
   };

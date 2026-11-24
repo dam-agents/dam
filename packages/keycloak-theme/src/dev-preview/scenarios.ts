@@ -70,7 +70,15 @@ const BASE: LoginContext = {
   properties: {
     PLATFORM_ALLOW_PASSWORD: "true",
     PLATFORM_SHARE_CLIENT_ID: "platform-share",
-    PLATFORM_BRAND_NAME_MEANINGS: '["Deploy Agents Massively"]',
+    PLATFORM_BRAND_NAME_MEANINGS: JSON.stringify([
+      "Deploy Agents Massively",
+      "Drive Agents, Make Coffee",
+      "Debugging At Midnight",
+      "Delightfully Aggressive Multitasking",
+      "Does Anything Mostly",
+      "Dangerously Autonomous Machines",
+      "Don't Ask Me",
+    ]),
     PLATFORM_DOCS_URL: "https://ibm.biz/dam-docs",
     PLATFORM_LOGIN_COMMUNITY_LABEL: "#dam-community",
     PLATFORM_LOGIN_COMMUNITY_URL:

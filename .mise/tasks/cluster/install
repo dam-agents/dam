@@ -107,7 +107,7 @@ no_mesh_warning
 
 # An Environment builds only what the registry lacks, when it loads them.
 if [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ "$CLUSTER_TARGET" != environment ]; then
-  mise run //packages/controller:oci ::: //packages/api-server:oci ::: //packages/ui:oci ::: //packages/keycloak-theme:oci
+  mise run //packages/controller:oci ::: //packages/api-server:oci ::: //packages/keycloak-theme:oci
 fi
 
 LIMA_TEMPLATE="$usage_lima_template"
@@ -115,7 +115,7 @@ HELM_VALUES="${usage_helm_values:-}"
 eval "sets=(${usage_set:-})"
 HELM_EXTRA_ARGS=()
 for kv in ${sets[@]+"${sets[@]}"}; do HELM_EXTRA_ARGS+=("--set=$kv"); done
-# Inside one of the platform's own vm agents, every upstream this cluster
+# Inside one of the platform's own agents, every upstream this cluster
 # reaches leaves through that agent's gateway, which intercepts TLS with its
 # own CA. The agent's guest holds that CA at the guest contract's caFile path;
 # the cluster's gateways must trust it too or every injected connection fails
@@ -302,6 +302,8 @@ if [ "$CLUSTER_TARGET" = environment ]; then
   # An Environment runs the platform's agent image, whose root is an overlay,
   # as a sandbox's is.
   node_volumes_on_home
+  # Nested guests boot in time only with huge pages on (NODE_THP_SERVICE).
+  node_thp_always || exit 1
   # Every image the install puts in stays, and only memory evicts
   # (NODE_IMAGE_GC_DROPIN); a k3s that already runs takes it at a restart.
   if node_image_gc_off && node_k3s_running; then
@@ -379,7 +381,7 @@ elif [ -n "${IS_SANDBOX:-}" ]; then
     fi
     # One process's out-of-memory kill must not take its container with it: on
     # cgroup v2 the kubelet groups a container's kills unless its configuration
-    # sets singleProcessOOMKill, so one VM agent's overrun would end its runner
+    # sets singleProcessOOMKill, so one agent's overrun would end its runner
     # and every machine of that owner (issue #5614). No kubelet command-line flag
     # carries the setting, so it is a kubelet configuration file, which k3s copies
     # into the kubelet's own drop-in dir wherever kubelet-arg names it — already
@@ -535,7 +537,7 @@ fi
 # dependencies are resolved into charts/ (gitignored) here, first: rendering
 # needs them even with clickstack.enabled=false, and the build refreshes both
 # repositories. Best effort: the kubelet still pulls whatever this misses.
-ISTIO_VERSION="1.31.3"
+ISTIO_VERSION="1.31.4"
 # Istio publishes its charts here from 1.31 on; the GCS bucket stops at 1.30
 # and is being retired. --force-update repoints an `istio` repo a machine
 # already has registered at the old URL.
@@ -663,7 +665,7 @@ else
     RUNNER_IMAGE_BUILT=1
   fi
 
-  COMPONENTS=(controller api-server ui keycloak vm-runner)
+  COMPONENTS=(controller api-server keycloak vm-runner)
   # An Environment pulls each image the registry has for this checkout's
   # source itself, under the local tag the chart runs, rather than this agent
   # pulling it and streaming it over the link; only an image the registry
@@ -686,7 +688,7 @@ else
         echo "$c changed: building it here"
         if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
           case "$c" in
-            controller|api-server|ui|vm-runner) task="//packages/$c:oci" ;;
+            controller|api-server|vm-runner) task="//packages/$c:oci" ;;
             keycloak) task="//packages/keycloak-theme:oci" ;;
             *) task="//packages/agents:oci" ;;
           esac
@@ -910,7 +912,7 @@ CERT_MANAGER_PID=$!
 # Istio 1.29.x is the floor for ambient L7 with locked-down waypoint HCM; the
 # Kubernetes 1.37 that k3s runs needs Istio 1.31 or later.
 # Pinned: Gateway API standard channel, at exactly the bundle k3s's own
-# `gateway-api-crd` chart ships (v1.6.1 in k3s v1.37.1). That chart owns these
+# `gateway-api-crd` chart ships (v1.6.3 in k3s v1.37.2). That chart owns these
 # CRDs too (it takes ownership of ones applied without Helm metadata, like
 # ours) and rewrites them to its bundle whenever its job runs. Since v1.5 the
 # bundle also installs the cluster-scoped safe-upgrades
@@ -923,7 +925,7 @@ CERT_MANAGER_PID=$!
 # apply's last-applied annotation. --force-conflicts: on a fresh k3s the
 # `gateway-api-crd` job can apply the same bundle between our check and our
 # apply, and Helm then owns the policy's matchConstraints/matchResources.
-GATEWAY_API_VERSION="v1.6.1"
+GATEWAY_API_VERSION="v1.6.3"
 
 if ! kubectl get crd gateways.gateway.networking.k8s.io >/dev/null 2>&1; then
   echo "Installing Gateway API CRDs ($GATEWAY_API_VERSION)..."
@@ -1242,7 +1244,7 @@ fi
 # images outgrow. The MongoDB agent stays on the 108 line, which still runs the
 # MongoDB 5.0 the clickstack subchart deploys: the 109 line 1.13 defaults to
 # dropped 5.0. Move it with that MongoDB version.
-# The 1.14.0 chart runs its own 1.14.0 operator image, so the dated
+# The 1.15.0 chart runs its own 1.15.0 operator image, so the dated
 # operator.version override this install carried while the chart lagged is gone.
 if [ -n "${CLICKSTACK:-}" ]; then
   echo "Installing ClickStack operators (ClickHouse + MongoDB)..."
@@ -1260,7 +1262,7 @@ if [ -n "${CLICKSTACK:-}" ]; then
     --set manager.image.tag=v0.0.8
   helm upgrade --install mongodb-operator mongodb-kubernetes \
     --repo https://mongodb.github.io/helm-charts \
-    --version 1.14.0 --namespace clickstack-operators --wait --timeout 5m \
+    --version 1.15.0 --namespace clickstack-operators --wait --timeout 5m \
     --take-ownership \
     --set registry.operator=quay.io/dam-agents \
     --set community.agent.version=108.0.27.9091-1 \
@@ -1314,7 +1316,7 @@ elif [ "$CLUSTER_TARGET" = environment ]; then
   # shellcheck disable=SC2013
   for c in $(sort -u "$ENV_CHANGED"); do
     case "$c" in
-      controller|ui|keycloak) deploy="$CLUSTER_RELEASE-$c" ;;
+      controller|keycloak) deploy="$CLUSTER_RELEASE-$c" ;;
       api-server) deploy="$CLUSTER_RELEASE-apiserver" ;;
       vm-runner)
         # The runners, the node image cache and the release stager all run

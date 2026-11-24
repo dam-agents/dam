@@ -11,11 +11,11 @@
 # (smolvm's libkrun submodule at commit=). The image build rebuilds it from that
 # commit with libkrun.patch applied, and refuses a build whose exported krun_*
 # symbols differ from the release's.
-tag=v1.33.0
-commit=03a5c2270d287b09e4aab52e28d384ab66dd5818
-libkrun-commit=2b0b86da373f5fb500d2c284929dfc41d265bd19
-libkrunfw-commit=eab8d72d0778c8dd60ed9c97859145096670cc79
+tag=v1.35.1
+commit=bc58c3ef808e70db10c0ffb2b282c5f565ac6afc
+libkrun-commit=e8fed93d25c340c91cf7e9d2cbbbda06f67c7a7f
+libkrunfw-commit=0fae3853989a7fe5bf9921bc8e0d013e86c630e8
 libkrunfw-kernel-sha256=3c2f44ef6acc021a7ad444d9a2e6ec1ef488ff09368793d0004a6080f69d621e
-sha256-linux-x86_64=97e0c64d50abc407499802daa6c849ac010ef29d44e1d97664d8a78067927274
-sha256-linux-arm64=ca80082c399b71b8f4afe405f1325e01fad6ca2c4817c89723ede92bee8f2737
-sha256-darwin-arm64=2f7772230e1c53a27db589fd3c65190a43eb014bc107b2f9cbd6a85f55e7c3f5
+sha256-linux-x86_64=1c9377f6ada3c7c6753efada90595d5f44eb7a900ca0e4f8b786815b84fd22be
+sha256-linux-arm64=554a3793009bdace519e46923d5f6466e17c126f4bb2111da874d45ef7e95cce
+sha256-darwin-arm64=962142af8820f2c7dc5a03d755ed1fbecea418201ff24e4bad48d2cdd313de0e

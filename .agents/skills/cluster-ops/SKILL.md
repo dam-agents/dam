@@ -13,7 +13,7 @@ In a Claude Code on the web session (`CLAUDE_CODE_REMOTE=true`), read [ccweb](..
 The common ones:
 
 - `cluster:install` — create the k3s VM, build images, install cert-manager + the Platform chart (upgrades in place if already installed)
-- `cluster:build -- <controller|api-server|ui|keycloak|agents>…` — rebuild those images and restart just their pods (`agents`: every deployed agent image)
+- `cluster:build -- <controller|api-server|keycloak|agents>…` — rebuild those images and restart just their pods (`agents`: every deployed agent image; a UI change rebuilds `api-server`, which serves the UI)
 - `cluster:status` — pods and cluster state
 - `cluster:install -- --no-mesh` — local-only install with no Istio dataplane, for kernels that cannot run ambient (see below)
 - `cluster:kubectl -- logs -l app.kubernetes.io/component=apiserver --all-containers` — api-server pod logs
@@ -88,7 +88,9 @@ A *linked* worktree never gets the default install, `main` included: only the re
 **A port per install, one Traefik.**
 Every install serves the same host names (`localhost`, `keycloak.localhost`, `share.`, `content.`, `*.env.localhost`) on a port of its own: 4444 for the default install, otherwise the first free port of 4400–4499.
 One Lima port-forward rule carries that whole range to this host (`etc/lima/k3s.yaml`); the first install of a cluster adds it and restarts the VM once (Lima reads forwards at start), and `cluster:install` checks for it on every run, so it happens at most once per VM.
-The cluster's one `HelmChartConfig traefik` holds an entrypoint per install (`platform`, `platform-<name>`), merged rather than overwritten: `traefik_entrypoint_port` re-reads it and writes it back with a compare-and-swap on the object's `resourceVersion`, so two installs starting at once take two ports and neither drops the other's entrypoint; that config is also the only record of which port is whose (`cluster:installs` reads it).
+The cluster's one `HelmChartConfig traefik` holds an entrypoint per install, merged rather than overwritten: `traefik_entrypoint_port` re-reads it and writes it back with a compare-and-swap on the object's `resourceVersion`, so two installs starting at once take two ports and neither drops the other's entrypoint; that config is also the only record of which port is whose (`cluster:installs` reads it).
+An entrypoint's name is a Kubernetes port name, which stops at 15 characters: the default install's is `platform`, and a named install's is `p-<the name's first 6 characters>-<5 hex of the name>`, so two installs whose names share a prefix never collide (`platform-<name>` collided once Traefik's chart truncated it, and failed its release for every install).
+An entrypoint an install recorded under that old name is read from there and rewritten under the short one, and `cluster:uninstall` drops both.
 Each install's Ingress names its entrypoint (`ingress.annotations.traefik.ingress.kubernetes.io/router.entrypoints`), because Traefik attaches a router with no entrypoints to all of them.
 A named install also sets `router.priority=1000`: an Ingress installed before the annotation existed — the default install's, until its next `cluster:install` — still claims `Host(localhost)` on every entrypoint, and Traefik breaks that tie by rule length.
 Traefik gives every router an Ingress makes that Ingress's priority, so the host-less catch-all rule (`ingress.catchAllAppHost`) has an Ingress of its own.
@@ -120,7 +122,7 @@ Every one of those is idempotent on a warm cluster, and none is safe on a fresh 
 
 ## In an Environment
 
-An agent on the vm backend installs DAM into one of its own [Environments](../../../docs/architecture/environments.md), from the current checkout, so a reviewer can open the change at the Environment's addresses.
+An agent installs DAM into one of its own [Environments](../../../docs/architecture/environments.md), from the current checkout, so a reviewer can open the change at the Environment's addresses.
 
 1. **Create the Environment** with the `create_environment` tool (a shell cannot), with four endpoints on one port that is not 4444, which the install's own ingress uses: `app`, `keycloak`, `share` and `content`, each → `4400`.
    The install stops and names what is missing when they are not there.
@@ -161,7 +163,7 @@ The cluster tasks load the tools' PATH from the image's mise themselves; in a sh
 
 - `mise run e2e` — full from-scratch run: nuke the test VM, install a fresh cluster, run specs, tear down (the CI path)
 - `mise run e2e:loop` — fast rerun against a warm test cluster: bootstrap once if missing, optionally rebuild components, wipe data, run specs.
-  Options: `--headed --full --rebuild=controller,api-server,ui,keycloak,agents --test=<filter>` (`--rebuild=` rebuilds nothing without asking); in an Environment also `--no-install`
+  Options: `--headed --full --rebuild=controller,api-server,keycloak,agents --test=<filter>` (`--rebuild=` rebuilds nothing without asking); in an Environment also `--no-install`
 - `mise run e2e:reset` — data wipe only: drop+recreate the platform DB, delete agents (CMs/sts/pods/PVCs) and VM runners, clear stored Playwright auth.
   Leaves the cluster running
 
@@ -254,8 +256,8 @@ Boot waits are four minutes for a boot and five for a smoke test, so a guest tha
 
 `smoke/19-agent-backend.spec.ts` (boot and chat, a file in HOME, a schedule fire, hibernate/wake, the restart verb, and the runner pod deleted, each keeping HOME) deletes the owner's whole VM runner, which also runs every other agent of the e2e user, so it runs after the rest of the suite.
 
-CI runs the smoke suite as two jobs on every run but a tag and a docs-only PR (e2e.yml's `docs-only` job): `e2e / mise e2e (vm, per-agent gateway)` (`e2e-agent-gateway`) on the chart's default gateway pod per agent, and `e2e / mise e2e (vm, owner gateway)` (`e2e-owner-gateway`, the same steps through YAML anchors, plus `E2E_GATEWAY_PER_OWNER=1`), each on its own GitHub-hosted x64 runner.
-A pull request runs the per-agent job alone, with a reduced set of the specs, the ones that fail for real there; the owner gateway's job, and every spec, run in a merge group, the nightly run and a dispatch ([e2e architecture](../../../docs/architecture/e2e.md)).
+CI runs the smoke suite as two jobs on every run but a tag and a docs-only PR (e2e.yml's `docs-only` job, which also picks a pull request's scope): `e2e / mise e2e (vm, per-agent gateway)` (`e2e-agent-gateway`) on the chart's default gateway pod per agent, and `e2e / mise e2e (vm, owner gateway)` (`e2e-owner-gateway`, the same steps through YAML anchors, plus `E2E_GATEWAY_PER_OWNER=1`), each on its own GitHub-hosted x64 runner.
+A pull request runs the per-agent job alone, with a reduced set of the specs, the ones that fail for real there, plus each deferred spec whose paths in `packages/e2e/playwright/pr-scope.json` its change touches, and the owner gateway's job only when it touches that lane's paths there; both jobs, and every spec, run on a push to main, the nightly run and a dispatch ([e2e architecture](../../../docs/architecture/e2e.md)).
 Each job's runner exposes `/dev/kvm`, which a udev rule opens to the runner user, and builds or pulls the vm-runner beside the other images.
 A failure in one job alone is its gateway topology's.
 

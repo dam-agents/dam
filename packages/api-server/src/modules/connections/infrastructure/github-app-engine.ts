@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
 import type {
+  GitHubAppInstallationAccount,
+  GitHubAppInstallations,
   GitHubUserTokenInstallation,
   GitHubUserTokenProbe,
 } from "api-server-api";
@@ -93,6 +95,9 @@ export interface GitHubAppEngine {
   readUserInstallations(
     opts: ReadUserInstallationsOpts,
   ): Promise<GitHubUserTokenProbe>;
+  listUserInstallationAccounts(
+    opts: ReadUserInstallationsOpts,
+  ): Promise<GitHubAppInstallations>;
 }
 
 export interface CreateGitHubAppEngineOptions {
@@ -129,19 +134,50 @@ interface ScopedTokenResponse {
   installation?: { account?: { login?: string } } | null;
 }
 
-interface UserInstallationsResponse {
-  installations?: {
+interface UserInstallationResponse {
+  id?: number;
+  target_id?: number;
+  target_type?: string;
+  account?: {
     id?: number;
-    target_id?: number;
-    account?: { id?: number; login?: string } | null;
-    permissions?: Record<string, string>;
-    repository_selection?: string;
-  }[];
+    login?: string;
+    avatar_url?: string;
+    type?: string;
+  } | null;
+  permissions?: Record<string, string>;
+  repository_selection?: string;
+  suspended_at?: string | null;
+}
+
+interface UserInstallationsResponse {
+  installations?: UserInstallationResponse[];
+}
+
+interface UserInstallationEntry {
+  installationId: number;
+  targetId: number;
+  accountLogin: string;
+  raw: UserInstallationResponse;
 }
 
 const REPOS_PER_PAGE = 100;
 const MAX_REPO_PAGES = 5;
 const MAX_INSTALLATION_PAGES = 3;
+
+function repositorySelectionOf(
+  installation: Pick<UserInstallationResponse, "repository_selection">,
+): "all" | "selected" {
+  return installation.repository_selection === "all" ? "all" : "selected";
+}
+
+function httpsUrlOf(value: string | undefined): string | undefined {
+  if (!value || value.length > 2048) return undefined;
+  try {
+    return new URL(value).protocol === "https:" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 async function reachGitHub(
   apiBaseUrl: string,
@@ -534,18 +570,17 @@ export function createGitHubAppEngine(
     return { repositories, repositoriesTruncated: true };
   }
 
-  async function readUserInstallations({
+  async function pageUserInstallations({
     id,
     apiBaseUrl,
     accessToken,
-  }: ReadUserInstallationsOpts): Promise<GitHubUserTokenProbe> {
+  }: ReadUserInstallationsOpts): Promise<{
+    entries: UserInstallationEntry[];
+    truncated: boolean;
+  }> {
     const base = apiBaseUrl.replace(/\/+$/, "");
     const headers = githubHeaders(`Bearer ${accessToken}`);
-    const found: Omit<
-      GitHubUserTokenInstallation,
-      "repositories" | "repositoriesTruncated" | "repositoriesUnavailable"
-    >[] = [];
-    let installationsTruncated = false;
+    const entries: UserInstallationEntry[] = [];
     for (let page = 1; page <= MAX_INSTALLATION_PAGES; page++) {
       const res = await fetchImpl(
         `${base}/user/installations?per_page=${REPOS_PER_PAGE}&page=${page}`,
@@ -566,32 +601,65 @@ export function createGitHubAppEngine(
           continue;
         }
         if (!accountLogin) continue;
-        found.push({
+        entries.push({
           installationId: inst.id,
           targetId,
           accountLogin,
-          permissions: inst.permissions ?? {},
-          repositorySelection:
-            inst.repository_selection === "all" ? "all" : "selected",
+          raw: inst,
         });
       }
-      if (batch.length < REPOS_PER_PAGE) break;
-      if (page === MAX_INSTALLATION_PAGES) installationsTruncated = true;
+      if (batch.length < REPOS_PER_PAGE) return { entries, truncated: false };
     }
+    return { entries, truncated: true };
+  }
+
+  async function readUserInstallations(
+    opts: ReadUserInstallationsOpts,
+  ): Promise<GitHubUserTokenProbe> {
+    const base = opts.apiBaseUrl.replace(/\/+$/, "");
+    const headers = githubHeaders(`Bearer ${opts.accessToken}`);
+    const { entries, truncated } = await pageUserInstallations(opts);
     const installations = await Promise.all(
-      found.map(async (inst) => ({
-        ...inst,
+      entries.map(async ({ installationId, targetId, accountLogin, raw }) => ({
+        installationId,
+        targetId,
+        accountLogin,
+        permissions: raw.permissions ?? {},
+        repositorySelection: repositorySelectionOf(raw),
         ...(await listUserInstallationRepositories(
           base,
-          inst.installationId,
+          installationId,
           headers,
         )),
       })),
     );
     return {
       installations,
-      ...(installationsTruncated ? { installationsTruncated: true } : {}),
+      ...(truncated ? { installationsTruncated: true } : {}),
     };
+  }
+
+  async function listUserInstallationAccounts(
+    opts: ReadUserInstallationsOpts,
+  ): Promise<GitHubAppInstallations> {
+    const { entries, truncated } = await pageUserInstallations(opts);
+    const accounts = entries.map(
+      ({ targetId, accountLogin, raw }): GitHubAppInstallationAccount => {
+        const avatarUrl = httpsUrlOf(raw.account?.avatar_url);
+        return {
+          login: accountLogin,
+          targetId,
+          ...(raw.suspended_at ? { suspended: true as const } : {}),
+          kind:
+            (raw.account?.type ?? raw.target_type) === "Organization"
+              ? "organization"
+              : "user",
+          repositorySelection: repositorySelectionOf(raw),
+          ...(avatarUrl ? { avatarUrl } : {}),
+        };
+      },
+    );
+    return { accounts, ...(truncated ? { truncated: true } : {}) };
   }
 
   return {
@@ -600,6 +668,7 @@ export function createGitHubAppEngine(
     revokeInstallationToken,
     scopeUserToken,
     readUserInstallations,
+    listUserInstallationAccounts,
 
     async readInstallation({
       id,

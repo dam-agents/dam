@@ -1,17 +1,34 @@
 #!/usr/bin/env node
-//MISE description="Re-vendor LiteLLM's model price and context-window table, pruned to the fields the model catalog reads"
-//MISE sources=[".mise/tasks/update/model-prices"]
-//MISE outputs=["src/modules/model-catalog/model-prices.json"]
-import { writeFileSync } from "node:fs";
+//MISE description="Write LiteLLM's model price list at one commit: the model catalog's part and the Anthropic API's prices"
+//USAGE arg "[commit]" help="The full LiteLLM commit SHA to pin; the newest commit of the price list when left out"
+/* UNIT_BOUNDARY_DESCRIPTION: DAM keeps one copy of LiteLLM's public price
+list, from one commit, in two parts. The model catalogs read the "models"
+part: one row per model family name, with its limits, reasoning, vision and
+base prices. Spend prices Anthropic API keys and the Claude subscription value
+from the "anthropic" part: the Anthropic API's chat rows with every price
+field, unchanged, so a reviewer can compare them with LiteLLM's file. Before
+it writes anything, the task stops when a row that the current file prices
+is missing upstream, lacks one of the five token prices, or loses any price
+that the current file has, such as a prompt-size price, the fast-mode or
+region factor, or the web-search price, because DAM would count those calls
+low. A price that Anthropic really removed passes once it is deleted from
+the current file. A new row without every price is left out of the "anthropic"
+part, so its model's calls wait for their price, and stays in "models". Each
+row is on its own line, so a diff shows one line per changed model. */
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO = "BerriAI/litellm";
 const FILE = "model_prices_and_context_window.json";
-const RAW = `https://raw.githubusercontent.com/${REPO}/main/${FILE}`;
-const COMMITS = `https://api.github.com/repos/${REPO}/commits?path=${FILE}&per_page=1`;
-const MODES = new Set(["chat", "responses", "completion"]);
-const FIELDS = [
+const OUT = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../src/modules/model-catalog/model-prices.json",
+);
+const HEADERS = { "user-agent": "platform-model-prices", accept: "application/vnd.github+json" };
+
+const CATALOG_MODES = new Set(["chat", "responses", "completion"]);
+const CATALOG_FIELDS = [
   "mode",
   "max_input_tokens",
   "max_output_tokens",
@@ -23,49 +40,185 @@ const FIELDS = [
   "supports_vision",
   "supports_reasoning",
 ];
+const REQUIRED = [
+  "input_cost_per_token",
+  "output_cost_per_token",
+  "cache_read_input_token_cost",
+  "cache_creation_input_token_cost",
+  "cache_creation_input_token_cost_above_1hr",
+];
+const PRICE_FIELD =
+  /^(input_cost_per_token|output_cost_per_token|cache_read_input_token_cost|cache_creation_input_token_cost(_above_1hr)?)(_above_\d+k?_tokens)?(_flex|_priority)?$/;
 
-const normalize = (key) =>
-  key.split("/").at(-1).toLowerCase().replace(/\./g, "-");
+async function fetchJson(url) {
+  const res = await fetch(url, { headers: HEADERS });
+  if (!res.ok) throw new Error(`${url} answered HTTP ${res.status}`);
+  return res.json();
+}
+
+async function pinnedCommit() {
+  const given = process.env.usage_commit ?? "";
+  if (given !== "") {
+    if (!/^[0-9a-f]{40}$/.test(given)) {
+      console.error(`Give the full 40-character LiteLLM commit SHA, not "${given}".`);
+      process.exit(1);
+    }
+    return given;
+  }
+  const commits = await fetchJson(
+    `https://api.github.com/repos/${REPO}/commits?path=${FILE}&per_page=1`,
+  );
+  const newest = commits[0]?.sha;
+  if (!newest) throw new Error("could not read the newest commit of the price list");
+  return newest;
+}
+
+const familyName = (key) => key.split("/").at(-1).toLowerCase().replace(/\./g, "-");
 const plainness = (key) =>
   (key.includes("/") ? 2 : 0) + (/^[a-z-]+\.[a-z]/i.test(key) ? 1 : 0);
 
-const out = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "../../../src/modules/model-catalog/model-prices.json",
-);
-
-const commits = await (await fetch(COMMITS, { headers: { accept: "application/vnd.github+json" } })).json();
-const commit = commits[0]?.sha;
-if (!commit) throw new Error("could not read the latest commit of the price table");
-const table = await (await fetch(`https://raw.githubusercontent.com/${REPO}/${commit}/${FILE}`)).json();
-
-const models = {};
-const keys = Object.keys(table)
-  .filter((key) => key !== "sample_spec" && table[key] && typeof table[key] === "object" && MODES.has(table[key].mode))
-  .sort((a, b) => plainness(a) - plainness(b) || a.localeCompare(b));
-for (const key of keys) {
-  const family = normalize(key);
-  if (models[family]) continue;
-  const entry = table[key];
-  const kept = { key };
-  for (const field of FIELDS) if (entry[field] !== undefined) kept[field] = entry[field];
-  models[family] = kept;
+function catalogPart(list) {
+  const models = {};
+  const keys = Object.keys(list)
+    .filter(
+      (key) =>
+        key !== "sample_spec" &&
+        list[key] &&
+        typeof list[key] === "object" &&
+        CATALOG_MODES.has(list[key].mode),
+    )
+    .sort((a, b) => plainness(a) - plainness(b) || a.localeCompare(b));
+  for (const key of keys) {
+    const family = familyName(key);
+    if (models[family]) continue;
+    const kept = { key };
+    for (const field of CATALOG_FIELDS) if (list[key][field] !== undefined) kept[field] = list[key][field];
+    models[family] = kept;
+  }
+  return models;
 }
 
+function anthropicRows(list) {
+  const rows = {};
+  for (const name of Object.keys(list).sort()) {
+    const row = list[name];
+    if (row?.litellm_provider !== "anthropic" || row.mode !== "chat") continue;
+    const kept = {};
+    for (const field of Object.keys(row).sort()) {
+      if (PRICE_FIELD.test(field) && typeof row[field] === "number") kept[field] = row[field];
+    }
+    const search = row.search_context_cost_per_query?.search_context_size_medium;
+    if (typeof search === "number") kept.web_search_cost_per_query = search;
+    const factors = Object.entries(row.provider_specific_entry ?? {}).filter(
+      ([, value]) => typeof value === "number",
+    );
+    if (factors.length > 0) kept.price_factors = Object.fromEntries(factors.sort());
+    rows[name] = kept;
+  }
+  return rows;
+}
+
+function gaps(row) {
+  const found = REQUIRED.filter((field) => typeof row[field] !== "number").map(
+    (field) => `no ${field}`,
+  );
+  const steps = new Set(
+    Object.keys(row).flatMap((field) => field.match(/_above_(\d+k?)_tokens/)?.[1] ?? []),
+  );
+  if (steps.size > 1) found.push("more than one prompt-size step");
+  return found;
+}
+
+function changedFields(before, after) {
+  const fields = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort();
+  return fields
+    .filter((field) => JSON.stringify(before[field]) !== JSON.stringify(after[field]))
+    .map(
+      (field) =>
+        `${field} ${JSON.stringify(before[field]) ?? "none"} -> ${JSON.stringify(after[field]) ?? "none"}`,
+    );
+}
+
+function part(rows) {
+  return Object.entries(rows)
+    .map(([name, row]) => `    ${JSON.stringify(name)}: ${JSON.stringify(row)}`)
+    .join(",\n");
+}
+
+const current = existsSync(OUT) ? JSON.parse(readFileSync(OUT, "utf8")) : {};
+const known = current.anthropic ?? {};
+const commit = await pinnedCommit();
+const meta = await fetchJson(`https://api.github.com/repos/${REPO}/commits/${commit}`);
+const list = await fetchJson(`https://raw.githubusercontent.com/${REPO}/${commit}/${FILE}`);
+
+const upstream = anthropicRows(list);
+if (Object.keys(upstream).length === 0) {
+  console.error(`LiteLLM ${commit} has no Anthropic API chat rows.`);
+  process.exit(1);
+}
+const priceNames = (row) =>
+  Object.entries(row).flatMap(([field, value]) =>
+    field === "price_factors"
+      ? Object.keys(value).map((factor) => `price_factors.${factor}`)
+      : [field],
+  );
+const lost = Object.keys(known).flatMap((name) => {
+  if (!upstream[name]) return [`${name}: missing upstream`];
+  const kept = new Set(priceNames(upstream[name]));
+  const removed = priceNames(known[name])
+    .filter((price) => !kept.has(price))
+    .map((price) => `no ${price}`);
+  const found = [...new Set([...gaps(upstream[name]), ...removed])];
+  return found.length > 0 ? [`${name}: ${found.join(", ")}`] : [];
+});
+if (lost.length > 0) {
+  console.error(
+    `LiteLLM ${commit} would remove prices that DAM has; nothing was written:\n  ${lost.join("\n  ")}\n` +
+      `If Anthropic really removed a price, delete it from the "anthropic" part of ${OUT} and run again.`,
+  );
+  process.exit(1);
+}
+
+const anthropic = {};
+const leftOut = [];
+for (const [name, row] of Object.entries(upstream)) {
+  const found = gaps(row);
+  if (found.length > 0) leftOut.push(`${name}: ${found.join(", ")}`);
+  else anthropic[name] = row;
+}
+const models = catalogPart(list);
+
+const source = {
+  url: `https://github.com/${REPO}/blob/${commit}/${FILE}`,
+  commit,
+  committedAt: meta.commit.committer.date,
+  pruned:
+    "models: mode in chat|responses|completion; one entry per family name (last path segment, lowercased, dots as dashes); fields the model catalog reads. anthropic: litellm_provider anthropic and mode chat; every price field, unchanged",
+};
 writeFileSync(
-  out,
-  JSON.stringify(
-    {
-      source: {
-        url: RAW,
-        commit,
-        fetchedAt: new Date().toISOString().slice(0, 10),
-        pruned: "mode in chat|responses|completion; one entry per family name (last path segment, lowercased, dots as dashes); fields the model catalog reads",
-      },
-      models,
-    },
-    null,
-    0,
-  ) + "\n",
+  OUT,
+  `{\n  "source": ${JSON.stringify(source)},\n  "models": {\n${part(models)}\n  },\n  "anthropic": {\n${part(anthropic)}\n  }\n}\n`,
 );
-console.log(`wrote ${Object.keys(models).length} models from ${REPO}@${commit.slice(0, 12)} to ${out}`);
+
+const added = Object.keys(anthropic).filter((name) => !known[name]);
+const changed = Object.keys(anthropic).flatMap((name) =>
+  known[name]
+    ? changedFields(known[name], anthropic[name]).map((change) => `${name}: ${change}`)
+    : [],
+);
+const oldModels = current.models ?? {};
+const catalogChanged = Object.keys(models).filter(
+  (family) => JSON.stringify(oldModels[family]) !== JSON.stringify(models[family]),
+).length;
+const catalogRemoved = Object.keys(oldModels).filter((family) => !models[family]).length;
+const report = (title, lines) =>
+  console.log(`${title}: ${lines.length === 0 ? "none" : `\n  ${lines.join("\n  ")}`}`);
+
+console.log(`Wrote LiteLLM ${commit} (${source.committedAt}) to ${OUT}`);
+console.log(
+  `models: ${Object.keys(models).length} families, ${catalogChanged} new or changed, ${catalogRemoved} removed`,
+);
+console.log(`anthropic: ${Object.keys(anthropic).length} rows`);
+report("Anthropic rows added", added);
+report("Anthropic prices changed", changed);
+report("Anthropic rows left out, their calls wait for a price", leftOut);

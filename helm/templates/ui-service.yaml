@@ -1,0 +1,33 @@
+{{- /*
+The ui Service, kept under the name the ui Deployment answered on, as an alias
+to the api-server pods.
+
+The api-server serves the browser app now, so this Service selects the
+api-server pods and offers the api-server's own port under the name `http`.
+It exists for installs whose routing lives outside this chart: their app-host
+Route or Ingress names `<release>-ui` with `targetPort: http`, and it is not
+applied with the chart, so it would point at a Service that no longer exists.
+Through this alias the api-server answers it, and the route follows the
+api-server's rollout.
+
+Delete this Service once every such Route and Ingress names the api-server
+Service instead; nothing in the chart points at it.
+*/ -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-ui" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ui
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.apiServer.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/component: apiserver
+    app.kubernetes.io/instance: {{ .Release.Name }}

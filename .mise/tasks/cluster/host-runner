@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="Build and (re)start the VM runner on this Mac's own hypervisor"
-# cluster:install runs vm agents on it here, instead of on a runner pod nested
+# cluster:install runs agents on it here, instead of on a runner pod nested
 # inside the k3s VM. It serves every owner of one install, listening on loopback,
 # where the k3s VM's pods reach it.
 # One Mac runs one runner per install: each holds its install's token and CA, so

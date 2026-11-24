@@ -11,10 +11,16 @@ const fake = vi.hoisted(() => ({
   state: "running" as string,
   connectionState: "reconnecting" as string,
   retryChannel: vi.fn(),
+  resumeSession: vi.fn(),
   busy: false,
   loadingSession: false,
   sendPrompt: vi.fn(async () => {}),
   stopAgent: vi.fn(async () => {}),
+  greeting: { kind: "none" } as
+    | { kind: "none" }
+    | { kind: "loading" }
+    | { kind: "greeting"; copy: unknown },
+  assistantChat: false,
 }));
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -27,10 +33,7 @@ function mockModule(path: string, exports: Record<string, unknown>): void {
 
 const components = new Map<string, string[]>();
 for (const [path, names] of [
-  [
-    "../../modules/agents/components/avatar/agent-avatar.js",
-    ["AgentAvatar", "avatarMood"],
-  ],
+  ["../../modules/agents/components/avatar/agent-avatar.js", ["AgentAvatar"]],
   [
     "../../modules/agents/components/agent-start-notice.js",
     ["AgentStartNotice", "hasStartNotice"],
@@ -68,10 +71,6 @@ for (const [path, names] of [
     ["AgentInaccessibleOverlay"],
   ],
   ["../../modules/sessions/components/chat-message.js", ["ChatMessage"]],
-  [
-    "../../modules/sessions/components/new-session-launcher.js",
-    ["NewSessionOptions"],
-  ],
   ["../../modules/sessions/components/queued-prompts.js", ["QueuedPrompts"]],
   ["../../modules/sessions/components/quiet-turn-line.js", ["QuietTurnLine"]],
   [
@@ -164,6 +163,10 @@ for (const [path, names] of [
     "../../modules/sessions/components/classic-chat-identity.js",
     ["ClassicChatIdentity"],
   ],
+  [
+    "../../modules/agents/components/editable-agent-identity.js",
+    ["EditableAgentIdentity"],
+  ],
 ] as const)
   components.set(path, [...names]);
 
@@ -177,16 +180,25 @@ for (const [path, names] of components) {
   mockModule(path, exports);
 }
 
+mockModule("../../modules/sessions/components/new-session-launcher.js", {
+  NewSessionOptions: () =>
+    createElement("div", { "data-testid": "new-session-launcher" }),
+});
+
 mockModule("../../modules/sessions/components/classic-chat-layout.js", {
   ClassicChatLayout: (props: {
+    identity: unknown;
     notices: unknown;
     status: unknown;
+    newChat?: unknown;
     children: unknown;
   }) =>
     createElement(
       "div",
       {},
+      props.identity as never,
       props.status as never,
+      props.newChat as never,
       props.notices as never,
       props.children as never,
     ),
@@ -258,7 +270,7 @@ mockModule("../../modules/sessions/hooks/use-app-side-panel-tabs.js", {
 mockModule("../../modules/sessions/hooks/use-acp-session.js", {
   useAcpSession: () => ({
     resetSession: vi.fn(),
-    resumeSession: vi.fn(),
+    resumeSession: fake.resumeSession,
     loadOlderMessages: vi.fn(),
     sendPrompt: fake.sendPrompt,
     rewriteFrom: vi.fn(),
@@ -319,7 +331,6 @@ vi.doMock("../../modules/agents/api/queries.js", async (importOriginal) => ({
     id: "a-1",
     name: "Code Guardian",
     state: fake.state,
-    disabled: false,
     overBudget: false,
     features: { liveUpdates: true },
     access: { role: "owner", editors: [], permissions: [] },
@@ -329,7 +340,6 @@ vi.doMock("../../modules/agents/api/queries.js", async (importOriginal) => ({
     startFailure: null,
     podTerminationReason: null,
     podTerminationCode: null,
-    hibernationTimeoutMin: 5,
     avatar: null,
     templateUpdate: null,
     unsupportedContributionKinds: [],
@@ -361,14 +371,21 @@ mockModule("../../modules/sessions/api/session-pair.js", {
     failed: false,
   }),
   useHarnessCatalogModels: () => ({ data: [] }),
+  useRememberedPair: () => ({ data: null, isPending: false }),
   rememberSessionPair: vi.fn(),
   attachProviderQuietly: vi.fn(),
 });
 mockModule("../../modules/sessions/api/background-work.js", {
   useSessionBackgroundWork: () => [],
 });
+mockModule("../../modules/assistants/hooks/use-assistant-greeting.js", {
+  useAssistantGreeting: () => fake.greeting,
+  useAssistantChat: () =>
+    fake.assistantChat || fake.greeting.kind === "greeting",
+});
 mockModule("../../modules/features/api/queries.js", {
   useFeatures: () => ({ data: {} }),
+  useInstallCapabilities: () => ({ data: undefined, isSuccess: false }),
 });
 mockModule("../../modules/profiles/api/queries.js", {
   useProfiles: () => ({ data: [] }),
@@ -382,6 +399,7 @@ mockModule("../../modules/spend/api/queries.js", {
 mockModule("../../modules/invocations/api/queries.js", {
   useContinuedFrom: () => undefined,
   useDelegationOwners: () => new Map(),
+  useOwnerQuestions: () => ({ data: undefined }),
 });
 mockModule("../../modules/a2ui/api/queries.js", {
   useChatFormPreferences: () => ({ data: undefined }),
@@ -510,6 +528,12 @@ const notice = (el: HTMLElement) =>
 const placeholder = (el: HTMLElement) =>
   el.querySelector("textarea")?.getAttribute("placeholder") ?? "";
 
+function newSessionButton(el: HTMLElement): HTMLButtonElement | undefined {
+  return [...el.querySelectorAll("button")].find(
+    (b) => b.textContent?.trim() === "New chat",
+  );
+}
+
 function button(el: HTMLElement, label: string): HTMLButtonElement {
   const found = [...el.querySelectorAll("button")].find(
     (b) => b.getAttribute("aria-label") === label,
@@ -525,8 +549,167 @@ afterEach(() => {
   fake.busy = false;
   fake.loadingSession = false;
   fake.connectionState = "reconnecting";
-  useStore.setState({ pendingPermissions: [] });
+  fake.greeting = { kind: "none" };
+  fake.assistantChat = false;
+  useStore.setState({ pendingPermissions: [], sessionError: null });
   vi.clearAllMocks();
+});
+
+function openNewChat(): HTMLElement {
+  fake.state = "running";
+  fake.operable = true;
+  fake.connectionState = "live";
+  useStore.setState({
+    selectedAgent: "a-1",
+    sessionId: null,
+    sessionMode: SessionMode.Chat,
+    messages: [],
+    drafts: {},
+    queuedPrompts: [],
+  });
+  return render();
+}
+
+function greetingCopy() {
+  return {
+    assistantName: "Dammy",
+    opening: "Hi Jenna! I'm Dammy, your personal DAM agent.",
+    learn: "I learn how you work, one task at a time.",
+    ideas: [
+      {
+        label: "Artifact",
+        text: "Make my next PowerPoint deck the way I make them",
+      },
+      {
+        label: "Skill",
+        text: "Learn how my team writes tickets, then take it over",
+      },
+    ],
+    placeholder: "Message Dammy",
+  };
+}
+
+// TEST_SCENARIO: an assistant whose chat has never had a session opens on its greeting — not on the empty page with a big avatar — and the composer hints one of the tasks it offers.
+it("opens an unused assistant's chat on its greeting", () => {
+  fake.greeting = { kind: "greeting", copy: greetingCopy() };
+  const el = openNewChat();
+  expect(el.querySelector('[data-testid="assistant-greeting"]')).not.toBeNull();
+  expect(el.textContent).not.toContain("Send a message to begin.");
+  expect(placeholder(el)).toBe("Message Dammy");
+});
+
+// TEST_SCENARIO: the header always offers the outlined "New chat" button, labelled as the design draws it, so the header keeps its balance; on a new, empty chat a press starts nothing and puts the cursor in the composer, as the design's New chat flow does.
+it("always shows New chat, which focuses the composer of an empty chat", async () => {
+  const el = openNewChat();
+  const button = newSessionButton(el);
+  expect(button?.textContent).toBe("New chat");
+
+  act(() => button!.click());
+  await vi.waitFor(() =>
+    expect(document.activeElement).toBe(el.querySelector("textarea")),
+  );
+  expect(useStore.getState().messages).toHaveLength(0);
+
+  act(() =>
+    useStore.setState({
+      messages: [
+        { id: "m-1", role: "assistant", parts: [], streaming: false },
+      ] as never,
+    }),
+  );
+  paint();
+  expect(newSessionButton(el)?.textContent).toBe("New chat");
+});
+
+// TEST_SCENARIO: a click on one of its pills puts that idea's text in the composer of this chat — never the label the pill is headed with — and sends nothing, so no turn runs before the person acts.
+it("fills the composer from a greeting pill without sending", () => {
+  fake.greeting = { kind: "greeting", copy: greetingCopy() };
+  const el = openNewChat();
+  const task = [...el.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("Make my next PowerPoint deck"),
+  );
+  expect(task).toBeDefined();
+  act(() => task!.click());
+  expect(useStore.getState().drafts["a-1:~new"]?.text).toBe(
+    "Make my next PowerPoint deck the way I make them",
+  );
+  expect(fake.sendPrompt).not.toHaveBeenCalled();
+});
+
+const tryRow = (el: HTMLElement) =>
+  el.querySelector<HTMLElement>('[data-testid="try-something-new"]');
+
+const buttonWithText = (el: HTMLElement, text: string) =>
+  [...el.querySelectorAll("button")].find((b) => b.textContent?.includes(text));
+
+// TEST_SCENARIO: the greeting holds the ideas itself, so the "Try something new" row stays out of the chat until the greeting is gone.
+it("keeps Try something new out of the greeting", () => {
+  fake.greeting = { kind: "greeting", copy: greetingCopy() };
+  const el = openNewChat();
+  expect(tryRow(el)).toBeNull();
+});
+
+// TEST_SCENARIO: a later new chat of the assistant has the ideas in a collapsed "Try something new" row above the composer, not under the cards for opening a new session elsewhere; opened, it shows three ideas and "Show all", which hands keyboard focus to the first idea it reveals, and a pick fills the composer without sending.
+it("offers the assistant's ideas in a collapsed row on a later new chat", () => {
+  fake.assistantChat = true;
+  const el = openNewChat();
+  const row = tryRow(el)!;
+  expect(row).not.toBeNull();
+  expect(
+    el.querySelector('[data-testid="new-session-launcher"]')?.textContent,
+  ).not.toContain("Make my next PowerPoint deck");
+  expect(buttonWithText(row, "Make my next PowerPoint deck")).toBeUndefined();
+
+  act(() => buttonWithText(row, "Try something new")!.click());
+  expect(
+    buttonWithText(row, "Learn how my team writes tickets"),
+  ).toBeUndefined();
+  act(() => buttonWithText(row, "Show all 5")!.click());
+  expect(document.activeElement?.textContent).toContain(
+    "Learn how my team writes tickets",
+  );
+
+  act(() => buttonWithText(row, "Make my next PowerPoint deck")!.click());
+  expect(useStore.getState().drafts["a-1:~new"]?.text).toBe(
+    "Make my next PowerPoint deck the way I make them",
+  );
+  expect(fake.sendPrompt).not.toHaveBeenCalled();
+});
+
+// TEST_SCENARIO: a chat that started from an idea keeps the row above the composer during the conversation, without the idea it started from.
+it("leaves the idea the chat started from out of the row", () => {
+  fake.assistantChat = true;
+  const el = openNewChat();
+  act(() =>
+    useStore.setState({
+      messages: [
+        {
+          id: "m-1",
+          role: "user",
+          parts: [
+            {
+              kind: "text",
+              text: "Make my next PowerPoint deck the way I make them",
+            },
+          ],
+          streaming: false,
+        },
+      ] as never,
+    }),
+  );
+  paint();
+  const row = tryRow(el)!;
+  act(() => buttonWithText(row, "Try something new")!.click());
+  expect(buttonWithText(row, "Make my next PowerPoint deck")).toBeUndefined();
+  expect(buttonWithText(row, "Show all 4")).toBeDefined();
+});
+
+// TEST_SCENARIO: while the greeting's own answers are still on their way the chat shows neither it nor the empty page, so neither flashes and is taken back a moment later.
+it("shows a blank page while it is unknown whether to greet", () => {
+  fake.greeting = { kind: "loading" };
+  const el = openNewChat();
+  expect(el.querySelector('[data-testid="assistant-greeting"]')).toBeNull();
+  expect(el.textContent).not.toContain("Send a message to begin.");
 });
 
 // TEST_SCENARIO: the Agent runs and its connection drops; the chat, its composer and the notice stay, and the takeover does not appear.
@@ -537,6 +720,39 @@ it("keeps a running Agent's chat while it reconnects", () => {
   expect(el.textContent).not.toContain("Restart agent");
 });
 
+// TEST_SCENARIO: a conversation the agent still holds that would not load used to be a dead end with no action; it offers Retry, and one that is gone for good offers none, since trying again cannot bring it back.
+it("offers Retry on a conversation that would not load", () => {
+  fake.connectionState = "live";
+  useStore.setState({ sessionError: { sessionId: "s-1", kind: "other" } });
+  const el = openChat("running", true);
+  const retry = [...el.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("Retry"),
+  );
+  expect(retry).toBeDefined();
+  act(() => retry!.click());
+  expect(fake.resumeSession).toHaveBeenCalledWith("s-1");
+
+  fake.loadingSession = false;
+  useStore.setState({
+    sessionError: { sessionId: "s-1", kind: "unavailable" },
+  });
+  paint();
+  expect(el.textContent).toContain("Can't open this conversation");
+  expect(
+    [...el.querySelectorAll("button")].some((b) =>
+      b.textContent?.includes("Retry"),
+    ),
+  ).toBe(false);
+});
+
+// TEST_SCENARIO: a chat opening on a conversation that is still loading, as when a sleeping agent wakes, says the message waits for it, the way a connecting chat does.
+it("says a message waits for the conversation to load", () => {
+  fake.connectionState = "live";
+  fake.loadingSession = true;
+  const el = openChat("running", true);
+  expect(placeholder(el)).toContain("your message sends once it opens");
+});
+
 // TEST_SCENARIO: the Agent answers again; the notice and the send gate are gone.
 it("drops the notice when the Agent answers", () => {
   fake.connectionState = "live";
@@ -545,12 +761,19 @@ it("drops the notice when the Agent answers", () => {
   expect(placeholder(el)).toBe("Message…");
 });
 
-// TEST_SCENARIO: the Agent is asleep, so there is no chat to keep and the takeover with its Start action appears.
-it("takes over an Agent with no chat to keep", () => {
-  const el = openChat("hibernated", false);
-  expect(notice(el)).toBeNull();
-  expect(el.textContent).toContain("The agent is sleeping.");
-  expect(el.textContent).toContain("Start agent");
+// TEST_SCENARIO: an Agent falling asleep keeps its chat; one stopped for idleness whose wake did not start, as when the wake call failed, gets the takeover that says it isn't running and starts it, with no sleep wording; an Agent in error gets the takeover with its Restart action.
+it("takes over only an Agent with no chat to keep", () => {
+  const falling = openChat("hibernating", false);
+  expect(falling.textContent).not.toContain("Start agent");
+  expect(falling.querySelector("textarea")).not.toBeNull();
+  const idle = openChat("hibernated", false);
+  expect(idle.textContent).toContain("The agent isn't running.");
+  expect(idle.textContent).toContain("Start agent");
+  expect(idle.textContent).not.toMatch(/sleep|Sleeping/i);
+  const failed = openChat("error", false);
+  expect(notice(failed)).toBeNull();
+  expect(failed.textContent).toContain("The agent hit an error");
+  expect(failed.textContent).toContain("Restart agent");
 });
 
 // TEST_SCENARIO: a send typed during a reconnect stays in the draft and never reaches the Agent, so a Stop can never finalize a bubble whose message still goes out.

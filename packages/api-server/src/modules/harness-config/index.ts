@@ -6,6 +6,8 @@ export {
   composeHarnessConfigModule,
   composeHarnessConfigReset,
   composeSessionChoicesValidator,
+  composeSharedCurveBender,
+  composeStartPair,
   type FirePair,
 } from "./compose.js";
 export { createDefaultModelNoticeReader } from "./infrastructure/default-model-notices.js";
@@ -16,6 +18,7 @@ export {
 } from "./services/harness-config-service.js";
 export { harnessConfigEvent } from "./domain/harness-config-event.js";
 export {
+  defaultSettingsProblem,
   harnessCapabilityOf,
   runSubagentSettings,
   type RunSettingsSource,
@@ -27,9 +30,12 @@ export {
 } from "./domain/run-boundary.js";
 export { createHarnessConfigSnapshotWriter } from "./infrastructure/snapshot-writer.js";
 export type {
+  FiredPair,
   SessionChoices,
   SessionChoicesValidator,
 } from "./services/session-choices.js";
 export type { DefaultConverter } from "./services/default-conversion.js";
-export type { NoDefaultModelError } from "./domain/no-default-model.js";
-export { isNoDefaultModelError } from "./domain/no-default-model.js";
+export {
+  isNoDefaultModelError,
+  NoDefaultModelError,
+} from "./domain/no-default-model.js";

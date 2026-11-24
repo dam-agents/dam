@@ -231,7 +231,7 @@ export function SidePanelShell({
       <div
         data-testid="side-panel"
         className={cn(
-          "flex bg-chrome relative z-content has-[[data-full-page]]:z-overlay",
+          "flex bg-chrome relative z-content",
           "max-md:fixed max-md:inset-0 max-md:z-overlay",
           !mobilePanelOpen && "max-md:hidden",
           sidePanelFills

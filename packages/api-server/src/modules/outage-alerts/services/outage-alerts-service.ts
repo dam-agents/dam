@@ -33,7 +33,6 @@ import type { FailedWorkStore } from "../infrastructure/redis-failed-work.js";
 export interface AgentFacts {
   ownerSub: string;
   name: string;
-  disabled: boolean;
 }
 
 type EvaluatedOutage = ProviderStatusEvaluated["outages"][number];
@@ -125,7 +124,7 @@ export function createOutageAlertsService(deps: {
   const describe = async (agentId: string) => {
     try {
       const facts = await deps.describeAgent(agentId);
-      return facts && !facts.disabled ? facts : null;
+      return facts;
     } catch (err) {
       log().warn(
         { agentId, reason: formatError(err) },

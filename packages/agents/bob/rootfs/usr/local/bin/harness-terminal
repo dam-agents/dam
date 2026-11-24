@@ -13,10 +13,13 @@ set --
 # is gone makes Bob report it and open a fresh task, which then re-pins.
 TASK_FILE="$HOME/.bob/platform-sessions/$HARNESS_SESSION_ID"
 [ -s "$TASK_FILE" ] && set -- "$@" --resume "$(cat "$TASK_FILE")"
+# Same approval posture over the settings file as the chat harness.
+preload="--import=/usr/local/lib/bob-outside-workspace.mjs"
 # Bob's model calls go to the Model Router on the machine's loopback, which Bob's
 # own proxy agent would send through the gateway proxy.
 if [ -n "$PLATFORM_MODEL_ROUTER_URL" ]; then
-  NODE_OPTIONS="--import=/usr/local/lib/bob-loopback-direct.mjs${NODE_OPTIONS:+ $NODE_OPTIONS}"
-  export NODE_OPTIONS
+  preload="--import=/usr/local/lib/bob-loopback-direct.mjs $preload"
 fi
+NODE_OPTIONS="$preload${NODE_OPTIONS:+ $NODE_OPTIONS}"
+export NODE_OPTIONS
 exec bob chat --trust --accept-license "$@"

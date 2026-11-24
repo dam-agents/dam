@@ -1,4 +1,4 @@
-import { Asleep, Play, Restart, Warning } from "@carbon/icons-react";
+import { Information, Play, Restart, Warning } from "@carbon/icons-react";
 import { isStartRefusal } from "api-server-api";
 import { match } from "ts-pattern";
 
@@ -6,15 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
-import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { routeToPath } from "../../platform/lib/routes.js";
+import { AskAssistantLink } from "../../assistants/components/ask-assistant-link.js";
+import { askAboutUnavailable } from "../../assistants/lib/ask-prefill.js";
 import { useRestartAgent } from "../hooks/use-restart-agent.js";
 import { useWakeAgent } from "../hooks/use-wake-agent.js";
-import {
-  AGENT_ENABLE_ANCHOR,
-  overlayDescription,
-} from "../lib/overlay-copy.js";
+import { overlayDescription } from "../lib/overlay-copy.js";
 import type {
   AgentDisplay,
   AgentDisplayState,
@@ -24,9 +21,8 @@ import { OverlayFrame } from "./overlay-frame.js";
 import { StartupTip } from "./startup-tip.js";
 import { TerminationReason } from "./termination-reason.js";
 
-const OVERLAY_ICON: Partial<Record<AgentDisplayState, typeof Asleep>> = {
-  hibernated: Asleep,
-  disabled: Asleep,
+const OVERLAY_ICON: Partial<Record<AgentDisplayState, typeof Information>> = {
+  hibernated: Information,
   error: Warning,
   over_budget: Warning,
 };
@@ -34,15 +30,14 @@ const OVERLAY_ICON: Partial<Record<AgentDisplayState, typeof Asleep>> = {
 export function takesOverChat(state: AgentDisplayState | null): boolean {
   return match(state)
     .with(null, () => true)
-    .with("starting", "preparing_workspace", "running", () => false)
     .with(
+      "starting",
+      "preparing_workspace",
+      "running",
       "hibernating",
-      "hibernated",
-      "over_budget",
-      "error",
-      "disabled",
-      () => true,
+      () => false,
     )
+    .with("hibernated", "over_budget", "error", () => true)
     .exhaustive();
 }
 
@@ -58,7 +53,6 @@ export function AgentUnavailableOverlay({
   onBack: () => void;
 }) {
   const { wake } = useWakeAgent();
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const { restart, isPending: restarting } = useRestartAgent();
 
   if (!agent || !display) {
@@ -99,7 +93,7 @@ export function AgentUnavailableOverlay({
         <h2 className="text-5xl font-normal tracking-tight text-foreground">
           {agent.name}
         </h2>
-        {state !== "starting" && (
+        {state !== "starting" && state !== "hibernated" && (
           <StatusBadge
             state={state}
             refused={isStartRefusal(agent.podTerminationCode)}
@@ -108,27 +102,6 @@ export function AgentUnavailableOverlay({
       </div>
       {description && (
         <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
-      )}
-      {state === "disabled" && (
-        <p className="max-w-105 text-sm text-muted-foreground">
-          This agent is disabled.{" "}
-          <a
-            href={`${routeToPath({ view: "sandbox-home", agentId: agent.id, sandboxSection: "setup" })}#${AGENT_ENABLE_ANCHOR}`}
-            onClick={(e) => {
-              e.preventDefault();
-              navigateToSandboxHome(agent.id);
-              history.replaceState(
-                null,
-                "",
-                `${location.pathname}#${AGENT_ENABLE_ANCHOR}`,
-              );
-            }}
-            className="font-medium text-foreground underline underline-offset-2"
-          >
-            Enable it in agent configuration
-          </a>{" "}
-          to use it again.
-        </p>
       )}
       {state === "starting" && (
         <p role="status" className="sr-only">
@@ -162,6 +135,17 @@ export function AgentUnavailableOverlay({
         <Button onClick={() => restart(agent.id)} disabled={restarting}>
           <Restart size={14} /> Restart agent
         </Button>
+      )}
+      {description && (state === "error" || state === "over_budget") && (
+        <AskAssistantLink
+          agentId={agent.id}
+          className="self-center"
+          prefill={askAboutUnavailable({
+            agentName: agent.name,
+            at: new Date().toISOString(),
+            description,
+          })}
+        />
       )}
     </OverlayFrame>
   );

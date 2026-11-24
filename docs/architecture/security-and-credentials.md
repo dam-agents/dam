@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-11-04
+Last verified: 2026-11-20
 
 ## Overview
 
@@ -11,10 +11,11 @@ Three rules carry the security model:
 2. **Identity flows from Keycloak.** Browser users authenticate against Keycloak; the api-server validates the JWT and stamps `agent-platform.ai/owner` on every resource the user creates.
    Per-user credential isolation is the `agent-platform.ai/owner` label on the K8s Secret — the controller's selector refuses to mount any other owner's Secret into a given owner's gateway pod.
    An Agent's `secretRef`, whose keys become its environment, is honoured only for a Secret with its owner's label that the platform does not manage.
-3. **Two boundaries, layered.** The machine → gateway hop is held at the *kernel*: the machine's egress allowlist is exactly its gateway's ClusterIP, and the runner pod it boots on may dial that gateway and nothing else; the gateway → api-server hops (harness and ext-authz) are gated at the *mesh* by per-Agent Istio AuthorizationPolicies on the gateway pod's SPIFFE principal (not on no-mesh dev clusters).
+3. **Two boundaries, layered.** The machine → gateway hop is held at the *kernel*: the machine's egress allowlist is exactly its gateway's ClusterIP, and the runner pod it boots on may dial that gateway and nothing else; the gateway → harness hop is gated at the *mesh* by a per-Agent Istio AuthorizationPolicy on the gateway pod's SPIFFE principal (not on no-mesh dev clusters).
    A machine is a guest, not a pod: it has no mesh identity and no service account token, so what it reaches is decided by an allowlist and by the runner's policy, and a destination it names is never what decides.
    The gateway pod stays in ambient; istiod stamps it with a SPIFFE workload cert whose SA name equals the Agent name.
-   Two per-Agent AuthorizationPolicies enforce the gateway-originated boundary cryptographically: the api-server's harness waypoint ALLOWs the gateway principal to `/api/agents/<id>/*`; the per-Agent ext-authz Service ALLOWs only the matching SA.
+   The api-server's harness waypoint ALLOWs the gateway principal to `/api/agents/<id>/*`.
+   The mesh does not prove who calls ext-authz: the gateway is trusted platform code that names its own Agent.
 
 Workspace contents are explicitly outside the trust boundary — see the security note on [persistence](persistence.md).
 
@@ -64,7 +65,7 @@ Enforcement is layered:
   agent-runtime serves unauthenticated on the assumption that this kernel gate is the auth boundary.
 - **Gateway Envoy ext_authz** gates everything the gateway forwards on behalf of the agent — external upstreams via the HITL rule model, while platform-internal upstreams pass without a per-request human decision: the harness path (control-plane traffic to the api-server) and the artifact object store, where each request already carries a platform-minted authorization — a short-lived link scoped to a single object and operation, issued by the api-server after ownership checks and validated by the store itself ([artifact-library](artifact-library.md)).
   This is the destination-side egress gate; no NetworkPolicies on Postgres / Redis / Keycloak / the harness or ext-authz Services are needed because the agent has no admitted route to any of them.
-- **Mesh AuthorizationPolicy** gates the gateway-originated hops by the gateway pod's SPIFFE principal: harness via the api-server's waypoint, ext-authz on the per-Agent Service.
+- **Mesh AuthorizationPolicy** gates the gateway → harness hop by the gateway pod's SPIFFE principal at the api-server's waypoint.
   The agent has no SPIFFE identity in this model.
 
 The machine holds no service account token and no Kubernetes identity at all, and nothing of the platform's shares its network or process namespace: the guest boots under the runner's own kernel, and that pod's policy is what stands between the two.
@@ -79,7 +80,7 @@ The chart's `keycloak.login` values ([`helm/values.yaml`](../../helm/values.yaml
 The same page also knows which client started the sign-in: when it is the artifact share host's client, the heading and lead paragraph tell the visitor they need to sign in to view a shared artifact instead of the general product pitch.
 The general sign-in page scrolls: its first screen holds the sign-in form, and the sections below it say what an agent does, where it works, what users say and what developers and DevOps get, ending in a second sign-in form.
 The shared-artifact sign-in keeps the short single-screen layout.
-The first screen's heading is what the brand name stands for: the install's brand values hold a list of meanings, which reach the theme the same way, and the page swaps the one on screen for another at random every few seconds, never the same one twice in a row.
+The first screen's heading is what the brand name stands for: the install's brand values hold a list of meanings, which reach the theme the same way, and the page rolls from the first through three others picked at random back to the first, where it stays.
 The page's "Read the docs" links point at the install's documentation site, the chart's `links.docs` value, and its community channel link is the `keycloak.login.community` value; both reach the theme the same way, and a value set empty, or a docs value that is not an http(s) URL, hides that link.
 The testimonials the page shows are rows in the platform's database, which only an [operator](#identity) changes, from the Operator settings page or `dam login-testimonials`, so a change reaches the page within a minute, with no redeploy.
 The page fetches them from the api-server's public `/api/public/login-testimonials`, which a browser may read only from Keycloak's origin; their photos are uploaded and served as [agent avatars](agent-avatars.md#custom-avatars) are.
@@ -107,6 +108,12 @@ Keycloak then takes its address from the forwarded host, which only the ingress 
 A restricted-link viewer thus gets an identity on the share origin without the app's tokens ever being valid there.
 The share host is also the front door of [Environments](environments.md#addresses): it signs their visitors in with the same client and session, and hands each address a one-time code, bound to the visitor's browser, for a session of its own that lasts while the share session does.
 
+A person's own OAuth clients reach [Environments](environments.md#addresses) without a browser session: on an install that serves Environments, the realm lets a client register itself anonymously (RFC 7591), and its sign-in for the `environments` scope gets a token whose only audience is the one Environment address it named as its `resource` (RFC 8707), never `platform-api`.
+The `keycloak-environments` extension, baked into the platform's Keycloak image beside the theme, enforces it: its mapper sets that audience and keeps it on refresh; a client policy refuses such a sign-in without one valid address (`invalid_target`) or without `offline_access` (`invalid_scope`), and a code exchange or refresh naming another address, and requires PKCE.
+It takes the place of Keycloak's Trusted Hosts registration policy under the same id: a registering client's callbacks must each match `environments.oauth.redirects` — loopback on any port and path (RFC 8252), the listed web sites, the listed app schemes — and Consent Required, the `environments` and `offline_access` scopes only and a cap of `environments.oauth.maxClients` clients still apply; without Environments it is Keycloak's own policy.
+A daily task deletes such clients older than 30 days that hold no session and no offline session.
+The api-server gains no Keycloak admin rights for any of it.
+
 Two interstitials can take the browser off the page the user asked for: the login redirect above, and the Terms-of-Use gate.
 Both park that destination and resume it once cleared, so a deep link survives them — an in-chat bind link ([channels](channels.md)) is single-use, so losing its target would cost the user a fresh bind command rather than a retry.
 
@@ -123,8 +130,10 @@ The bearer middleware dispatches by prefix and yields the same principal shape �
 Keys cannot mint or revoke other keys: the management surface rejects any request authenticated via a key, so a leaked key cannot escalate.
 An API key carries no realm roles, so it reaches no role-gated route, with one exception: the UI telemetry read (`GET /api/usage/ui/signals`) admits a key whose owner holds the inspector role, which the api-server asks Keycloak for live and caches for a minute ([usage-tracking](usage-tracking.md#ui-telemetry)).
 
-A key is checked when a request or connection opens, so every long-lived stream it opens — an HTTP subscription, the tRPC WebSocket, an agent relay — re-checks the key every few seconds and ends once the key is revoked or expired.
-The re-check is a poll rather than a reaction to the revoke, because revoke can land on another replica; the poll interval is the bound on how long a revoked key keeps a stream.
+A key outlives its sign-in: the api-server asks the identity provider whether its owner still may act, keeps a yes a minute, and refuses an unanswered directory as unavailable (503, retryable).
+
+A key is checked when a request or connection opens, so every long-lived stream it opens — an HTTP subscription, the tRPC WebSocket, an agent relay — re-checks the key every few seconds and ends once it is revoked or expired.
+That re-check is a poll, since a revoke can land on another replica; its interval bounds how long a revoked key keeps a stream.
 
 **Platform operators** run the install for all its users.
 The realm role `keycloak.operatorRole` (`platform-operator` by default) marks an operator, and the chart creates an `operators` group that grants it.
@@ -257,24 +266,25 @@ Operational details are in the [runbook](../notes/postgres-role-operations.md).
 
 ## Envoy credential injection
 
-Upstream credentials exist only gateway-side: the controller mounts the owner's Secrets into the paired gateway pod, and Envoy there adds each credential to the agent's outbound requests on the wire — injected into a header or query parameter, or, for S3-compatible storage, by re-signing the request with keys the agent never holds — so the machine holds placeholders and never Secret bytes.
+Upstream credentials exist only gateway-side: the controller mounts the owner's Secrets into the paired gateway pod, and Envoy there adds each credential to the agent's outbound requests on the wire — in a header or query parameter, or, for S3-compatible storage, by re-signing the request with keys the agent never holds — so the machine holds placeholders and never Secret bytes.
 A credentialed host is pinned to its upstream, so a request cannot carry a credential to a destination of the agent's choosing — the route-confusion exfiltration path is structurally closed.
-The mechanics — L7 promotion, per-host chains, injection steps, request signing, path rewriting, addressing between Connections, and how a bad Secret degrades rather than wedges the gateway — live on [credential-gateway](credential-gateway.md).
+The mechanics — chains, injection and signing, addressing, and how a bad Secret degrades — are on [credential-gateway](credential-gateway.md).
 
 ## HITL ext_authz
 
 Each credentialed request goes through an ext_authz Check call against the api-server.
-Identity is the **per-Agent ext-authz Service** the gateway pod's Envoy was configured to dial (`<release>-extauthz-<id>`); the AuthorizationPolicy on each Service ALLOWs only the matching SA principal, so by the time a Check arrives the calling Agent is already proven cryptographically.
-The handler parses the Agent ID from the gRPC `:authority`, looks up the matching egress rule, and either allows the request, denies it, or holds it open while the user makes a verdict on Home.
-An invocation sub-agent's request is decided by its driver's rules, and an [Environment](environments.md#network-access)'s by its Owning Agent's; its approval is filed as the Owning Agent's and names the Environment.
+Identity is the **per-Agent ext-authz Service** the controller configures the gateway's Envoy to dial (`<release>-extauthz-<id>`), and the mesh does not prove it.
+No waypoint serves that Service, so its AuthorizationPolicy is not enforced, and any in-mesh caller from the agent namespace could name any Agent; today the gateways, trusted platform code, are the only such callers.
+The handler parses the Agent ID from the gRPC `:authority`, looks up the matching egress rule, and allows the request, denies it, or holds it while the user decides on Home.
+Whose rules decide a sub-agent's or an [Environment](environments.md#network-access)'s request is set out under Egress Aliasing below.
 
 A held request is one pending approval, and identical requests — same host, port, method and path, as a retrying client sends — join it rather than filing their own.
-Each one that joins raises the approval's in-session prompt again, to every session attached at that moment, and records its own hold in the security log: the session that saw the first prompt may be long gone, and a request waiting on a prompt nobody can see would stall the agent silently for the whole hold window.
+Each one that joins raises the approval's in-session prompt again, to every session attached at that moment, and records its own hold in the security log: the session that saw the first prompt may be gone, and a request waiting on an unseen prompt would stall the agent for the whole hold window.
 
 That re-published prompt is for attached ACP clients such as the CLI.
-The web chat does not read it: a held request belongs to the agent, not to a session, so every open conversation of the agent shows the agent's waiting network approvals from the approvals list, with their verdict controls.
+The web chat does not read it: a held request belongs to the agent, not to a session, so with the `chat-network-approvals` [experimental feature](features.md) on, every open conversation of the agent shows the agent's waiting network approvals from the approvals list, with their verdict controls; with it off they wait in the approvals list and the notifications alone.
 The list is the api-server's own state, refreshed by the approvals live hint, so a conversation opened after the hold — or a retry that joined it — still shows the prompt, and a verdict given in one place clears it from every conversation, from Home and from its toast.
-Requests that arrive together, as a browser's parallel connections to one host do, can each file their own approval before any of them is there to join, so the UI shows an Agent's waiting approvals for the same host, port, method and path as one approval with a count, and a verdict on it answers every one of them.
+Requests that arrive together, as a browser's parallel connections to one host do, can each file their own approval before any of them is there to join, so the UI shows an Agent's waiting approvals of one host, port, method and path as one approval with a count, and a verdict answers them all.
 
 An Agent can also **propose** a rule before it needs one (the `egress_proposal` tool on its platform MCP server): a host, optionally a port, a method and a path, and one sentence of reason.
 A held request waits only as long as the hold, so a job that runs while nobody watches would fail on a host its owner never saw; a proposal waits seven days instead.
@@ -290,11 +300,13 @@ A request a deny rule refuses on a TLS-terminated chain gets a 403 whose body na
 
 **Model provider hosts.** A model provider Connection granted to the Agent passes the gate on its own hosts, ports and paths even where a rule denies them, logged with basis *provider*.
 A provider Connection that sets Claude Code's env also passes `api.anthropic.com`, which Claude Code calls for its settings, policy limits and bootstrap whatever host serves its model calls.
-A model call refused at the gate ends the session, and a deny written while another provider was attached — for the host a harness also calls for its own settings — would otherwise break the provider attached later.
+A model call refused at the gate ends the session, and a deny written while another provider was attached, for a host the harness also calls for its settings, would otherwise break the provider attached later.
 A rule that allows the request decides first, so the override is read only when no rule allows it.
 
 **Spend limits.** On a metered model call, the gate also checks the payer's spend limits, after identity and before the rules ([spend-limits](spend-limits.md#limits)).
 At a limit it refuses at once, with a response shaped for the call's API path instead of the bare 403, and files a spend-limit question instead of an egress approval; it never holds such a call.
+
+**Web search.** With web search control on, the gate then holds a model call that declares a web search tool, under its own rule ([web-search-control](web-search-control.md)).
 
 The HTTP filter on TLS-terminated chains sees method/path; the network filter on the catch-all chain sees SNI only.
 
@@ -316,19 +328,20 @@ A peer marked as in the ambient mesh also gets HBONE (15008), and over HBONE ztu
 A connection to a private upstream (an in-house API, a cluster's API server) needs its range listed there.
 
 **Unattended requests are refused, not held.** Holding is only worth doing where a verdict can be made.
-A turn driven from a messenger ([channels](channels.md)) cannot produce one — the owner is not necessarily present, and the conversation's other members are not the owner — so a hold raised by such a turn would occupy the entire window and deny anyway, with the turn silent throughout.
+A turn driven from a messenger ([channels](channels.md)) cannot produce one — the owner may be absent, and the conversation's other members are not the owner — so its hold would fill the window and deny anyway, the turn silent throughout.
 So when the gate sees a channel turn open on the agent and no interactive session attached to answer for it, it records the request and denies at once.
-The record is the point: it stays actionable on Home, a permanent verdict there writes the rule the agent's next attempt consumes, and retries reuse that one row instead of filing a copy each time.
-No in-session prompt is published on this path — the only consumers are the relay clients whose absence defines it.
+The record is the point: it stays actionable on Home, a permanent verdict there writes the rule the agent's next attempt meets, and retries reuse that one row.
+No in-session prompt is published on this path: the relay clients that would read it are absent by definition.
 Both signals are read across api-server replicas (the replica relaying a turn is rarely the one a Check lands on) and fail toward *attended*, so losing them degrades to the ordinary hold rather than to silent denial.
 An attached browser or CLI session means someone can decide, so a channel turn running alongside one holds as usual; and an agent whose rules allow everything never reaches this path, because nothing it requests is unmatched.
 
-**Egress Aliasing.** An Invocation target has no egress identity of its own: before any decision, the gate resolves the calling agent to its driver — recursively for chained Invocations, up to the root non-target agent — and runs rule match, hold, and approval against the driver.
-The provider-host check alone reads the calling agent's own grants, because the target's gateway injects the target's own provider credentials: a target's model calls pass over the driver's deny rules for the hosts of the provider the target holds.
+**Egress Aliasing.** An Invocation target without detached egress has no egress identity: before any decision, the gate resolves the calling agent to its driver — recursively for chained Invocations, up to the root non-target agent — and runs rule match, hold, and approval against the driver.
+**Detached egress.** A driver may instead launch a child with egress of its own, open or scoped ([invocations](invocations.md#spawning)); the gate decides under the nearest such child up the chain, the caller first; only the owner widens a child past what its driver may give it.
+Two checks read the caller's own grants, as the target's gateway injects its own credentials: the [read-only check](connections.md#connection) and the provider-host check, so a target's model calls pass over the driver's deny rules for its provider's hosts.
 The link is live: rules are matched per request, so tightening or loosening the driver applies to its running targets immediately.
-Approval prompts raised by target traffic surface as the driver's, stamped with the originating target, and approving permanently updates the driver's rules.
-The aliasing is application-layer only — the target's gateway still mounts and injects credentials for the target's own (attenuated) connection grants, so the target gains the driver's network *reach*, never its credential set.
-Deleting a driver cascades: its running Invocations are failed and their targets eagerly reaped (transitively for chains), and a target that slips past the cascade fails closed at the gate because its driver no longer resolves.
+Approval prompts raised by an aliased target's traffic surface as the driver's, stamped with the originating target, and approving permanently updates the driver's rules.
+The aliasing is application-layer only — the target's gateway still mounts and injects credentials for the target's own connection grants, so the target gains the driver's network *reach*, and only its own grants' credentials.
+A target that outlives its driver's [cascade](invocations.md#outcomes) fails closed at the gate, as its driver no longer resolves.
 
 ## Channel turns
 
@@ -365,9 +378,8 @@ The machine and the gateway are gated by different mechanisms — they live on o
   The harness Service is `<rel>-apiserver-harness`, carrying `istio.io/use-waypoint`; Istio synthesises a waypoint Gateway pod in front of it.
   A per-Agent AuthorizationPolicy on the waypoint ALLOWs the gateway's SA principal to `/api/agents/<id>/*`; handlers can treat URL `:id` as authenticated.
 - **Gateway → api-server ext-authz** routes through a per-Agent Service `<rel>-extauthz-<id>` rendered by the controller alongside each Agent.
-  The AuthorizationPolicy on each Service ALLOWs only the matching SA principal.
-  The destination Service is cryptographically pinned to the calling Agent; the api-server derives Agent ID from the gRPC `:authority`.
-- **Pod-level DENY AuthorizationPolicy** on the api-server pod rejects anything that isn't either the waypoint's SA (harness) or a per-Agent SA from the agent namespace (ext-authz), closing the direct pod-IP bypass.
+  The api-server derives the Agent ID from the gRPC `:authority`, which the mesh does not pin to the caller.
+- **Pod-level DENY AuthorizationPolicy** on the api-server pod rejects anything that isn't either the waypoint's SA (harness) or a source in the agent namespace (ext-authz), closing the direct pod-IP bypass of the harness.
 
 The egress allowlist and the runner's NetworkPolicy are the security boundary for the machine's egress; mesh AuthorizationPolicy is the security boundary for the gateway's egress to api-server endpoints.
 Each gate matches its threat model: the machine runs untrusted code and is held at the guest's own network and at the runner's kernel; the gateway is platform-controlled and its identity flows through the mesh.
@@ -380,7 +392,10 @@ What changes in the boundaries:
 - **Agent identity is a Service port, not a pod.** Each agent keeps its own gateway Service and ClusterIP, the only destination its machine may reach, and that Service declares only the ports that map onto the agent's own listener.
   A ClusterIP carries nothing on an undeclared port, measured on OVN-Kubernetes and k3s, so a guest that has not escaped reaches no sibling's listener.
   SNI, Host, headers and source address are never identity: every machine's traffic arrives from the runner.
+  A dial from inside the pod reaches no sibling's listener either: an agent listener admits only connections from outside the pod.
 - **Kernel gates are per owner.** One ingress policy admits the owner's runner on the agent port range and the controller there for readiness; one egress policy, with the per-agent content above, replaces the per-agent ones; the runner's egress names the owner gateway on that range.
+  It also admits the mesh's kubelet-probe source on the health port alone, which istio-cni rewrites a host probe to, or the pod is never ready.
+  The ranges are `istio.hostProbeSNAT` at install, which must match the `HOST_PROBE_SNAT_IP` and `HOST_PROBE_SNAT_IPV6` the cluster's istio-cni is installed with.
 - **Mesh identity is the owner's.** The owner gateway runs as a ServiceAccount of its own, and each agent's harness and ext-authz policies admit that principal.
   Because that principal is shared, each agent's listener guards harness paths to the agent's own and stamps the agent's name in a header no other route lets through, and the harness policy admits the owner principal only with that header naming the agent.
   The harness boundary between one owner's agents therefore rests on the rendered gateway configuration, not on the mesh alone.

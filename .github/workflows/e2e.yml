@@ -1,9 +1,9 @@
 name: E2E
 
 # The smoke suite on two gateway topologies — the chart's default per-agent
-# gateway and one gateway pod per owner — and the docs-only check that skips
-# both. Both install the same thing: every agent is a machine on its owner's VM
-# runner.
+# gateway and one gateway pod per owner — and the check that skips both on a
+# docs-only change and picks a pull request's scope. Both install the same
+# thing: every agent is a machine on its owner's VM runner.
 # cd.yml calls it on every run but a tag push; the github context is the
 # calling run's. Its jobs report as `e2e / <name>`.
 #
@@ -18,13 +18,7 @@ on:
     inputs:
       verify:
         description: >-
-          A PR or a merge group: build the images here, and save nothing.
-        type: boolean
-        required: true
-      queue:
-        description: >-
-          A merge queue run, a merge_group event or a Mergify queue PR: reuse
-          an earlier queue run's images, as build.yml's `queue` input says.
+          A PR: build the images here, and save nothing.
         type: boolean
         required: true
       fresh:
@@ -64,34 +58,45 @@ env:
   IMAGE_PREFIX: quay.io/dam-agents
   MISE_LOCKED: "1"
   # What a verifying run's change detection diffs against. A PR's checkout is
-  # its merge commit, whose first parent is the base; in a merge group that
-  # batches PRs, the first parent is only the PR queued before this one.
-  DIFF_BASE: ${{ github.event.merge_group.base_sha || 'HEAD^1' }}
+  # its merge commit, whose first parent is the base.
+  DIFF_BASE: HEAD^1
 
 jobs:
   docs-only:
     name: detect docs-only change
-    # A PR or a merge group that changes only docs/ and Markdown outside
-    # packages/ skips both e2e jobs. Markdown under packages/ ships in agent
-    # images, so it counts as code. The jobs run when it fails, so a broken
+    # A PR that changes only docs/ and Markdown outside packages/ skips both
+    # e2e jobs. Markdown under packages/ ships in agent images, so it counts
+    # as code. The jobs run when it fails, so a broken
     # detection never skips them.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       docs: ${{ steps.d.outputs.docs }}
+      specs: ${{ steps.scope.outputs.specs }}
+      owner-gateway: ${{ steps.scope.outputs.owner-gateway }}
     steps:
       - if: inputs.verify
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # A merge group's base can be several commits back.
-          fetch-depth: ${{ github.event.merge_group && '0' || '2' }}
+          fetch-depth: 2
       - id: d
         if: inputs.verify
         run: |
           if git diff --quiet "$DIFF_BASE" HEAD -- . ':!docs' ':!*.md' && git diff --quiet "$DIFF_BASE" HEAD -- 'packages/*.md'; then
             echo "docs=true" >> "$GITHUB_OUTPUT"
           fi
+      # A pull request's reduced set still runs the deferred specs, and the
+      # owner-gateway lane, that cover a path its change touches:
+      # packages/e2e/playwright/pr-scope.json maps them. A pull request has no
+      # other e2e run before it merges.
+      # A failure here fails the run's `verify`, so a broken detection never
+      # merges a change on the reduced set alone.
+      - id: scope
+        if: inputs.pr-scope
+        run: |
+          scope="$(.mise/tasks/e2e/pr-scope "$DIFF_BASE")"
+          echo "$scope" | tee -a "$GITHUB_OUTPUT"
 
   e2e-agent-gateway:
     name: mise e2e (vm, per-agent gateway)
@@ -99,13 +104,13 @@ jobs:
     # gateway pod, which hibernation scales to zero. e2e-owner-gateway runs the
     # same suite on the same backend with one gateway pod per owner, so a
     # regression in either path fails on its own job.
-    # A push to main runs both, as no merge queue runs them before the merge.
+    # A push to main runs both in full, as nothing runs them before the merge.
     # The nightly run runs them on main too, and both save their caches there.
     # No `needs` on the builds: bringing the cluster up takes minutes and needs
     # no image, so it runs while they build. e2e:ci-images builds them here on
-    # a PR or a merge group, or waits for this run's build jobs, in the
-    # background, once per image family, and cluster:install waits for it at the
-    # image load. A failed build still fails this job, there.
+    # a PR, or waits for this run's build jobs, in the background, once per
+    # image family, and cluster:install waits for it at the image load. A
+    # failed build still fails this job, there.
     # Every step e2e-owner-gateway runs is anchored here (&e2e-*), so the two
     # jobs bring their clusters up the same way, and a phase of one is compared
     # with the same phase of the other. The jobs differ only in the gateway
@@ -124,10 +129,12 @@ jobs:
       actions: read
     env:
       IS_SANDBOX: "1"
-      # A pull request runs the specs that fail for real on one; the merge
-      # queue, the nightly run and a tag run them all. The Playwright config
-      # applies it; see docs/architecture/e2e.md.
+      # A pull request runs the specs that fail for real on one, and the
+      # deferred specs its change's paths need (E2E_PR_SPECS); a push to main
+      # and the nightly run run them all. The Playwright config applies both;
+      # see docs/architecture/e2e.md.
       E2E_SCOPE: ${{ inputs.pr-scope && 'pr' || '' }}
+      E2E_PR_SPECS: ${{ needs.docs-only.outputs.specs }}
       # The nightly run adds the full/ tier here, in this lane alone; the
       # summary says so beside the scope.
       E2E_FULL: ${{ inputs.full-tier && '1' || '' }}
@@ -270,8 +277,6 @@ jobs:
       - &e2e-vm-runner-build
         id: vm-runner-build
         if: inputs.verify
-        env: &e2e-resolve-env
-          EVENT: ${{ inputs.queue && 'merge_group' || github.event_name }}
         run: |
           decision="$(.mise/tasks/image/resolve resolve vm-runner)" || decision=BUILD
           [ "$decision" != BUILD ] || echo "build=true" >> "$GITHUB_OUTPUT"
@@ -334,13 +339,10 @@ jobs:
           CI_IMAGES_BUILD: ${{ inputs.verify && '1' || '' }}
           CI_IMAGES_CHANGES_JOB: build / detect stale images
           CI_IMAGES_IMAGES_JOB: build / build-images (amd64)
-          CI_IMAGES_MOCK_JOB: build / build mock (e2e fixture)
           CI_IMAGES_AGENTS_JOB: build / build-agents (amd64)
-          # As build.yml's `changes` job sets them, so both resolve the same
-          # images stale. EVENT lets a merge group reuse an earlier group's
-          # build; see image:resolve.
+          # As build.yml's `changes` job sets it, so both resolve the same
+          # images stale.
           RESOLVE_NO_REUSE: ${{ inputs.fresh && '1' || '' }}
-          EVENT: ${{ inputs.queue && 'merge_group' || github.event_name }}
           CI_BUILD_READY_DIR: ${{ runner.temp }}/ci-images.status.ready
         run: CI_IMAGES_FAMILY=platform nohup .mise/tasks/e2e/ci-images "$RUNNER_TEMP/ci-images-platform.status" > "$RUNNER_TEMP/ci-images.log" 2>&1 &
       # A run that builds the mock or the default image builds it here, the
@@ -350,12 +352,10 @@ jobs:
       # for minutes and failed the job. A run that pulls both skips the
       # restore, a gigabyte and about 20 s. Decided as e2e:ci-images decides
       # it, not by this change's diff: a base whose own image is not published
-      # yet (main's push still building it, or an earlier merge group) builds
-      # it here too.
+      # yet (main's push still building it) builds it here too.
       - &e2e-agents-build
         id: agents-build
         if: inputs.verify
-        env: *e2e-resolve-env
         run: |
           for c in mock default; do
             decision="$(.mise/tasks/image/resolve resolve "$c")" || decision=BUILD
@@ -558,12 +558,13 @@ jobs:
     # KVM setup, the background k3s provision and image builds, the suite and
     # its logs. The only difference is E2E_GATEWAY_PER_OWNER below.
     #
-    # A pull request does not run it: the merge queue runs the same suite on the
-    # same tree in full scope before anything merges, so the guard costs one
-    # 13-minute runner per push and buys a failure reported a few minutes
-    # earlier. The merge queue and the nightly run keep it.
+    # A pull request runs it only when its change touches the owner gateway's
+    # own code (pr-scope.json's lanes): elsewhere the lane differs from
+    # e2e-agent-gateway in nothing the change moved, so it costs one 13-minute
+    # runner per push and buys little. A push to main and the nightly run
+    # keep it.
     needs: [docs-only]
-    if: ${{ !cancelled() && needs.docs-only.outputs.docs != 'true' && !inputs.pr-scope }}
+    if: ${{ !cancelled() && needs.docs-only.outputs.docs != 'true' && (!inputs.pr-scope || needs.docs-only.outputs.owner-gateway == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -575,6 +576,7 @@ jobs:
       E2E_TIMINGS: *e2e-timings
       E2E_REPORT_JSON: *e2e-report-json
       E2E_SCOPE: ${{ inputs.pr-scope && 'pr' || '' }}
+      E2E_PR_SPECS: ${{ needs.docs-only.outputs.specs }}
       MBX_DISABLE: "1"
     steps:
       - *e2e-timing-start

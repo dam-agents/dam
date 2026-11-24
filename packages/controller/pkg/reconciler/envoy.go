@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
@@ -112,7 +113,11 @@ type envoyPathRewrite struct {
 }
 
 type envoyHostChain struct {
-	RequireAddress  bool
+	RequireAddress bool
+	// UNIT_BOUNDARY_DESCRIPTION: set on every chain of an agent whose owner turned on web search control. A metered chain then sends each request's whole body to the ext_authz check, which holds a model call that declares a web search tool.
+	WebSearchControl bool
+	// UNIT_BOUNDARY_DESCRIPTION: set on a chain when a Connection on its host asks for its requests to be checked with their body. The chain then sends each request's whole body to the ext_authz check, whatever the agent's own choices are.
+	CheckBody       bool
 	ChainID         string
 	Host            string
 	Credentials     []envoyCredential
@@ -123,6 +128,8 @@ type envoyHostChain struct {
 	Upgrades        bool
 	UpstreamCAFile  string
 	PathRewrites    []envoyPathRewrite
+	// UNIT_BOUNDARY_DESCRIPTION: set on the chain that carries the install's own key: its upstream is the api-server's public Service inside the cluster, pinned by name and port, so the Agent's Host and SNI can never send that key anywhere else.
+	InCluster bool
 	// UNIT_BOUNDARY_DESCRIPTION: set on the one chain for the environments domain: it carries the Agent's key to the api-server's Environment gate, inside the cluster, instead of to the host the agent named.
 	AgentKey *envoyCredential
 }
@@ -161,6 +168,9 @@ func (c envoyHostChain) ConnectionIDs() []string {
 	}
 	return out
 }
+
+/* UNIT_BOUNDARY_DESCRIPTION: the template of the Connection that drives this install as its owner. Its credential is injected on the install's own host, which no other Connection may name (the api-server refuses one), but a Secret written before that rule, or by another path, could still share the host: a chain carrying this credential therefore takes its upstream port and its upstream CA from this credential alone, never from a peer, so the install's key is only ever sent to the address the install published. */
+const damConnectionTemplate = "dam"
 
 var meteredProviderTemplates = []string{"anthropic", "anthropic-oauth", "openai", "ibm-litellm", "curve-bender", "curve-bender-deployment", "bob", "bedrock"}
 
@@ -223,8 +233,12 @@ func (c envoyHostChain) PathScopedCredentials() bool {
 }
 
 func (c envoyHostChain) PathScopes() []string {
-	seen := map[string]bool{"/": true}
-	scopes := []string{"/"}
+	seen := map[string]bool{}
+	scopes := []string{}
+	if !c.InCluster {
+		seen["/"] = true
+		scopes = append(scopes, "/")
+	}
 	for _, cred := range c.Credentials {
 		s := injectionScope(cred.PathPattern)
 		if seen[s] {
@@ -273,7 +287,7 @@ func (c envoyHostChain) RefusesUnaddressedAt(scope string) bool {
 func (c envoyHostChain) ScopesOf(connectionID string) []string {
 	seen := map[string]bool{}
 	var out []string
-	if c.Signs(connectionID) {
+	if c.Signs(connectionID) && !c.InCluster {
 		seen["/"] = true
 		out = append(out, "/")
 	}
@@ -478,6 +492,7 @@ type connectionHostInjection struct {
 	CAKey          string             `json:"caKey,omitempty"`
 	SDSKey         string             `json:"sdsKey,omitempty"`
 	Signing        *connectionSigning `json:"signing,omitempty"`
+	CheckBody      bool               `json:"checkBody,omitempty"`
 }
 
 type connectionSigning struct {
@@ -542,6 +557,18 @@ type chainOpts struct {
 	upgrades     bool
 	caFile       string
 	pathRewrites []envoyPathRewrite
+	checkBody    bool
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the hosts of one Secret whose requests are checked with their body. One entry that asks for it is enough for its host, so an entry that is later skipped as a duplicate or rendered without its credential still turns the check on.
+func checkBodyHosts(entries []connectionHostInjection) map[string]bool {
+	hosts := map[string]bool{}
+	for _, e := range entries {
+		if e.CheckBody {
+			hosts[e.Host] = true
+		}
+	}
+	return hosts
 }
 
 func expandConnectionSecret(s corev1.Secret) []hostCredential {
@@ -551,6 +578,7 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 	}
 	seen := map[struct{ host, header, scope string }]struct{}{}
 	seenSigner := map[struct{ host, key string }]struct{}{}
+	checkBody := checkBodyHosts(entries)
 	out := make([]hostCredential, 0, len(entries))
 	for _, e := range entries {
 		if e.Host == "" {
@@ -562,6 +590,7 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 			upgrades:     e.Upgrades,
 			caFile:       upstreamCAFile(s, e),
 			pathRewrites: validPathRewrites(s, e),
+			checkBody:    checkBody[e.Host],
 		}
 		if e.Signing != nil {
 			key := struct{ host, key string }{e.Host, e.Signing.CredentialsKey}
@@ -687,6 +716,7 @@ func parseConnectionHosts(s corev1.Secret) []connectionHostInjection {
 	return entries
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: the install's own Service carries one credential and no other. The api-server refuses a second Connection naming that host, but a Secret written before that rule — or by an operator — could still be mounted here, and a peer's host-wide scope or path rewrite would widen the chain past the API paths or add a credential to it. Such a peer is dropped and reported rather than merged. That chain always takes WebSocket upgrades, whatever its Secret says, so `dam run`, `dam chat` and `dam ssh` reach the relays from inside an Agent with the key in their upgrade's header. */
 func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostChain {
 	type headerOwner struct{ connectionID, secretName string }
 	type bucket struct {
@@ -696,6 +726,7 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 		credentials     []envoyCredential
 		signers         []envoySigner
 		opts            chainOpts
+		damOpts         *chainOpts
 		first           string
 	}
 	byHost := map[string]*bucket{}
@@ -731,6 +762,9 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 		}
 		if opts.upgrades {
 			b.opts.upgrades = true
+		}
+		if opts.checkBody {
+			b.opts.checkBody = true
 		}
 		if opts.port != 0 {
 			if b.opts.port == 0 {
@@ -777,6 +811,10 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 			return b
 		}
 		b.seenHeader[claim] = headerOwner{connectionID: cred.ConnectionID, secretName: secretName}
+		if cred.TemplateID == damConnectionTemplate {
+			own := opts
+			b.damOpts = &own
+		}
 		c := *cred
 		c.HeaderName = header
 		b.credentials = append(b.credentials, c)
@@ -829,17 +867,49 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 				"host", host, "secret", b.first)
 			continue
 		}
+		port, caFile := b.opts.port, b.opts.caFile
+		inCluster := b.damOpts != nil
+		upgrades := b.opts.upgrades || inCluster
+		credentials, signers, rewrites := b.credentials, b.signers, b.opts.pathRewrites
+		if b.damOpts != nil {
+			if port != b.damOpts.port || caFile != b.damOpts.caFile {
+				slog.Warn("a peer Connection tried to move the chain that carries the install's own key; keeping the address its Connection published",
+					"host", host, "keptPort", b.damOpts.port, "skippedPort", port,
+					"keptCA", b.damOpts.caFile, "skippedCA", caFile)
+			}
+			port, caFile = b.damOpts.port, b.damOpts.caFile
+			kept := make([]envoyCredential, 0, 1)
+			for _, cred := range b.credentials {
+				if cred.TemplateID == damConnectionTemplate {
+					kept = append(kept, cred)
+					continue
+				}
+				slog.Warn("a peer Connection claims the install's own Service; the chain carries only the install's key, so the peer is dropped",
+					"host", host, "secret", cred.SecretName, "template", cred.TemplateID)
+			}
+			for _, signer := range b.signers {
+				slog.Warn("a peer Connection signs requests to the install's own Service; dropped",
+					"host", host, "secret", signer.SecretName, "template", signer.TemplateID)
+			}
+			if len(b.opts.pathRewrites) > 0 {
+				slog.Warn("a peer Connection rewrites paths on the install's own Service; dropped",
+					"host", host, "rewrites", len(b.opts.pathRewrites))
+			}
+			credentials, signers, rewrites = kept, nil, nil
+		}
 		chains = append(chains, envoyHostChain{
 			ChainID:         "chain_" + b.first + "_" + shortHash(host),
 			UpstreamCluster: "upstream_" + b.first + "_" + shortHash(host),
 			Host:            host,
-			Credentials:     b.credentials,
-			Signers:         b.signers,
+			Credentials:     credentials,
+			Signers:         signers,
 			HTTP2:           b.opts.http2,
-			UpstreamPort:    b.opts.port,
-			Upgrades:        b.opts.upgrades,
-			UpstreamCAFile:  b.opts.caFile,
-			PathRewrites:    b.opts.pathRewrites,
+			CheckBody:       b.opts.checkBody,
+			UpstreamPort:    port,
+			Upgrades:        upgrades,
+			UpstreamCAFile:  caFile,
+			PathRewrites:    rewrites,
+			InCluster:       inCluster,
 		})
 	}
 	if keyChain != nil {
@@ -937,11 +1007,26 @@ func newEnvoyOTelView(instanceName string, cfg *config.Config) envoyOTelView {
 	return v
 }
 
-func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string, requireAddress bool) (*corev1.ConfigMap, error) {
-	chains := chainsFromSecrets(secrets, l7Hosts)
+// UNIT_BOUNDARY_DESCRIPTION: the owner's per-agent choices that change what the agent's gateway renders, so each one also moves the gateway's revision and rolls it.
+type gatewayChoices struct {
+	RequireAddress   bool
+	WebSearchControl bool
+}
+
+func gatewayChoicesOf(spec *apiv1.AgentSpec) gatewayChoices {
+	return gatewayChoices{RequireAddress: spec.RequireConnectionAddress, WebSearchControl: spec.WebSearchControl}
+}
+
+func (g gatewayChoices) applyTo(chains []envoyHostChain) {
 	for i := range chains {
-		chains[i].RequireAddress = requireAddress
+		chains[i].RequireAddress = g.RequireAddress
+		chains[i].WebSearchControl = g.WebSearchControl
 	}
+}
+
+func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string, choices gatewayChoices) (*corev1.ConfigMap, error) {
+	chains := chainsFromSecrets(secrets, l7Hosts)
+	choices.applyTo(chains)
 	yaml, err := renderEnvoyBootstrap(instanceName, attributionID, cfg, chains, true)
 	if err != nil {
 		return nil, err
@@ -950,7 +1035,7 @@ func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, cfg *confi
 	if cfg.GatewayUpstreamTrustBundle != "" {
 		data[envoyUpstreamCAKey] = cfg.GatewayUpstreamTrustBundle
 	}
-	data[machineDNSCorefileKey] = machineDNSCorefile
+	data[machineDNSCorefileKey] = machineDNSCorefile(cfg)
 	if data[envoyLeafSDSKey], err = renderLeafSDS(""); err != nil {
 		return nil, err
 	}
@@ -1017,23 +1102,34 @@ func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 			s.Annotations[envoyQueryParamAnn],
 			s.Annotations[envoyInjectionHostsAnn],
 			strings.Join(gatewayDataKeys(s), ","),
-		))
+		)+checkBodyRevMark(s))
 	}
 	sort.Strings(parts[1:])
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
 	return hex.EncodeToString(sum[:8])
 }
 
-func envoyGatewayRev(cfg *config.Config, secrets []corev1.Secret, l7Hosts []string, requireAddress bool) string {
+// UNIT_BOUNDARY_DESCRIPTION: what a Secret that asks for the body check adds to the gateway's revision. The annotation is already in the revision, so a flag that appears or goes away rolls the gateway. But a controller from before the flag hashed the same annotation and rendered no body check, and the first controller that knows the flag would keep that revision and that gateway. This mark makes it roll that gateway once. A Secret without the flag adds nothing, so an upgrade rolls no other gateway.
+func checkBodyRevMark(s corev1.Secret) string {
+	if len(checkBodyHosts(parseConnectionHosts(s))) == 0 {
+		return ""
+	}
+	return "|check-body"
+}
+
+func envoyGatewayRev(cfg *config.Config, secrets []corev1.Secret, l7Hosts []string, choices gatewayChoices) string {
 	rev := envoySecretsRev(secrets, l7Hosts)
-	if cfg.GatewayUpstreamTrustBundle == "" && !requireAddress {
+	if cfg.GatewayUpstreamTrustBundle == "" && choices == (gatewayChoices{}) {
 		return rev
 	}
 	if cfg.GatewayUpstreamTrustBundle != "" {
 		rev += "\ntrust=" + cfg.GatewayUpstreamTrustBundle
 	}
-	if requireAddress {
+	if choices.RequireAddress {
 		rev += "\nrequire-connection-address"
+	}
+	if choices.WebSearchControl {
+		rev += "\nweb-search-control"
 	}
 	sum := sha256.Sum256([]byte(rev))
 	return hex.EncodeToString(sum[:8])

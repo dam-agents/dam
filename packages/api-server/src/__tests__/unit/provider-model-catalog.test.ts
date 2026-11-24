@@ -79,7 +79,7 @@ const shipped: Record<string, ShippedHarnessFacts> = Object.fromEntries(
 );
 
 const table: PriceTable = {
-  source: { url: "test", commit: "test", fetchedAt: "2026-10-26" },
+  source: { url: "test", commit: "test", committedAt: "2026-10-26" },
   models: {},
 };
 

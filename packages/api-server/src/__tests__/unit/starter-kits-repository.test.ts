@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
+import { starterKitCatalogSchema } from "api-server-api";
 import { loadYamlDocument } from "../../core/yaml-document.js";
 import type { CatalogSource } from "../../modules/starter-kits/infrastructure/catalog-source.js";
 import {
@@ -56,8 +57,8 @@ function memoryResolved(): ResolvedCatalogRepository {
 }
 
 function harness(
-  catalogs: (Omit<NamedCatalog, "entryHosts"> &
-    Partial<Pick<NamedCatalog, "entryHosts">>)[],
+  catalogs: (Omit<NamedCatalog, "entryHosts" | "builtin"> &
+    Partial<Pick<NamedCatalog, "entryHosts" | "builtin">>)[],
   opts: {
     resolve?: (gitUrl: string, ref?: string) => Promise<string | RefResolution>;
     scanSkills?: CatalogRefreshDeps["scanSkills"];
@@ -72,7 +73,11 @@ function harness(
     sweep: async () => 0,
   };
   const refresh = createCatalogRefresh({
-    catalogs: catalogs.map((c) => ({ entryHosts: ENTERPRISE_HOSTS, ...c })),
+    catalogs: catalogs.map((c) => ({
+      entryHosts: ENTERPRISE_HOSTS,
+      builtin: false,
+      ...c,
+    })),
     repo: resolved,
     appVersion: APP_VERSION,
     refs: {
@@ -177,6 +182,7 @@ kits:
     });
     const exploding: NamedCatalog = {
       name: "broken",
+      builtin: false,
       entryHosts: ENTERPRISE_HOSTS,
       source: {
         locator: "/broken",
@@ -489,6 +495,75 @@ kits:
     ]);
     expect((await repo.get("acme", "shared"))?.source).toBe("/b");
     expect(await repo.get("nope", "shared")).toBeNull();
+  });
+
+  // TEST_SCENARIO: a user's kit sits beside the team's in the same catalog, so the catalog entry, which the catalog's reviewers control, says who publishes it; an entry that names nobody is the team's kit, and kit.yaml has no say.
+  it("takes a kit's publisher from its catalog entry, and the team's when it names none", async () => {
+    const catalog = memorySource("/curated", {
+      "catalog.yaml": `
+kits:
+  - path: team
+  - path: user
+    publisher:
+      name: "  Adi Digidh  "
+      url: https://github.com/adigidh
+  - path: nameless
+    publisher:
+      name: Jane Doe
+`,
+      "team/kit.yaml": KIT("team", "publisher:\n  name: Someone\n"),
+      "user/kit.yaml": KIT("user"),
+      "nameless/kit.yaml": KIT("nameless"),
+    });
+    const { refresh, repo } = harness([{ name: "curated", source: catalog }]);
+    await refresh.run();
+    expect(
+      Object.fromEntries(
+        (await repo.list()).map((k) => [k.kitId, k.publisher]),
+      ),
+    ).toEqual({
+      team: { kind: "team" },
+      user: {
+        kind: "user",
+        name: "Adi Digidh",
+        url: "https://github.com/adigidh",
+      },
+      nameless: { kind: "user", name: "Jane Doe" },
+    });
+  });
+
+  // TEST_SCENARIO: the built-in catalog ships with the release, so every kit it carries is the platform team's, even when an entry there names someone else.
+  it("keeps every built-in kit the team's", async () => {
+    const catalog = memorySource("/catalog", {
+      "catalog.yaml":
+        "kits:\n  - path: a\n    publisher:\n      name: Someone\n",
+      "a/kit.yaml": KIT("a"),
+    });
+    const { refresh, repo } = harness([
+      { name: "platform", builtin: true, source: catalog },
+    ]);
+    await refresh.run();
+    expect((await repo.get("platform", "a"))?.publisher).toEqual({
+      kind: "team",
+    });
+  });
+
+  // TEST_SCENARIO: the publisher is shown to every user and its link opens from the kit modal, so an entry must give a real name and, when it links one, an https page; anything else is refused with the rest of catalog.yaml rather than shown.
+  it("accepts a publisher with a name and an https link, and refuses any other", () => {
+    const entry = (publisher: unknown) =>
+      starterKitCatalogSchema.safeParse({ kits: [{ path: "a", publisher }] })
+        .success;
+    expect(entry({ name: "Adi Digidh" })).toBe(true);
+    expect(entry({ name: "Adi", url: "https://github.com/adigidh" })).toBe(
+      true,
+    );
+    expect(entry({ name: "   " })).toBe(false);
+    expect(entry({ name: "x".repeat(81) })).toBe(false);
+    expect(entry({ url: "https://github.com/adigidh" })).toBe(false);
+    expect(entry({ name: "Adi", url: "http://github.com/adigidh" })).toBe(
+      false,
+    );
+    expect(entry({ name: "Adi", url: "javascript:alert(1)" })).toBe(false);
   });
 
   // TEST_SCENARIO: an external catalog moves by design — whoever writes to it, not the operator, decides what it lists. If any catalog could aim at the enterprise host, the entry's author would pick which internal repository the refresh opens with the install's token, and a kit.yaml-shaped file in a private repository would be read and published to every user. A public catalog is therefore held to public GitHub, and the enterprise read is refused rather than attempted.

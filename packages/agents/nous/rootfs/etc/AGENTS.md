@@ -66,7 +66,7 @@ Overrides for an autonomous session, in place of the usual flow:
    Never run a campaign the user hasn't seen and confirmed.
 4. **Make it lean and fast** — declare `observable_metrics` and schedule a rehearsal iteration (below); both cut DESIGN time and cost.
 5. **State the rough wall-clock up front.** Tell the user roughly how long the campaign will take before you launch.
-   This sandbox is configured **not to hibernate** (see "Long runs & recovery"), so a backgrounded run progresses to completion on its own — the user does *not* need to keep a session open.
+   A campaign launched with `platform-keep` holds the sandbox awake until it exits (see "Long runs & recovery"), so it progresses to completion on its own — the user does *not* need to keep a session open.
 
 Give **every campaign its own directory** under `$NOUS_CAMPAIGN_PARENT`, and clone the target repo **inside** it.
 Never create campaign files or clone repos in the home root or any unrelated directory.
@@ -153,10 +153,10 @@ Use `nous stop <run_id>` to halt cleanly.
 
 ## Long runs & recovery
 
-This agent is configured to **never hibernate** (the nous template sets its idle timeout to `0`), so an idle interactive session does not scale the sandbox to zero (an autonomous session is the exception: see "Autonomous sessions").
-A backgrounded `nous run` therefore **progresses to completion on its own** — the user does not need to keep a terminal or SSH session open, and there are no idle "gaps" to resume across.
+A campaign launched with `platform-keep` holds the sandbox awake until it exits, so it **progresses to completion on its own** — the user does not need to keep a terminal or SSH session open (an autonomous session is the exception: see "Autonomous sessions").
+Once nothing kept runs, the sandbox sleeps after the install's idle timeout, like any agent, and wakes on the next message or schedule.
 
-The sandbox can still go away for reasons *other* than idle hibernation — an image upgrade, a node drain/eviction, an OOM, or a plain crash.
+The sandbox can still go away while a campaign runs — an image upgrade, a node drain/eviction, an OOM, or a plain crash.
 Campaign artifacts live on the persistent `$HOME`, so the run survives and is resumable.
 Therefore **at the start of every turn**, for each campaign the user cares about (or any you launched this session): if the campaign's `run.pid` (located in its subdirectory under `$NOUS_CAMPAIGN_PARENT`) is dead but `nous status` shows the campaign is not `DONE`, resume it auto-approved in the background (if it uses a bound channel, re-run the bridge check first — see "Reporting progress"):
 
@@ -218,7 +218,7 @@ Call it for `slack` and `telegram`; a channel is bound if it returns a non-empty
 Nous then POSTs a markdown summary at every DESIGN/FINDINGS gate — the notify fires before the gate auto-passes — and the bridge relays it to the thread.
 Delivery is best-effort: a bridge or channel hiccup logs a warning and never blocks the campaign.
 
-**After a restart:** the bridge dies with the sandbox, like the campaign — not on idle (this sandbox doesn't hibernate), but on an upgrade, eviction, or crash.
+**After a restart or a sleep:** the bridge is not kept work, so it dies with the sandbox — when it sleeps once no campaign runs, or on an upgrade, eviction, or crash.
 When you resume a campaign that uses channels, re-run the bridge check.
 
 ## After a campaign: harvest knowledge into the wiki

@@ -12,6 +12,19 @@ export type RouteKind =
 const BOB_INFERENCE_PREFIX = "/inference";
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: the roots Bob's client has compiled in for its
+ * one gateway base URL: model calls and the model list, the admin API it
+ * reads its profile and team budget from, its docs-search MCP server, and
+ * its metrics forwarder.
+ */
+const BOB_GATEWAY_ROOTS = [
+  `${BOB_INFERENCE_PREFIX}/`,
+  "/admin/",
+  "/rag/",
+  "/metrics-forwarder/",
+];
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: pi-ai appends `/v1/messages` to a base that
  * already ends in `/v1`, and Bob calls under its compiled-in `/inference`
  * prefix, so both are folded away before the path is classified.
@@ -27,11 +40,12 @@ export function normalizePath(rawPath: string): string {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Bob cannot stamp the harness header and alone
- * calls under its compiled-in `/inference` prefix, so the prefix names the
- * harness when no header does.
+ * calls under its compiled-in roots, so such a path names the harness when
+ * no header does.
  */
 export function bobGatewayPath(rawPath: string): boolean {
-  return rawPath.replace(/\/{2,}/g, "/").startsWith(`${BOB_INFERENCE_PREFIX}/`);
+  const path = rawPath.replace(/\/{2,}/g, "/");
+  return BOB_GATEWAY_ROOTS.some((root) => path.startsWith(root));
 }
 
 export function classify(method: string, rawPath: string): RouteKind {

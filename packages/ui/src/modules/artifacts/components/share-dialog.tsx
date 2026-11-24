@@ -24,7 +24,8 @@ interface Props {
 }
 
 const INTERACTIVE_UNAVAILABLE = {
-  public: "Not for interactive pages: their buttons can ask your agent",
+  public:
+    "For your security, only people you invite can use interactive artifacts. Their buttons run actions through your agent and your accounts.",
 };
 
 export function ShareDialog({ artifact, onClose }: Props) {

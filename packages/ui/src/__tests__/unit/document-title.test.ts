@@ -34,23 +34,19 @@ describe("documentTitle", () => {
     ).toBe("Jeeves · Brand");
   });
 
-  test("names an agent config section under the agent", () => {
-    expect(
-      documentTitle(
-        {
-          ...base,
-          view: "sandbox-home",
-          sandboxSectionTitle: "Network access",
-        },
-        { agent: "Jeeves" },
-        "Brand",
-      ),
-    ).toBe("Network access · Jeeves · Brand");
-  });
-
   test("names Home", () => {
     expect(documentTitle({ ...base, view: "home" }, {}, "Brand")).toBe(
       "Home · Brand",
     );
+  });
+
+  test("names an artifact page by the artifact's title", () => {
+    expect(
+      documentTitle(
+        { ...base, view: "artifact" },
+        { artifact: "KPIs" },
+        "Brand",
+      ),
+    ).toBe("KPIs · Brand");
   });
 });

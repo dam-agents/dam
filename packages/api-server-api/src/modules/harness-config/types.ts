@@ -1,6 +1,7 @@
 import type {
   HarnessCapability,
   HarnessConfigCatalog,
+  ToolApproval,
 } from "agent-runtime-api";
 import type { z } from "zod";
 import type {
@@ -80,6 +81,11 @@ export interface HarnessConfigService {
   clearSessionDefault(
     agentId: string,
     kind: Exclude<DefaultKind, "chat">,
+  ): Promise<void>;
+  /** UNIT_BOUNDARY_DESCRIPTION: the tool approval every session of the agent runs on unless the session picked its own; null removes it. A value none of the agent's harnesses takes from the agent is refused. */
+  setToolApproval(
+    agentId: string,
+    toolApproval: ToolApproval | null,
   ): Promise<void>;
   /** UNIT_BOUNDARY_DESCRIPTION: after a profile the agent points at changed, sends the agent its new pair, or answers why it keeps the one it holds. */
   republishDefaults(agentId: string): Promise<string | null>;

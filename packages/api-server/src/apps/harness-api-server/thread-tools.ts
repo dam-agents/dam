@@ -8,13 +8,17 @@ import type {
   ThreadLeave,
   ThreadStart,
 } from "../../modules/channels/services/channel-manager.js";
+import type { ChannelCard } from "../../modules/channels/services/worker-contract.js";
 
 export interface ThreadToolPorts {
   callerSessionId(): Promise<string | null>;
+  blocksOf(
+    blocks: Record<string, unknown>[] | undefined,
+  ): Promise<{ card?: ChannelCard } | { error: string }>;
   startThread(
     channel: ChannelType,
     start: ThreadStart,
-  ): Promise<StartedThread | { error: string }>;
+  ): Promise<StartedThread | { error: string; refused?: string }>;
   listThreads(
     channel: ChannelType,
     sessionId: string,
@@ -26,8 +30,11 @@ export interface ThreadToolPorts {
   audit(
     action: "start" | "leave",
     outcome: { error: string } | { conversationId: string; threadTs: string },
+    detail?: { hasCard: boolean; slackError?: string },
   ): void;
 }
+
+export const blocksSchema = z.array(z.record(z.string(), z.unknown()));
 
 const UNIDENTIFIED =
   "this session could not be identified, so it cannot own a thread; post the message with post instead, and its replies open a session of their own.";
@@ -59,17 +66,33 @@ export function registerThreadTools(
         .describe(
           "The opening message, in standard Markdown. Say who should answer, and tag them when they should be notified.",
         ),
+      blocks: blocksSchema
+        .optional()
+        .describe(
+          "Optional Slack Block Kit blocks shown under the opening message, written as Slack defines them. A button with a url opens a page; any other button or field sends the answer back to you. Call describe_blocks for the rules and the newer blocks.",
+        ),
     },
-    ({ channel, chatId, text }) =>
+    ({ channel, chatId, text, blocks }) =>
       run(async () => {
         const sessionId = await ports.callerSessionId();
         if (!sessionId) return errorResult(UNIDENTIFIED);
+        const built = await ports.blocksOf(blocks);
+        if ("error" in built) {
+          ports.audit("start", built, { hasCard: true });
+          return errorResult(built.error);
+        }
         const result = await ports.startThread(channel, {
           sessionId,
           conversationId: chatId,
           text,
+          ...(built.card ? { card: built.card } : {}),
         });
-        ports.audit("start", result);
+        ports.audit("start", result, {
+          hasCard: built.card !== undefined,
+          ...("refused" in result && result.refused
+            ? { slackError: result.refused }
+            : {}),
+        });
         if ("error" in result) return errorResult(result.error);
         return json({
           chatId: result.conversationId,

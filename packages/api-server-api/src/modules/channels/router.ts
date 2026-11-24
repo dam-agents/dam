@@ -25,6 +25,14 @@ export const channelChoiceInputSchema = z
   })
   .merge(sessionChoiceReferencesSchema);
 
+/* UNIT_BOUNDARY_DESCRIPTION: the agent a Bridge call acts for. The owner is
+ * never in the input — a procedure runs as the caller, and the service refuses
+ * an Agent that caller does not own. */
+export const slackDmAgentInputSchema = z.object({
+  agentId: z.string().min(1),
+  purpose: z.string().max(280).optional(),
+});
+
 export const channelsRouter = t.router({
   available: readAgentProcedure.query(({ ctx }) => ctx.channels.available),
 
@@ -41,4 +49,25 @@ export const channelsRouter = t.router({
   slackChannelChoices: readAgentProcedure
     .use(requireWildcardBinding)
     .query(({ ctx }) => ctx.channels.slackChannelChoices()),
+
+  slackDmStatus: readAgentProcedure.query(({ ctx }) =>
+    ctx.channels.slackDm.status(),
+  ),
+
+  slackDmConnect: manageAgentsProcedure
+    .input(slackDmAgentInputSchema)
+    .use(agentPermission("channels", (input) => agentTarget(input.agentId)))
+    .mutation(({ ctx, input }) =>
+      ctx.channels.slackDm.connect({
+        agentId: input.agentId,
+        ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
+      }),
+    ),
+
+  slackDmDisconnect: manageAgentsProcedure
+    .input(slackDmAgentInputSchema)
+    .use(agentPermission("channels", (input) => agentTarget(input.agentId)))
+    .mutation(({ ctx, input }) =>
+      ctx.channels.slackDm.disconnect({ agentId: input.agentId }),
+    ),
 });

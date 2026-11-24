@@ -1,16 +1,13 @@
-import { type AttentionItem, SessionMode, SessionType } from "api-server-api";
+import {
+  SESSION_CHANNEL_TYPES,
+  type SessionChannelType,
+  sessionChannelTypeOf,
+} from "agent-runtime-api";
+import type { AttentionItem } from "api-server-api";
 
-export type ChannelType =
-  "chat" | "slack" | "telegram" | "artifact" | "schedule" | "terminal";
+export type ChannelType = SessionChannelType;
 
-export const CHANNEL_TYPES: readonly ChannelType[] = [
-  "chat",
-  "slack",
-  "telegram",
-  "artifact",
-  "schedule",
-  "terminal",
-];
+export const CHANNEL_TYPES: readonly ChannelType[] = SESSION_CHANNEL_TYPES;
 
 export const CHANNEL_TYPE_LABELS: Record<ChannelType, string> = {
   chat: "Chat",
@@ -50,6 +47,30 @@ export function isFiltered(filters: ActivityFilters): boolean {
   return (
     filters.channelTypes.size < CHANNEL_TYPES.length || filters.state !== "any"
   );
+}
+
+export function activityFilterSummary(filters: ActivityFilters): string {
+  const types = CHANNEL_TYPES.filter((type) => filters.channelTypes.has(type));
+  const hidden = CHANNEL_TYPES.filter(
+    (type) => !filters.channelTypes.has(type),
+  );
+  const labels = (list: readonly ChannelType[]) =>
+    list.map((type) => CHANNEL_TYPE_LABELS[type]).join(", ");
+  const parts = [
+    ...(hidden.length > 0
+      ? [
+          types.length === 0
+            ? "No types"
+            : types.length <= 2
+              ? labels(types)
+              : hidden.length <= 2
+                ? `All but ${labels(hidden)}`
+                : `${types.length} types`,
+        ]
+      : []),
+    ...(filters.state !== "any" ? [STATE_FILTER_LABELS[filters.state]] : []),
+  ];
+  return parts.join(" · ");
 }
 
 export interface StoredActivityFilters {
@@ -106,15 +127,5 @@ export function channelTypeOfSession(
     scheduleId?: string | null;
   },
 ): ChannelType {
-  if (
-    session.scheduleId ||
-    session.type === SessionType.ScheduleCron ||
-    session.type === SessionType.ScheduleOnce
-  )
-    return "schedule";
-  if (session.mode === SessionMode.Terminal) return "terminal";
-  if (session.type === SessionType.ChannelSlack) return "slack";
-  if (session.type === SessionType.ChannelTelegram) return "telegram";
-  if (session.type === SessionType.Artifact) return "artifact";
-  return "chat";
+  return sessionChannelTypeOf(session);
 }

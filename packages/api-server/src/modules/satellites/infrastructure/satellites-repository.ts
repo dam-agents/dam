@@ -13,6 +13,7 @@ import {
   satelliteJobs,
   satellites,
 } from "db";
+import { isOnline } from "../domain/admission.js";
 import { formatJobRef } from "api-server-api";
 import type {
   JobStatus,
@@ -20,10 +21,6 @@ import type {
   SatelliteManifest,
   SatelliteTool,
 } from "api-server-api";
-import {
-  mintTransferToken,
-  transferTokenHash,
-} from "../domain/transfer-token.js";
 import {
   TERMINAL_STATUSES,
   type JobRow,
@@ -34,6 +31,8 @@ function toSatellite(r: typeof satellites.$inferSelect): SatelliteRow {
   return {
     owner: r.owner,
     name: r.name,
+    kind: r.kind === "files" ? "files" : "tools",
+    filesWritable: r.filesWritable,
     description: r.description,
     host: r.host,
     maxConcurrent: r.maxConcurrent,
@@ -76,10 +75,6 @@ function toJob(r: typeof satelliteJobs.$inferSelect): JobRow {
     agentId: r.agentId,
     tool: r.tool,
     args: r.args as Record<string, unknown>,
-    transferDirection:
-      r.transferDirection === "download" || r.transferDirection === "upload"
-        ? r.transferDirection
-        : null,
     status: r.status as JobStatus,
     isError: r.isError,
     exitCode: r.exitCode,
@@ -118,6 +113,8 @@ export function createSatellitesRepository(db: Db) {
         .values({
           owner,
           name: manifest.name,
+          kind: manifest.kind ?? "tools",
+          filesWritable: manifest.files?.writable ?? false,
           description: manifest.description ?? null,
           host,
           maxConcurrent,
@@ -128,6 +125,8 @@ export function createSatellitesRepository(db: Db) {
         .onConflictDoUpdate({
           target: [satellites.owner, satellites.name],
           set: {
+            kind: manifest.kind ?? "tools",
+            filesWritable: manifest.files?.writable ?? false,
             description: manifest.description ?? null,
             host,
             maxConcurrent,
@@ -156,6 +155,8 @@ export function createSatellitesRepository(db: Db) {
       const [row] = await db
         .update(satellites)
         .set({
+          kind: manifest.kind ?? "tools",
+          filesWritable: manifest.files?.writable ?? false,
           description: manifest.description ?? null,
           host,
           maxConcurrent: Math.min(manifest.maxConcurrent, ceiling),
@@ -311,6 +312,52 @@ export function createSatellitesRepository(db: Db) {
       return rows[0] ? toSatellite(rows[0]) : null;
     },
 
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: The file-tree Satellites one Agent may mount,
+     * with whether each is writable and whether it is reachable. It is the list
+     * the mount server polls and the one the Agent's instructions are built
+     * from, so it joins the grant rather than reading one after the other: a
+     * grant removed between the two reads would otherwise name a mount the
+     * Agent no longer holds.
+     */
+    async grantedFilesSatellites(
+      agentId: string,
+      owner: string,
+    ): Promise<
+      { name: string; writable: boolean; online: boolean; draining: boolean }[]
+    > {
+      const rows = await db
+        .select({
+          name: satellites.name,
+          writable: satellites.filesWritable,
+          draining: satellites.draining,
+          lastSeenAt: satellites.lastSeenAt,
+        })
+        .from(satellites)
+        .innerJoin(
+          satelliteGrants,
+          and(
+            eq(satelliteGrants.owner, satellites.owner),
+            eq(satelliteGrants.name, satellites.name),
+          ),
+        )
+        .where(
+          and(
+            eq(satelliteGrants.agentId, agentId),
+            eq(satellites.owner, owner),
+            eq(satellites.kind, "files"),
+          ),
+        )
+        .orderBy(asc(satellites.name));
+      const at = new Date();
+      return rows.map((row) => ({
+        name: row.name,
+        writable: row.writable,
+        online: isOnline(row, at) && !row.draining,
+        draining: row.draining,
+      }));
+    },
+
     async grantedNames(
       agentId: string,
     ): Promise<{ owner: string; name: string }[]> {
@@ -365,7 +412,6 @@ export function createSatellitesRepository(db: Db) {
       agentId: string;
       tool: string;
       args: Record<string, unknown>;
-      transferDirection: "download" | "upload" | null;
       status: JobStatus;
       expiresAt: Date;
       maxConcurrent: number;
@@ -470,7 +516,7 @@ export function createSatellitesRepository(db: Db) {
       capacity: number,
       leaseUntil: Date,
       incarnation?: string,
-    ): Promise<{ job: JobRow; transferToken?: string }[]> {
+    ): Promise<JobRow[]> {
       if (capacity <= 0) return [];
       return db.transaction(async (tx) => {
         const pending = await tx
@@ -487,16 +533,14 @@ export function createSatellitesRepository(db: Db) {
           .orderBy(asc(satelliteJobs.sequence))
           .limit(capacity)
           .for("update", { skipLocked: true });
-        const claimed: { job: JobRow; transferToken?: string }[] = [];
+        const claimed: JobRow[] = [];
         for (const { sequence } of pending) {
-          const transferToken = mintTransferToken();
           const [row] = await tx
             .update(satelliteJobs)
             .set({
               status: "running",
               startedAt: new Date(),
               leaseUntil,
-              transferTokenHash: transferTokenHash(transferToken),
             })
             .where(
               and(
@@ -508,64 +552,10 @@ export function createSatellitesRepository(db: Db) {
             )
             .returning();
           if (row === undefined) continue;
-          const job = toJob(row);
-          claimed.push(
-            job.transferDirection === null ? { job } : { job, transferToken },
-          );
+          claimed.push(toJob(row));
         }
         return claimed;
       });
-    },
-
-    /**
-     * UNIT_BOUNDARY_DESCRIPTION: Takes the claim's transfer capability for the
-     * one transfer it authorises, or reports that there is nothing to take. One
-     * statement does the whole check: the Job must still be running, the token
-     * must be this claim's, and it must not have been spent — so a transfer that
-     * finishes after its Job was settled, cancelled or swept cannot land, and a
-     * second transfer on the same Job cannot either.
-     */
-    async consumeTransfer(
-      owner: string,
-      satellite: string,
-      sequence: number,
-      transferToken: string,
-    ): Promise<JobRow | null> {
-      const [row] = await db
-        .update(satelliteJobs)
-        .set({ transferTokenHash: null })
-        .where(
-          and(
-            eq(satelliteJobs.owner, owner),
-            eq(satelliteJobs.satellite, satellite),
-            eq(satelliteJobs.sequence, sequence),
-            eq(satelliteJobs.status, "running"),
-            eq(
-              satelliteJobs.transferTokenHash,
-              transferTokenHash(transferToken),
-            ),
-          ),
-        )
-        .returning();
-      return row === undefined ? null : toJob(row);
-    },
-
-    async transferTokenHashOf(
-      owner: string,
-      satellite: string,
-      sequence: number,
-    ): Promise<string | null> {
-      const rows = await db
-        .select({ hash: satelliteJobs.transferTokenHash })
-        .from(satelliteJobs)
-        .where(
-          and(
-            eq(satelliteJobs.owner, owner),
-            eq(satelliteJobs.satellite, satellite),
-            eq(satelliteJobs.sequence, sequence),
-          ),
-        );
-      return rows[0]?.hash ?? null;
     },
 
     /**

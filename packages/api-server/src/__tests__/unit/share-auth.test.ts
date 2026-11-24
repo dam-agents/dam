@@ -28,6 +28,7 @@ import {
 } from "../../modules/artifact-library/services/share-auth-service.js";
 import { createShareAuthRoutes } from "../../modules/artifact-library/viewer/share-auth-routes.js";
 import { createShareHostApp } from "../../modules/kb-shares/serving/compose.js";
+import { createBrandIconRoutes } from "../../apps/api-server/routes/brand.js";
 
 const SHARE = "https://share.example.test";
 
@@ -85,6 +86,7 @@ function setup(identity: IdentityFn = alice, shareBaseUrl = SHARE) {
       brandName: "Acme",
       sessionCookie: shareSessionCookie(shareBaseUrl),
     }),
+    brandIcon: createBrandIconRoutes(),
     environments: null,
   });
   const get = (path: string, cookie?: string) =>
@@ -317,6 +319,18 @@ describe("share host sign-in", () => {
     const s = setup();
     const res = await s.get("/a/xyz");
     expect(await res.text()).toBe("viewer");
+  });
+});
+
+describe("share host brand icon", () => {
+  /**
+   * TEST_SCENARIO: Share pages link the brand icon from their own host, since app routes never reach it. The SVG is sandboxed so it cannot run script as the share origin.
+   */
+  it("serves the brand icon as a sandboxed SVG", async () => {
+    const res = await setup().get("/brand/icon.svg");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("image/svg+xml");
+    expect(res.headers.get("Content-Security-Policy")).toContain("sandbox");
   });
 });
 

@@ -24,7 +24,7 @@ export default function register(pi: ExtensionAPI): void {
 		emit("user_prompt", {
 			"session.id": ctx.sessionManager.getSessionId(),
 			"prompt.id": promptId,
-			prompt_length: event.prompt.length,
+			prompt_length: event.messageType === "user" ? event.prompt.length : 0,
 		});
 	});
 

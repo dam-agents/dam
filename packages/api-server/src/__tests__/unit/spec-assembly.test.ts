@@ -14,20 +14,11 @@ const baseTemplate: TemplateSpec = {
 const defaultLimits = { cpu: "1", memory: "1Gi" };
 
 describe("assembleSpecFromTemplate", () => {
-  it("carries the template's hibernationTimeout onto the agent spec", () => {
+  // TEST_SCENARIO: a regular Agent sleeps on the install's idle timeout, so a template that still carries a hibernationTimeout, which the template schema passes through, seeds no override.
+  it("drops a template's hibernationTimeout", () => {
     const spec = assembleSpecFromTemplate(
       "nous-1",
-      { ...baseTemplate, hibernationTimeout: "0s" },
-      {},
-      defaultLimits,
-    );
-    expect(spec.hibernationTimeout).toBe("0s");
-  });
-
-  it("leaves hibernationTimeout unset when the template omits it (inherit the default)", () => {
-    const spec = assembleSpecFromTemplate(
-      "agent-1",
-      baseTemplate,
+      { ...baseTemplate, hibernationTimeout: "0s" } as TemplateSpec,
       {},
       defaultLimits,
     );

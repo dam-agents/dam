@@ -1,6 +1,6 @@
 # Agent avatars
 
-Last verified: 2026-11-05
+Last verified: 2026-11-16
 
 ## Overview
 
@@ -32,7 +32,7 @@ A custom avatar has no eyes, so it shows sleep with a *zzz* mark instead ([state
 
 The eyes follow the [lifecycle](agent-lifecycle.md): open while the Agent runs, working or idle, and closed while it sleeps.
 A sleeping avatar keeps its colours; an emoji or an upload, which has no eyes to close, carries a grey *zzz* at its top right.
-A [disabled](agent-lifecycle.md#disable) avatar looks the same as a sleeping one, but grey.
+An avatar of a deleted Agent looks the same as a sleeping one, but grey.
 A sleeping character twitches now and then.
 Each awake character makes its own small gesture on hover, a sleeping one breathes, and the waking screen loops the gesture while an Agent starts ([lifecycle](agent-lifecycle.md#wake)).
 Motion stops when the user's system asks for reduced motion.
@@ -42,3 +42,4 @@ Motion stops when the user's system asks for reduced motion.
 The drawing is shared by the UI and the api-server, so every surface shows the same character.
 Slack replies are the one place an avatar leaves the browser: where a workspace grants the persona scope, the api-server renders the character to a PNG, or reads the uploaded one, and uploads it to a public image host for the message icon ([channels](channels.md#slack-scopes-required-vs-optional)).
 An emoji avatar is never uploaded: Slack gets the public Twemoji PNG for it, so it looks different from the UI's system emoji.
+The share page of an artifact an Agent published shows the Agent's avatar as its tab icon, unless the artifact has an icon of its own ([artifact library](artifact-library.md#the-share-host--trust-boundary)).

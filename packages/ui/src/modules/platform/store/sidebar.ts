@@ -20,7 +20,9 @@ import {
 } from "../../home/lib/activity-filter.js";
 import { keepFirstSessionPages } from "../../sessions/api/queries.js";
 
-const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
+// UNIT_BOUNDARY_DESCRIPTION: the version in the key is a one-time reset: the collapsed rail changed, so every browser opens expanded once and stores its own choice from then on, while the old key is removed rather than read.
+const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded-v2";
+const OLD_SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
 const SIDEBAR_HIBERNATING_STORAGE_KEY = "platform-sidebar-show-hibernating";
 const SIDEBAR_SESSION_FILTER_STORAGE_KEY = "platform-session-filter";
 
@@ -40,7 +42,8 @@ export interface SidebarSlice {
 }
 
 function readStoredSidebarExpanded(): boolean {
-  return readPersistedFlag(SIDEBAR_EXPANDED_STORAGE_KEY, false);
+  safeRemoveItem(browserStorage, OLD_SIDEBAR_EXPANDED_STORAGE_KEY);
+  return readPersistedFlag(SIDEBAR_EXPANDED_STORAGE_KEY, true);
 }
 
 function readStoredSessionFilter(): ActivityFilters {

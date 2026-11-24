@@ -128,7 +128,7 @@ function regexProblems(surface: SurfaceState): RendererError[] {
   return problems;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: validates a reply the way the web chat replays it, except that a surface the reply updates without creating is taken to come from an earlier reply, and agent function calls are checked but not run, though each literal regex pattern is compiled the way the chat's renderer compiles it; with the user's preferences it also reports the forms they asked the agent not to send.
+// UNIT_BOUNDARY_DESCRIPTION: validates a reply the way the web chat replays it, except that a surface the reply updates without creating is taken to come from an earlier reply, and agent function calls are checked but not run, though each literal regex pattern is compiled the way the chat's renderer compiles it, and a block in the v1.0 draft the chat still replays is reported; with the user's preferences it also reports the forms they asked the agent not to send.
 export function checkChatForm(
   reply: string,
   preferences?: ChatFormPreferences,
@@ -144,7 +144,7 @@ export function checkChatForm(
     { callFunction: () => null, assumeEarlierSurfaces: true },
   );
   for (const block of blocks.values()) {
-    problems.push(...block.errors);
+    problems.push(...block.errors, ...block.outdated);
     for (const call of block.functionCalls)
       if (call.response.error)
         problems.push({

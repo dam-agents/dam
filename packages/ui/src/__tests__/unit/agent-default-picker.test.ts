@@ -172,7 +172,7 @@ describe("a channel's and a schedule's model", () => {
     expect(state.target!.slots.pair).toBeNull();
     expect(state.target!.label).toBe(label);
     expect(state.target!.agentDefault?.detail).toBe(
-      "Follows Claude Opus 5.5 · Medium · Anthropic",
+      "Follows Claude Opus 5.5 · Anthropic",
     );
     expect(state.target!.agentDefault?.harness).toBe("claude-code");
     expect(state.row).toBe(true);

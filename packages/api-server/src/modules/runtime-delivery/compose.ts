@@ -31,6 +31,7 @@ import {
   type StateQueue,
 } from "./infrastructure/state-queue.js";
 import { createStateBuilder } from "./services/state-builder.js";
+import type { DamSkillFile } from "../connections/domain/dam-connection.js";
 import { createBuiltinContributions } from "./services/builtin-contributions.js";
 import {
   createWorkerHandler,
@@ -129,8 +130,11 @@ export interface ComposeRuntimeDeliveryOpts {
   telemetryEnv: (harness: string) => readonly EnvVar[];
   resolveOwner: (agentId: string) => Promise<string | null>;
   resolveAgentName: (agentId: string) => Promise<string | null>;
+  resolveWebSearchControl: (agentId: string) => Promise<boolean>;
   resolveEvent?: PendingEventResolver;
   deliveryConcurrency: number;
+  /* UNIT_BOUNDARY_DESCRIPTION: the `dam` skill the api-server image carries, so the skill the DAM Connection writes is the one this install ships now. */
+  damSkill: readonly DamSkillFile[];
 }
 
 export function composeRuntimeDelivery(
@@ -148,8 +152,10 @@ export function composeRuntimeDelivery(
   const stateBuilder = createStateBuilder({
     db: opts.db,
     outboxRepo,
+    damSkill: opts.damSkill,
     builtin,
     agentName: opts.resolveAgentName,
+    webSearchControl: opts.resolveWebSearchControl,
     egressDenies: (agentId) => async (host, method, path) =>
       (await egressRules.match(agentId, host, 443, true, method, path))
         ?.verdict === "deny",

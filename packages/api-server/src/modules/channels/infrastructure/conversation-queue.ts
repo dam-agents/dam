@@ -33,8 +33,14 @@ export async function steerChannelTurn(
 ): Promise<SteerResult> {
   const outcome = await acp.steer(sessionId, frame, request);
   if (outcome === "injected") return "injected";
-  getLogger().debug(
-    { ...log.fields, outcome },
+  getLogger().info(
+    {
+      ...log.fields,
+      sessionId,
+      promptId: request.promptId,
+      targetPromptId: request.targetPromptId,
+      outcome,
+    },
     `${log.surface}.turn.steer_declined`,
   );
   return match(outcome)
@@ -46,6 +52,7 @@ export async function steerChannelTurn(
 
 export interface ConversationQueue<T> {
   submit(message: T): Promise<void>;
+  replace(revise: (queued: T) => T | null): boolean;
   heldSteer(): readonly T[];
   abortSteer(): void;
 }
@@ -79,8 +86,10 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  *  steered into it — the agent reads it before it calls its reply tool, so the
  *  conversation still gets one answer — and where the harness refuses steering
  *  the message waits and becomes the next turn instead of a second one racing
- *  the first. A steer names the turn it may join by the prompt id of that
- *  turn's prompt, and the agent-runtime holds it until the agent's next steer
+ *  the first; a refusal holds for that turn only, so the next turn, which may
+ *  run on a harness that has started since, is asked again. A steer names the
+ *  turn it may join by the prompt id of that turn's prompt, and the
+ *  agent-runtime holds it until the agent's next steer
  *  point, which can take as long as a command runs, so it has no deadline. A
  *  steer claims its batch out of the queue before it goes out, and puts it
  *  back at the head only when the runtime declines it: once injected, the
@@ -93,9 +102,12 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  *  and picks up whatever arrived during its round trip, and no turn is
  *  composed while a batch is still claimed — otherwise a batch coming back
  *  would land behind messages sent after it, and the agent would read a split
- *  thought out of order. The caller supplies what a turn and a steer mean on
- *  its surface, and can see and abort a held steer; the ordering, the quiet
- *  period, and the one-turn-at-a-time rule live here. */
+ *  thought out of order. A caller can replace a message that still waits,
+ *  in its place, so the agent only ever reads the replacement; a message a
+ *  turn or a steer already took is past replacing, and the caller is told
+ *  so. The caller supplies what a turn and a steer mean on its surface, and
+ *  can see and abort a held steer; the ordering, the quiet period, and the
+ *  one-turn-at-a-time rule live here. */
 export function createConversationQueue<T>(
   deps: ConversationQueueDeps<T>,
 ): ConversationQueue<T> {
@@ -228,6 +240,7 @@ export function createConversationQueue<T>(
             (id, promptId) => {
               sessionId = id;
               targetPromptId = promptId ?? null;
+              steeringUnsupported = false;
             },
             steersSettled,
           );
@@ -250,6 +263,16 @@ export function createConversationQueue<T>(
     submit(message: T): Promise<void> {
       pending.push(message);
       return draining ? steerPending() : drain();
+    },
+
+    replace(revise) {
+      for (const [index, queued] of pending.entries()) {
+        const revised = revise(queued);
+        if (revised === null) continue;
+        pending[index] = revised;
+        return true;
+      }
+      return false;
     },
 
     heldSteer() {

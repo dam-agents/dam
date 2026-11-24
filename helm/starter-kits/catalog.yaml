@@ -13,7 +13,3 @@ kits:
   - path: kits/evox
   - path: kits/k-search
   - path: kits/spotlights
-  - id: software-developer
-    url: https://github.com/dam-agents/software-developer
-  - id: micro-manager
-    url: https://github.com/dam-agents/micro-manager

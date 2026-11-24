@@ -56,6 +56,7 @@ function world(opts: { allowed?: boolean } = {}) {
   });
   const approvals = createApprovalsService({
     repo,
+    webSearchRuleWriter: { write: async () => {} },
     egressRuleWriter: {
       insert: async (input) => {
         written.push(input);

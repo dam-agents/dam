@@ -1,4 +1,4 @@
-import { isCancel, password, text } from "@clack/prompts";
+import { isCancel, password, select, text } from "@clack/prompts";
 import { Command, Option } from "commander";
 import type {
   ConnectionCreateInput,
@@ -19,9 +19,15 @@ import { pollUntil } from "../../shared/poll.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { exitCancelled } from "../../shared/prompt.js";
 import {
+  hostnameOf,
+  offeredHostsLine,
+  offeredHostsOf,
+} from "../domain/github-enterprise-host.js";
+import {
   type ConfigFlagError,
   resolveConfigInputFlags,
 } from "../domain/config-inputs.js";
+import { accessNote } from "../domain/access-choice.js";
 import { credentialCheckWarning } from "../domain/credential-check.js";
 import {
   connectFromHint,
@@ -174,7 +180,8 @@ export function buildConnectCommand(deps: {
     .option(
       "--full-access",
       "let the connection reach everything the GitHub sign-in or installation reaches: " +
-        "every account, repository and permission (GitHub, GitHub App installation)",
+        "every account, repository and permission (GitHub, GitHub App installation); " +
+        "for a Slack Account, let the agent also post and change things as you, where the default is read only",
     )
     .option("--header-name <name>", "input: header name")
     .option("--value-format <format>", "input: header value format")
@@ -255,6 +262,10 @@ export function buildConnectCommand(deps: {
         "installation reaches. Without either, the command keeps the sign-in or\n" +
         "installation alone and shows what it reaches; --from makes a connection from\n" +
         "it then, and another one next to those it has.\n" +
+        "\nOn a server that offers several GitHub Enterprise hosts, github-enterprise\n" +
+        "signs in on the one --host names, and asks which at a terminal without it;\n" +
+        "`dam connection templates` lists them. Another host takes your own app:\n" +
+        "pass --client-id and --client-secret with it.\n" +
         "\nA missing secret (token, API key, client secret, private key, key pair)\n" +
         "is entered on a DAM web page: the command opens it, waits until the\n" +
         "secret is saved, and reports the result. The page shows where the secret\n" +
@@ -265,6 +276,9 @@ export function buildConnectCommand(deps: {
         "  dam connection connect github --account acme --repositories api,web \\\n" +
         "      --permissions contents:read,pull_requests:write\n" +
         "  dam connection connect github --full-access --no-browser\n" +
+        "  dam connection connect slack   # read only: the agent reads Slack as you\n" +
+        "  dam connection connect slack --full-access   # it can also post as you\n" +
+        "  dam connection connect github-enterprise --host research.ghe.example.com\n" +
         "  dam connection connect --from github --account acme --repositories docs --name github-docs\n" +
         "  dam connection connect github-pat   # the token is entered on a DAM web page\n" +
         "  dam connection connect custom-header --host api.example.com \\\n" +
@@ -605,18 +619,70 @@ async function resolveSlugTemplate(args: {
     process.exit(EXIT_INVALID_INPUT);
   }
 
-  if (opts.fullAccess && !splitsIntoParent(template)) {
+  if (
+    opts.fullAccess &&
+    !splitsIntoParent(template) &&
+    !template.accessChoice
+  ) {
     process.stderr.write(
-      "error: --full-access applies only to a GitHub sign-in or GitHub App installation " +
-        `(github, github-enterprise, github-app, github-enterprise-app), not '${template.id}'\n`,
+      "error: --full-access applies only to a GitHub sign-in, a GitHub App installation or a Slack Account " +
+        `(github, github-enterprise, github-app, github-enterprise-app, slack), not '${template.id}'\n`,
     );
     process.exit(EXIT_INVALID_INPUT);
   }
 
   const name = (opts.name ?? slugifyTemplateName(template.name)).trim();
   validateName(name);
-  const collected = await collectInputs(template, opts, json);
+  if (template.accessChoice && !json) {
+    process.stderr.write(
+      accessNote(name, template.accessChoice, opts.fullAccess === true),
+    );
+  }
+  const host = await chooseOfferedHost(template, opts, json);
+  const collected = await collectInputs(
+    template,
+    host ? { ...opts, host } : opts,
+    json,
+  );
   return { template, name, ...collected };
+}
+
+async function chooseOfferedHost(
+  template: ConnectionTemplateView,
+  opts: Pick<ConnectOpts, "host" | "clientId" | "clientSecret">,
+  json: boolean,
+): Promise<string | undefined> {
+  const offered = offeredHostsOf(template);
+  if (offered.length === 0) return undefined;
+  const given = opts.host;
+  if (given !== undefined && given.trim().length > 0) {
+    const host = hostnameOf(given);
+    if (offered.includes(host)) return host;
+    const ownApp = !!opts.clientId?.trim();
+    if (ownApp && opts.clientSecret?.trim()) return host;
+    process.stderr.write(
+      ownApp
+        ? `error: ${host} is not a host this server has an app on; your own app there needs --client-secret too\n`
+        : `error: ${host} is not a GitHub Enterprise host this server offers, or it is retired\n` +
+            `hint: ${offeredHostsLine(offered)}; pass one with --host, or --client-id and --client-secret for your own app on another host\n`,
+    );
+    process.exit(EXIT_INVALID_INPUT);
+  }
+  if (offered.length === 1) return offered[0];
+  if (!process.stdin.isTTY) {
+    process.stderr.write(
+      "error: this server offers several GitHub Enterprise hosts; pass one with --host\n" +
+        `hint: ${offeredHostsLine(offered)}\n`,
+    );
+    process.exit(EXIT_INVALID_INPUT);
+  }
+  const picked = await select({
+    message: "GitHub Enterprise host",
+    options: offered.map((h) => ({ value: h, label: h })),
+    initialValue: offered[0],
+  });
+  if (isCancel(picked)) exitCancelled({ json });
+  return String(picked);
 }
 
 async function resolveMcpTemplate(args: {
@@ -857,6 +923,7 @@ function buildPayload(
         ...(v("clientId") ? { clientId: v("clientId")! } : {}),
         ...(v("clientSecret") ? { clientSecret: v("clientSecret")! } : {}),
         ...(v("appSlug") ? { appSlug: v("appSlug")! } : {}),
+        ...(fullAccess && template.accessChoice ? { fullAccess: true } : {}),
       };
     case "client-credentials":
       return {

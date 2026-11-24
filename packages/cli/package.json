@@ -1,7 +1,7 @@
 {
   "name": "@dam-agents/cli",
   "author": "IBM Corp.",
-  "version": "0.3.0",
+  "version": "0.3.3",
   "type": "module",
   "license": "Apache-2.0",
   "homepage": "https://github.com/dam-agents/dam/tree/main/packages/cli#readme",
@@ -25,16 +25,16 @@
     "README.md"
   ],
   "devDependencies": {
-    "@agentclientprotocol/sdk": "^2.0.2",
+    "@agentclientprotocol/sdk": "^2.4.0",
     "@clack/prompts": "1.8.1",
     "@modelcontextprotocol/sdk": "^1.32.2",
-    "@trpc/client": "^11.19.0",
-    "@trpc/server": "^11.19.0",
-    "@types/node": "^26.6.5",
+    "@trpc/client": "^11.25.2",
+    "@trpc/server": "^11.25.2",
+    "@types/node": "^26.6.6",
     "@types/ws": "^8.18.2",
     "agent-runtime-api": "workspace:*",
     "api-server-api": "workspace:*",
-    "commander": "^15.0.0",
+    "commander": "^15.1.0",
     "dev-config": "workspace:*",
     "http-proxy-agent": "^9.1.0",
     "https-proxy-agent": "^9.1.0",
@@ -43,8 +43,8 @@
     "tar-stream": "^3.2.2",
     "tsup": "^9.0.0",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.5",
-    "ws": "^8.22.0",
+    "vitest": "^5.1.0",
+    "ws": "^8.22.2",
     "zod": "^4.6.7"
   }
 }

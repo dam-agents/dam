@@ -196,11 +196,11 @@ describe("agentsInstallSettings — what every agents module is built with", () 
 
   // TEST_SCENARIO: an operator sets the install's default mode off and pins one feature on. Every feature the chart does not name takes the default; without a default each unnamed feature stays experimental.
   it("reads every feature the chart does not name as the default mode", () => {
-    expect(loadConfig().featureModes["agent-telemetry"]).toBe("experimental");
+    expect(loadConfig().featureModes["chat-forms"]).toBe("experimental");
     process.env.FEATURE_DEFAULT_MODE = "off";
-    process.env.FEATURE_MODES = JSON.stringify({ "agent-telemetry": "on" });
+    process.env.FEATURE_MODES = JSON.stringify({ "chat-forms": "on" });
     expect(loadConfig().featureModes).toMatchObject({
-      "agent-telemetry": "on",
+      "chat-forms": "on",
       "custom-avatars": "off",
     });
   });
@@ -226,11 +226,8 @@ describe("agentsInstallSettings — what every agents module is built with", () 
       values.apiServer.spend.priceOverrides,
     );
     try {
-      expect(loadConfig().spendPriceOverrides).toContainEqual(
-        expect.objectContaining({
-          provider: "ibm-litellm",
-          model: "aws/claude-opus-5-5",
-        }),
+      expect(loadConfig().spendPriceOverrides).toEqual(
+        values.apiServer.spend.priceOverrides,
       );
     } finally {
       delete process.env.SPEND_PRICE_OVERRIDES;
@@ -318,7 +315,6 @@ describe("loadConfig — outbound links", () => {
   const LINKS_ENV = {
     docs: "LINKS_DOCS",
     computeRequest: "LINKS_COMPUTE_REQUEST",
-    curveBenderCommunity: "LINKS_CURVE_BENDER_COMMUNITY",
     slackInstallRequest: "LINKS_SLACK_INSTALL_REQUEST",
   } as const;
   const managed = [...Object.keys(REQUIRED_ENV), ...Object.values(LINKS_ENV)];
@@ -352,11 +348,9 @@ describe("loadConfig — outbound links", () => {
       if (value) process.env[env] = value;
     }
     expect(loadConfig().links).toEqual({
-      docs: "https://pages.github.ibm.com/dam-agents/docs/",
+      docs: "https://dam-agents.github.io/docs/",
       computeRequest:
         "https://ibm-research.slack.com/archives/C0B3F03NB24/p1788879773235759",
-      curveBenderCommunity:
-        "https://ibm.enterprise.slack.com/archives/C0C3E4VJAR1",
       slackInstallRequest: null,
     });
   });
@@ -366,7 +360,6 @@ describe("loadConfig — outbound links", () => {
     expect(loadConfig().links).toEqual({
       docs: null,
       computeRequest: null,
-      curveBenderCommunity: null,
       slackInstallRequest: null,
     });
   });

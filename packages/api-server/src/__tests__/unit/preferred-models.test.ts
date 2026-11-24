@@ -12,6 +12,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  internalModel,
   modelMatches,
   modelTokens,
   PREFERRED_MODELS,
@@ -179,6 +180,22 @@ describe("preferredModelOf", () => {
       upstreamId: "rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4",
     });
     expect(preferredModelOf("work", [])).toBeNull();
+  });
+
+  // TEST_SCENARIO: CurveBender's Nemotron is internal, so no picker offers it, and the classifier still resolves to it; the work model and the other CurveBender models stay offered.
+  it("keeps the internal classifier model resolvable", () => {
+    const classifier = preferredModelOf("classifier", [cb])!;
+    expect(internalModel(classifier.upstreamId)).toBe(true);
+    expect(internalModel(preferredModelOf("work", [cb])!.upstreamId)).toBe(
+      false,
+    );
+    expect(
+      [
+        "rits/zai-org/glm-5-3",
+        "rits/ibm-research/granite-5.0-230b-preview-r261008a",
+        "rits/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+      ].filter(internalModel),
+    ).toEqual([]);
   });
 
   // TEST_SCENARIO: Claude Code's classifier runs on Sonnet 5, so a provider listing 5.5 beside it still answers 5 in either order, and a provider listing 5.5 alone answers nothing rather than a newer model.

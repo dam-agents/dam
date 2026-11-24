@@ -28,6 +28,7 @@ const slackChannelFormSchema = (editing: boolean) =>
     .object({
       channelIds: z.array(z.string()),
       ambient: z.boolean(),
+      history: z.boolean(),
       customEmojiEnabled: z.boolean(),
       customEmoji: z.array(z.string()),
       choice: z.custom<ChannelPick>().nullable(),
@@ -91,6 +92,7 @@ export function useSlackChannelForm(
     defaultValues: {
       channelIds: [],
       ambient: channel?.ambient ?? false,
+      history: channel?.history ?? false,
       customEmojiEnabled: !!channel?.customEmoji,
       customEmoji:
         channel?.customEmoji ??
@@ -129,7 +131,12 @@ export function useSlackChannelForm(
       const connect = planSlackChannelSave({
         agentId: agent.id,
         channel,
-        values: { channelId, ambient: values.ambient, customEmoji },
+        values: {
+          channelId,
+          ambient: values.ambient,
+          history: values.history,
+          customEmoji,
+        },
       });
       if (connect) await connectSlack.mutateAsync(connect);
       if (!channel && values.choice)

@@ -36,7 +36,7 @@ export function SlackChannelCard({
 }) {
   const slackChannels = findSlackChannels(agent);
   const [modalTarget, setModalTarget] = useState<ModalTarget>(null);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
 
   return (
     <>
@@ -48,7 +48,7 @@ export function SlackChannelCard({
             <SlackChannelExplainer
               onGoToConnections={
                 agent
-                  ? () => navigateToSandboxHome(agent.id, "connections")
+                  ? () => openAgentSettings(agent.id, "connections")
                   : undefined
               }
             />
@@ -163,9 +163,9 @@ function SlackChannelRow({
         subtitle={
           isSlackConversationGone(channel)
             ? "No longer available in Slack. Disconnect to remove it."
-            : channel.ambient
-              ? "Ambient on"
-              : "Ambient off"
+            : `${channel.ambient ? "Ambient on" : "Ambient off"}${
+                channel.history ? " · Channel history on" : ""
+              }`
         }
         actionsLabel={`Slack channel ${label} actions`}
         menuTestId="slack-channel-menu"

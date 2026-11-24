@@ -7,6 +7,7 @@ import type {
   resolvedSkillSchema,
   starterKitCatalogEntrySchema,
   starterKitConnectionRequirementSchema,
+  starterKitEntryPublisherSchema,
   starterKitEgressRuleSchema,
   onboardingStepSchema,
   starterKitResourcesSchema,
@@ -38,12 +39,19 @@ export type StarterKitCatalogEntry = z.infer<
   typeof starterKitCatalogEntrySchema
 >;
 export type StarterKitApplyInput = z.infer<typeof starterKitApplyInputSchema>;
+export type StarterKitEntryPublisher = z.infer<
+  typeof starterKitEntryPublisherSchema
+>;
+
+export type StarterKitPublisher =
+  { kind: "team" } | ({ kind: "user" } & StarterKitEntryPublisher);
 
 export interface StarterKitView extends ResolvedStarterKit {
   catalog: string;
   version: string;
   source: string;
   skillsInKit: ResolvedSkill[];
+  publisher?: StarterKitPublisher;
   link?: { url: string };
 }
 

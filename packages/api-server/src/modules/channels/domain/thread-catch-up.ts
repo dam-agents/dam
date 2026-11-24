@@ -107,6 +107,39 @@ export function parseThreadCursor(raw: string): ThreadCursor | null {
   return { threadTs, before };
 }
 
+export interface ChannelHistoryCursor {
+  conversationId: string;
+  before: string;
+  since?: string;
+}
+
+const CURSOR_CONVERSATION = /^[CDG][A-Z0-9]+$/;
+
+export function formatChannelHistoryCursor(
+  cursor: ChannelHistoryCursor,
+): string {
+  const floor =
+    cursor.since === undefined ? "" : `${CURSOR_SEPARATOR}${cursor.since}`;
+  return `${cursor.conversationId}${CURSOR_SEPARATOR}${cursor.before}${floor}`;
+}
+
+export function parseChannelHistoryCursor(
+  raw: string,
+): ChannelHistoryCursor | null {
+  const parts = raw.split(CURSOR_SEPARATOR);
+  const [conversationId, before, since] = parts;
+  if (
+    (parts.length !== 2 && parts.length !== 3) ||
+    conversationId === undefined ||
+    before === undefined
+  )
+    return null;
+  if (!CURSOR_CONVERSATION.test(conversationId) || !CURSOR_TS.test(before))
+    return null;
+  if (since !== undefined && !CURSOR_TS.test(since)) return null;
+  return { conversationId, before, ...(since !== undefined ? { since } : {}) };
+}
+
 export function selectUnseen<T>(
   entries: ThreadEntry<T>[],
   selection: CatchUpSelection,

@@ -15,6 +15,7 @@ export function partKey(messageId: string, partIndex: number): string {
 export function collectBlocks(messages: readonly Message[]): BlockInput[] {
   return messages.flatMap((message) => {
     if (message.role !== "assistant" || message.notice) return [];
+    if (message.chatFormFix !== undefined) return [];
     return withoutAgentMarkup(message.parts).flatMap((part, partIndex) => {
       if (part.kind !== "text" || !hasA2uiBlock(part.text)) return [];
       return splitA2uiBlocks(part.text)
@@ -23,7 +24,7 @@ export function collectBlocks(messages: readonly Message[]): BlockInput[] {
           key: blockKey(partKey(message.id, partIndex), index),
           messageId: message.id,
           source: segment.source,
-          closed: segment.closed || !message.streaming,
+          closed: !message.streaming,
         }));
     });
   });

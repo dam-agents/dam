@@ -144,7 +144,7 @@ func TestTheIdleCheckerRetriesAHibernationWhoseMachineDidNotStop(t *testing.T) {
 		}
 		return r.HaltMachine(ctx, owner, name)
 	})
-	checker.busyProbe = func(context.Context, string) bool { return false }
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return true, true }
 
 	checker.check(ctx)
 	assert.NotEqual(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
@@ -172,7 +172,7 @@ func TestAnAgentReadsHibernatedOnlyOnceItsMachineHasStopped(t *testing.T) {
 	node.stopsSlowly = true
 	node.mu.Unlock()
 	checker := NewIdleChecker(r.client, r.dynamic, r.config).WithMachineHalt(r.HaltMachine)
-	checker.busyProbe = func(context.Context, string) bool { return false }
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return true, true }
 
 	checker.check(ctx)
 	require.False(t, node.spec("my-agent").Running)

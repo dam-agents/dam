@@ -128,9 +128,7 @@ function globalCommands(
     command({
       id: "sidebar:sleeping",
       prefix: "sidebar: ",
-      label: input.showSleeping
-        ? "hide sleeping agents"
-        : "show sleeping agents",
+      label: input.showSleeping ? "show recent agents only" : "show all agents",
       keywords: ["hibernating"],
       icon: input.showSleeping ? ViewOff : ViewIcon,
       prior: PRIOR.rare,

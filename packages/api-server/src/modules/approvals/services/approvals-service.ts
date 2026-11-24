@@ -23,6 +23,12 @@ function emitResolved(row: PendingApprovalRow, verdict: ApprovalVerdict): void {
     agentId: row.agentId,
     ownerSub: row.ownerSub,
     resolution: verdict,
+    ...((row.payload.kind === "ext_authz" ||
+      row.payload.kind === "egress_proposal" ||
+      row.payload.kind === "web_search") &&
+    row.payload.forAgentId
+      ? { forAgentId: row.payload.forAgentId }
+      : {}),
   });
 }
 
@@ -55,6 +61,15 @@ export interface EgressRuleWriter {
   }): Promise<EgressRuleWriteOutcome>;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: writes an agent's one web search rule, replacing whatever it held, so a permanent verdict on a held web search allows or refuses every later one. It is the agent's own rule, apart from its egress rules.
+export interface WebSearchRuleWriter {
+  write(input: {
+    agentId: string;
+    verdict: "allow" | "deny";
+    decidedBy: string;
+  }): Promise<void>;
+}
+
 export interface WrapperFrameSender {
   send(agentId: string, frame: string): Promise<void>;
 }
@@ -62,12 +77,47 @@ export interface WrapperFrameSender {
 interface CreateApprovalsServiceDeps {
   repo: ApprovalsRepository;
   egressRuleWriter: EgressRuleWriter;
+  webSearchRuleWriter: WebSearchRuleWriter;
   wrapperFrameSender: WrapperFrameSender;
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
   actor: string;
   actorEmail: string | null;
   agentBinding: readonly string[] | "*";
+  // UNIT_BOUNDARY_DESCRIPTION: the owner's switch that lets the sub-agents and Environments of a driver's launch root have network access of their own. A verdict on one request never turns it on; only the owner's explicit choice does, on the request (approveForChildren) or on the Agent's Network access page. Turning it on also writes every rule of that root's children that waits for it.
+  // UNIT_BOUNDARY_DESCRIPTION: told each answer the owner gives to a rule a driver set on its child, so the answer can be kept where the driver reads it after a one-off child is removed.
+  childEgressAnswered?: ChildEgressAnswered;
+  childEgressSwitch?: {
+    turnOnForRootOf(driverId: string, decidedBy: string): Promise<void>;
+  };
+}
+
+export type ChildEgressAnswered = (
+  childId: string,
+  answer: {
+    host: string;
+    port?: number;
+    method: string;
+    path: string;
+    verdict: "allow" | "deny";
+  },
+) => Promise<void>;
+
+async function tellChildEgressAnswer(
+  deps: Pick<CreateApprovalsServiceDeps, "childEgressAnswered">,
+  row: PendingApprovalRow,
+  verdict: "allow" | "deny",
+  written?: { method: string; pathPattern: string },
+): Promise<void> {
+  if (row.payload.kind !== "egress_proposal" || !row.payload.forAgentId) return;
+  const { host, port, method, path } = row.payload;
+  await deps.childEgressAnswered?.(row.agentId, {
+    host,
+    ...(port !== undefined ? { port } : {}),
+    method: written?.method ?? method,
+    path: written?.pathPattern ?? path,
+    verdict,
+  });
 }
 
 function matchesBinding(
@@ -149,7 +199,7 @@ function verdictConflict(
   });
   return new TRPCError({
     code: "CONFLICT",
-    message: `an equivalent rule already exists with verdict '${existing.verdict}' — edit the agent's network rules instead`,
+    message: `an equivalent rule already exists with verdict '${existing.verdict}' — revoke it under the agent's Network access, then answer again`,
   });
 }
 
@@ -210,7 +260,7 @@ export function createApprovalsService(
       }
       if (!row || row.status !== "pending") return NOT_ACTIONABLE;
       if (row.payload.kind === "egress_proposal") return NOT_ACTIONABLE;
-      if (row.type === "ext_authz") {
+      if (row.type === "ext_authz" || row.type === "web_search") {
         return resolveOnce(deps, row, "allow_once", "allow");
       }
       return resolveAndDeliverAcpNative(deps, row, "allow_once");
@@ -222,6 +272,9 @@ export function createApprovalsService(
         return answerSpendQuestion(deps, row, "allow");
       }
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
+      if (row.payload.kind === "web_search") {
+        return writeWebSearchRuleAndResolve(deps, row, "allow");
+      }
       if (
         row.payload.kind === "ext_authz" ||
         row.payload.kind === "egress_proposal"
@@ -243,6 +296,7 @@ export function createApprovalsService(
         return answerSpendQuestion(deps, row, "allow");
       }
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
+      if (row.payload.kind === "web_search") return NOT_ACTIONABLE;
       if (
         row.payload.kind === "ext_authz" ||
         row.payload.kind === "egress_proposal"
@@ -258,12 +312,44 @@ export function createApprovalsService(
       return resolveAndDeliverAcpNative(deps, row, "allow");
     },
 
+    async approveForChildren(id) {
+      const row = await loadOwned(deps, id);
+      if (
+        !row ||
+        row.status === "resolved" ||
+        row.payload.kind !== "egress_proposal" ||
+        !row.payload.widerThanDriver ||
+        !row.payload.forAgentId ||
+        !deps.childEgressSwitch
+      )
+        return NOT_ACTIONABLE;
+      if (deps.agentBinding !== "*") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message:
+            "letting an agent's sub-agents and Environments have network access of their own changes the agent at the root of the launch chain, so it requires an unrestricted (wildcard) principal; agent-bound API keys are refused.",
+        });
+      }
+      const { host, port, method, path, forAgentId } = row.payload;
+      const outcome = await writeRuleAndResolve(
+        deps,
+        row,
+        { host, port, method, pathPattern: path, verdict: "allow" },
+        { host, method, pathPattern: path, childEgressGranted: true },
+      );
+      await deps.childEgressSwitch.turnOnForRootOf(forAgentId, deps.actor);
+      return outcome;
+    },
+
     async denyForever(id) {
       const row = await loadOwned(deps, id);
       if (row?.type === "spend_limit") refuseSpendDeny();
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (row.payload.kind === "egress_proposal") {
         return declineProposal(deps, row);
+      }
+      if (row.payload.kind === "web_search") {
+        return writeWebSearchRuleAndResolve(deps, row, "deny");
       }
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
         const { host, port, method, path } = row.payload;
@@ -304,7 +390,7 @@ async function dismissOne(
   if (row.payload.kind === "egress_proposal") {
     return declineProposal(deps, row);
   }
-  if (row.type === "ext_authz") {
+  if (row.type === "ext_authz" || row.type === "web_search") {
     return resolveOnce(deps, row, "deny_once", "deny");
   }
   return resolveAndDeliverAcpNative(deps, row, "deny_once");
@@ -319,6 +405,7 @@ async function declineProposal(
     markDelivered: true,
   });
   if (casWon) emitResolved(row, "deny");
+  if (casWon) await tellChildEgressAnswer(deps, row, "deny");
   auditVerdict(deps, row, "deny", { verdict: "deny", ruleWritten: false });
   return casWon
     ? { outcome: "applied", type: row.type, rule: null }
@@ -406,6 +493,7 @@ async function writeRuleAndResolve(
     ? false
     : await deps.repo.resolveExpired(row.id, rule.verdict, deps.actor);
   if (casWon || expiredFlipped) emitResolved(row, rule.verdict);
+  await tellChildEgressAnswer(deps, row, rule.verdict, rule);
   auditVerdict(deps, row, rule.verdict, {
     verdict: rule.verdict,
     ...auditRuleFields(written),
@@ -415,6 +503,34 @@ async function writeRuleAndResolve(
     outcome: casWon ? "applied" : "rule_written_expired",
     type: row.type,
     rule,
+  };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a permanent answer to a held web search. The answer settles the approval first and writes the agent's web search rule only when it won that settle, so when two answers race, the rule is the winner's and the losing answer changes nothing. A rule write that fails after the settle leaves no rule, and the next search asks again.
+async function writeWebSearchRuleAndResolve(
+  deps: CreateApprovalsServiceDeps,
+  row: PendingApprovalRow,
+  verdict: "allow" | "deny",
+): Promise<ApprovalActionOutcome> {
+  const casWon = await deps.repo.resolvePending(row.id, verdict, deps.actor);
+  const expiredFlipped = casWon
+    ? false
+    : await deps.repo.resolveExpired(row.id, verdict, deps.actor);
+  if (!casWon && !expiredFlipped) return NOT_ACTIONABLE;
+  await deps.webSearchRuleWriter.write({
+    agentId: row.agentId,
+    verdict,
+    decidedBy: deps.actor,
+  });
+  emitResolved(row, verdict);
+  auditVerdict(deps, row, verdict, {
+    verdict,
+    webSearchRuleWritten: true,
+  });
+  return {
+    outcome: casWon ? "applied" : "rule_written_expired",
+    type: row.type,
+    rule: null,
   };
 }
 

@@ -12,6 +12,7 @@ import type {
 } from "./modules/budgets/types.js";
 import type { AttentionService } from "./modules/attention/types.js";
 import type { CostReviewsService } from "./modules/cost-reviews/types.js";
+import type { SecurityChecksService } from "./modules/security-checks/types.js";
 import type { ApprovalsService } from "./modules/approvals/types.js";
 import type {
   SatellitesService,
@@ -29,7 +30,9 @@ import type {
   FeatureModes,
   FeaturesService,
 } from "./modules/features/types.js";
+import type { AssistantsService } from "./modules/assistants/types.js";
 import type { EgressRulesService } from "./modules/egress-rules/types.js";
+import type { WebSearchService } from "./modules/web-search/types.js";
 import type { EnvironmentsService } from "./modules/environments/types.js";
 import type { LiveEventsService } from "./modules/events/types.js";
 import type { ProviderStatusService } from "./modules/provider-status/types.js";
@@ -51,7 +54,6 @@ import type {
   SpendService,
 } from "./modules/spend/types.js";
 import type { StarterKitsService } from "./modules/starter-kits/types.js";
-import type { ReposService } from "./modules/repos/types.js";
 import type { MetricsService } from "./modules/metrics/types.js";
 import type { TelemetryService } from "./modules/telemetry/types.js";
 import type {
@@ -80,7 +82,6 @@ export type AgentActing =
 export interface ApiContext {
   templates: TemplatesService;
   harnesses: HarnessCatalog;
-  repos: ReposService;
   agents: AgentsService;
   schedules: SchedulesService;
   channels: ChannelsService;
@@ -90,7 +91,9 @@ export interface ApiContext {
   approvals: ApprovalsService;
   attention: AttentionService;
   costReviews: CostReviewsService;
+  securityChecks: SecurityChecksService;
   egressRules: EgressRulesService;
+  webSearch: WebSearchService;
   invocationsQuery: InvocationsQueryService;
   invocationsControl: InvocationsControlService;
   environments: EnvironmentsService;
@@ -122,6 +125,11 @@ export interface ApiContext {
   spendCeilings: SpendCeilingsService;
   providerStatus: ProviderStatusService;
   user: UserIdentity;
+  assistants: AssistantsService;
+  /* UNIT_BOUNDARY_DESCRIPTION: starts giving this person the assistant at their first admitted request, on an install that offers it to them: it returns at once and the create finishes behind the replica's guard, so no request waits for it. Called when a transport attaches and again after a first acceptance, because that makes no new request context. */
+  provisionAssistant: () => void;
+  /* UNIT_BOUNDARY_DESCRIPTION: gives this person Dambledore when they turn the feature on, since a flag change makes no new request context. Nothing is made for a person who already owns an Agent under the assistant's name. */
+  optInAssistant: () => Promise<void>;
   e2eEnabled: boolean;
   featureModes: FeatureModes;
   telemetryBackend: boolean;

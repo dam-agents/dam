@@ -5,6 +5,7 @@ import {
 } from "agent-runtime-api";
 import {
   aliasForProviderType,
+  internalModel,
   parseQualifiedModel,
   type ProviderPresetType,
   type SessionPair,
@@ -34,6 +35,7 @@ import {
   useHarnessConfigured,
   useProviderConnections,
   useProviderModels,
+  useSessionDefaults,
 } from "../api/session-pair.js";
 import { keepOpenWhileDialog } from "../hooks/use-connect-on-pick.js";
 import {
@@ -75,6 +77,8 @@ interface Props {
   /** UNIT_BOUNDARY_DESCRIPTION: a tool-approval pick, which configures this session and is saved nowhere else. */
   onToolApproval: (settings: Record<string, string>) => void;
   onNewSession: () => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: opens the Agent's Providers settings; the chat passes its settings modal. */
+  onManageProviders: () => void;
 }
 
 export function ModelIndicator({
@@ -91,11 +95,12 @@ export function ModelIndicator({
   onConfigure,
   onToolApproval,
   onNewSession,
+  onManageProviders,
 }: Props) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const { data: catalog } = useHarnessCatalog();
   const capability = carried.find((h) => h.name === harness);
+  const agentApproval = useSessionDefaults(agentId).data?.toolApproval;
   const defaults = settingDefaults(
     capability,
     useHarnessConfigured(agentId, harness),
@@ -211,14 +216,16 @@ export function ModelIndicator({
     );
   };
   const harnessName = harnessDisplayName(harness, catalog?.harnesses);
-  const models = removed
-    ? []
-    : data?.availableModels === null
-      ? (carried
-          .find((h) => h.name === harness)
-          ?.harnessConfigCatalog?.options.find((o) => o.category === "model")
-          ?.choices ?? [])
-      : (data?.availableModels ?? []);
+  const models = (
+    removed
+      ? []
+      : data?.availableModels === null
+        ? (carried
+            .find((h) => h.name === harness)
+            ?.harnessConfigCatalog?.options.find((o) => o.category === "model")
+            ?.choices ?? [])
+        : (data?.availableModels ?? [])
+  ).filter((c) => c.value === model || !internalModel(c.value));
   const modelName = routed
     ? pairSummary(model, {
         settings,
@@ -332,9 +339,7 @@ export function ModelIndicator({
               }}
               saveAsProfile={saveAs.row}
               onChoose={applyPair}
-              onManageProviders={() =>
-                navigateToSandboxHome(agentId, "providers")
-              }
+              onManageProviders={onManageProviders}
             />
           ) : (
             <OldRuntimeModels
@@ -358,10 +363,12 @@ export function ModelIndicator({
                 settings={settings}
                 defaults={defaults}
                 modelChoices={sameSideGroups(groups, model).flatMap((g) =>
-                  g.models.map((m) => ({
-                    value: m.name,
-                    name: `${m.upstreamId} · ${g.displayName}`,
-                  })),
+                  g.models
+                    .filter((m) => !internalModel(m.upstreamId))
+                    .map((m) => ({
+                      value: m.name,
+                      name: `${m.upstreamId} · ${g.displayName}`,
+                    })),
                 )}
                 onChange={onConfigure}
               />
@@ -372,6 +379,7 @@ export function ModelIndicator({
       <ToolApprovalPicker
         capability={capability}
         settings={settings}
+        agentApproval={agentApproval}
         onChange={onToolApproval}
       />
     </div>

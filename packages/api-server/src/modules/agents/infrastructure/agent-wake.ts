@@ -16,7 +16,7 @@ import {
 import { AgentStoppedError } from "../domain/agent-stopped.js";
 import { getLogger } from "../../../core/logger.js";
 import type { AgentChangeSubscription } from "./agent-state-cache.js";
-import { DISABLED_KEY, STOP_REQUESTED_KEY } from "./labels.js";
+import { READY_REASON_HIBERNATED, STOP_REQUESTED_KEY } from "./labels.js";
 
 export interface AgentWakeOptions {
   onWaking?: () => void;
@@ -86,10 +86,7 @@ export function createAgentWake(deps: {
         });
       }
       if (current.metadata?.annotations?.[STOP_REQUESTED_KEY]) {
-        throw new AgentStoppedError(
-          id,
-          !!current.metadata.annotations[DISABLED_KEY],
-        );
+        throw new AgentStoppedError(id);
       }
       if (await deps.isReady(id)) {
         if (!waitOnly) await deps.bumpLastActivity(id);
@@ -117,10 +114,7 @@ export function createAgentWake(deps: {
           const obj = await deps.readCached(id);
           if (!obj) return false;
           if (obj.metadata?.annotations?.[STOP_REQUESTED_KEY]) {
-            throw new AgentStoppedError(
-              id,
-              !!obj.metadata.annotations[DISABLED_KEY],
-            );
+            throw new AgentStoppedError(id);
           }
           const infra = parseInfraAgent(obj);
           if (waitOnly && infra.hibernated && !infra.wakeRequested) {
@@ -178,6 +172,9 @@ export function createAgentWake(deps: {
           return;
         }
         const failure = classifyWakeFailure(infra);
+        const gatewayLeftFromSleep =
+          !infra?.hibernated &&
+          infra?.gatewayPodNotReadyReason === READY_REASON_HIBERNATED;
         getLogger().warn(
           {
             agentId: id,
@@ -185,8 +182,10 @@ export function createAgentWake(deps: {
             cause: wakeFailureReasonToken(failure),
             hibernated: infra?.hibernated,
             machineNotReadyReason: infra?.machineNotReadyReason,
-            gatewayPodReady: infra?.gatewayPodReady,
-            gatewayPodNotReadyReason: infra?.gatewayPodNotReadyReason,
+            ...(!gatewayLeftFromSleep && {
+              gatewayPodReady: infra?.gatewayPodReady,
+              gatewayPodNotReadyReason: infra?.gatewayPodNotReadyReason,
+            }),
             reconciledReason: infra?.reconciledReason,
             podTerminationReason: infra?.podTerminationReason,
           },

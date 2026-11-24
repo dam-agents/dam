@@ -3,6 +3,7 @@ import type {
   CatalogProviderView,
   HarnessCatalogView,
 } from "agent-runtime-api";
+import { internalModel } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
 import type { AgentModelsService } from "../services/agent-models-service.js";
@@ -100,10 +101,15 @@ export function buildModelsCommand(deps: {
 
         const catalog = await svc.catalog(agent.id, harness);
         exitOnServiceError(catalog, host);
+        const offered: HarnessCatalogView = {
+          ...catalog.value,
+          providers: catalog.value.providers.map((p) => ({
+            ...p,
+            models: p.models.filter((m) => !internalModel(m.upstreamId)),
+          })),
+        };
         process.stdout.write(
-          opts.json
-            ? `${JSON.stringify(catalog.value)}\n`
-            : renderCatalog(catalog.value),
+          opts.json ? `${JSON.stringify(offered)}\n` : renderCatalog(offered),
         );
         process.exit(EXIT_SUCCESS);
       },

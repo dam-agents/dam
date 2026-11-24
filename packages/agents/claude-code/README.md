@@ -22,6 +22,10 @@ Files a user attaches to a message, and files a channel brings in, land under `~
 `managed-settings.json` allows `Read(~/.uploads/**)`, so a session in "Ask for approvals" reads them without asking.
 The rule covers every session's attachments: the sessions of one agent share its home, so it reaches no file the agent could not already read.
 
+An agent with [web search control](../../../docs/architecture/web-search-control.md#the-harnesss-own-question) on is asked about each search by its gateway, so Claude Code does not ask a second time.
+`managed-settings.json` holds a `PreToolUse` hook on `WebSearch` that allows the tool when `PLATFORM_WEB_SEARCH_CONTROL` is set, which the platform sets only for such an agent.
+With the variable unset the hook prints nothing, and Claude Code asks about a search as its permission mode says.
+
 ## User settings
 
 [`sync-claude-settings.mjs`](rootfs/usr/local/lib/sync-claude-settings.mjs) writes the platform's own keys into `~/.claude/settings.json`: the `OTEL_*` telemetry variables of the rail the agent was given, and the `report-background-work.mjs` entry it owns in `hooks.Stop` and `hooks.SubagentStop`.
@@ -51,3 +55,12 @@ The subagent effort (`subagentEffort`) is the router's: it replaces the `output_
 Neither reaches a platform sub-agent, which follows the session's platform sub-agent settings.
 The router adds the OAuth beta flag to a call on the subscription; Bedrock stays on Claude Code's native path (`CLAUDE_CODE_USE_BEDROCK`).
 Workload images extend the shim through `model-gateway.d/*.sh` (Nous does, for its own OpenAI-format calls).
+
+## The platform's MCP server
+
+Every session carries the platform's own MCP server beside the ones its connections add, and that is where schedules, artifacts, `spawn_subagent` and channel messaging come from.
+Claude Code caches a server that answered as if it needs authentication in `~/.claude/mcp-needs-auth-cache.json` and skips it for 15 minutes; each `claude` process reads that file once, when it starts.
+One mesh blip — a `403` with `RBAC: access denied` from the Istio policy — therefore left every session of an agent on dam-dev without those tools until the entry expired, and Claude Code told the user to authorise the server in `/mcp` or its connector settings, which no DAM agent has.
+So [`forget-platform-mcp-auth.mjs`](rootfs/usr/local/lib/forget-platform-mcp-auth.mjs) drops the platform's own servers (`platform-outbound`, `knowledge-bases`) from that cache, and it runs once per `claude` process: [`harness-claude`](rootfs/usr/local/bin/harness-claude) is what `harness-chat` names in `CLAUDE_CODE_EXECUTABLE`, so each session's own `claude` prunes before it reads the cache, and `harness-terminal` prunes for the terminal's.
+A server of the agent's own keeps its entry, since a person may have signed it in.
+A process that hits the blip itself still skips the server until it restarts or the entry expires, because the cache is read once and held in memory.

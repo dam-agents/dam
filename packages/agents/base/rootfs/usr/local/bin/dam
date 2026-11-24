@@ -1,0 +1,7 @@
+#!/bin/sh
+# The dam CLI of this image, on the path every agent's shell reaches it on.
+# It needs no configuration of its own: DAM_SERVER and DAM_TOKEN come from the
+# Connection that grants this install, and that token is a placeholder this
+# machine's egress gateway swaps for the real key on the way out.
+set -eu
+exec node /usr/local/lib/dam/dam.mjs "$@"

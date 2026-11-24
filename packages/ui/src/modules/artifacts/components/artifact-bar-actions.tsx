@@ -1,82 +1,155 @@
 import {
   AddComment,
+  Calendar,
+  ChevronDown,
+  Code,
   Download,
-  Launch,
+  Edit,
+  FolderMoveTo,
+  Popup,
   RequestQuote,
-  Share,
+  TrashCan,
+  View,
 } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 
+import { routeToPath } from "../../platform/lib/routes.js";
 import { downloadArtifact } from "../lib/transfer.js";
+import { VISIBILITY_OPTIONS } from "./share-visibility-choice.js";
+
+export function ArtifactShareButton({
+  artifact,
+  onShare,
+}: {
+  artifact: LibraryArtifact;
+  onShare: () => void;
+}) {
+  const { label, description, Icon } = VISIBILITY_OPTIONS[artifact.visibility];
+  return (
+    <Button
+      variant="outline"
+      size="xs"
+      className="shrink-0"
+      aria-haspopup="dialog"
+      aria-label={`Share: ${label}`}
+      tooltip={`${label} — ${description.toLowerCase()}. Change who can open it`}
+      onClick={onShare}
+    >
+      <Icon size={14} />
+      {label}
+      <ChevronDown size={12} className="-mr-0.5 text-muted-foreground" />
+    </Button>
+  );
+}
 
 export function ArtifactBarActions({
   artifact,
-  onEdit,
-  onShare,
-  onStartSession,
+  newTab,
 }: {
   artifact: LibraryArtifact;
-  onEdit?: () => void;
-  onShare: () => void;
-  onStartSession?: () => void;
+  newTab: boolean;
 }) {
   return (
     <>
-      {onEdit && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Edit"
-          tooltip="Edit"
-          onClick={onEdit}
-        >
-          <RequestQuote size={16} />
-        </Button>
-      )}
       <Button
         variant="ghost"
         size="icon-sm"
-        aria-label="Share"
-        tooltip="Share"
-        onClick={onShare}
-      >
-        <Share size={16} />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-sm"
+        className="shrink-0"
         aria-label="Download"
         tooltip="Download"
         onClick={() => void downloadArtifact(artifact.id)}
       >
         <Download size={16} />
       </Button>
-      {artifact.shareUrl && (
+      {newTab && (
         <Button
           variant="ghost"
           size="icon-sm"
+          className="shrink-0"
           aria-label="Open in new tab"
           tooltip="Open in new tab"
           asChild
         >
-          <a href={artifact.shareUrl} target="_blank" rel="noopener noreferrer">
-            <Launch size={16} />
+          <a
+            href={routeToPath({ view: "artifact", artifactId: artifact.id })}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Popup size={16} />
           </a>
         </Button>
       )}
-      {onStartSession && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Discuss with agent"
-          tooltip="Discuss with agent"
-          onClick={onStartSession}
-        >
-          <AddComment size={16} />
-        </Button>
-      )}
     </>
+  );
+}
+
+export function ArtifactPanelMenu({
+  onRename,
+  onMove,
+  onEdit,
+  onStartSession,
+  source,
+  onToggleSource,
+  onSetRetention,
+  onDelete,
+}: {
+  onRename: () => void;
+  onMove: () => void;
+  onEdit?: () => void;
+  onStartSession?: () => void;
+  source: boolean;
+  onToggleSource?: () => void;
+  onSetRetention: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <RowActionsMenu label="More actions">
+      <DropdownMenuItem onSelect={onRename}>
+        <Edit size={14} />
+        Rename
+      </DropdownMenuItem>
+      <DropdownMenuItem onSelect={onMove}>
+        <FolderMoveTo size={14} />
+        Move
+      </DropdownMenuItem>
+      {(onEdit || onStartSession) && <DropdownMenuSeparator />}
+      {onEdit && (
+        <DropdownMenuItem onSelect={onEdit}>
+          <RequestQuote size={14} />
+          Edit source
+        </DropdownMenuItem>
+      )}
+      {onStartSession && (
+        <DropdownMenuItem onSelect={onStartSession}>
+          <AddComment size={14} />
+          Start a new session
+        </DropdownMenuItem>
+      )}
+      {onToggleSource && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={onToggleSource}>
+            {source ? <View size={14} /> : <Code size={14} />}
+            {source ? "View preview" : "View source"}
+          </DropdownMenuItem>
+        </>
+      )}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onSelect={onSetRetention}>
+        <Calendar size={14} />
+        Set expiration
+      </DropdownMenuItem>
+      <DropdownMenuItem tone="danger" onSelect={onDelete}>
+        <TrashCan size={14} />
+        Delete artifact
+      </DropdownMenuItem>
+    </RowActionsMenu>
   );
 }

@@ -60,7 +60,6 @@ function panel() {
       null,
       createElement(ProcessesPanel, {
         agentId: "agent-a",
-        alwaysOn: false,
         open: true,
         onToggle: () => {},
       }),
@@ -70,7 +69,7 @@ function panel() {
 
 function indicator() {
   return renderToStaticMarkup(
-    createElement(ProcessesIndicator, { agentId: "agent-a" }),
+    createElement(ProcessesIndicator, { agentId: "agent-a", onOpen: () => {} }),
   );
 }
 

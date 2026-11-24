@@ -27,7 +27,6 @@ export interface WakeStamp {
 export interface DefaultConverter {
   convert(agentId: string): Promise<DefaultConversion>;
   ensure(agentId: string, timeoutMs: number): Promise<DefaultConversion>;
-  pendingAfterMove(agentId: string): Promise<boolean>;
   ensureForFire(agentId: string): Promise<WakeStamp | null>;
 }
 
@@ -220,13 +219,6 @@ export function createDefaultConverter(deps: {
   return {
     convert,
     ensure,
-    async pendingAfterMove(agentId) {
-      if (!(await deps.movedToNewImage(agentId))) return false;
-      return (
-        !(await deps.isRunning(agentId)) ||
-        !(await deps.pairRepo.read(agentId, "chat"))
-      );
-    },
     async ensureForFire(agentId) {
       if (!(await deps.movedToNewImage(agentId))) return null;
       let stamp: WakeStamp | null = null;
@@ -234,7 +226,7 @@ export function createDefaultConverter(deps: {
         const since = now();
         stamp = await deps.wake(agentId);
         if (!(await helloSince(agentId, since)))
-          throw new NoDefaultModelError(undefined, { pending: true });
+          throw new NoDefaultModelError({ pending: true });
       }
       if (!(await deps.pairRepo.read(agentId, "chat"))?.model)
         await ensure(agentId, LISTING_WAIT_MS);

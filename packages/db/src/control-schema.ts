@@ -35,6 +35,7 @@ export const controlAgents = control.table(
     ownerSub: text("owner_sub").notNull(),
     templateId: text("template_id"),
     environmentOf: text("environment_of"),
+    linkFrom: text("link_from"),
     name: text("name").notNull().default(""),
     description: text("description"),
     avatar: text("avatar"),
@@ -50,6 +51,7 @@ export const controlAgents = control.table(
     requireConnectionAddress: boolean("require_connection_address")
       .notNull()
       .default(false),
+    webSearchControl: boolean("web_search_control").notNull().default(false),
     telemetryAttributionId: text("telemetry_attribution_id"),
     cpuLimit: text("cpu_limit").notNull(),
     memoryLimit: text("memory_limit").notNull(),

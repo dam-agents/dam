@@ -2,6 +2,13 @@ import { Command } from "commander";
 import type { ConnectionView } from "api-server-api";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
 import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
+import {
+  audienceOf,
+  type SharingService,
+  sharedConnectionNames,
+  sharingUnchecked,
+  sharingWarning,
+} from "../../sharing/index.js";
 import { resolveConnectionRef } from "../domain/connection-ref.js";
 import {
   childrenOf,
@@ -15,7 +22,11 @@ import {
 
 const collect = (v: string, acc: string[]): string[] => [...acc, v];
 
-export function buildGrantCommand(deps: ConnectionCommandDeps): Command {
+export function buildGrantCommand(
+  deps: ConnectionCommandDeps & {
+    createSharingService: (host: string) => SharingService;
+  },
+): Command {
   return new Command("grant")
     .description("Grant one or more connections to an Agent")
     .argument("<agent>", "Agent Ref — name or 'agent-…' ID")
@@ -96,6 +107,24 @@ export function buildGrantCommand(deps: ConnectionCommandDeps): Command {
           process.stdout.write(
             `✓ Granted to ${agent.name}. Agent now has ${res.value.length} connection(s).\n`,
           );
+        }
+        const shared = sharedConnectionNames(
+          connections.filter((c) => connectionIds.includes(c.id)),
+        );
+        if (shared.length > 0) {
+          const chats = await deps
+            .createSharingService(host)
+            .telegramChats(agent.id);
+          if (!chats.ok)
+            process.stderr.write(
+              sharingUnchecked(agent.name, chats.error.reason),
+            );
+          const warning = sharingWarning(
+            agent.name,
+            audienceOf(agent, chats.ok ? chats.value : []),
+            { connections: shared, satellites: [] },
+          );
+          if (warning) process.stderr.write(warning);
         }
         process.exit(EXIT_SUCCESS);
       },

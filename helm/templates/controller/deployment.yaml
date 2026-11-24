@@ -104,28 +104,10 @@ spec:
             - name: AGENT_HARNESS_TEMPLATE_DEFAULTS
               value: {{ .Values.controller.agent.harnessTemplateDefaults | toJson | replace "$HOME" "/home/agent" | quote }}
             # Every agent's machine runs on its owner's VM runner; see
-            # `virtualization` in values.yaml.
-            {{- $r := .Values.virtualization.runner }}
-            {{- $cache := .Values.virtualization.imageCache | default dict }}
-            {{- $devices := $r.devices | default (dict "devices.kubevirt.io/kvm" "1") }}
-            {{- $runner := dict
-                  "image" (include "platform.vmRunner.image" .)
-                  "imagePullPolicy" ($r.image.pullPolicy | default "IfNotPresent")
-                  "imagePullSecrets" (.Values.imagePullSecrets | default list)
-                  "serviceAccountName" (include "platform.vmRunner.serviceAccountName" .)
-                  "storage" $r.storage "storageClass" $r.storageClass
-                  "devices" $devices
-                  "reserveMiB" $r.reserveMiB "headroomMiB" $r.headroomMiB "bootMiB" $r.bootMiB "machineCPUs" $r.machineCPUs "nestedVirtualization" ($r.nestedVirtualization | default false)
-                  "releaseHostPath" (include "platform.vmRunner.releaseDir" .)
-                  "seccomp" (include "platform.vmRunner.seccomp" .)
-                  "imageCacheHostPath" (include "platform.vmImageCache.dir" .) "imageCacheBudget" ($cache.budget | default "" | toString)
-                  "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations "affinity" $r.affinity
-                  "resources" $r.resources
-                  "priorityClassName" (include "platform.vmRunner.priorityClassName" .)
-                  "hostAddress" ($r.hostAddress | default "") "hostPort" ($r.hostPort | default 0) "machineMemoryMiB" ($r.machineMemoryMiB | default 2048 | int)
-                  "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "maxConcurrentPercent" ($r.rollout.maxConcurrentPercent | default 0 | int) "settleTimeout" ($r.rollout.settleTimeout | default "10m") "stalledTimeout" ($r.rollout.stalledTimeout | default "30m") "idleWait" ($r.rollout.idleWait | default "24h")) }}
+            # `virtualization` in values.yaml, and `platform.controller.agentVM`
+            # for the dict the controller decodes.
             - name: AGENT_VM
-              value: {{ dict "runner" $runner "gateway" (dict "perOwner" (dig "perOwner" false (.Values.virtualization.gateway | default dict))) | toJson | quote }}
+              value: {{ include "platform.controller.agentVM" . | quote }}
             - name: VM_RUNNER_CA_ISSUER
               value: {{ .Values.virtualization.runnerCA.issuerName | quote }}
             # Cluster-scoped, so an install with its own (several share a cluster)
@@ -159,6 +141,10 @@ spec:
               value: {{ .Values.istio.trustDomain | quote }}
             - name: PLATFORM_ISTIO_WAYPOINT_NAME
               value: {{ .Values.istio.waypointName | quote }}
+            # The sources a kubelet probe of a meshed pod arrives from; see
+            # istio.hostProbeSNAT.
+            - name: PLATFORM_ISTIO_HOST_PROBE_SNAT
+              value: {{ .Values.istio.hostProbeSNAT | toJson | quote }}
             {{- with include "platform.objectstorage.agentAuthorityHttp" . }}
             # Plain-HTTP object-store authority — gateways render dedicated
             # routes for it (harness-route shape) for presigned uploads.

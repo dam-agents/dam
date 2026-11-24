@@ -239,7 +239,7 @@ describe("pool bars", () => {
 });
 
 describe("a pool's warning text", () => {
-  const advice = "Disable agents you aren't using to free up memory.";
+  const advice = "Delete an agent you no longer use to free up memory.";
   const fact = "Idle agents are put to sleep automatically to make room.";
 
   it("adds what the platform does, and the Slack login for an unlinked user, only at critical", () => {

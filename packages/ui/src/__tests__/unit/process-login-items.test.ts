@@ -51,7 +51,7 @@ describe("login items", () => {
       startupItems: [item({ running: true })],
     };
 
-    const listed = groupProcesses(running, false).flatMap((g) => g.rows);
+    const listed = groupProcesses(running).flatMap((g) => g.rows);
     expect(listed.map((r) => r.key)).toEqual(["detached"]);
     expect(summarizeProcesses(list).running).toBe(1);
     expect(processKindLabel(row("item", "startup-item"))).toBe("Login item");

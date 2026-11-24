@@ -6,13 +6,14 @@ import {
   Globe,
   Misuse,
 } from "@carbon/icons-react";
-import type { ApprovalView } from "api-server-api";
+import { type ApprovalView, wildcardHostReach } from "api-server-api";
 import { match } from "ts-pattern";
 
 import { useStore } from "../../../store.js";
 import { continueLabel } from "../../spend/lib/copy.js";
 import { localResetTime } from "../../spend/lib/format.js";
 import {
+  useApproveForChildren,
   useApproveHost,
   useApproveOnce,
   useApprovePermanent,
@@ -23,7 +24,12 @@ import { offeredByAgent } from "../lib/agent-options.js";
 import { useEgressApprovalRestart } from "../lib/egress-approval-restart.js";
 
 export type ApprovalActionId =
-  "allow-once" | "allow-permanent" | "allow-host" | "dismiss" | "deny-forever";
+  | "allow-once"
+  | "allow-permanent"
+  | "allow-host"
+  | "allow-children"
+  | "dismiss"
+  | "deny-forever";
 
 export interface ApprovalAction {
   id: ApprovalActionId;
@@ -52,15 +58,18 @@ export function useApprovalActions(
   const approveOnce = useApproveOnce();
   const approvePermanent = useApprovePermanent();
   const approveHost = useApproveHost();
+  const approveForChildren = useApproveForChildren();
+  const showConfirm = useStore((s) => s.showConfirm);
   const denyForever = useDenyForever();
   const dismiss = useDismissApproval();
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const restart = useEgressApprovalRestart(row);
 
   const inflight =
     approveOnce.isPending ||
     approvePermanent.isPending ||
     approveHost.isPending ||
+    approveForChildren.isPending ||
     denyForever.isPending ||
     dismiss.isPending;
 
@@ -70,7 +79,8 @@ export function useApprovalActions(
     row.payload.kind === "ext_authz" || row.payload.kind === "egress_proposal"
       ? row.payload.host
       : null;
-  const allowOnceDisabled = row.type === "ext_authz" ? !live : false;
+  const allowOnceDisabled =
+    row.type === "ext_authz" || row.type === "web_search" ? !live : false;
 
   const confirmed = async (
     confirm: (label: string) => Promise<boolean>,
@@ -219,10 +229,138 @@ export function useApprovalActions(
     },
   ];
 
+  const webSearchActions: ApprovalAction[] = [
+    {
+      id: "allow-once",
+      label: "Allow once",
+      icon: Checkmark,
+      danger: false,
+      disabled: inflight || allowOnceDisabled,
+      tooltip: allowOnceDisabled
+        ? "The search already failed; pick Always allow to let later searches through"
+        : "Allow this search only — the next one asks again",
+      resolvedLabel: "Allowed",
+      run: () => direct(() => each(approveOnce.mutateAsync)),
+    },
+    {
+      id: "allow-permanent",
+      label: "Always allow web search",
+      icon: CheckmarkFilled,
+      danger: false,
+      disabled: inflight,
+      tooltip:
+        "Every later web search of this agent goes ahead without asking, whatever the query. Change it under Web search in Network settings.",
+      resolvedLabel: "Always allowed",
+      run: () => direct(() => each(approvePermanent.mutateAsync)),
+    },
+    {
+      id: "dismiss",
+      label: "Deny",
+      icon: Close,
+      danger: true,
+      disabled: inflight || !live,
+      tooltip: live
+        ? "Refuse this search only — the agent gets a failed search, and the next one asks again"
+        : "The search already failed; nothing to deny",
+      resolvedLabel: "Denied",
+      run: () => direct(() => each(dismiss.mutateAsync)),
+    },
+    {
+      id: "deny-forever",
+      label: "Always deny web search",
+      icon: Misuse,
+      danger: true,
+      disabled: inflight,
+      tooltip:
+        "Every later web search of this agent is refused without asking. Change it under Web search in Network settings.",
+      resolvedLabel: "Always denied",
+      run: () => direct(() => each(denyForever.mutateAsync)),
+    },
+  ];
+
+  const childRequest =
+    row.payload.kind === "egress_proposal" && row.payload.forAgentId
+      ? row.payload
+      : null;
+  const decline = proposalActions.find((a) => a.id === "dismiss")!;
+  const confirmStopAsking = (): Promise<boolean> =>
+    showConfirm(
+      "This agent will be able to give any sub-agent or Environment it creates access to any named host, without asking you. Wildcard hosts, such as *.example.com, still ask. You can turn this off on the agent's Network access page.",
+      "Stop asking for this agent?",
+      { confirmLabel: "Allow and stop asking" },
+    );
+  const childRequestActions: ApprovalAction[] = childRequest
+    ? childRequest.widerThanDriver
+      ? [
+          {
+            id: "allow-permanent",
+            label:
+              ids.length > 1
+                ? `Allow these ${String(ids.length)}`
+                : "Allow this",
+            icon: CheckmarkFilled,
+            danger: false,
+            disabled: inflight,
+            tooltip:
+              "Lets this one sub-agent or Environment make this request. You are asked again for others.",
+            resolvedLabel: "Allowed",
+            run: () =>
+              confirmed(restart.confirmNarrow, "Allow & restart", () =>
+                each(approvePermanent.mutateAsync),
+              ),
+          },
+          ...(hostWideAction &&
+          ids.length === 1 &&
+          (childRequest.method !== "*" || childRequest.path !== "*")
+            ? [hostWideAction]
+            : []),
+          {
+            id: "allow-children",
+            label: "Allow, and stop asking for its sub-agents and Environments",
+            icon: Checkmark,
+            danger: false,
+            disabled: inflight,
+            tooltip:
+              "Allows this, and lets the agent give its sub-agents and Environments network access of their own from now on",
+            resolvedLabel: "Allowed, and no longer asking",
+            run: async () =>
+              (await confirmStopAsking()) &&
+              confirmed(restart.confirmNarrow, "Allow & restart", () =>
+                each(approveForChildren.mutateAsync),
+              ),
+          },
+          decline,
+        ]
+      : [
+          {
+            id: "allow-permanent",
+            label:
+              ids.length > 1
+                ? `Allow these ${String(ids.length)}`
+                : `Allow ${wildcardHostReach(childRequest.host)}`,
+            icon: CheckmarkFilled,
+            danger: false,
+            disabled: inflight,
+            tooltip:
+              "Lets this one sub-agent or Environment reach these hosts. A wildcard always asks you.",
+            resolvedLabel: "Allowed",
+            run: () =>
+              confirmed(restart.confirmNarrow, "Allow & restart", () =>
+                each(approvePermanent.mutateAsync),
+              ),
+          },
+          decline,
+        ]
+    : [];
+
   const actions = match(row.type)
     .with("spend_limit", () => spendLimitActions)
-    .with("egress_proposal", () => proposalActions)
-    .otherwise(() => egressActions)
+    .with("egress_proposal", () =>
+      childRequest ? childRequestActions : proposalActions,
+    )
+    .with("web_search", () => webSearchActions)
+    .with("ext_authz", "acp_native", () => egressActions)
+    .exhaustive()
     .filter((action) => offeredByAgent(row, action.id));
   const preferred: ApprovalActionId =
     row.type === "egress_proposal" ? "allow-permanent" : "allow-once";
@@ -238,7 +376,9 @@ export function useApprovalActions(
     expiredNote:
       row.status === "expired" && row.type === "ext_authz"
         ? "The original request already failed. Always allow writes a rule that future retries match."
-        : null,
-    openSettings: () => navigateToSandboxHome(row.agentId, "network"),
+        : row.status === "expired" && row.type === "web_search"
+          ? "The search already failed. Always allow lets the agent's later searches through."
+          : null,
+    openSettings: () => openAgentSettings(row.agentId, "network"),
   };
 }

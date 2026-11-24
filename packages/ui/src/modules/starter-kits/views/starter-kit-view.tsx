@@ -1,10 +1,4 @@
-import {
-  ArrowLeft,
-  Gift,
-  Launch,
-  PlayFilledAlt,
-  WarningAlt,
-} from "@carbon/icons-react";
+import { ArrowLeft, Gift, Launch, WarningAlt } from "@carbon/icons-react";
 import {
   ChannelType,
   type ConnectionTemplateView,
@@ -53,6 +47,7 @@ import { useStarterKit } from "../api/queries.js";
 import { ClampedText } from "../components/clamped-text.js";
 import { KitCategoryTag } from "../components/kit-category-tag.js";
 import { KitChannelsSection } from "../components/kit-channels-section.js";
+import { KitPublisher } from "../components/kit-publisher.js";
 import { KitRequirementsList } from "../components/kit-requirements-list.js";
 import { KitScheduleCard } from "../components/kit-schedule-card.js";
 import {
@@ -60,6 +55,7 @@ import {
   EGRESS_PRESET_LABEL,
   kitEgressPreset,
 } from "../lib/catalog-cards.js";
+import { kitRunsOn } from "../lib/runs-on.js";
 import {
   buildStarterKitApplyInput,
   connectionRequirements,
@@ -205,7 +201,7 @@ export function StarterKitDetailView() {
   }
 
   return (
-    <Modal size="xl" heightClass={KIT_MODAL_HEIGHT} onClose={close}>
+    <Modal size="lg" heightClass={KIT_MODAL_HEIGHT} onClose={close}>
       {kit.data === undefined || kitId === null ? (
         <KitDetailSkeleton onClose={close} onBack={back} />
       ) : (
@@ -263,30 +259,27 @@ function KitDetailSkeleton({
   onBack: () => void;
 }) {
   return (
-    <div className="flex min-h-0 flex-1">
-      <div className="flex min-h-0 flex-1 flex-col">
-        <DialogHeader
-          title={<TextSkeleton width={240} />}
-          subtitle={<TextSkeleton width="80%" tone="muted" />}
-          onClose={onClose}
-        >
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <TextSkeleton width={24} className="h-6" />
-            <TextSkeleton width={72} className="h-5" />
-            <TextSkeleton width={56} className="h-5" />
-          </div>
-        </DialogHeader>
-        <DialogBody>
-          <ListSkeleton rows={4} rowHeight={72} />
-        </DialogBody>
-        <DialogFooter className="justify-between">
-          <Button variant="ghost" onClick={onBack}>
-            <ArrowLeft size={16} /> Back
-          </Button>
-          <TextSkeleton width={260} className="h-10" />
-        </DialogFooter>
-      </div>
-      <KitVideoPanel video={undefined} />
+    <div className="flex min-h-0 flex-1 flex-col">
+      <DialogHeader
+        title={<TextSkeleton width={240} />}
+        subtitle={<TextSkeleton width="80%" tone="muted" />}
+        onClose={onClose}
+      >
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <TextSkeleton width={24} className="h-6" />
+          <TextSkeleton width={72} className="h-5" />
+          <TextSkeleton width={56} className="h-5" />
+        </div>
+      </DialogHeader>
+      <DialogBody>
+        <ListSkeleton rows={4} rowHeight={72} />
+      </DialogBody>
+      <DialogFooter className="justify-between">
+        <Button variant="ghost" onClick={onBack}>
+          <ArrowLeft size={16} /> Back
+        </Button>
+        <TextSkeleton width={260} className="h-10" />
+      </DialogFooter>
     </div>
   );
 }
@@ -336,27 +329,11 @@ function LinkedKitNotice({
   );
 }
 
-function KitVideoPanel({ video }: { video: string | undefined }) {
-  return (
-    <aside className="hidden w-[380px] shrink-0 flex-col items-center justify-center gap-1 border-l border-kit-line bg-gradient-to-b from-kit-tint to-kit-surface px-8 text-center md:flex">
-      <PlayFilledAlt size={56} className="mb-3 text-kit/40" aria-hidden />
-      <p className="text-base font-semibold text-foreground">
-        See it in action
-      </p>
-      {video ? (
-        <a
-          href={video}
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center gap-1.5 text-sm text-foreground underline underline-offset-2"
-        >
-          Watch the walkthrough <Launch size={14} />
-        </a>
-      ) : (
-        <p className="text-sm text-muted-foreground">Video coming soon</p>
-      )}
-    </aside>
-  );
+function repositoryHint(seed: { ref?: string; commit?: string }): string {
+  const at = [seed.ref, seed.commit && shortKitVersion(seed.commit)]
+    .filter(Boolean)
+    .join(" · ");
+  return at ? `Open repository (${at})` : "Open repository";
 }
 
 function KitDetail({
@@ -484,324 +461,331 @@ function KitDetail({
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
   const kbSeed = kit.knowledgeBase ? kit.seed : undefined;
+  const runsOn = kitRunsOn(kit);
 
   return (
-    <div className="flex min-h-0 flex-1">
-      <div className="flex min-h-0 flex-1 flex-col">
-        <DialogHeader
-          title={kit.name}
-          titleAccessory={<KitCategoryTag category={kit.category} />}
-          subtitle={kit.description}
-          onClose={onClose}
-        >
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            {connectionFamilyTags(kit.connections, templates.data ?? []).map(
-              (family) => (
-                <Badge key={family.id} variant="muted" size="sm">
-                  <span className="flex items-center gap-1.5">
-                    {family.iconSlug && (
-                      <ConnectionIcon
-                        iconSlug={family.iconSlug}
-                        alt=""
-                        size={14}
-                      />
-                    )}
-                    {family.title}
-                  </span>
-                </Badge>
-              ),
-            )}
-            {skillCount > 0 && (
-              <Badge variant="muted" size="sm">
-                {skillCount} {skillCount === 1 ? "skill" : "skills"}
-              </Badge>
-            )}
+    <div className="flex min-h-0 flex-1 flex-col">
+      <DialogHeader
+        title={kit.name}
+        titleAccessory={<KitCategoryTag category={kit.category} />}
+        subtitle={kit.description}
+        onClose={onClose}
+      >
+        {kit.publisher && (
+          <div className="mt-1.5">
+            <KitPublisher publisher={kit.publisher} surface="header" />
           </div>
-        </DialogHeader>
-
-        <DialogBody>
-          {kit.link && <LinkedKitNotice kit={kit} link={kit.link} />}
-          {form.name && (
-            <div
-              className="mb-8 flex min-w-0 items-center gap-3"
-              data-testid="kit-agent-identity"
-            >
-              <EditableIdentity
-                name={form.name}
-                avatar={avatar}
-                onRename={(name) => update({ name })}
-                onAvatarChange={(next) => update({ avatar: next })}
-                avatarSize={36}
-                mood="awake"
-                nameClassName="text-base font-semibold text-foreground"
-                nameTag="h2"
-              />
-            </div>
+        )}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {connectionFamilyTags(kit.connections, templates.data ?? []).map(
+            (family) => (
+              <Badge key={family.id} variant="muted" size="sm">
+                <span className="flex items-center gap-1.5">
+                  {family.iconSlug && (
+                    <ConnectionIcon
+                      iconSlug={family.iconSlug}
+                      alt=""
+                      size={14}
+                    />
+                  )}
+                  {family.title}
+                </span>
+              </Badge>
+            ),
           )}
-          {kbSeed && (
-            <Section label="Knowledge base">
-              <Row
-                title={`${kit.name} knowledge base skills`}
-                detail="Installed by the kit's own bootstrap from its repository, so they are not listed under Skills."
-                action={
-                  <Tooltip content="Open repository">
-                    <a
-                      href={kbSeed.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={`Open the ${kit.name} repository`}
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      <Launch size={16} />
-                    </a>
-                  </Tooltip>
-                }
-              />
-            </Section>
-          )}
-
           {skillCount > 0 && (
-            <Section label="Skills">
-              {kit.skillsInKit.map((skill) => (
-                <Row
-                  key={`in-kit:${skill.name}`}
-                  title={skill.name}
-                  detail={skill.description}
-                />
-              ))}
-              {kit.skills.map((skill) => (
-                <Row
-                  key={`external:${skill.source}:${skill.name}`}
-                  title={skill.name}
-                  detail={skill.source}
-                  tag={
-                    <Badge variant="muted" size="sm">
-                      installed at create
-                    </Badge>
-                  }
-                />
-              ))}
-            </Section>
+            <Badge variant="muted" size="sm">
+              {skillCount} {skillCount === 1 ? "skill" : "skills"}
+            </Badge>
           )}
-
-          {kit.image && (
-            <Section label="Framework">
-              <Row
-                title={kit.name}
-                detail={kit.image.ref}
-                tag={
-                  <Badge variant="muted" size="sm">
-                    brings its own agent
-                  </Badge>
-                }
-              />
-            </Section>
+          {kit.video && (
+            <a
+              href={kit.video}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 text-sm text-foreground underline underline-offset-2"
+            >
+              Watch the walkthrough <Launch size={14} />
+            </a>
           )}
+        </div>
+      </DialogHeader>
 
-          {kit.seed && (
-            <Section label="Repository">
-              <Row
-                title={kit.seed.url.replace("https://github.com/", "")}
-                detail={`Seeded into ${
-                  kit.seed.into === "home"
-                    ? "the agent's home directory"
-                    : "the work directory"
-                }${kit.seed.ref ? ` on ${kit.seed.ref}` : ""}${
-                  kit.seed.commit
-                    ? ` at ${shortKitVersion(kit.seed.commit)}`
-                    : ""
-                } before the first session`}
-                action={
-                  <Tooltip content="Open repository">
-                    <a
-                      href={kit.seed.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label="Open the repository"
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      <Launch size={16} />
-                    </a>
-                  </Tooltip>
-                }
-              />
-            </Section>
-          )}
-
-          <Section label="Network access">
-            <Row
-              title={EGRESS_PRESET_LABEL[kitEgressPreset(kit)]}
-              detail={EGRESS_PRESET_DETAIL[kitEgressPreset(kit)]}
+      <DialogBody>
+        {kit.link && <LinkedKitNotice kit={kit} link={kit.link} />}
+        {runsOn && (
+          <p className="mb-6 text-sm text-muted-foreground">{runsOn}</p>
+        )}
+        {form.name && (
+          <div
+            className="mb-8 flex min-w-0 items-center gap-3"
+            data-testid="kit-agent-identity"
+          >
+            <EditableIdentity
+              name={form.name}
+              avatar={avatar}
+              onRename={(name) => update({ name })}
+              onAvatarChange={(next) => update({ avatar: next })}
+              avatarSize={36}
+              nameClassName="text-base font-semibold text-foreground"
+              nameTag="h2"
             />
-            {kit.egressRules.map((rule) => (
+          </div>
+        )}
+        {kbSeed && (
+          <Section label="Knowledge base">
+            <Row
+              title={`${kit.name} knowledge base skills`}
+              detail="Comes with the skills that file your notes and find them again."
+              action={
+                <Tooltip content={repositoryHint(kbSeed)}>
+                  <a
+                    href={kbSeed.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`Open the ${kit.name} repository`}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <Launch size={16} />
+                  </a>
+                </Tooltip>
+              }
+            />
+          </Section>
+        )}
+
+        {skillCount > 0 && (
+          <Section label="Skills">
+            {kit.skillsInKit.map((skill) => (
               <Row
-                key={formatEgressRuleInline(rule)}
-                title={formatEgressRuleInline(rule)}
+                key={`in-kit:${skill.name}`}
+                title={skill.name}
+                detail={skill.description}
+              />
+            ))}
+            {kit.skills.map((skill) => (
+              <Row
+                key={`external:${skill.source}:${skill.name}`}
+                title={skill.name}
+                detail={skill.source}
                 tag={
                   <Badge variant="muted" size="sm">
-                    added by the kit
+                    installed at create
                   </Badge>
                 }
               />
             ))}
           </Section>
+        )}
 
-          {kit.startupItems.length > 0 && (
-            <Section label="Login items">
-              {kit.startupItems.map((item) => (
-                <Row
-                  key={item.name}
-                  title={item.name}
-                  detail={item.description}
-                  code={startupItemCommandLine(item)}
-                  tag={
-                    <Badge variant="muted" size="sm">
-                      {item.enabled ? "starts at every boot" : "off at boot"}
-                    </Badge>
+        {kit.image && (
+          <Section label="Framework">
+            <Row
+              title={kit.name}
+              detail={kit.image.ref}
+              tag={
+                <Badge variant="muted" size="sm">
+                  brings its own agent
+                </Badge>
+              }
+            />
+          </Section>
+        )}
+
+        {kit.seed && (
+          <Section label="Repository">
+            <Row
+              title={kit.seed.url.replace("https://github.com/", "")}
+              detail="The kit's instructions come from this repository."
+              action={
+                <Tooltip content={repositoryHint(kit.seed)}>
+                  <a
+                    href={kit.seed.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="Open the repository"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <Launch size={16} />
+                  </a>
+                </Tooltip>
+              }
+            />
+          </Section>
+        )}
+
+        <Section label="Network access">
+          <Row
+            title={EGRESS_PRESET_LABEL[kitEgressPreset(kit)]}
+            detail={EGRESS_PRESET_DETAIL[kitEgressPreset(kit)]}
+          />
+          {kit.egressRules.map((rule) => (
+            <Row
+              key={formatEgressRuleInline(rule)}
+              title={formatEgressRuleInline(rule)}
+              tag={
+                <Badge variant="muted" size="sm">
+                  added by the kit
+                </Badge>
+              }
+            />
+          ))}
+        </Section>
+
+        {kit.startupItems.length > 0 && (
+          <Section label="Login items">
+            {kit.startupItems.map((item) => (
+              <Row
+                key={item.name}
+                title={item.name}
+                detail={item.description}
+                code={startupItemCommandLine(item)}
+                tag={
+                  <Badge variant="muted" size="sm">
+                    {item.enabled ? "starts at every boot" : "off at boot"}
+                  </Badge>
+                }
+              />
+            ))}
+          </Section>
+        )}
+
+        {kit.link && kit.install && (
+          <Section label="Install command">
+            <Row
+              title="Runs in the agent's workspace when it is created"
+              code={kit.install.command}
+            />
+          </Section>
+        )}
+
+        {kit.link && kit.env.length > 0 && (
+          <Section label="Environment">
+            {kit.env.map((variable) => (
+              <Row
+                key={variable.name}
+                title={variable.name}
+                code={variable.value}
+              />
+            ))}
+          </Section>
+        )}
+
+        {(connectionRequirements(kit).length > 0 ||
+          kit.schedules.length > 0 ||
+          offersChannels) && (
+          <h2 className="mb-3 mt-8 text-base font-semibold text-foreground">
+            You&apos;ll set up
+          </h2>
+        )}
+
+        {connectionRequirements(kit).length > 0 && (
+          <section className="mb-6">
+            <SectionLabel spaced>Connections</SectionLabel>
+            <KitRequirementsList
+              kit={kit}
+              granted={owned.filter((c) => grantedIds.has(c.id))}
+              templateById={templateById}
+              templates={templates.data ?? []}
+              onRevoke={(id) => toggleConnection(id, false)}
+              onConnect={setConnectAccepts}
+            />
+          </section>
+        )}
+
+        {kit.schedules.length > 0 && (
+          <section className="mb-6">
+            <SectionLabel spaced>Schedules</SectionLabel>
+            <ul className="flex flex-col gap-3">
+              {kit.schedules.map((schedule) => (
+                <KitScheduleCard
+                  key={schedule.name}
+                  schedule={schedule}
+                  override={form.scheduleOverrides.find(
+                    (o) => o.name === schedule.name,
+                  )}
+                  skipped={form.skippedSchedules.includes(schedule.name)}
+                  onChange={(patch) =>
+                    update({
+                      scheduleOverrides: withOverride(
+                        form.scheduleOverrides,
+                        schedule.name,
+                        patch,
+                      ),
+                    })
+                  }
+                  onInvalid={(invalid) =>
+                    setInvalidSchedules((prev) =>
+                      invalid
+                        ? [...new Set([...prev, schedule.name])]
+                        : prev.filter((n) => n !== schedule.name),
+                    )
+                  }
+                  onToggleSkipped={() =>
+                    update({
+                      skippedSchedules: toggleSkipped(
+                        form.skippedSchedules,
+                        schedule.name,
+                      ),
+                    })
                   }
                 />
               ))}
-            </Section>
-          )}
-
-          {kit.link && kit.install && (
-            <Section label="Install command">
-              <Row
-                title="Runs in the agent's workspace when it is created"
-                code={kit.install.command}
-              />
-            </Section>
-          )}
-
-          {kit.link && kit.env.length > 0 && (
-            <Section label="Environment">
-              {kit.env.map((variable) => (
-                <Row
-                  key={variable.name}
-                  title={variable.name}
-                  code={variable.value}
-                />
-              ))}
-            </Section>
-          )}
-
-          {(connectionRequirements(kit).length > 0 ||
-            kit.schedules.length > 0 ||
-            offersChannels) && (
-            <h2 className="mb-3 mt-8 text-base font-semibold text-foreground">
-              You&apos;ll set up
-            </h2>
-          )}
-
-          {connectionRequirements(kit).length > 0 && (
-            <section className="mb-6">
-              <SectionLabel spaced>Connections</SectionLabel>
-              <KitRequirementsList
-                kit={kit}
-                granted={owned.filter((c) => grantedIds.has(c.id))}
-                templateById={templateById}
-                templates={templates.data ?? []}
-                onRevoke={(id) => toggleConnection(id, false)}
-                onConnect={setConnectAccepts}
-              />
-            </section>
-          )}
-
-          {kit.schedules.length > 0 && (
-            <section className="mb-6">
-              <SectionLabel spaced>Schedules</SectionLabel>
-              <ul className="flex flex-col gap-3">
-                {kit.schedules.map((schedule) => (
-                  <KitScheduleCard
-                    key={schedule.name}
-                    schedule={schedule}
-                    override={form.scheduleOverrides.find(
-                      (o) => o.name === schedule.name,
-                    )}
-                    skipped={form.skippedSchedules.includes(schedule.name)}
-                    onChange={(patch) =>
-                      update({
-                        scheduleOverrides: withOverride(
-                          form.scheduleOverrides,
-                          schedule.name,
-                          patch,
-                        ),
-                      })
-                    }
-                    onInvalid={(invalid) =>
-                      setInvalidSchedules((prev) =>
-                        invalid
-                          ? [...new Set([...prev, schedule.name])]
-                          : prev.filter((n) => n !== schedule.name),
-                      )
-                    }
-                    onToggleSkipped={() =>
-                      update({
-                        skippedSchedules: toggleSkipped(
-                          form.skippedSchedules,
-                          schedule.name,
-                        ),
-                      })
-                    }
-                  />
-                ))}
-              </ul>
-              <p className="mt-3 text-sm text-muted-foreground">
-                {kit.onboarding === false
-                  ? "Created with the kit author's defaults."
-                  : "Created with the kit author's defaults and held until onboarding finishes."}{" "}
-                Adjust any of them, or skip what you do not want.
-              </p>
-            </section>
-          )}
-
-          <KitChannelsSection
-            kit={kit}
-            available={availableChannels}
-            slackChannelIds={form.slackChannelIds}
-            onSlackChannelIdsChange={(slackChannelIds) =>
-              update({ slackChannelIds })
-            }
-          />
-        </DialogBody>
-
-        <DialogFooter className="justify-between">
-          <Button variant="ghost" onClick={onBack}>
-            <ArrowLeft size={16} /> Back
-          </Button>
-          <Button onClick={() => void create()} disabled={!canCreate}>
-            <Gift size={16} aria-hidden />
-            {apply.isPending ? "Creating…" : "Use this starter kit"}
-          </Button>
-        </DialogFooter>
-        {connectAccepts && (
-          <ConnectionCatalogModal
-            accepts={connectAccepts}
-            title={`Connect ${describeAccepts(connectAccepts, templateById)}`}
-            subtitle="Pick one of your connections, or add a new one."
-            onClose={() => setConnectAccepts(null)}
-            sandbox={{
-              grantedIds,
-              onToggleGrant: toggleConnection,
-              onRevoke: (ids) => {
-                for (const id of ids) toggleConnection(id, false);
-              },
-            }}
-            oauthReturnView={returnPath}
-          />
+            </ul>
+            <p className="mt-3 text-sm text-muted-foreground">
+              {kit.onboarding === false
+                ? "Created with the kit author's defaults."
+                : "Created with the kit author's defaults and held until onboarding finishes."}{" "}
+              Adjust any of them, or skip what you do not want.
+            </p>
+          </section>
         )}
-        {signedInParentId && (
-          <SignedInParentDialog
-            connectionId={signedInParentId}
-            onClose={clearSignedIn}
-            onCreated={(id) => {
-              clearSignedIn();
-              toggleConnection(id, true);
-            }}
-          />
-        )}
-      </div>
-      <KitVideoPanel video={kit.video} />
+
+        <KitChannelsSection
+          kit={kit}
+          available={availableChannels}
+          slackChannelIds={form.slackChannelIds}
+          onSlackChannelIdsChange={(slackChannelIds) =>
+            update({ slackChannelIds })
+          }
+        />
+      </DialogBody>
+
+      <DialogFooter className="justify-between">
+        <Button variant="ghost" onClick={onBack}>
+          <ArrowLeft size={16} /> Back
+        </Button>
+        <Button onClick={() => void create()} disabled={!canCreate}>
+          <Gift size={16} aria-hidden />
+          {apply.isPending ? "Creating…" : "Use this starter kit"}
+        </Button>
+      </DialogFooter>
+      {connectAccepts && (
+        <ConnectionCatalogModal
+          accepts={connectAccepts}
+          title={`Connect ${describeAccepts(connectAccepts, templateById)}`}
+          subtitle="Pick one of your connections, or add a new one."
+          onClose={() => setConnectAccepts(null)}
+          sandbox={{
+            grantedIds,
+            onToggleGrant: toggleConnection,
+            onRevoke: (ids) => {
+              for (const id of ids) toggleConnection(id, false);
+            },
+          }}
+          oauthReturnView={returnPath}
+        />
+      )}
+      {signedInParentId && (
+        <SignedInParentDialog
+          connectionId={signedInParentId}
+          onClose={clearSignedIn}
+          onCreated={(id) => {
+            clearSignedIn();
+            toggleConnection(id, true);
+          }}
+        />
+      )}
     </div>
   );
 }

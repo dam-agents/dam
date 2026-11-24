@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a request from outside the api-server has a byte limit and a tRPC batch has a length limit. The user tRPC HTTP endpoint answers 413 to a body over the limit before tRPC reads or parses it, whether the body declares its length or arrives chunked; a body exactly at the limit is parsed. The tRPC WebSocket closes a connection whose message is over the same limit before the message is parsed. Both tRPC HTTP endpoints, user and agent, refuse a batch over the length limit.
+// TEST_OVERVIEW: a request from outside the api-server has a byte limit and a tRPC batch has a length limit. The user tRPC HTTP endpoint answers 413 to a body over the limit before tRPC reads or parses it, whether the body declares its length or arrives chunked; a body exactly at the limit is parsed. The tRPC WebSocket closes a connection whose message is over the same limit before the message is parsed. Both tRPC HTTP endpoints, user and agent, and the user tRPC WebSocket refuse a batch over the length limit.
 import type { AddressInfo } from "node:net";
 import { createServer, type Server } from "node:http";
 import { serve } from "@hono/node-server";
@@ -8,7 +8,7 @@ import {
   type KbPublishGate,
 } from "api-server-api";
 import { Hono } from "hono";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import type { ApiVariables } from "../../apps/api-server/deps.js";
 import { createTrpcHttpRoutes } from "../../apps/api-server/trpc/http.js";
@@ -43,7 +43,7 @@ async function userTrpc() {
   app.route(
     "/api/trpc",
     createTrpcHttpRoutes({
-      composeApiContext: () => {
+      composeApiContext: async () => {
         composed.count++;
         return {} as ApiContext;
       },
@@ -188,7 +188,7 @@ describe("request body bounds", () => {
         return { ok: false, kind: "unauthorized" };
       },
       surfaceAttribution: { uiClientId: "ui", cliClientId: "cli" },
-      composeApiContext: () => ({}) as ApiContext,
+      composeApiContext: async () => ({}) as ApiContext,
     });
     const server = createServer();
     server.on("upgrade", (req, socket, head) =>
@@ -213,5 +213,59 @@ describe("request body bounds", () => {
 
     await connectAndSend(MAX_USER_REQUEST_BODY_BYTES);
     expect(tokens).toEqual([`t${MAX_USER_REQUEST_BODY_BYTES}`]);
+  });
+
+  // TEST_SCENARIO: an admitted WebSocket sends a batch one call over the length limit; every call in it gets the batch error and none runs.
+  it("refuses a tRPC WebSocket batch over the length limit", async () => {
+    const endpoint = createTrpcWsEndpoint({
+      authenticate: async () => ({
+        ok: true,
+        principal: {
+          user: {
+            sub: "u1",
+            preferredUsername: "u1",
+            scopes: [],
+            agentIds: [],
+          },
+          azp: "ui",
+          roles: [],
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+      }),
+      surfaceAttribution: { uiClientId: "ui", cliClientId: "cli" },
+      composeApiContext: async () => ({}) as ApiContext,
+    });
+    const server = createServer();
+    server.on("upgrade", (req, socket, head) =>
+      endpoint.handleUpgrade(req, socket, head),
+    );
+    const host = await listen(server.listen(0, "127.0.0.1"));
+    const ws = new WebSocket(`ws://${host}/?connectionParams=1`);
+    sockets.push(ws);
+    const replies: { error?: { message: string } }[] = [];
+    ws.on("message", (raw) => {
+      const text = raw.toString();
+      if (text !== "PING" && text !== "PONG") replies.push(JSON.parse(text));
+    });
+    await new Promise((r) => ws.once("open", r));
+    ws.send(
+      JSON.stringify({ method: "connectionParams", data: { token: "t" } }),
+    );
+    ws.send(
+      JSON.stringify(
+        Array.from({ length: MAX_TRPC_BATCH_SIZE + 1 }, (_, id) => ({
+          id,
+          method: "mutation",
+          params: { path: "terms.accept", input: {} },
+        })),
+      ),
+    );
+
+    await vi.waitFor(() =>
+      expect(replies).toHaveLength(MAX_TRPC_BATCH_SIZE + 1),
+    );
+    expect(new Set(replies.map((r) => r.error?.message))).toEqual(
+      new Set(["Batch call exceeds maximum size"]),
+    );
   });
 });

@@ -12,6 +12,7 @@ import type {
   PromptBlock,
   QueuedPrompt,
 } from "api-server-api";
+import { chatFormFixAttemptOf } from "api-server-api/chat-forms";
 
 import type {
   Message,
@@ -172,6 +173,7 @@ function applyUpdateOf(
         model: update.model,
         stopped: update.stopReason === "cancelled",
         stoppedAtOutputLimit: isOutputLimitStop(update.stopReason),
+        chatFormFix: update.chatFormFix,
       };
       return update.turnId === undefined
         ? closeActiveAssistant(messages, end)
@@ -585,11 +587,13 @@ export function appendUndelivered(
   records: PlatformUndeliveredPrompt[],
 ): Message[] {
   if (records.length === 0) return messages;
+  /* UNIT_BOUNDARY_DESCRIPTION: the runtime and this browser each record a prompt the harness refused, under the prompt's own id, so one message is one bubble and not two; the later record wins, which is the one this browser kept with its reason. */
+  const unique = [...new Map(records.map((r) => [r.id, r])).values()];
   const marked = markUndelivered(
     messages,
-    new Map(records.map((r) => [r.id, r])),
+    new Map(unique.map((r) => [r.id, r])),
   );
-  const fresh = records
+  const fresh = unique
     .filter((r) => !messages.some((m) => m.id === r.id))
     .sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
   if (fresh.length === 0) return marked;
@@ -611,7 +615,7 @@ export function appendInterruptedNotice(
   return appendNotice(
     messages,
     turn.interruptedByStop
-      ? "This conversation was interrupted when the agent was stopped (put to sleep, restarted or moved) and is resuming automatically — the agent will pick the task back up."
+      ? "This conversation was interrupted when the agent was stopped, restarted or moved, and is resuming automatically — the agent will pick the task back up."
       : "This conversation was interrupted by an unexpected restart (often out of memory) and is resuming automatically — the agent will pick the task back up.",
   );
 }
@@ -656,6 +660,17 @@ export function hasAgentContent(m: Message): boolean {
   return m.parts.some((p) => p.kind !== "verdict");
 }
 
+function markTurnSentBack(messages: Message[], attempt: number): Message[] {
+  let turnStart = messages.length;
+  while (turnStart > 0 && messages[turnStart - 1].role !== "user")
+    turnStart -= 1;
+  return messages.map((m, i) =>
+    i >= turnStart && m.role === "assistant" && !m.notice
+      ? { ...m, chatFormFix: attempt }
+      : m,
+  );
+}
+
 function handleUserChunk(
   messages: Message[],
   u: ContentChunk,
@@ -668,7 +683,10 @@ function handleUserChunk(
 
   let bubbles: MessagePart[][] | null = null;
   if (u.content.type === "text") {
+    const fix = chatFormFixAttemptOf(u.content.text);
     const txt = stripPlumbing(u.content.text);
+    if (fix !== null && !txt && !queued)
+      return markTurnSentBack(closeActiveAssistant(messages), fix);
     if (INTERRUPT_MARKER_RE.test(txt))
       return markLastReplyStopped(closeActiveAssistant(messages));
     if (txt) bubbles = parseUserText(txt);
@@ -952,10 +970,14 @@ function closeTurn(
   if (last === -1) return messages;
   const toolStatus = endedToolStatus(end);
   return messages.map((m, i) => {
-    const settled =
+    const tools =
       toolStatus !== null && owned(m)
         ? { ...m, parts: settleRunningTools(m.parts, toolStatus) }
         : m;
+    const settled =
+      end.chatFormFix !== undefined && owned(m)
+        ? { ...tools, chatFormFix: end.chatFormFix }
+        : tools;
     if (i === last)
       return {
         ...settled,
@@ -1062,6 +1084,7 @@ interface ReplyClose {
   model?: string;
   stopped?: boolean;
   stoppedAtOutputLimit?: boolean;
+  chatFormFix?: number;
 }
 
 function closeActiveAssistant(
@@ -1073,6 +1096,7 @@ function closeActiveAssistant(
     model,
     stopped = false,
     stoppedAtOutputLimit,
+    chatFormFix,
   }: ReplyClose = {},
 ): Message[] {
   const i = activeReplyIndex(messages);
@@ -1090,6 +1114,7 @@ function closeActiveAssistant(
           ...(stopped && { stopped: true }),
           ...(stoppedAtOutputLimit &&
             hasAgentContent(x) && { stoppedAtOutputLimit }),
+          ...(chatFormFix !== undefined && { chatFormFix }),
           ...(toolStatus !== null && {
             parts: settleRunningTools(x.parts, toolStatus),
           }),

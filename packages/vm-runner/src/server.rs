@@ -1845,21 +1845,20 @@ impl Server {
         Some(Resolved { digest, launch })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: records a machine's part in the Environment Link where its VMM reads it at the next boot, and listens on an agent machine's end of the link or stops listening on an Environment's. Called at create, at every reshape and for every machine at runner start, so a machine an earlier runner made has its link from its next boot. A runner that cannot record or listen still runs the machine, which then has no link; the reason is logged, since the agent sees only a refused dial.
+    // UNIT_BOUNDARY_DESCRIPTION: records a machine's part in the link where its VMM reads it at the next boot, and listens on the dial socket of a machine that may dial or stops listening on one that may not. Called at create, at every reshape and for every machine at runner start, so a machine an earlier runner made has its link from its next boot. A runner that cannot record or listen still runs the machine, which then has no link; the reason is logged, since the agent sees only a refused dial.
     fn serve_link(&self, id: &str, spec: &MachineSpec) {
         let role = Role::of_env(&spec.env);
         if let Some(dir) = self.runtime.vm_dir(id) {
             if let Err(e) = crate::link::write_role(&dir, &role) {
-                tracing::warn!(machine = %id, error = %e, "recording the environment link role");
+                tracing::warn!(machine = %id, error = %e, "recording the link role");
             }
         }
-        match role {
-            Role::Agent => {
-                if let Err(e) = self.links.serve(id) {
-                    tracing::warn!(machine = %id, error = %e, "serving the environment link");
-                }
+        if role.dials {
+            if let Err(e) = self.links.serve(id) {
+                tracing::warn!(machine = %id, error = %e, "serving the link");
             }
-            Role::Environment { .. } => self.links.stop(id),
+        } else {
+            self.links.stop(id);
         }
     }
 

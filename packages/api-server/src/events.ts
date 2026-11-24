@@ -2,6 +2,7 @@ import type {
   ApprovalVerdict,
   ChannelType,
   EntryPointChoice,
+  FirstResultKind,
   GettingStartedTask,
   ProviderOutageReason,
   SpendLimitScope,
@@ -34,6 +35,7 @@ export enum EventType {
   ScheduleFired = "ScheduleFired",
   ConnectionCreated = "ConnectionCreated",
   ConnectionRemoved = "ConnectionRemoved",
+  ConnectionCredentialChanged = "ConnectionCredentialChanged",
   FilesImported = "FilesImported",
   ContributionApplyFailed = "ContributionApplyFailed",
   ContributionRecovered = "ContributionRecovered",
@@ -78,6 +80,8 @@ export enum EventType {
   AgentResourceRemoved = "AgentResourceRemoved",
   AvatarUnlocked = "AvatarUnlocked",
   GettingStartedReset = "GettingStartedReset",
+  AssistantUsed = "AssistantUsed",
+  AssistantFirstResultRecorded = "assistant.first_result_recorded",
   CostReviewStarted = "CostReviewStarted",
   CostReviewDismissed = "CostReviewDismissed",
 }
@@ -203,6 +207,12 @@ export type ConnectionRemoved = {
   kind: ConnectionKind;
 };
 
+export type ConnectionCredentialChanged = {
+  type: EventType.ConnectionCredentialChanged;
+  connectionKey: string;
+  templateId: string;
+};
+
 export type FilesImported = {
   type: EventType.FilesImported;
   actorSub: string;
@@ -255,6 +265,8 @@ export type ApprovalRequested = {
   approvalId: string;
   agentId: string;
   ownerSub: string;
+  // UNIT_BOUNDARY_DESCRIPTION: the parent a scoped child's prompt surfaces on, when the request came from such a child.
+  forAgentId?: string;
 };
 
 export type ApprovalResolved = {
@@ -263,6 +275,7 @@ export type ApprovalResolved = {
   agentId: string;
   ownerSub: string;
   resolution: ApprovalResolution;
+  forAgentId?: string;
 };
 
 export type SpendLimitsChanged = {
@@ -587,6 +600,30 @@ export type GettingStartedReset = {
   ownerSub: string;
 };
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the person's onboarding reached its first result, as
+ * the assistant reported it over its own Connection — a schedule set, an artifact
+ * made, a saved knowledge base. This is the seam for anything that should carry
+ * that news somewhere else, and its name and payload are the agreed shape of that
+ * seam; `owner` is the person, because this event is that seam's rather than the
+ * bus's own, whose other events call the same field `ownerSub`.
+ */
+export type AssistantFirstResultRecorded = {
+  type: EventType.AssistantFirstResultRecorded;
+  owner: string;
+  kind: FirstResultKind;
+  ref: string | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the onboarding epoch the result completed in, so a consumer can tell two onboardings' first results apart, and dedupe on it. */
+  epoch: number;
+};
+
+/** UNIT_BOUNDARY_DESCRIPTION: the assistant was used for the first time since the person's onboarding reset, which takes the greeting and the first landing away in every tab that has the owner signed in. */
+export type AssistantUsed = {
+  type: EventType.AssistantUsed;
+  agentId: string;
+  ownerSub: string;
+};
+
 export type DomainEvent =
   | UserAuthenticated
   | AgentCreated
@@ -605,6 +642,7 @@ export type DomainEvent =
   | SchedulePrecheckReported
   | ConnectionCreated
   | ConnectionRemoved
+  | ConnectionCredentialChanged
   | FilesImported
   | ContributionApplyFailed
   | ContributionRecovered
@@ -650,6 +688,8 @@ export type DomainEvent =
   | AgentResourceRemoved
   | AvatarUnlocked
   | GettingStartedReset
+  | AssistantUsed
+  | AssistantFirstResultRecorded
   | CostReviewStarted
   | CostReviewDismissed;
 

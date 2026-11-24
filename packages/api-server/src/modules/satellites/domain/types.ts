@@ -1,8 +1,15 @@
-import type { JobStatus, SatelliteImage, SatelliteTool } from "api-server-api";
+import type {
+  JobStatus,
+  SatelliteImage,
+  SatelliteKind,
+  SatelliteTool,
+} from "api-server-api";
 
 export interface SatelliteRow {
   owner: string;
   name: string;
+  kind: SatelliteKind;
+  filesWritable: boolean;
   description: string | null;
   host: string | null;
   maxConcurrent: number;
@@ -20,7 +27,6 @@ export interface JobRow {
   agentId: string;
   tool: string;
   args: Record<string, unknown>;
-  transferDirection: "download" | "upload" | null;
   status: JobStatus;
   isError: boolean;
   exitCode: number | null;

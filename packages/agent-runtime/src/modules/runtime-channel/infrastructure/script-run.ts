@@ -86,7 +86,8 @@ function exitOf(
  * script left running in the background may hold its stdout open after the
  * script exits, even one that left the group with setsid, so a short grace
  * after that exit the group is killed and any pipe still open is closed; the
- * run ends with the script's own exit code.
+ * run ends with the script's own exit code. A run the platform ended is
+ * killed the same way when its signal aborts.
  */
 export async function runScript(opts: {
   command: string;
@@ -96,6 +97,7 @@ export async function runScript(opts: {
   stdoutPath: string;
   stderrPath: string;
   maxBytes: number;
+  signal?: AbortSignal;
 }): Promise<ScriptRun> {
   const stdout = capture(opts.maxBytes, false);
   const stderr = capture(opts.maxBytes, true);
@@ -139,6 +141,13 @@ export async function runScript(opts: {
     }
   };
   let timedOut = false;
+  let stopped = false;
+  const stop = () => {
+    stopped = true;
+    release();
+  };
+  if (opts.signal?.aborted) stop();
+  else opts.signal?.addEventListener("abort", stop, { once: true });
   const timer = setTimeout(
     () => {
       timedOut = true;
@@ -163,6 +172,7 @@ export async function runScript(opts: {
   const ended = await exit;
   clearTimeout(timer);
   clearTimeout(lingering);
+  opts.signal?.removeEventListener("abort", stop);
 
   if (ended instanceof Error)
     return result(`script failed to start: ${ended.message}`);
@@ -172,6 +182,7 @@ export async function runScript(opts: {
     );
   if (timedOut)
     return result(withTail("script ran past the invocation deadline"));
+  if (stopped) return result(withTail("the run was ended by the platform"));
   const broken = copies.find(
     (c) => c.status === "rejected" && !(c.reason instanceof PipesReleased),
   );

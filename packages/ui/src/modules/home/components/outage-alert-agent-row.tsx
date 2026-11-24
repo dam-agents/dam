@@ -19,7 +19,7 @@ export function OutageAlertAgentRow({
   avatar,
   switchable,
 }: Props) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
 
   return (
     <li className="flex items-center gap-2">
@@ -34,7 +34,7 @@ export function OutageAlertAgentRow({
         <Button
           variant="link"
           size="inline"
-          onClick={() => navigateToSandboxHome(agent.agentId, "providers")}
+          onClick={() => openAgentSettings(agent.agentId, "providers")}
           className="shrink-0 text-sm"
         >
           Switch provider

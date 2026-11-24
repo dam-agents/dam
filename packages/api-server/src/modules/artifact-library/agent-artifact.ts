@@ -4,6 +4,7 @@ export function toAgentArtifact(artifact: LibraryArtifact) {
   return {
     id: artifact.id,
     title: artifact.title,
+    icon: artifact.icon,
     slug: artifact.slug,
     kind: artifact.kind,
     contentType: artifact.contentType,
@@ -17,6 +18,7 @@ export function toAgentArtifact(artifact: LibraryArtifact) {
     expiresAt: artifact.expiresAt,
     viewCount: artifact.viewCount,
     shareUrl: artifact.shareUrl,
+    viewers: artifact.viewers,
     createdAt: artifact.createdAt,
     updatedAt: artifact.updatedAt,
     internal_link: artifactInternalLink(artifact.id),

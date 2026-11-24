@@ -3,6 +3,7 @@ import {
   type CSSProperties,
   type ReactNode,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -22,22 +23,63 @@ import { FilesPanel } from "../../files/components/files-panel.js";
 import { ApprovalsDrawer } from "../../home/components/approvals-panel.js";
 import { MobileMenuButton } from "../../platform/components/sidebar/mobile-menu-button.js";
 import { ProcessesPanel } from "../../processes/components/processes-panel.js";
+import { useChatSections } from "../hooks/use-chat-sections.js";
 import {
   type SidebarPanelStack,
   useSidebarPanels,
 } from "../hooks/use-sidebar-panels.js";
 import {
-  clampLeftWidth,
   classicColumns,
-  LEFT_MIN_W,
+  headerFlanks,
   PANEL_MIN_W,
+  sectionsColumn,
 } from "../lib/classic-chat-layout.js";
-import type { SidebarPanelId } from "../lib/sidebar-panels.js";
+import type { SidebarPanel, SidebarPanelId } from "../lib/sidebar-panels.js";
+import { ChatColumn } from "./chat-column.js";
 import { SidePanelCloseScope } from "./side-panel-close-button.js";
 import { SidePanelEdgeTab } from "./side-panel-edge-tab.js";
 
-const LEFT_WIDTH_KEY = "platform-left-w";
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
+/* UNIT_BOUNDARY_DESCRIPTION: the sections column's width, fixed, as the design draws it. */
+const SECTIONS_W = 320;
+
+/* UNIT_BOUNDARY_DESCRIPTION: an element's width with nothing in it cut short: a name truncated with an ellipsis counts at its full length, so the header measures the same in either layout and does not flip between them. */
+function naturalWidth(el: HTMLElement): number {
+  let width = el.getBoundingClientRect().width;
+  for (const child of el.querySelectorAll<HTMLElement>("*")) {
+    const cut = child.scrollWidth - child.clientWidth;
+    if (cut > 0 && getComputedStyle(child).overflowX !== "visible")
+      width += cut;
+  }
+  return width;
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: whether the chat header's start and end fit beside the messages' well, measured again whenever the header or either of them changes size. */
+function useHeaderFlanks() {
+  const headerRef = useRef<HTMLElement>(null);
+  const startRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+  const [flanks, setFlanks] = useState(true);
+  useLayoutEffect(() => {
+    const header = headerRef.current;
+    const start = startRef.current;
+    const end = endRef.current;
+    if (!header || !start || !end) return;
+    const measure = () =>
+      setFlanks(
+        headerFlanks({
+          headerW: header.getBoundingClientRect().width,
+          startW: naturalWidth(start),
+          endW: naturalWidth(end),
+        }),
+      );
+    measure();
+    const ro = new ResizeObserver(measure);
+    for (const el of [header, start, end]) ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return { flanks, headerRef, startRef, endRef };
+}
 
 function PanelDivider({
   stack,
@@ -51,20 +93,26 @@ function PanelDivider({
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The chat view's layout: a top bar with the
- * Agent's identity and status, a resizable column of Files,
- * Artifacts and Processes sections on the left, the conversation in the
- * middle, and the docked item on the right, beside the conversation.
+ * UNIT_BOUNDARY_DESCRIPTION: The chat view's layout, as the design's chat
+ * refresh draws it: a thin strip across the top with the notifications bell,
+ * then the open Files and Artifacts in a 320 px column on the left, stacked
+ * when both are open, the conversation with its own header (the agent menu and
+ * the Agent's status) in the middle, and the docked item on the right, beside
+ * the conversation. The strip's border shows while anything is open beside
+ * the conversation. A phone keeps the sections, Processes too, in a screen of
+ * their own, each folding from its header, and the bell in the header. The
+ * bell is drawn once, in one place or the other.
  * Approvals opens as a drawer over the chat, so the slot keeps whatever it
  * shows.
  */
 export function ClassicChatLayout({
   identity,
   status,
+  newChat,
+  activity,
   notices,
   agentId,
   agentName,
-  alwaysOn,
   processesEnabled,
   onOpenFile,
   panel,
@@ -76,10 +124,12 @@ export function ClassicChatLayout({
 }: {
   identity: ReactNode;
   status: ReactNode;
+  /** UNIT_BOUNDARY_DESCRIPTION: the header's New chat button, at its end, as the design draws it; always there for an Agent, so the header keeps its balance, and on a chat not started yet it only puts the cursor in the composer. */
+  newChat?: ReactNode;
+  activity: ReactNode;
   notices: ReactNode;
   agentId: string | null;
   agentName: string | null;
-  alwaysOn: boolean;
   processesEnabled: boolean;
   onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
   panel: "dock" | null;
@@ -103,10 +153,6 @@ export function ClassicChatLayout({
   const sidePanelTab = useStore((s) => s.sidePanelTab);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
 
-  const [leftW, setLeftW] = useState(() =>
-    clampLeftWidth(readPersistedNumber(LEFT_WIDTH_KEY, LEFT_MIN_W)),
-  );
-  const leftWRef = useRef(leftW);
   const [rightW, setRightW] = useState<number | null>(() =>
     readPersistedNumber(FILE_PANEL_WIDTH_KEY, null),
   );
@@ -122,50 +168,55 @@ export function ClassicChatLayout({
     return () => ro.disconnect();
   }, [columnsEl]);
   const panelRef = useRef<HTMLDivElement>(null);
+  const sections: SidebarPanel[] = useChatSections().map(({ id, open }) => ({
+    id,
+    open,
+  }));
+  const phoneProcesses = !desktop && processesEnabled;
   const panelStack = useSidebarPanels([
-    { id: "files", open: filesSectionOpen },
-    { id: "artifacts", open: artifactsSectionOpen },
-    ...(processesEnabled
+    ...sections,
+    ...(phoneProcesses
       ? [{ id: "processes" as const, open: processesSectionOpen }]
       : []),
   ]);
+  const column = sectionsColumn(sections, desktop);
+  const shows = (id: SidebarPanelId) => column.shown.includes(id);
+  const sectionControls = (open: boolean, setOpen: (open: boolean) => void) =>
+    desktop
+      ? { onClose: () => setOpen(false) }
+      : { onToggle: () => setOpen(!open) };
 
   const maximized = maximizable !== null && sidePanelMaximized === maximizable;
   const { panelFills, panelMaxW, panelW } = classicColumns({
     columnsW,
-    leftW,
+    leftW: column.open ? SECTIONS_W : 0,
     savedPanelW: rightW,
     panelOpen: panel !== null,
     panelMaximized: maximized,
   });
-  const leftPanelWidth = { width: leftW };
+  const anythingOpen = column.open || panel !== null;
+  const header = useHeaderFlanks();
 
   return (
     <>
-      <header
-        className={`${mobileScreen === "files" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:h-[52px] max-md:border-b border-border shrink-0 relative z-content`}
+      <div
+        data-testid="chat-top-strip"
+        className={cn(
+          "hidden h-10 shrink-0 items-center justify-end border-b px-6 transition-colors duration-200 md:flex",
+          anythingOpen ? "border-border" : "border-transparent",
+        )}
       >
-        <div
-          style={leftPanelWidth}
-          className="@container flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-4 max-md:!w-auto max-md:flex-1 md:border-r md:border-b md:border-border"
-        >
-          <MobileMenuButton />
-          {identity}
-        </div>
-        <div className="ml-auto flex items-center gap-2 pl-2 pr-4 md:pl-6 md:pr-6">
-          {status}
-        </div>
-      </header>
+        {desktop && activity}
+      </div>
 
       <div ref={setColumnsEl} className="flex flex-1 min-h-0">
         <div
-          style={leftPanelWidth}
           data-testid="chat-sections"
           className={cn(
-            "shrink-0 flex flex-col border-r border-border overflow-hidden relative z-content",
+            "shrink-0 flex flex-col overflow-hidden relative z-content md:w-[320px] md:border-r md:border-border",
             mobileScreen === "chat" ? "hidden md:flex" : "flex",
             mobileScreen === "files" && "max-md:!w-full",
-            maximized && "md:!hidden",
+            (maximized || !column.open) && "md:!hidden",
           )}
         >
           <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3 md:hidden">
@@ -181,28 +232,36 @@ export function ClassicChatLayout({
               {agentName}
             </span>
           </div>
-          {desktop && notices}
+          {desktop && column.open && notices}
           <SidePanelCloseScope value={false}>
-            <FilesPanel
-              open={filesSectionOpen}
-              onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
-              {...panelStack.panelProps("files")}
-              onOpenFile={onOpenFile}
-            />
-            <PanelDivider stack={panelStack} below="artifacts" />
-            <ChatArtifactsPanel
-              key={agentId}
-              agentId={agentId}
-              open={artifactsSectionOpen}
-              onToggle={() => setArtifactsSectionOpen(!artifactsSectionOpen)}
-              {...panelStack.panelProps("artifacts")}
-            />
-            {processesEnabled && (
+            {shows("files") && (
+              <FilesPanel
+                open={filesSectionOpen}
+                {...sectionControls(filesSectionOpen, setFilesSectionOpen)}
+                {...panelStack.panelProps("files")}
+                onOpenFile={onOpenFile}
+              />
+            )}
+            {shows("artifacts") && (
+              <>
+                <PanelDivider stack={panelStack} below="artifacts" />
+                <ChatArtifactsPanel
+                  key={agentId}
+                  agentId={agentId}
+                  open={artifactsSectionOpen}
+                  {...sectionControls(
+                    artifactsSectionOpen,
+                    setArtifactsSectionOpen,
+                  )}
+                  {...panelStack.panelProps("artifacts")}
+                />
+              </>
+            )}
+            {phoneProcesses && (
               <>
                 <PanelDivider stack={panelStack} below="processes" />
                 <ProcessesPanel
                   agentId={agentId}
-                  alwaysOn={alwaysOn}
                   open={processesSectionOpen}
                   onToggle={() =>
                     setProcessesSectionOpen(!processesSectionOpen)
@@ -213,18 +272,6 @@ export function ClassicChatLayout({
             )}
           </SidePanelCloseScope>
         </div>
-        {!maximized && (
-          <ResizeHandle
-            side="left"
-            label="Resize sections"
-            onResize={(d) => {
-              const v = clampLeftWidth(leftWRef.current + d);
-              leftWRef.current = v;
-              writePersistedNumber(LEFT_WIDTH_KEY, v);
-              setLeftW(v);
-            }}
-          />
-        )}
 
         <div
           className={cn(
@@ -233,7 +280,49 @@ export function ClassicChatLayout({
             panelFills && "md:!hidden",
           )}
         >
-          {!desktop && notices}
+          {/* UNIT_BOUNDARY_DESCRIPTION: the header flanks the content well, as the design review drew it: where the chat is wide enough, the agent menu's chevron ends 16 px outside the messages' left edge (the menu's hover padding reaches past it) and New chat starts 16 px outside their right edge (the well is the 813 px column less its 32 px padding, 749 px). A narrower chat has no room beside the well, nor has a wide one whose margin is narrower than the agent menu (a long name, the Shared badge, the running count), so there both sit inside it, at the messages' edges. */}
+          <header
+            ref={header.headerRef}
+            data-flanks={header.flanks}
+            className="relative z-content flex h-14 shrink-0 items-center max-md:h-[52px] max-md:border-b max-md:border-border max-md:px-3"
+          >
+            <ChatColumn
+              className={cn(
+                "flex items-center gap-2 max-md:px-0 md:px-2 md:@xs/chat:px-4 md:@xl/chat:px-8",
+                header.flanks &&
+                  "@5xl/chat:grid @5xl/chat:max-w-none @5xl/chat:grid-cols-[1fr_minmax(0,749px)_1fr] @5xl/chat:gap-x-4 @5xl/chat:!px-0",
+              )}
+            >
+              <div
+                ref={header.startRef}
+                data-testid="chat-header-start"
+                className={cn(
+                  "flex min-w-0 items-center gap-2",
+                  header.flanks &&
+                    "@5xl/chat:col-start-1 @5xl/chat:-mr-2 @5xl/chat:justify-self-end",
+                )}
+              >
+                <MobileMenuButton />
+                {identity}
+                <div className="flex min-w-0 items-center gap-2 empty:hidden">
+                  {status}
+                </div>
+              </div>
+              <div
+                ref={header.endRef}
+                data-testid="chat-header-end"
+                className={cn(
+                  "ml-auto flex shrink-0 items-center gap-2",
+                  header.flanks &&
+                    "@5xl/chat:col-start-3 @5xl/chat:ml-0 @5xl/chat:justify-self-start",
+                )}
+              >
+                {newChat}
+                {!desktop && activity}
+              </div>
+            </ChatColumn>
+          </header>
+          {(!desktop || !column.open) && notices}
           {children}
         </div>
 
@@ -266,7 +355,7 @@ export function ClassicChatLayout({
                 : undefined
             }
             className={cn(
-              "flex flex-col bg-background relative z-content has-[[data-full-page]]:z-overlay max-md:fixed max-md:inset-0 max-md:z-overlay",
+              "flex flex-col bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
               panel === null && "hidden",
               panel === "dock" && dockHiddenOnPhone && "max-md:hidden",
               panelFills

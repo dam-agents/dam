@@ -73,6 +73,10 @@
       "source": "./.agents/skills/pr-open",
       "sourceType": "local"
     },
+    "propose-ux": {
+      "source": "./.agents/skills/propose-ux",
+      "sourceType": "local"
+    },
     "react-ui-engineering": {
       "source": "./.agents/skills/react-ui-engineering",
       "sourceType": "local"

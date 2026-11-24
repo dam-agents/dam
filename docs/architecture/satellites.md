@@ -1,6 +1,6 @@
 # Satellites
 
-Last verified: 2026-11-04
+Last verified: 2026-11-20
 
 ## Overview
 
@@ -11,7 +11,7 @@ The machine polls; nothing is pushed to it.
 The worker runs beside the tools, claims work over ordinary outbound HTTPS, calls them and reports back.
 The Agent sees each granted Satellite's tools on the platform MCP server it already has, scoped by Satellite name.
 
-Three verbs start a worker, and **nothing above it can tell them apart**:
+Three verbs start a worker, and the platform reads only the shape it declares — a tool surface or a file tree — never which verb started it:
 
 - `dam satellite mcp --name build-farm -- npx -y @acme/build-mcp` — any MCP server, whose tools are offered as they come, bar a name the contract refuses.
   The worker either starts it over stdio or, with `--url localhost:8080`, reaches one already listening and forwards each call to it: Streamable HTTP first, then SSE, with any `--header` the server wants.
@@ -20,7 +20,7 @@ Three verbs start a worker, and **nothing above it can tell them apart**:
   Without `--name` it is named after the server it starts — the first word past a package runner such as `npx` or `uvx`, less scope, version and path — or the host it forwards to.
 - `dam satellite shell "…"` — a **Command Surface**: permitted command shapes, one usage line each, which becomes a one-tool MCP server whose single `run` tool takes the command to run.
   Without `--name` it is named after the one command every pattern permits, or called `user@hostname` when they differ; either is folded into the name contract.
-- `dam satellite files --root <dir>` — one directory on the machine, offered as a `download` tool, and with `--upload` an `upload` tool beside it (see [Files](#files-between-the-machine-and-the-agent)).
+- `dam satellite files --root <dir>` — one directory on the machine, mounted in each granted Agent's machine as `/mnt/sat/<name>`; it offers no tools, and `--write` lets Agents change the tree (see [Files as a mount](#files-as-a-mount)).
   Without `--name` it is named after the directory.
 
 Separate verbs rather than one flag because each is a different thing to set up, not another way of saying the same thing, and an explicit verb cannot be misread the way a selector flag can.
@@ -94,7 +94,7 @@ A Satellite is therefore unreachable except through Platform, which is the point
 - **Command Pattern** — one permitted command shape (below).
   A Command Surface concept only, enforced entirely on the machine.
 - **Satellite Grant** — the per-Agent permission to reach a Satellite.
-  The granted set decides whether the tools are registered at all.
+  The granted set decides whether the tools are registered at all, and, for a file tree, whether it is mounted at all.
 
 ## Command Patterns
 
@@ -219,50 +219,46 @@ A call made while the Satellite is offline never starts at all: admission refuse
 **Credentials refresh themselves.** A worker signed in through the browser re-mints its access token before each call, and one started as a service holds a serve key in `DAM_TOKEN` instead, which needs no refresh.
 Either way, a worker that cannot authenticate retries like any other failure but says what ends it: signing in again, or a new key.
 
-## Files between the machine and the Agent
+## Files as a mount
 
-A Job's result carries one string of at most 1 MiB beside a handful of images, which is the wrong channel for a file: a tool that returned contents would spend the Agent's context on bytes, and a large file would not fit at all.
-So a file travels on **its own request, in the direction the queue cannot go** — the machine makes it, over the same outbound HTTPS the worker already uses, streamed both ways and never through a Job's arguments or its result.
+A Satellite is a **tool surface** or a **file tree**: a file tree has no tools and no Jobs, and therefore no Job row and no per-call record.
+Its Agent sees one directory per granted Satellite under `/mnt/sat`, served by a mount inside the Agent's own machine, and every call the mount cannot answer from its cache becomes a **File Operation** on a channel of its own beside Jobs ([Satellite Mount](../ubiquitous-language.md)).
+A directory's operation answers each entry with the attributes a lookup would return, so the kernel takes them with the listing and does not ask again for an entry it has just been given: within the 30-second window an entry the Agent listed is `stat`ed, opened and read without another operation for its attributes, and after the window the next listing or lookup answers them afresh.
+The mount keeps no copy of those attributes or of a listing's page: what it answers is what the machine said at that moment, and the window is the kernel's alone.
+A file tree once moved one file per Job through `list`, `stat`, `download` and `upload` tools and a transfer token; nothing offers those any more, and the mount replaces all of it.
 
-`dam satellite files --root <dir>` exposes one directory on the machine as a **transfer surface**:
+An operation is queued in the shared store under the owner, its Satellite and its Agent, and the machine's ordinary claim long-poll takes it up exactly as a Job is taken up: one operation per Agent per turn, in rotation, so one Agent's walk cannot starve another Agent's single read.
+The answer travels back to the replica holding the Agent's request open, whichever replica the machine's claim landed on; nothing about an operation is pinned to a replica, and nothing about it is written to Postgres.
+A write's body rides a short-lived handoff beside the queue rather than the queue itself, and both are taken exactly once.
+An operation carries the instant its Agent stops waiting, 30 seconds after it was asked for, and a claim drops one that is past it: a change never lands after the Agent was told it failed.
+At most 64 operations wait for one Agent of one Satellite, and beyond that the platform answers "Input/output error" rather than letting one walk fill the shared store.
 
-- `download` copies one file **into the Agent's workspace**, and the Agent is told only the path the file landed at, its size and its sha256.
-  It reads the file with its own tools, never through the model's context.
-- `upload`, offered only when the worker was started with `--upload`, copies one file **from the Agent's workspace onto the machine**.
-  It is the same request in reverse, and it never replaces a file that is already there unless the call says to.
+**Grants are checked on every operation**, because the mount server enforces nothing.
+The platform checks the grant, that the Satellite is a file tree, that the machine is online and not draining, that the grant was not revoked a moment ago, and that the worker was started writable for anything that changes the tree.
+An offline or draining Satellite answers "Host is down" at once, a revoked grant "Permission denied", and a read-only worker "Read-only file system", all before the machine is asked anything.
+A revocation also ends the operations that Agent already has waiting, rather than letting them run out their deadline.
 
-Each tool declares which way it moves files, and **that direction is frozen on the Job when the Agent's call is admitted**, from the Snapshot that accepted it.
-A Satellite replaces its tool list every time it connects, so the direction cannot be read again later: a manifest that points the tool the other way must not reinterpret a Job the Agent already made.
-A Job whose tool moved no file, or moves them the other way, authorises nothing.
+The record is a **summary**: one line per Agent, Satellite and minute, with the operations relayed, the files opened, the bytes read and written, and the entries created, renamed and deleted — and never a path.
+Replicas elect one flusher a minute through a shared key, so a pair is logged once however many replicas relayed its operations.
+Nothing on the platform says which file an Agent read, wrote or deleted, which is the price of the summary and the reason a files Satellite has no safety net.
 
-**A transfer belongs to the claim that is running the Job.** Claiming a Job issues that worker a transfer token, stored on the Job row as a hash, and a file request must present it; the token is spent by the transfer it authorises, in the same statement that checks the Job is still running.
-So a transfer happens once, for one Job, and only while that Job runs: bytes that arrive after it settled land nothing, a second transfer on the same Job is refused, and an upload's stream stops within one re-check interval of the Job ending.
-This is the one thing the serve key does *not* buy: two keys of one owner are indistinguishable to the queue, and the token is what tells the claimant from any other worker of that owner.
+A session is told about its mounts once, when it starts: the platform names each `/mnt/sat/<name>` and whether it is writable, but only when the mount server has been seen within the last 45 seconds.
+A machine that has not booted the mount server therefore leaves an Agent with no mount words at all, rather than instructions about a directory that is not there.
 
-**The platform takes the direction and both paths from the Job itself** — the direction frozen at admission and the arguments the Agent's call carried — so a machine cannot ask for a file its Agent did not ask for, and cannot choose where a received file lands.
-A download lands in a directory the platform derives from the Job and its claim, so two transfers never collide even when a Satellite is removed and its sequences start again; the file's name is the last segment of the path the Agent asked for.
-An upload reads the workspace path the Agent asked for, and no other.
+**The worker is `dam satellite files --root <dir>`**, one directory per Satellite, and it offers no tools at all: the mount is the whole surface, and no Job can be admitted to it.
+`--write` is the whole opt-in, and a writable worker refuses nothing: no trash, no undo, and a deletion through the mount leaves no per-file trace anywhere.
+Without it the worker answers "Read-only file system" to every change itself, besides the platform's own check, so the user's opt-in holds on their own machine even when the Satellite's row says otherwise.
+One worker serves every Agent its Satellite is granted to, and a second worker on the same directory is refused through a pid file under the user's home, which a machine that crashed leaves for the next start to replace.
 
-The directory is the whole allowlist on the machine, and every path is opened without trusting a component:
+A worker from before the mount registers tools that carry a transfer direction, and no Satellite serves those any more: the platform refuses such a manifest at registration and tells the user to update the CLI, while a CLI that meets a platform older than the file channel stops and says the platform has to be upgraded, because waiting does not grow a manifest schema.
 
-- The root is resolved once at startup and re-resolved on every call, so a root replaced afterwards stops being a root.
-  `/` and the home directory are refused as roots.
-- Each directory on the way must be a real one, and the file is opened without following a link, without blocking on a FIFO, and then compared with the path it was opened by — same device and inode, a regular file, one link.
-  A `..`, an absolute path, a link at any point, a hard link out and a special file are all refused.
-- Read-only unless the user passed `--upload`.
-  A write is staged beside its destination under an exclusive name, verified before a byte is written, and published **inside the destination directory's inode**: the process steps into that directory, proves it is the one that was checked, and names both files relatively, so renaming a path on top of it cannot steer the step.
-  It never writes through a link, and it never replaces a file with more than one link.
-- Every chunk is written in full, and the finished file is read back through its own descriptor and compared with what was hashed before anything is published: a short write fails the transfer instead of leaving a truncated file.
-- The surface is POSIX only; on Windows the verb refuses to start rather than promise a confinement it cannot keep.
-
-The Agent's own workspace is treated as untrusted in exactly the same way, because the Agent owns everything inside it.
-The platform's writes are staged beside their destination in the workspace and published by a second request, so the publish happens only after the bytes arrived and the token was spent; both directions walk the workspace components, open without following a link, refuse a hard link and a special file, and publish and clean up inside a verified directory's inode rather than by a pathname.
-Cleanup of an abandoned stage is confined the same way, and it removes only an entry that is one of the platform's own staged files, so it cannot be steered into deleting an Agent's file through a link.
-
-**One transfer carries at most 50 MB**, counted while the bytes move in both directions — including on the platform's own relay, which counts what it hands the machine and cuts the response off at the limit even when the workspace understates a file's size.
-A file that grows after it was measured, or a response that never ends, is cut off at the limit rather than read whole.
-Nothing passes through the api-server's memory: it relays the stream, the runtime owns the workspace end.
-Every transfer leaves one audit line — the direction, the Job, the Agent, the path, the byte count and the outcome — and file contents never enter a log, an error message or a tool result.
+**Every operation is confined to the root on the machine as well.** A path is relative to the root, and `.` is the root itself; an absolute path, a `..` segment, an empty name, a NUL or a backslash is refused, the root is resolved again on every operation, and every directory on the way must be a real directory, never a link.
+An open takes a regular file without following a link and without blocking on a FIFO, requires exactly one link, and compares the file with the identity the Agent saw: a path that no longer names that inode answers "Stale file handle", so a file swapped between two writes cannot redirect the second, and a file with a second hard link is listed but neither read nor written.
+Create, mkdir, unlink, rmdir and symlink act inside the parent directory the walk proved and never follow the last name; a rename proves both parents, and one that moves a directory or a link closer to the root is answered as a cross-device move, so `mv` copies it and re-creates each link, which checks every target again.
+The root can be neither renamed nor removed, and a symbolic link is created — and its target shown — only when the target is relative, is zero or more leading `..` followed by plain names, and has no more leading `..` than the link's directory lies below the root: anything else answers "Operation not permitted" when it is created and hides the target of one that exists.
+Hard links, FIFOs, sockets and devices cannot be created; `chmod` sets the read, write and execute bits and drops setuid, setgid and sticky; `chown` is refused and so are extended attributes and `fallocate`; locks stay local to the Agent's machine.
+A write writes every byte at its offset or fails, and is refused with "No space left on device" when it would leave less than a gibibyte free.
+The ceilings are the worker's: Node has no `openat`/`renameat`, so a step inside a directory makes it the process's working directory and changes to the tree run one at a time, which is why one worker per root is enforced, and a link that complies can still pass through a link the user made that leaves the root; a native `openat2`/`renameat2` is the upgrade.
 
 ## Trust boundary
 
@@ -273,17 +269,12 @@ It is never a shell, so nothing in an argument is expanded or interpreted.
 The command — or the MCP server — inherits the **worker's own environment**, so whatever the user exported when they started the worker is what it sees, which is worth knowing when deciding what to start it from.
 
 This is a narrower promise than matching in both places, and deliberately so: a check the platform cannot perform for every Satellite is a check it should not appear to perform for any.
-What Platform still guarantees is the record — every call, verdict and outcome is stored on the Job row whether or not the machine reports honestly about itself.
-
-A **file transfer crosses in the other direction**, so the platform is the side that writes what it is given.
-It trusts none of it: the machine names no path at all, the direction is the one frozen on the Job when the call was admitted and both paths come from the Job's own arguments, and the workspace end walks every component without following a link.
-The claim's token is spent atomically: a download lands only by spending it, so nothing lands once it is spent or once the Job ends, and an upload's stream stops within one re-check interval of the Job ending — the resolution at which the platform re-proves the Job while bytes leave, not the instant they stop.
-What the machine reads is bounded on the machine, by its root.
+What Platform still guarantees is the record — every call, verdict and outcome is stored on the Job row (a files Satellite keeps the summary instead) whether or not the machine reports honestly about itself.
 
 Anything an Agent can call is callable by a **prompt-injected** Agent.
 That is the whole exposure surface, and it is why a tool call is bounded before it is stored — arguments are capped, and the concurrency limit is enforced in the same transaction that inserts.
 Connecting an arbitrary MCP server widens that surface to whatever the server exposes, which is the user's call to make and the reason grants stay deliberate.
-Every call, verdict and outcome is recorded on the Job row itself — the tool, its arguments and the result — and because Platform stores that rather than the Satellite, the record does not depend on a machine reporting honestly about itself.
+Every tool call, its verdict and its outcome is recorded on the Job row itself — the tool, its arguments and the result — and because Platform stores that rather than the Satellite, the record does not depend on a machine reporting honestly about itself.
 The rows are the whole of it: they are purged with the retention sweep a week after the Job started, so a longer-lived trail would have to be added on purpose.
 
 A worker authenticates with an API key carrying the **serve scope**, which covers only what serving needs: registering a tool surface, claiming the work approved for it, heartbeating, reporting what came back, and declaring itself draining.
@@ -309,16 +300,17 @@ Running a worker is the opt-in: a second switch in the UI would be one more plac
 Until then nothing about Satellites appears.
 After it, the Connections page lists each Satellite with whether it is online, its tools and its host, and removes one.
 An Agent's Connections section lists the Satellites granted to it.
-Its **+ New** catalog lists them under MCP servers, which is where a grant is given, so the path is ⵗ → Configure agent → Connections → + New → MCP servers → the machine → Add to agent.
+Its **+ New** catalog lists them under MCP servers, which is where a grant is given, so the path is the Agent's Agent settings wrench → Connections → + New → MCP servers → the machine → Add to agent.
 A Satellite is an MCP server to the agent, so the catalog has no tab of its own for it; the form that adds a remote MCP server points at `dam satellite` for one that runs on the user's own machine.
 The Connections page and the catalog poll while open, so a machine that has just connected, or just gone offline, shows without a reload.
 
 For deployment operations, the CLI is at parity plus `dam satellite mcp`, `dam satellite shell` and `dam satellite files`, whose **log is the interface**.
 The parsed Command Patterns print at startup.
 Right after connecting, the worker prints where in the UI to add the machine to an Agent, since until someone does, no Agent can reach it.
-Every request is one line naming the Agent that sent it and what it asked for.
+Every tool call is one line naming the Agent that sent it and what it asked for.
 The api-server resolves the Agent's name when the worker claims the call, and falls back to its id.
 Every outcome is one line too, and each way a call ends reads differently: `DONE` with its exit code, `FAILED` for a command that ran and failed or a tool that returned an error, `BLOCKED` for a call the machine refused without running, which names the pattern it came closest to, and `CANCELLED` and `INTERRUPTED`.
+A files worker prints none of those: a File Operation is not a call and names no path, so that worker prints the same per-minute summary the platform keeps — operations, files opened, bytes, and entries created, renamed and deleted ([Files as a mount](#files-as-a-mount)).
 A parse error names the line it is on, since the text the user just typed is the whole allowlist.
 Shutdown stops claiming on the first interrupt — a claim already open hands nothing back that is then started — and lets what is running report.
 After a bounded grace it stops waiting on the platform, so a supervisor's stop timeout gets an exit rather than a kill, and it closes the MCP server it started before it exits, waiting for the child to stop within its own deadline.
@@ -329,8 +321,9 @@ Keeping one worker running unattended is [running a satellite as a service](../n
 
 `dam satellite` marks itself **experimental** in its description and help text, which is how a pre-release surface is disclosed where there is no feature flag to read.
 
-A running harness lists tools once at spawn, so a new grant or a newly added tool is invisible until it restarts — the same lag every MCP entry has.
-Enforcement never lags: admission reads the live Snapshot, so a removed tool is refused at once, and the machine matches against the surface it was started with.
+A running harness lists tools once at spawn, so a new grant or a newly added tool of a **tool surface** is invisible until it restarts — the same lag every MCP entry has.
+A **file tree** is not a tool list: its mount follows the grants while the Agent runs, so a grant appears at `/mnt/sat/<name>` within 30 seconds and a revocation is refused at once and gone within 30 seconds, with nothing restarted ([Files as a mount](#files-as-a-mount)).
+Enforcement never lags for either: admission reads the live Snapshot, so a removed tool is refused at once, and the machine matches against the surface it was started with.
 
 Each Satellite's tools are registered **scoped by its name** — `gpu_box__run`, `gpu_box__wait`, `gpu_box__get`, `gpu_box__cancel`.
 Any character of the name other than a letter or digit becomes `_`, so `jan@lab.local` registers `jan_lab_local__run`.

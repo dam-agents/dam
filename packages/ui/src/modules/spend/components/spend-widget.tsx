@@ -6,8 +6,13 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs } from "@/components/ui/tabs";
 import { TextSkeleton } from "@/components/ui/text-skeleton";
 import { useNow } from "@/hooks/use-now";
+import { cn } from "@/lib/utils";
 
-import { useSpendBreakdown, useSpendMetering } from "../api/queries.js";
+import {
+  useAnyCoveredSpend,
+  useSpendBreakdown,
+  useSpendMetering,
+} from "../api/queries.js";
 import { useShowPlanUse } from "../hooks/use-spend-preferences.js";
 import {
   API_SPEND_TITLE,
@@ -23,6 +28,7 @@ import {
   HOME_PERIODS,
   type PresetPeriod,
   rangeOf,
+  rangeOfPeriods,
 } from "../lib/spend-period.js";
 import { utcDayOf } from "../lib/utc-day.js";
 import { AnimatedUsd } from "./animated-usd.js";
@@ -50,6 +56,7 @@ export function SpendWidget() {
   const { data: metering } = useSpendMetering();
   const query = useSpendBreakdown(range);
   const showPlanUse = useShowPlanUse();
+  const covered = useAnyCoveredSpend(rangeOfPeriods(HOME_PERIODS, today));
   const data = query.data;
   const totals = unitTotals(data?.totals ?? []);
   const measured = metering
@@ -117,8 +124,13 @@ export function SpendWidget() {
           </div>
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border-hairline pt-4">
-          <PlanUseCheckbox />
+        <div
+          className={cn(
+            "mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border-hairline pt-4",
+            !covered.data && "justify-end",
+          )}
+        >
+          {covered.data && <PlanUseCheckbox />}
           <ViewDetailsLink period={period} />
         </div>
       </div>

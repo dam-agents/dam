@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { dropOwnImport } from "./bob-preload-lib.mjs";
 
-const BOB_VERSION = "2.0.9";
+const BOB_VERSION = "2.1.0";
 const UPSTREAM_GAP =
   "Bob starts the MCP servers of mcp.json in the background in `bob acp` too, as `bob chat` does, " +
-  "and a cancel during its automatic context compaction no longer replaces the history with an empty summary";
+  "and neither a cancelled loop nor an empty summary of its automatic context compaction replaces the history";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: `bob acp` builds every session's harness as a
@@ -19,12 +19,13 @@ const UPSTREAM_GAP =
  * servers a session carries, the platform entry among them, are registered
  * after that startup and are still awaited, so the platform tools are there
  * on the first turn. Bob also compacts its context right after a batch of
- * tool calls, which is where the platform cancels a turn to steer it, and a
- * cancel during that compaction makes Bob replace the whole history with an
- * empty summary. The second edit starts no compaction in a loop already
- * cancelled; the third keeps the history when the compaction was cancelled or
- * produced no summary. The preload takes its own --import out of NODE_OPTIONS
- * once Bob's bundle loads, so the processes Bob starts do not inherit it.
+ * tool calls, which is where the platform cancels a turn to steer it, and Bob
+ * still starts that compaction in a loop already cancelled and replaces the
+ * whole history with an empty summary. The second edit starts no compaction
+ * in a loop already cancelled; the third keeps the history when the
+ * compaction produced no summary. The preload takes its own --import out of
+ * NODE_OPTIONS once Bob's bundle loads, so the processes Bob starts do not
+ * inherit it.
  */
 const edits = [
   {
@@ -33,14 +34,13 @@ const edits = [
     count: 1,
   },
   {
-    find: "if(o&&S8i(u.getSpend().contextTokens,o,a))",
-    replace: "if(o&&!n.cancelled()&&S8i(u.getSpend().contextTokens,o,a))",
+    find: "if(l&&t_t(f.getSpend().contextTokens,l,o))",
+    replace: "if(l&&!n.cancelled()&&t_t(f.getSpend().contextTokens,l,o))",
     count: 1,
   },
   {
-    find: "v=e.getSpend().contextTokens;e.replaceMessagesWithSummary(B,{autoTriggered:r})",
-    replace:
-      "v=e.getSpend().contextTokens;if(t?.cancelled()||!B?.trim())return;e.replaceMessagesWithSummary(B,{autoTriggered:r})",
+    find: "if(t.cancelled())return;e.replaceMessagesWithSummary(F,{autoTriggered:u})",
+    replace: "if(t.cancelled()||!F?.trim())return;e.replaceMessagesWithSummary(F,{autoTriggered:u})",
     count: 1,
   },
 ];

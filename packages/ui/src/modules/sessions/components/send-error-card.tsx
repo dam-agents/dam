@@ -8,6 +8,9 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import { describeSendError, isSpendRefusal } from "../../acp/errors.js";
+import { useAgentDisplayName } from "../../agents/api/queries.js";
+import { AskAssistantLink } from "../../assistants/components/ask-assistant-link.js";
+import { askAboutTurn } from "../../assistants/lib/ask-prefill.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { useSpendRefusalViewer } from "../hooks/use-spend-refusal-viewer.js";
 import { QuietNotice } from "./quiet-notice.js";
@@ -16,6 +19,9 @@ interface Props {
   rawError: string;
   interrupted?: boolean;
   quiet?: boolean;
+  agentId?: string;
+  sessionId?: string;
+  at?: string;
 }
 
 function ProvidersSettingsLink() {
@@ -59,13 +65,51 @@ function withProvidersLink(text: string): ReactNode {
   );
 }
 
-export function SendErrorCard({ rawError, interrupted, quiet }: Props) {
+function AskAboutTurn({
+  agentId,
+  sessionId,
+  at,
+  error,
+}: {
+  agentId: string;
+  sessionId: string;
+  at: string;
+  error: string;
+}) {
+  const agentName = useAgentDisplayName(agentId) ?? agentId;
+  return (
+    <AskAssistantLink
+      agentId={agentId}
+      className="self-start"
+      prefill={askAboutTurn({ agentName, sessionId, at, error })}
+    />
+  );
+}
+
+export function SendErrorCard({
+  rawError,
+  interrupted,
+  quiet,
+  agentId,
+  sessionId,
+  at,
+}: Props) {
   const viewer = useSpendRefusalViewer(isSpendRefusal(rawError));
   const { title, message, hint } = describeSendError(rawError, viewer);
+  const askLink =
+    agentId && sessionId ? (
+      <AskAboutTurn
+        agentId={agentId}
+        sessionId={sessionId}
+        at={at ?? new Date().toISOString()}
+        error={rawError}
+      />
+    ) : null;
   if (interrupted && quiet) {
     return (
       <QuietNotice testId="prompt-delivery-error">
         {title ?? "Response interrupted:"} {message}
+        {askLink && <> {askLink}</>}
       </QuietNotice>
     );
   }
@@ -92,6 +136,7 @@ export function SendErrorCard({ rawError, interrupted, quiet }: Props) {
             {withProvidersLink(hint)}
           </p>
         )}
+        {askLink}
       </div>
     </Callout>
   );

@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-11-05
+Last verified: 2026-11-23
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -30,7 +30,7 @@ A Slack "conversation" is any surface the bot is party to: a public/private **ch
 The binding key is the conversation id in every case, so DMs and group DMs reuse the channel binding mechanics wholesale.
 
 Because one bot serves every Agent in a workspace, a bare `@bot` cannot say which Agent is meant.
-So a conversation carries at most one **default Agent** — the first connected, and the one a bare mention reaches — while a mention opening with an Agent's name reaches that Agent.
+So a conversation carries at most one **default Agent** — the first connected, and the one a mention whose message names no Agent reaches — while a mention opening with an Agent's name reaches that Agent.
 Which Agent holds it can be changed, in-chat.
 A name matching nobody is not an address at all: it falls through to the default as ordinary prose.
 A name matching *several* Agents also falls through, but carries the unresolved name forward, so the default can say it could not tell them apart.
@@ -56,7 +56,7 @@ Every turn relays single-track to the main agent; the **binding owner's** Terms-
 
 Telegram is structurally identical — with no workspace to anchor per-user identity, consent covers the whole chat, every forum topic and reply in it included, and everyone in the bound chat drives the Agent.
 
-Members use every granted Connection and Satellite; the UI warns, never blocks, when a group binding and grants meet.
+Members use every granted Connection and Satellite; the UI and the CLI warn, never block, when a group binding and grants meet.
 
 #### Ambient mode
 
@@ -77,11 +77,14 @@ Running them concurrently would have them talk over each other; in sequence, a l
 The **default Agent goes first** where it reads along, being the conversation's primary; the rest follow **shuffled**, freshly per message — past the default there is nothing to rank them by, and a stable order would quietly hand one Agent every second look.
 The cost is deliberate: a channel with several read-along Agents spends that many turns per message, which is why ambient stays a per-Agent opt-in.
 
+A Slack binding can also carry **channel history**, which lets its Agent read the conversation's older messages ([slack-channel-history](slack-channel-history.md)).
+
 #### Posts by Agents and apps
 
 A post by another Agent, another app or an incoming webhook starts turns the same way a person's post does: a tag routes it to one Agent, and in ambient mode it reaches the readers.
 This is what lets one Agent ask another for help, and an Agent react to a CI, alerting or deployment post, without a person posting again.
 Every Agent posts as the one bot, so the worker tells an Agent's post from the platform's own by its [Agent Footer](channel-turns.md#the-agent-footer); a footer-less bot post (a notice, a whisper root) is not any Agent's words and starts nothing.
+A footer on any other app's post is not read, except a listed [companion app's](slack-companion-apps.md), whose post is an agent's of another install.
 An Agent's own post **never starts a turn for that Agent**; every other Agent in the conversation still gets it.
 The exception is an Agent's **reply in an ambient round**: the round already hands it to the readers after it, so feeding it back as a new post would spend a second turn on words they were given — and a reply in the thread under a top-level message would run alongside the round, in that thread's own queue.
 So a reply an ambient turn posts with its reply tool is marked in its Agent Footer link, and a marked post reaches no reader; the mark travels with the post, so the check needs no timing and spares the same Agent's other posts.
@@ -125,7 +128,7 @@ One cross-cutting concern is owned elsewhere and only summarized here:
 
 Both adapters share the same shape inside the api-server — a worker that owns the messenger socket, the channel manager that supervises lifecycle, the ACP relay for inbound, and the per-Agent MCP endpoint for outbound.
 The interesting parts are where the two diverge: Slack hangs off a workspace-wide identity link table; Telegram hangs off its own binding table (chat → Agent).
-Telegram's token comes from Helm values; Slack's app-level token does too, but a Slack bot token is per workspace and comes from the install handshake.
+Telegram's token comes from Helm values; Slack's app-level token does too — imported into a K8s Secret where its own rotation is on — but a Slack bot token is per workspace and comes from the install handshake.
 
 ### Slack — platform channel
 
@@ -161,7 +164,7 @@ flowchart LR
   MCP --> CM
 ```
 
-The App-Level Token comes from Helm values and lives in api-server env; a Bot Token is per workspace, comes from the install handshake and lives in a K8s Secret — neither is per-Agent.
+The App-Level Token comes from Helm values and lives in api-server env, or, with app-level token rotation on, in the K8s Secret a rotating pair is imported into; a Bot Token is per workspace, comes from the install handshake and lives in a K8s Secret — neither is per-Agent.
 Resolving the channel's binding yields the Agent and the binding owner; the relay is single-track to the main agent.
 The workspace-wide identity-link table backs the `/platform login` flow, which authorizes the in-chat bind, unbind, ambient, whisper on/off and default commands — never who may drive a turn.
 
@@ -212,18 +215,10 @@ The differences are transport, identity model, and where the bot token comes fro
   The api-server has no inbound network access requirement; events arrive over the socket the api-server itself opened.
   Slack caps Socket Mode at ten concurrent connections per app, which is the install-level scale ceiling for Slack.
   The gateway reconnects a dropped socket itself, with the Socket Mode client's own reconnect turned off: the first reconnect runs 1 s after the drop, and a reconnect Slack refuses, even `invalid_auth` on the app token, is retried after 5 s, 15 s, 30 s and then every 60 s, so a Slack auth outage stops only Slack, never the api-server, and the socket comes back once Slack accepts the token again.
-- **Token provenance.** The App-Level Token (`xapp-…`) is app-scoped: it comes from Helm values and stays singular, so one Socket Mode connection serves every installed workspace, and it alone decides whether the Slack worker runs.
+- **Token provenance.** The App-Level Token (`xapp-…`) is app-scoped: it comes from Helm values and stays singular, so one Socket Mode connection serves every installed workspace, and its Helm value alone decides whether the Slack worker runs.
   A **Bot Token is per workspace**, because Slack scopes one to one workspace, and every workspace gets its token the same way: by completing Slack's install handshake, the token that mints landing in a K8s Secret with a row pointing at it — no credential in Postgres, and none served from api-server env.
   Neither token is per-Agent.
-- **Token rotation.** Where the Slack app has token rotation turned on, the handshake mints a bot token that expires after twelve hours together with a single-use refresh token, and both go into the workspace's Secret.
-  The token is swapped for a fresh pair once it is an hour old — by a sweep every ten minutes, or by whichever replica needs it first — so an outage has eleven hours to pass before any workspace goes dark, and Slack's two-live-tokens-per-workspace limit is never crossed.
-  The swap runs under the workspace's lock — two replicas spending the same refresh token would leave one holding a revoked pair — with the Secret re-read inside the lock so the later one takes what the earlier one wrote.
-  A refresh that fails while the token still works keeps serving it; once the token has expired, a refresh Slack refuses as a dead credential marks it like any other rejection, while a refusal that may pass — being rate limited — or one Slack never answered leaves it unmarked for the next try.
-  Slack reports revoked tokens by workspace rather than by token, and a rotated-out token may be the one it reports, so a revocation marks the credential only when the workspace's current token is refused too.
-  Rotation is one switch on the Slack app, but a token minted before it was on keeps not expiring until it is exchanged, one call per token: once the install says rotation is on, every such token is exchanged in one sweep as soon as the lease-holding replica's socket is up, under the same lock.
-  Slack retires the old token as it answers, so the pair replaces it in the workspace's Secret at once.
-  A failed exchange keeps serving the old token and tries again later.
-  Renewing depends only on what a Secret holds, so the install setting only starts exchanges — turning it back off changes nothing for tokens already exchanged, and cannot, since Slack's own switch is one-way.
+- **Token rotation.** Where the Slack app has token rotation turned on, bot tokens and, with its own install setting, the App-Level Token expire after twelve hours and are renewed before then; how, and how a refresh token from Helm values becomes a one-time import, is on [slack-tokens](slack-tokens.md).
 - **Connecting a workspace is an operator act, and an invitation rather than open enrollment.** A new workspace is install-wide reach, not one Agent's config, so starting the handshake sits behind its own realm role (`platform-slack-installer`) — the chart creates it and a group mapped to it, the same shape the inspector role uses ([usage-tracking](usage-tracking.md)) — and an install that configured no Slack client credentials mounts no install surface at all.
   What the operator issues is a one-time invitation; the consent itself belongs to an admin of the workspace being added, who needs no platform account.
   Both sides therefore agree before a workspace is served.
@@ -250,20 +245,20 @@ The differences are transport, identity model, and where the bot token comes fro
 - **Re-install, not uninstall, is the lifecycle event.** A workspace re-authorizes to pick up scopes added to the manifest later; the handshake rewrites the same Secret in place, and bindings and identity links key on conversation and user id so they are untouched.
   A credential Slack rejects is **marked**, never cleaned up, and re-authorizing clears the mark.
   Nothing is deleted.
-- **Identity linking.** A `/platform login` slash command starts a Keycloak OAuth flow; on callback the api-server stores `slack_user_id ↔ keycloak_sub` and the workspace the command ran in.
-  The link table is the source of truth for "who is this Slack user in Platform terms" — consulted to authorize the in-chat `bind`, `unbind`, `ambient`, `whisper on|off`, `ignore`, `unignore`, `default` and `delete` commands, never to admit a turn, and to reach a person directly.
+- **Identity linking.** The link table is the source of truth for "who is this Slack user in Platform terms": it authorizes the in-chat `bind`, `unbind`, `ambient`, `history`, `whisper on|off`, `ignore`, `unignore`, `default` and `delete` commands, never a turn, and reaches a person directly.
+  A `/platform login` slash command proves the person, and the DM Bridge may also pair a link by verified email under rules of its own ([slack-dm-bridge](slack-dm-bridge.md)).
 - **A connect from the platform needs the person in the conversation.** A connect from the UI or the CLI binds only a conversation the person and the bot are both in: one of the person's linked Slack identities shares the channel with the bot in some connected workspace, or is the other side of the 1:1 DM.
   A group DM is outside what Slack lists for a person, so it is connected in-chat only.
   Without it, anyone who knows a conversation id could lend an Agent to a private channel they are not in.
   An unlinked person is refused and pointed at `/platform login`, or at the in-chat bind, whose run inside the conversation is the proof and so needs no check.
-  Only a new binding is checked; a re-connect of an existing one, which changes ambient mode or custom emoji, is not.
+  Only a new binding, or a re-connect turning channel history on, is checked.
   The UI therefore picks channels by name from the same rule rather than taking an id: the channel choices are the bot's channels that the person's linked identities also share, across every connected workspace and listed once per conversation id, and a pasted id is matched against that list.
 - **The platform can message a linked person.** A notice the platform raises itself, such as a resource alert, an outage alert or a spend stop, goes as a direct message from the app — no Agent persona — to each Slack identity linked to that user, in the workspace the link recorded.
   A link made before links recorded their workspace reaches the one active install, and nothing when several are active, until the user logs in again.
   A workspace whose credential is rejected or that did not grant `im:write` is skipped, and a user with no link gets nothing in Slack.
   A notice that reaches nobody in Slack goes to Telegram instead (below), so a person gets one copy.
   Only the channel leader sends; other replicas reach it over the channel RPC.
-  `login`/`logout` stay working but are not listed in the bare-`/platform` usage help (which advertises the other nine); the flows that need a linked identity still point users at `/platform login` in context.
+  `login`/`logout` stay working but are not listed in the usage help (which advertises the other nine); the flows that need a linked identity still point users at `/platform login` in context.
 - **In-chat binding.** Beyond the platform UI and CLI, a channel can be bound from inside Slack, mirroring Telegram: anyone runs `/platform bind`, authenticates through the same Keycloak OAuth flow, and picks one of *their own* Agents on a web picker — the binding lends that Agent, under its own credentials, to the whole channel, exactly like every binding.
   Being invited offers the same link without the command: when the bot itself is added to a conversation, it answers the inviter alone, privately, with the bind link, so nobody has to discover the slash command first.
   The binding is created ambient-off; an in-chat ambient command reports and flips the binding's ambient mode afterward under the same binder-or-owner authorization as unbind.
@@ -275,11 +270,15 @@ The differences are transport, identity model, and where the bot token comes fro
 - **A conversation shows who stands behind its Agents.** Every connect, in-chat, from the UI or from the CLI, posts one notice in the conversation that tags the person who connected the Agent, because members otherwise find an Agent there with nobody to ask about it.
   That person is always the Agent's owner, since only the owner may manage its channels.
   A 1:1 DM is the exception: the notice there names no one, as the person reading it is the one who connected.
-  Afterwards `/platform who` lists the conversation's Agents with each owner's Slack tag, and `/platform default` with no name shows the same list.
+  Afterwards `/platform who` lists the conversation's Agents, and `/platform default` with no name shows the same list.
+  Each line gives the owner's tag, the default, what the Agent reads, the mention that reaches it, and the Agent's own description, cut to 200 characters; one equal to its template's is left out, and a new Agent no longer copies it.
   The tag is the owner's link in that workspace; an owner with none there, after a logout or from a connect that predates the membership check, is named by display name instead, so a member never needs the Public Agent Page to find them, and an owner with neither is left out.
   The list is never put on each post: a tag notifies the owner, and a name on every post is noise to everyone else.
   The owner lookups may outlast the three seconds Slack gives a slash command, so a slow list arrives through the command's response URL after an empty acknowledgement rather than in part; the response URL reaches the person even where the bot can no longer post.
   The notice is best-effort and never holds up the connect, and a Starter Kit posts its notices only once every channel it names is connected, since a later refusal deletes the Agent.
+- **The command menu.** `/platform` with no text answers with a private menu of the commands as buttons ([slack-commands](slack-commands.md)).
+- **Command look-alikes.** Commands run only from `/platform`; every mention reaches an Agent, `@bot whisper …` included, which opens no whisper.
+  A person whose mention reads as a valid command also gets an ephemeral tip naming the `/platform` form; a mention opening with an Agent's name, and an Agent's or app's post, get none.
 - **DMs and group DMs** reuse the in-chat bind verbatim — the conversation id (`D…` for a 1:1 DM, an `mpim` id for a group DM) is the binding key, so `/platform bind` connects one of the binder's own Agents to the DM or group, exactly as it binds a channel.
   Only the *trigger* differs: a bound **1:1 DM** relays every plain message, because every DM message is addressed to the bot — no `@mention`, and the prompt isn't speaker-labelled (a single human).
   A bound **group DM** stays mention-driven like a channel.
@@ -309,8 +308,8 @@ The differences are transport, identity model, and where the bot token comes fro
 - **Agent resolution.** A mention (channel, group DM) or a plain 1:1-DM message resolves to exactly one Agent: the one whose name opens the message, else the conversation's default.
   Name matching is over the Agents connected to that conversation only, whole-name and case-insensitive, longest name first — Agent names are not unique, so a name matching two of them resolves to the default rather than a guess.
   An addressed message in an unconnected conversation is refused with an ephemeral.
-- **Message intake.** The gateway subscribes to plain messages on three surfaces and pre-filters them all the same way: message edits, joins and other subtypes never reach the worker, and neither do the bot's own footer-less posts.
-  Every post that passes carries its **sender** — a person, an Agent (the bot's own post, named by its footer), or an app (any other bot or webhook, named by its username).
+- **Message intake.** The gateway subscribes to plain messages on three surfaces and pre-filters them all the same way: joins and other subtypes never reach the worker, and neither do the bot's own footer-less posts; an edit reaches it apart ([slack-edits](slack-edits.md)).
+  Every post that passes carries its **sender** — a person, an Agent (the bot's own post, named by its footer), a companion (a companion app's footed post), or an app (any other bot or webhook, named by its username).
   While the bot's own ids are unknown, every bot post is dropped, so an Agent's reply can never pass for an app's.
   A person's tag arrives on the mention path, so their plain-message copy is dropped; a bot post that tags the bot is handed to the mention path too, because Slack may not send it as a mention, and the worker takes each such post once.
   Surface then decides the route: **channel/group** messages feed ambient mode (relayed only when the binding has ambient on; everything else drops silently); **1:1 DM** messages feed the bound-DM relay (no mention needed); **group DM** plain messages are ignored — group DMs are mention-driven, so they arrive on the mention path.
@@ -390,7 +389,7 @@ A channel message becoming an agent turn — the inbound relay into an ACP sessi
 
 ## Per-Agent vs. platform channel
 
-Both messengers are platform channels: credentials belong to the install rather than to an Agent — Telegram's token and Slack's app-level token from Helm, a Slack bot token per workspace from its install handshake — and a binding table, keyed by conversation on Slack and by chat on Telegram, differing mainly in where the binding is gestured — Slack from the UI/CLI, an in-chat `/platform bind`, or the link the bot posts when it is invited; Telegram from an in-chat `/bind` plus the web agent picker.
+Both messengers are platform channels: credentials belong to the install rather than to an Agent — Telegram's token and Slack's app-level token from Helm (the latter imported into a Secret where it rotates), a Slack bot token per workspace from its install handshake — and a binding table, keyed by conversation on Slack and by chat on Telegram, differing mainly in where the binding is gestured — Slack from the UI/CLI, an in-chat `/platform bind`, or the link the bot posts when it is invited; Telegram from an in-chat `/bind` plus the web agent picker.
 The verbs match; the spelling follows each messenger — Slack prefixes its registered slash command, Telegram uses bare ones.
 Future channels (WhatsApp Business, Discord, SMS) follow the same pattern — the Telegram flow is the template for messengers without a workspace identity to anchor per-user links against.
 
@@ -402,6 +401,7 @@ Channels touch these stores; the substrate details live on [persistence](persist
   An identity link ties a messenger user to a platform identity, populated by Slack's `/platform login` — which is what authorizes the in-chat bind/unbind/ambient/default commands.
   Table shapes and indexes: [persistence](persistence.md).
   Telegram's token and Slack's app-level token live in api-server env from Helm values; a Slack workspace's bot token is a K8s Secret, which its install row points at.
+  With app-level token rotation on, its rotating pair lives in one install-wide K8s Secret ([slack-tokens](slack-tokens.md)).
 
 - **Loop guard drops (Postgres).** One row per Slack conversation where the bot-post limit dropped a post, written by the leader and read with the Agent's channels; a drop more than a day after the last starts the count again.
 

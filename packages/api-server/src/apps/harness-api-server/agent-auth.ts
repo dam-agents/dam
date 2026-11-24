@@ -10,6 +10,7 @@ import {
   LABEL_OWNER,
 } from "../../modules/agents/infrastructure/labels.js";
 import { legacyShareRoots } from "../../modules/kb-shares/domain/legacy-roots.js";
+import { isInvocationTargetName } from "../../modules/invocations/index.js";
 
 export interface AgentIdentity {
   agentId: string;
@@ -17,6 +18,8 @@ export interface AgentIdentity {
   kbShareRoots?: readonly string[];
   onboardingPending: boolean;
   kitUpdatePending: boolean;
+  // UNIT_BOUNDARY_DESCRIPTION: the agent is a sub-agent another agent spawned, known by the shape of the name the platform minted for it; only such an agent is offered the tool that puts a question to its owner, since any other agent asks in its reply.
+  subAgent: boolean;
 }
 
 export async function resolveAgent(
@@ -41,6 +44,9 @@ export async function resolveAgent(
       annotations[ANN_STARTER_KIT] !== undefined &&
       annotations[ANN_STARTER_KIT_ONBOARDED] === undefined,
     kitUpdatePending: annotations[ANN_KIT_UPDATE_PENDING] !== undefined,
+    subAgent: isInvocationTargetName(
+      (obj.spec as { name?: unknown } | undefined)?.name?.toString() ?? "",
+    ),
     ...(shareRoots ? { kbShareRoots: shareRoots } : {}),
   };
 }

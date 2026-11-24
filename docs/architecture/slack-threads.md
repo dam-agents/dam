@@ -1,6 +1,6 @@
 # Slack threads a Session owns
 
-Last verified: 2026-11-04
+Last verified: 2026-11-11
 
 How a Slack thread an Agent's Session started with `start_thread` brings every later message in it back to that Session.
 What a plain post and a channel turn are lives on [channel-turns](channel-turns.md); which outcomes are guaranteed is mapped on [slack-guarantees](slack-guarantees.md).
@@ -12,6 +12,7 @@ The platform keeps the record — chat, thread, Agent, Session, and the newest m
 It is kept apart from a channel Session's own thread key, which still says "this is a channel session" and is never an owned thread.
 Every message in an owned thread, from a person or another Agent, tagging the Agent or not, becomes a turn of the owning Session, and no other road of that Agent takes it: no thread session opens, and a read-along binding skips it.
 Another Agent tagged there still answers as its own turn, which is how one Agent asks another.
+A person's edit to a message there comes back to the owning Session the same way ([slack-edits](slack-edits.md)).
 The owning Agent's own posts never come back to it, and bot posts pass the bot-post rate limit once, so two Agents cannot wake each other in a loop there.
 
 ## Turns

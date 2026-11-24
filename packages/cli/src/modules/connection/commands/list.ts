@@ -13,6 +13,12 @@ import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { formatExpiry } from "../domain/credential-check.js";
+import {
+  defaultCell,
+  defaultMarks,
+  type DefaultMark,
+} from "../domain/default-account.js";
+import { accessScopeOf, formatAccess } from "../domain/access-choice.js";
 import { childrenOf, parentLabel } from "../domain/github-parent.js";
 import { formatScope, scopeKindOf, scopeOf } from "../domain/github-scope.js";
 import type { ConnectionService } from "../services/connection-service.js";
@@ -47,13 +53,16 @@ function providerCell({ provider, templateId }: ConnectionView): string {
   return `${provider.alias} (${harnesses})${provider.preferred ? " preferred" : ""}`;
 }
 
-function statusCell({ status, check }: ConnectionView): string {
+function statusCell({ status, check, retiredHost }: ConnectionView): string {
+  if (retiredHost) return `${status} (${retiredHost} retired)`;
   return check && check.status !== "passed"
     ? `${status} (check ${check.status})`
     : status;
 }
 
 function scopeCell(c: ConnectionView, children: number): string {
+  if (c.accessChoice)
+    return formatAccess(c.accessChoice, c.fullAccess === true);
   if (!c.isParent) return formatScope(scopeOf(c), scopeKindOf(c));
   return children > 0
     ? `${parentLabel(c)} (never granted itself)`
@@ -80,9 +89,12 @@ function treeRows(
   });
 }
 
-function tableFor(views: readonly ConnectionView[]): string {
+function tableFor(
+  views: readonly ConnectionView[],
+  marks?: ReadonlyMap<string, DefaultMark>,
+): string {
   return renderTable([
-    HEADER,
+    marks ? [...HEADER, "DEFAULT"] : HEADER,
     ...treeRows(views).map(({ view: c, branch, children }) => [
       c.id,
       `${branch}${c.name}`,
@@ -92,14 +104,23 @@ function tableFor(views: readonly ConnectionView[]): string {
       c.hosts.join(","),
       c.check?.expiresAt ? formatExpiry(c.check.expiresAt) : "—",
       scopeCell(c, children),
+      ...(marks ? [defaultCell(marks.get(c.id))] : []),
     ]),
   ]);
 }
 
-function withScope(views: readonly ConnectionView[]) {
+function withScope(
+  views: readonly ConnectionView[],
+  marks?: ReadonlyMap<string, DefaultMark>,
+) {
   return views.map((c) => {
-    const scope = scopeOf(c);
-    return scope ? { ...c, scope } : c;
+    const scope = accessScopeOf(c) ?? scopeOf(c);
+    const mark = marks?.get(c.id);
+    return {
+      ...c,
+      ...(scope && { scope }),
+      ...(mark && { default: mark }),
+    };
   });
 }
 
@@ -138,8 +159,11 @@ export function buildListCommand(deps: {
       "--json",
       "emit raw JSON instead of the default table; a GitHub connection carries scope { restricted, fullAccess?, account?, repositories?, repositoryIds?, permissions? }, " +
         "with fullAccess: true when it reaches everything its sign-in or installation reaches; " +
+        "a connection that is read only unless it has full access, such as a Slack Account, carries scope { restricted, readOnly? | fullAccess? }; " +
         "a GitHub sign-in or installation carries isParent: true, and each connection made from it parentId; " +
-        "a checked credential carries its last check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, installedOn?, repositories?, repositoriesTruncated?, reason?, at }",
+        "a connection on a GitHub Enterprise host the server retired carries retiredHost; " +
+        "a checked credential carries its last check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, installedOn?, repositories?, repositoriesTruncated?, reason?, at }; " +
+        "listed for an agent, a connection that shares its host with another granted one carries default { kind, scope, active }",
     )
     .addHelpText(
       "after",
@@ -147,10 +171,16 @@ export function buildListCommand(deps: {
         "granted to an agent. The connections made from it are listed under it, each\n" +
         "with its own SCOPE. FULL ACCESS marks one that reaches everything its sign-in\n" +
         "or installation reaches; limit it with `dam connection scope`.\n" +
+        "\nA Slack Account connection is `read only` unless it has FULL ACCESS: an agent\n" +
+        "then searches and reads Slack as you and posts nothing. Change it with\n" +
+        "`dam connection scope <connection> --full-access` or `--read-only`.\n" +
         "\nEXPIRES is when the credential expires, as its last check found it.\n" +
         "\nPROVIDER names a model provider's alias, the harnesses that run on it, and\n" +
         "`preferred` on the one a plain `dam agent create` (no --provider, --template\n" +
         "or --kit) grants; the create's output names the one it granted.\n" +
+        "\nListed for an agent, DEFAULT marks which of several GitHub accounts on one\n" +
+        "host, or of several Object Storage connections, the agent acts as unless it\n" +
+        "switches itself; change it with `dam connection default`.\n" +
         "\nExamples:\n" +
         "  dam connection list\n" +
         "  dam connection list --providers\n" +
@@ -192,26 +222,27 @@ export function buildListCommand(deps: {
           host,
         );
 
-        const [idsRes, allRes] = await Promise.all([
-          svc.agentConnectionIds(agent.id),
+        const [grantsRes, allRes] = await Promise.all([
+          svc.agentGrants(agent.id),
           svc.list(),
         ]);
-        exitOnServiceError(idsRes, host);
+        exitOnServiceError(grantsRes, host);
         exitOnServiceError(allRes, host);
 
         const byId = new Map(allRes.value.map((c) => [c.id, c]));
         const granted: ConnectionView[] = [];
         const missing: string[] = [];
-        for (const id of idsRes.value) {
-          const view = byId.get(id);
+        for (const { connectionId } of grantsRes.value) {
+          const view = byId.get(connectionId);
           if (view) granted.push(view);
-          else missing.push(id);
+          else missing.push(connectionId);
         }
+        const marks = defaultMarks(granted, grantsRes.value);
         const matched = onlyProviders(granted, opts.providers);
 
         if (opts.json) {
           return writeStdoutAndExit(
-            `${JSON.stringify(withScope(matched))}\n`,
+            `${JSON.stringify(withScope(matched, marks))}\n`,
             EXIT_SUCCESS,
           );
         }
@@ -227,7 +258,7 @@ export function buildListCommand(deps: {
           );
         }
         if (matched.length > 0) {
-          return writeStdoutAndExit(tableFor(matched), EXIT_SUCCESS);
+          return writeStdoutAndExit(tableFor(matched, marks), EXIT_SUCCESS);
         }
         process.exit(EXIT_SUCCESS);
       },

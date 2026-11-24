@@ -72,15 +72,15 @@ The agent pod's process tree, `/proc`, filesystem, and network namespace contain
 
 ## Side by side
 
-| Property                                        | OpenShell                                                                                          | Platform                                                                                                      |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Real credential location                        | Supervisor process heap                                                                            | Gateway pod (Envoy heap + mounted Secret file)                                                                |
-| Sandbox unit                                    | 1 container or 1 microVM (libkrun driver)                                                          | 2 pods per instance (agent + gateway); each pod is 1 microVM under Kata                                       |
-| Agent kernel                                    | Shared with supervisor                                                                             | Separate from gateway under Kata; separate cgroup/PID/net/mount namespaces always                             |
-| Agent's admitted IPC reach to credential holder | Multiple loopback ports + Unix sockets (proxy CONNECT, supervisor SSH, file sync, log push, relay) | One TCP destination (gateway Service on Envoy port), gated by per-pair NetworkPolicy                          |
-| K8s SA token in agent                           | Whatever chart provisions (in K8s driver)                                                          | `automountServiceAccountToken: false` — no token, no API reach                                                |
-| Per-instance crypto identity                    | Gateway mTLS to control plane                                                                      | Per-instance/per-fork SPIFFE SA principal + Istio AuthorizationPolicy on harness waypoint + ext-authz Service |
-| Destination-vs-credential pinning               | Provider YAML declares `endpoints`; enforcement path needs verification (see §Open verifications)  | Cryptographically pinned via SNI-bound STRICT_DNS clusters per credential                                     |
+| Property                                        | OpenShell                                                                                          | Platform                                                                                  |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Real credential location                        | Supervisor process heap                                                                            | Gateway pod (Envoy heap + mounted Secret file)                                            |
+| Sandbox unit                                    | 1 container or 1 microVM (libkrun driver)                                                          | 2 pods per instance (agent + gateway); each pod is 1 microVM under Kata                   |
+| Agent kernel                                    | Shared with supervisor                                                                             | Separate from gateway under Kata; separate cgroup/PID/net/mount namespaces always         |
+| Agent's admitted IPC reach to credential holder | Multiple loopback ports + Unix sockets (proxy CONNECT, supervisor SSH, file sync, log push, relay) | One TCP destination (gateway Service on Envoy port), gated by per-pair NetworkPolicy      |
+| K8s SA token in agent                           | Whatever chart provisions (in K8s driver)                                                          | `automountServiceAccountToken: false` — no token, no API reach                            |
+| Per-instance crypto identity                    | Gateway mTLS to control plane                                                                      | Per-instance/per-fork SPIFFE SA principal + Istio AuthorizationPolicy on harness waypoint |
+| Destination-vs-credential pinning               | Provider YAML declares `endpoints`; enforcement path needs verification (see §Open verifications)  | Cryptographically pinned via SNI-bound STRICT_DNS clusters per credential                 |
 
 ## Threat-by-threat
 

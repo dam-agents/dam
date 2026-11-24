@@ -8,20 +8,27 @@ export {
   composeInvocationsControlForOwner,
   composeInvocationLivenessSweep,
   composeSubAgentOutcomeDelivery,
+  composeQuestionDeadlines,
   composeSubAgentAwaitMarks,
   type SubAgentAwaitMarks,
   createDriverResolutionAdapter,
   createSpawnSessionsAdapter,
   createInvocationTasksAdapter,
   createInvocationStartAdapter,
+  createInvocationEgressHoldAdapter,
+  recordEgressAnswerAdapter,
   createInvocationsCleanupHook,
   createInvocationSetupFailure,
+  createInvocationCancelOutcome,
   composeScriptOutputs,
   composeInvocationPinReconciler,
   listInvocationAgentIds,
 } from "./compose.js";
 export {
   AttenuationError,
+  KeepError,
+  RunError,
+  OpenEgressConnectionsError,
   InvalidSchemaError,
   ModelNameError,
   NoSpawnModelError,
@@ -33,6 +40,7 @@ export {
   type InvocationsService,
   type Reachability,
   type SpawnInput,
+  type SpawnTarget,
   type ScriptSpawnInput,
 } from "./services/invocations-service.js";
 export type {
@@ -41,6 +49,7 @@ export type {
 } from "./services/script-outputs.js";
 export type { DriverProvider } from "./domain/provider-inheritance.js";
 export { isInvocationTargetName } from "./domain/target-name.js";
+export { ASKING_IDLE_MIN } from "./domain/owner-question.js";
 export { runtimeRunsScripts } from "./domain/script-output.js";
 export { createDelegationFramesClient } from "./infrastructure/delegation-frames-client.js";
 export { invocationScheduleId } from "./domain/target-name.js";

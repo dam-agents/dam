@@ -127,7 +127,6 @@ function fakeAgents(seed: Partial<Agent>[]) {
   const updated: AgentUpdateInput[] = [];
   const deleted: string[] = [];
   const woken: string[] = [];
-  const disabled = new Set<string>();
   let n = 0;
   const service = {
     list: async () => [...agents.values()],
@@ -161,13 +160,11 @@ function fakeAgents(seed: Partial<Agent>[]) {
       agents.delete(id);
     },
     wake: async (id: string) => {
-      if (disabled.has(id))
-        return { ok: false, error: { type: "AgentDisabled" } };
       woken.push(id);
       return { ok: true, value: agents.get(id) };
     },
   } as unknown as AgentsService;
-  return { service, created, updated, deleted, woken, disabled };
+  return { service, created, updated, deleted, woken };
 }
 
 const vmOwning = {
@@ -216,6 +213,37 @@ function setup(
 }
 
 describe("creating an Environment", () => {
+  // TEST_SCENARIO: an Environment created with named connections holds those of its owning agent's and nothing else, copied once; a name the owning agent does not hold is refused, and so is any connection on an Environment whose egress is open, which holds none.
+  it("takes a subset of the owning agent's connections, and none with open egress", async () => {
+    const owning = {
+      ...vmOwning,
+      spec: {
+        backend: { type: "vm" },
+        grantedConnectionIds: ["conn-a", "conn-b"],
+      },
+    } as unknown as Partial<Agent>;
+    const { service, agents } = setup({ agents: [owning] });
+    const envs = service.forOwningAgent(vmOwning.id!);
+    const endpoints = [{ name: "app", port: 4444 }];
+
+    await envs.create({ name: "subset", endpoints, connections: ["conn-b"] });
+    expect(agents.created[0]).toMatchObject({
+      connectionIds: ["conn-b"],
+      inheritance: { connectionsFrom: "subset" },
+    });
+    await expect(
+      envs.create({ name: "foreign", endpoints, connections: ["conn-x"] }),
+    ).rejects.toThrow(/not granted to the owning agent: conn-x/);
+    await expect(
+      envs.create({
+        name: "open",
+        endpoints,
+        connections: "parent",
+        egress: "open",
+      }),
+    ).rejects.toThrow(/egress "open" holds no connections/);
+  });
+
   // TEST_SCENARIO: the Environment is a vm Agent record naming its owning Agent, with nothing that lets it act as that Agent: no default model provider and no egress preset. Its endpoints get addresses under the install's URL, its start command becomes a Startup Item, and it expires a week from now by default.
   it("creates a vm Agent naming its owner, with addresses, a start command and a default expiry", async () => {
     const { service, agents, starts, repo } = setup();
@@ -609,9 +637,9 @@ describe("changing and deleting Environments", () => {
     expect(members.environmentLists.size).toBe(0);
   });
 
-  // TEST_SCENARIO: the owning Agent wakes a sleeping Environment by name before it opens the Environment Link, which reaches only a running machine; a name it does not own wakes nothing, and one its owner turned off is refused with that reason, never reported as waking.
+  // TEST_SCENARIO: the owning Agent wakes a sleeping Environment by name before it opens the Environment Link, which reaches only a running machine; a name it does not own wakes nothing.
   it("wakes its own Environment by name", async () => {
-    const { service, woken, agents } = setup();
+    const { service, woken } = setup();
     const mine = service.forOwningAgent(vmOwning.id!);
     const env = await mine.create({
       name: "a",
@@ -622,8 +650,6 @@ describe("changing and deleting Environments", () => {
     expect(woken).toEqual([env.id]);
     await expect(mine.wake("b")).rejects.toThrow(/no Environment named/);
     expect(woken).toEqual([env.id]);
-    agents.disabled.add(env.id);
-    await expect(mine.wake("a")).rejects.toThrow(/turned off by your owner/);
   });
 
   // TEST_SCENARIO: another owner's Environment is not found, by id or by name.

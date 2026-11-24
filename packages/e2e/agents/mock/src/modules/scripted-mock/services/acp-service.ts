@@ -33,7 +33,7 @@ export interface AcpServiceDeps {
 }
 
 export function startAcpService(deps: AcpServiceDeps): void {
-  const knownSessions = new Set<string>();
+  const histories = new Map<string, Record<string, unknown>[]>();
   const pendingAsks = new Map<JsonRpcId, (outcome: string) => void>();
 
   deps.channel.onLine((line) => {
@@ -66,30 +66,32 @@ export function startAcpService(deps: AcpServiceDeps): void {
           return;
         case "session/new": {
           const sid = randomUUID();
-          knownSessions.add(sid);
+          histories.set(sid, []);
           respond(id, { sessionId: sid });
           return;
         }
         case "session/load": {
           const sid = extractSessionId(params);
-          if (sid) knownSessions.add(sid);
+          if (sid) {
+            if (!histories.has(sid)) histories.set(sid, []);
+            for (const update of histories.get(sid) ?? []) {
+              notify("session/update", { sessionId: sid, update });
+            }
+          }
           respond(id, {});
           return;
         }
         case "session/list":
           respond(id, {
-            sessions: [...knownSessions].map((sessionId) => ({ sessionId })),
+            sessions: [...histories.keys()].map((sessionId) => ({ sessionId })),
           });
           return;
         case "session/prompt":
           await handlePrompt(id, params);
           return;
-        case "session/close": {
-          const sid = extractSessionId(params);
-          if (sid) knownSessions.delete(sid);
+        case "session/close":
           respond(id, null);
           return;
-        }
         case "session/cancel":
           respond(id, null);
           return;
@@ -112,6 +114,11 @@ export function startAcpService(deps: AcpServiceDeps): void {
       return;
     }
     const promptPayload = (params as { prompt?: unknown }).prompt;
+    if (Array.isArray(promptPayload)) {
+      for (const content of promptPayload) {
+        remember(sid, { sessionUpdate: "user_message_chunk", content });
+      }
+    }
     deps.state.receivedPrompts.push({
       sessionId: sid,
       receivedAt: new Date().toISOString(),
@@ -175,6 +182,7 @@ export function startAcpService(deps: AcpServiceDeps): void {
 
     for (const entry of deps.state.scriptEntries) {
       if (entry.delayMs && entry.delayMs > 0) await sleep(entry.delayMs);
+      remember(sid, entry.sessionUpdate);
       notify("session/update", {
         sessionId: sid,
         update: entry.sessionUpdate,
@@ -229,14 +237,19 @@ export function startAcpService(deps: AcpServiceDeps): void {
     });
   }
 
+  function remember(sid: string, update: Record<string, unknown>): void {
+    const history = histories.get(sid) ?? [];
+    history.push(update);
+    histories.set(sid, history);
+  }
+
   function emitText(sid: string, text: string): void {
-    notify("session/update", {
-      sessionId: sid,
-      update: {
-        sessionUpdate: "agent_message_chunk",
-        content: { type: "text", text },
-      },
-    });
+    const update = {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text },
+    };
+    remember(sid, update);
+    notify("session/update", { sessionId: sid, update });
   }
 
   async function replyWithFetch(

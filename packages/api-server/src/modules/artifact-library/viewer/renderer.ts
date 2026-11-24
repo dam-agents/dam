@@ -4,6 +4,7 @@ import {
   ARTIFACT_REQUEST_TYPE,
   ARTIFACT_RESPONSE_TYPE,
   ARTIFACT_WHOAMI_TYPE,
+  artifactIconDataUrl,
   type ArtifactKind,
 } from "api-server-api";
 import type { ArtifactApiCaller } from "agent-runtime-api";
@@ -14,6 +15,15 @@ import {
 } from "./bridge-shim.js";
 import { ARTIFACT_SIZE_REPORTER, FRAME_PRINT_BODY } from "./print-size.js";
 import { escapeHtml } from "../../../core/escape-html.js";
+
+function iconHref(icon: string | null | undefined): string | null {
+  return icon ? artifactIconDataUrl(icon) : null;
+}
+
+function iconLink(icon: string | null | undefined): string {
+  const href = iconHref(icon);
+  return href ? `<link rel="icon" href="${escapeHtml(href)}"/>` : "";
+}
 
 function jsStringLiteral(s: string): string {
   return JSON.stringify(s).replaceAll("<", "\\u003c");
@@ -40,6 +50,9 @@ const CHROME_CSS = `
   .error { color: #dc2626; font-size: 13px; margin-bottom: 12px; }
 `;
 
+const SHARE_ICON_LINK =
+  '<link rel="icon" type="image/svg+xml" href="/brand/icon.svg"/><link rel="apple-touch-icon" href="/brand/icon-180.png"/>';
+
 function chromePage(title: string, body: string): string {
   return `<!doctype html>
 <html lang="en">
@@ -47,6 +60,7 @@ function chromePage(title: string, body: string): string {
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <meta name="robots" content="noindex, nofollow"/>
+${SHARE_ICON_LINK}
 <title>${escapeHtml(title)}</title>
 <style>${CHROME_CSS}</style>
 </head>
@@ -56,6 +70,7 @@ function chromePage(title: string, body: string): string {
 
 export interface WrapperInput {
   title: string;
+  iconHref: string | null;
   brandName: string;
   contentUrl: string;
   slug: string;
@@ -116,7 +131,7 @@ function renderViewerRelay(
     const data = event.data;
     if (!data || typeof data !== "object") return;
     if (data.type === ${JSON.stringify(ARTIFACT_PROMPT_TYPE)}) {
-      void post("/prompt", { prompt: data.prompt }).then((result) => {
+      void post("/prompt", { prompt: data.prompt, conversation: data.conversation }).then((result) => {
         show(result && result.ok ? notices.sent : notices[result && result.reason] || notices["agent-unreachable"]);
       });
       return;
@@ -162,6 +177,7 @@ export function renderWrapper(input: WrapperInput): string {
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <meta name="robots" content="noindex, nofollow"/>
+${input.iconHref ? `<link rel="icon" href="${escapeHtml(input.iconHref)}"/>` : SHARE_ICON_LINK}
 <title>${escapeHtml(input.title)}</title>
 <style>
   :root { color-scheme: light dark; }
@@ -204,13 +220,17 @@ const BRIDGE_SHIMS: Record<ArtifactBridge, string> = {
   shared: ARTIFACT_SHARED_BRIDGE_SHIM,
 };
 
+const OWN_ICON = /<link\b[^>]*\brel\s*=\s*["']?[^"'>]*\bicon\b/i;
+
 export function renderHtmlInner(
   content: string,
   bridge?: ArtifactBridge,
+  icon?: string | null,
 ): string {
   const shim = bridge ? BRIDGE_SHIMS[bridge] : "";
   const base = /<base[\s>]/i.test(content) ? "" : `<base target="_blank">`;
-  const prelude = `${ARTIFACT_SIZE_REPORTER}${shim}${base}`;
+  const favicon = OWN_ICON.test(content) ? "" : iconLink(icon);
+  const prelude = `${ARTIFACT_SIZE_REPORTER}${shim}${base}${favicon}`;
   const headMatch = content.match(/<head[^>]*>/i);
   if (headMatch && headMatch.index !== undefined) {
     const at = headMatch.index + headMatch[0].length;
@@ -238,13 +258,18 @@ const JSX_IMPORT_MAP = `{
   }
 }`;
 
-function renderJsxInner(source: string, title: string): string {
+function renderJsxInner(
+  source: string,
+  title: string,
+  icon: string | null | undefined,
+): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>${escapeHtml(title)}</title>
+${iconLink(icon)}
 ${ARTIFACT_SIZE_REPORTER}
 <script type="importmap">${JSX_IMPORT_MAP}</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"></script>
@@ -305,13 +330,18 @@ try {
 </html>`;
 }
 
-function renderMarkdownInner(source: string, title: string): string {
+function renderMarkdownInner(
+  source: string,
+  title: string,
+  icon: string | null | undefined,
+): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>${escapeHtml(title)}</title>
+${iconLink(icon)}
 ${ARTIFACT_SIZE_REPORTER}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
@@ -364,6 +394,7 @@ function renderCodeInner(
   source: string,
   fileName: string,
   title: string,
+  icon: string | null | undefined,
 ): string {
   const ext = extensionOf(fileName);
   const lang = HLJS_LANG_BY_EXT[ext] ?? ext;
@@ -374,6 +405,7 @@ function renderCodeInner(
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>${escapeHtml(title)}</title>
+${iconLink(icon)}
 ${ARTIFACT_SIZE_REPORTER}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)"/>
@@ -394,12 +426,18 @@ ${ARTIFACT_SIZE_REPORTER}
 export function renderTextKindInner(
   kind: Exclude<ArtifactKind, "binary">,
   source: string,
-  opts: { title: string; fileName: string; bridge?: ArtifactBridge },
+  opts: {
+    title: string;
+    icon?: string | null;
+    fileName: string;
+    bridge?: ArtifactBridge;
+  },
 ): string {
-  if (kind === "html") return renderHtmlInner(source, opts.bridge);
-  if (kind === "jsx") return renderJsxInner(source, opts.title);
-  if (kind === "markdown") return renderMarkdownInner(source, opts.title);
-  return renderCodeInner(source, opts.fileName, opts.title);
+  if (kind === "html") return renderHtmlInner(source, opts.bridge, opts.icon);
+  if (kind === "jsx") return renderJsxInner(source, opts.title, opts.icon);
+  if (kind === "markdown")
+    return renderMarkdownInner(source, opts.title, opts.icon);
+  return renderCodeInner(source, opts.fileName, opts.title, opts.icon);
 }
 
 export function renderImageInner(rawUrl: string, title: string): string {

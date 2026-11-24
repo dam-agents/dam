@@ -10,6 +10,7 @@ export interface CallAmounts {
   readonly webSearches: number;
   readonly calls: number;
   readonly estimatedCalls: number;
+  readonly awaitingCalls: number;
   readonly durationMs: number;
 }
 
@@ -23,6 +24,7 @@ export const AMOUNT_FIELDS = [
   "webSearches",
   "calls",
   "estimatedCalls",
+  "awaitingCalls",
   "durationMs",
 ] as const satisfies readonly (keyof CallAmounts)[];
 
@@ -81,6 +83,7 @@ export function mapAmounts(
     webSearches: value("webSearches"),
     calls: value("calls"),
     estimatedCalls: value("estimatedCalls"),
+    awaitingCalls: value("awaitingCalls"),
     durationMs: value("durationMs"),
   };
 }

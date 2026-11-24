@@ -1,9 +1,7 @@
-import { Add } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { SectionLabel } from "@/components/ui/section-label";
-import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
@@ -23,9 +21,9 @@ import {
 } from "../../sessions/lib/agent-session-filters.js";
 import { shownSessionId } from "../../sessions/lib/shown-session.js";
 import { useAgents, useAgentsList } from "../api/queries.js";
-import { useCreateDefaultAgent } from "../hooks/use-create-default-agent.js";
 import { useSidebarAgents } from "../hooks/use-sidebar-agents.js";
 import { useSidebarOrderActions } from "../hooks/use-sidebar-order-actions.js";
+import { CreateAgentMenu } from "./create-agent-menu.js";
 import {
   hasChannelActions,
   SidebarAgentActions,
@@ -59,7 +57,7 @@ export function SidebarAgents({
   );
   const conversationOf = useActivityConversations(attention, allAgents);
   const available = useAgents().data?.availableChannels ?? {};
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const setAgentOpen = useStore((s) => s.setSidebarAgentOpen);
   const showFolded = useStore((s) => s.sidebarShowHibernating);
   const setShowFolded = useStore((s) => s.setSidebarShowHibernating);
@@ -99,7 +97,7 @@ export function SidebarAgents({
                 startSession(agent.id);
               })
         }
-        onOpenPeople={navigate(() => navigateToSandboxHome(agent.id, "people"))}
+        onOpenPeople={navigate(() => openAgentSettings(agent.id, "people"))}
         filtered={agentFilters.has(agent.id)}
         filter={
           <ActivityFilterMenu
@@ -116,7 +114,7 @@ export function SidebarAgents({
           <SidebarAgentActions
             channels={available}
             onNewSession={navigate(() => startSession(agent.id))}
-            onConfigure={navigate(() => navigateToSandboxHome(agent.id))}
+            onConfigure={navigate(() => openAgentSettings(agent.id))}
             onBind={setBinding}
           />
         }
@@ -144,7 +142,7 @@ export function SidebarAgents({
         )}
       >
         <SectionLabel>Agents</SectionLabel>
-        <CreateAgentButton onCreate={onNavigate} />
+        <CreateAgentMenu onChoose={onNavigate} />
       </div>
       {activity.unreadable && (
         <p className="px-2.5 py-1.5 text-xs text-muted-foreground">
@@ -160,7 +158,7 @@ export function SidebarAgents({
           data-testid="sidebar-agents-hibernating"
           className="mt-px flex h-[30px] w-full items-center rounded-lg px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
-          {showFolded ? "Show less" : `See all (${folded.length} hibernating)`}
+          {showFolded ? "Show less" : `See all (${folded.length} more)`}
         </button>
       )}
       {binding && (
@@ -170,25 +168,5 @@ export function SidebarAgents({
         />
       )}
     </section>
-  );
-}
-
-function CreateAgentButton({ onCreate }: { onCreate?: () => void }) {
-  const defaultAgent = useCreateDefaultAgent();
-  return (
-    <Tooltip content="Create agent" side="right">
-      <button
-        type="button"
-        aria-label="Create agent"
-        disabled={!defaultAgent.ready}
-        onClick={() => {
-          void defaultAgent.create();
-          onCreate?.();
-        }}
-        className={`flex size-6 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 ${FOCUS_RING}`}
-      >
-        <Add size={14} />
-      </button>
-    </Tooltip>
   );
 }

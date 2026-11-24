@@ -34,6 +34,9 @@ function setup(
     tool: (name: string, _d: unknown, _shape: unknown, handler: Handler) => {
       tools.set(name, handler);
     },
+    registerTool: (name: string, _config: unknown, handler: Handler) => {
+      tools.set(name, handler);
+    },
   } as unknown as McpServer;
   const spawned: SpawnRequest[] = [];
   const from: unknown[] = [];
@@ -42,12 +45,15 @@ function setup(
     spawn: async (body: SpawnRequest, origin: unknown) => {
       spawned.push(body);
       from.push(origin);
-      return { ok: true, id: "agent-child" };
+      return { ok: true, id: "agent-child", egressWaiting: [] };
     },
   } as unknown as DriverOps;
   registerSubAgentTools(server, {
     ops,
-    awaits: { markAwaited: async () => {}, markCollected: async () => {} },
+    awaits: {
+      markAwaited: async () => {},
+      collect: async () => ({ inTurn: [] }),
+    },
     ...(sessionContext && { sessionContext }),
     ...(catalogModels && { catalogModels }),
     spawningSession: spawningSession ?? (async () => null),

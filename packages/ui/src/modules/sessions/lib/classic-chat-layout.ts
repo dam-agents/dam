@@ -1,4 +1,5 @@
 import type { SidePanelTab } from "./side-panel.js";
+import type { SidebarPanel, SidebarPanelId } from "./sidebar-panels.js";
 
 export const LEFT_MIN_W = 240;
 const LEFT_MAX_W = 400;
@@ -41,6 +42,32 @@ export function classicColumns({
   };
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: the chat header's flanking geometry, as its class names in the layout draw it: the messages' well, the gap on each side of it, and how far the agent menu's end reaches past the gap. */
+const HEADER_WELL_W = 749;
+const HEADER_GAP = 16;
+const HEADER_START_REACH = 8;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: whether the chat header can flank the messages'
+ * well, as the design draws a wide chat: the start (the agent menu, the Shared
+ * badge, the running count) must fit in the margin left of the well, and the
+ * end (New chat) in the margin right of it. Where either does not, the header
+ * sits inside the well, as in a narrow chat, so nothing spills past the chat's
+ * edge and under the sidebar.
+ */
+export function headerFlanks({
+  headerW,
+  startW,
+  endW,
+}: {
+  headerW: number;
+  startW: number;
+  endW: number;
+}): boolean {
+  const margin = (headerW - HEADER_WELL_W) / 2 - HEADER_GAP;
+  return startW <= margin + HEADER_START_REACH && endW <= margin;
+}
+
 export type ClassicAppTab = Extract<SidePanelTab, "approvals">;
 
 export function classicAppTab(
@@ -80,4 +107,27 @@ export function classicDockToggle({
   return shown
     ? { pressed: true, click: "close" }
     : { pressed: false, click: "reveal" };
+}
+
+export interface SectionsColumn {
+  shown: SidebarPanelId[];
+  open: boolean;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: which of the Files, Artifacts and Processes
+ * sections the column beside the conversation draws. On a desktop each section
+ * opens from its top-bar icon and closes with its X, so the column draws only
+ * the open ones and is gone while none is open, leaving the conversation the
+ * width. A phone shows the column as a screen of its own, so it draws every
+ * section there, each one folding from its header.
+ */
+export function sectionsColumn(
+  sections: readonly SidebarPanel[],
+  desktop: boolean,
+): SectionsColumn {
+  const opened = sections.filter((s) => s.open).map((s) => s.id);
+  return desktop
+    ? { shown: opened, open: opened.length > 0 }
+    : { shown: sections.map((s) => s.id), open: true };
 }

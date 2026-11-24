@@ -20,8 +20,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
-import { useStore } from "../../../store.js";
-import { useDeleteArtifact } from "../api/mutations.js";
+import { useConfirmDeleteArtifact } from "../hooks/use-confirm-delete-artifact.js";
 import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { picksPromptModel } from "../lib/prompt-model.js";
@@ -52,32 +51,15 @@ export function ArtifactRowMenuItems({
   menu?: keyof typeof MENU_PARTS;
 }) {
   const { Item, Separator } = MENU_PARTS[menu];
-  const showConfirm = useStore((s) => s.showConfirm);
-  const openArtifactId = useStore((s) =>
-    s.dock?.kind === "artifact" ? s.dock.id : null,
-  );
-  const setDock = useStore((s) => s.setDock);
-  const { mutate: deleteArtifact } = useDeleteArtifact();
+  const confirmAndDelete = useConfirmDeleteArtifact();
   const startSession = useStartArtifactSession(artifact);
-
-  const confirmAndDelete = async () => {
-    const confirmed = await showConfirm(
-      "All versions are deleted and its share link stops working. This cannot be undone.",
-      `Delete “${artifact.title}”?`,
-      { kind: "destructive", confirmLabel: "Delete" },
-    );
-    if (!confirmed) return;
-
-    if (openArtifactId === artifact.id) setDock(null);
-    deleteArtifact({ id: artifact.id });
-  };
 
   return (
     <>
       {isEditableArtifact(artifact) && (
         <Item onSelect={() => onEdit(artifact)}>
           <RequestQuote size={14} />
-          Edit
+          Edit source
         </Item>
       )}
       <Item onSelect={() => onRename(artifact)}>
@@ -99,7 +81,7 @@ export function ArtifactRowMenuItems({
       {startSession.available && (
         <Item onSelect={startSession.start}>
           <AddComment size={14} />
-          Discuss with agent
+          Start a new session
         </Item>
       )}
       {startSession.available && picksPromptModel(artifact) && (
@@ -113,7 +95,7 @@ export function ArtifactRowMenuItems({
         <Calendar size={14} />
         Set expiration
       </Item>
-      <Item tone="danger" onSelect={() => void confirmAndDelete()}>
+      <Item tone="danger" onSelect={() => void confirmAndDelete(artifact)}>
         <TrashCan size={14} />
         Delete artifact
       </Item>

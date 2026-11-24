@@ -1,13 +1,11 @@
 import {
   AddComment,
-  Awake,
   Branch,
   Chat,
   Copy,
   Edit,
   Exit,
   Globe,
-  Power,
   Restart,
   Terminal,
   Tools,
@@ -49,11 +47,6 @@ export function agentCommands(
     });
   const ref = cliAgentRef(agent, input.ownAgents);
   const settling = input.restarting.has(agent.id);
-  const asleep =
-    agent.state === "hibernated" &&
-    !agent.disabled &&
-    !agent.overBudget &&
-    !settling;
   const session = inChat ? input.openSession : null;
 
   return [
@@ -119,7 +112,7 @@ export function agentCommands(
       .filter(
         ({ section }) =>
           !isLockedSection(agent.access, section) &&
-          !(here && route.view === "sandbox-home" && route.section === section),
+          !(here && route.section === section),
       )
       .map(({ section, title }) =>
         of({
@@ -193,19 +186,7 @@ export function agentCommands(
       : []),
     ...(may("lifecycle")
       ? [
-          ...(asleep
-            ? [
-                of({
-                  id: "wake",
-                  label: "wake",
-                  keywords: ["start"],
-                  icon: Awake,
-                  prior: PRIOR.wake,
-                  run: () => act.wake(agent.id),
-                }),
-              ]
-            : []),
-          ...(agent.state === "running" && !agent.disabled && !settling
+          ...(agent.state === "running" && !settling
             ? [
                 of({
                   id: "restart",
@@ -216,13 +197,6 @@ export function agentCommands(
                 }),
               ]
             : []),
-          of({
-            id: "toggle-disabled",
-            label: agent.disabled ? "enable" : "disable",
-            icon: Power,
-            prior: PRIOR.disable,
-            run: () => act.toggleDisabled(agent),
-          }),
         ]
       : []),
     ...(may("delete")

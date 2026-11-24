@@ -442,6 +442,24 @@ describe("watchPages", () => {
     );
   });
 
+  // TEST_SCENARIO: Chromium's New Tab page does not always keep the address chrome://newtab/; on some starts it reports chrome://new-tab-page-third-party/ or chrome://new-tab-page/ instead. Under each address the watcher closes the start-up page, so a fresh browser still has one tab.
+  it.each(["chrome://new-tab-page-third-party/", "chrome://new-tab-page/"])(
+    "closes the start-up page at %s",
+    async (url) => {
+      const start = tab("S", url, false);
+      const own = tab("A", "about:blank", true);
+      const chrome = await fakeChrome([own, start]);
+      const { page } = await watching(chrome.url);
+      expect(page.state().tabs.map((t) => t.id)).toEqual(["A"]);
+      expect(chrome.calls).toContainEqual(
+        expect.objectContaining({
+          method: "Target.closeTarget",
+          params: { targetId: "S" },
+        }),
+      );
+    },
+  );
+
   // TEST_SCENARIO: closing a tab that is not on screen leaves the active tab as it is.
   it("keeps the active tab when another closes", async () => {
     const a = tab("A", "http://a/", true);

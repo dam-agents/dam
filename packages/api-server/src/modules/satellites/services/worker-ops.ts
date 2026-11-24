@@ -2,20 +2,25 @@ import { TRPCError } from "@trpc/server";
 import {
   formatJobRef,
   type ClaimInput,
+  type FileResultInput,
   type HeartbeatInput,
   type ReportInput,
   type SatelliteManifest,
   type WorkItem,
 } from "api-server-api";
-import type { JobRow } from "../domain/types.js";
+import type { JobRow, SatelliteRow } from "../domain/types.js";
 import type { SatellitesRepository } from "../infrastructure/satellites-repository.js";
+import type { SatelliteFileChannel } from "./file-channel.js";
 
 export const LEASE_MS = 60_000;
 const STALE_JOB_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const CLAIM_POLL_MS = 500;
+const TOUCH_INTERVAL_MS = 20_000;
+const TOUCH_MEMORY_MS = 5 * 60_000;
 
 export interface WorkerOpsDeps {
   repo: SatellitesRepository;
+  fileChannel: SatelliteFileChannel;
   maxConcurrentCeiling: number;
   deliverOutcome: (input: {
     owner: string;
@@ -28,6 +33,21 @@ export interface WorkerOpsDeps {
 }
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: A manifest is refused only for a shape the platform
+ * cannot serve at all. A tool that declares a transfer belongs to the file
+ * transfer tools a Satellite Mount replaced, and the only worker that sends one is
+ * a `dam satellite files` from before the mount: it would register a Satellite
+ * whose tools no Agent is offered, and its Jobs would never run, so the worker is
+ * told to update the CLI instead of being registered. An MCP or shell Satellite
+ * never sends one, and a tool merely *named* `download` is an ordinary tool.
+ */
+function retiredTransferTool(manifest: SatelliteManifest): string | null {
+  const retired = manifest.tools.find((tool) => tool.transfer !== undefined);
+  if (retired === undefined) return null;
+  return `${manifest.name} offers "${retired.name}" as a file transfer, which a satellite files mount replaces — update the CLI (\`dam update\`) and start the worker again`;
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: The Satellite side of the queue — connect, claim,
  * heartbeat, report, drain. It moves MCP tool calls out and outcomes back and
  * never reads either: only the machine knows what its arguments mean.
@@ -35,6 +55,30 @@ export interface WorkerOpsDeps {
  */
 export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
   const now = deps.now ?? (() => new Date());
+  const lastTouch = new Map<string, number>();
+
+  async function fileItems(
+    owner: string,
+    input: ClaimInput,
+    satellite: SatelliteRow,
+    deadline: number,
+  ): Promise<WorkItem[]> {
+    const key = `${owner}:${input.satellite}`;
+    const at = now().getTime();
+    for (const [seen, touched] of lastTouch)
+      if (at - touched > TOUCH_MEMORY_MS) lastTouch.delete(seen);
+    if (at - (lastTouch.get(key) ?? 0) >= TOUCH_INTERVAL_MS) {
+      lastTouch.set(key, at);
+      await deps.repo.touch(owner, input.satellite, input.incarnation);
+    }
+    return deps.fileChannel.take(
+      owner,
+      input.satellite,
+      satellite.incarnation,
+      input.capacity,
+      Math.max(0, deadline - now().getTime()),
+    );
+  }
 
   return {
     /**
@@ -53,6 +97,9 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
       host?: string,
       resume?: string,
     ): Promise<{ incarnation: string }> {
+      const retired = retiredTransferTool(manifest);
+      if (retired !== null)
+        throw new TRPCError({ code: "BAD_REQUEST", message: retired });
       if (resume === undefined)
         return deps.repo.upsertFromManifest(
           owner,
@@ -97,6 +144,13 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
             input.incarnation,
           );
 
+        if (satellite.kind === "files") {
+          const files = await fileItems(owner, input, satellite, deadline);
+          if (files.length > 0 || now().getTime() >= deadline) return files;
+          await new Promise((resolve) => setTimeout(resolve, CLAIM_POLL_MS));
+          continue;
+        }
+
         await deps.repo.touch(owner, input.satellite, input.incarnation);
 
         const cancels = await deps.repo.takeCancellations(
@@ -120,20 +174,19 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
           input.incarnation,
         );
         const names = await Promise.all(
-          claimed.map(({ job }) =>
+          claimed.map((job) =>
             (deps.agentName?.(job.agentId) ?? Promise.resolve(null)).catch(
               () => null,
             ),
           ),
         );
-        for (const [index, { job, transferToken }] of claimed.entries())
+        for (const [index, job] of claimed.entries())
           items.push({
             kind: "call",
             sequence: job.sequence,
             tool: job.tool,
             args: job.args,
             agent: { id: job.agentId, name: names[index] ?? null },
-            ...(transferToken === undefined ? {} : { transferToken }),
           });
 
         if (items.length > 0 || now().getTime() >= deadline) return items;
@@ -208,6 +261,15 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
       });
     },
 
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: One file operation's answer, from the worker
+     * that claimed it. It goes straight to the channel: a files Satellite keeps
+     * no Job row, so there is nothing here to settle, deliver or wake.
+     */
+    async fileResult(owner: string, input: FileResultInput): Promise<void> {
+      await deps.fileChannel.settle(owner, input);
+    },
+
     async drain(
       owner: string,
       satellite: string,
@@ -222,6 +284,7 @@ export function createSatelliteWorkerOps(deps: WorkerOpsDeps) {
           });
       }
       await deps.repo.setDraining(owner, satellite, true, incarnation);
+      await deps.fileChannel.satelliteOffline(owner, satellite);
     },
   };
 }

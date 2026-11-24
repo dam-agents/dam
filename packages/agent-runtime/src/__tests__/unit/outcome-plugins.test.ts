@@ -24,6 +24,7 @@ const pair = {
 function fakeDriver() {
   const calls: Parameters<TriggerSessionDriver["start"]>[0][] = [];
   const driver: TriggerSessionDriver = {
+    cancel: async () => true,
     async start(opts) {
       calls.push(opts);
       return { sessionId: "s-1", openedOn: null };

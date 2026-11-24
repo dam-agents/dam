@@ -1,6 +1,6 @@
 import { WebSocket } from "ws";
 
-import { proxyAgentForUrl } from "../../shared/ws-proxy.js";
+import { wsClientOptions } from "../../shared/ws-proxy.js";
 
 export interface JsonRpcError {
   code: number;
@@ -46,7 +46,7 @@ const CLIENT_ANSWERED_REQUESTS: Record<string, unknown> = {
 export async function connectRun(
   deps: RunConnectionDeps,
 ): Promise<RunConnection> {
-  const ws = new WebSocket(deps.url, { agent: proxyAgentForUrl(deps.url) });
+  const ws = new WebSocket(deps.url, wsClientOptions(deps.url));
   await new Promise<void>((resolve, reject) => {
     ws.on("open", () => {
       resolve();

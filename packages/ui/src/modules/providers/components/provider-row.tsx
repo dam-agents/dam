@@ -26,7 +26,7 @@ interface Props {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: one provider in Settings, a card of its own as on
- * an agent's page: a small icon, its name, its balance and spend pills, and the
+ * an agent's settings: a small icon, its name, its balance and spend pills, and the
  * words that say where it stands. The icon and name open it.
  */
 export function ProviderRow({

@@ -2,6 +2,7 @@ import { channelNetworkAccessGuidance } from "./network-access-copy.js";
 import { channelOwnerGuidance, type ChannelOwner } from "./owner-copy.js";
 import { channelPermissionCheckGuidance } from "./permission-check-copy.js";
 import { escapeFrameText } from "./frame-text.js";
+import { CHANGED_MESSAGES_NOTE, editedMessageText } from "./slack-edit-copy.js";
 import { OUTBOUND_TOOL_PREFIX } from "../../../core/platform-mcp.js";
 
 const TOOL = OUTBOUND_TOOL_PREFIX;
@@ -10,6 +11,7 @@ export interface OwnedThreadMessage {
   ts: string;
   speaker: string;
   text: string;
+  edited?: boolean;
 }
 
 export interface OwnedThreadBatch {
@@ -18,6 +20,12 @@ export interface OwnedThreadBatch {
   firstLine: string;
   messages: OwnedThreadMessage[];
   missed: string[];
+  changed?: string[];
+}
+
+function messageText(m: OwnedThreadMessage): string {
+  const text = escapeFrameText(m.text);
+  return m.edited ? editedMessageText(m.ts, text, "carry-on") : text;
 }
 
 function threadSentence(batch: OwnedThreadBatch): string {
@@ -32,6 +40,9 @@ function batchLines(batch: OwnedThreadBatch): string[] {
   return [
     `<slack-thread chatId="${batch.channel}" threadTs="${batch.threadTs}">`,
     threadSentence(batch),
+    ...(batch.changed && batch.changed.length > 0
+      ? [CHANGED_MESSAGES_NOTE, ...batch.changed]
+      : []),
     ...(batch.missed.length > 0
       ? [
           "Earlier in the thread, after the last message you were handed " +
@@ -39,9 +50,11 @@ function batchLines(batch: OwnedThreadBatch): string[] {
           ...batch.missed,
           "New:",
         ]
-      : []),
+      : batch.changed && batch.changed.length > 0
+        ? ["New:"]
+        : []),
     ...batch.messages.map(
-      (m) => `[ts ${m.ts}] ${m.speaker}: ${escapeFrameText(m.text)}`,
+      (m) => `[ts ${m.ts}] ${m.speaker}: ${messageText(m)}`,
     ),
     "</slack-thread>",
   ];

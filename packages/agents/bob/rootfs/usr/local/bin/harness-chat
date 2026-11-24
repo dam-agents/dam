@@ -22,6 +22,11 @@ if [ -n "$PLATFORM_PROVIDER$PLATFORM_MODEL$BOB_SESSION_APPROVALS" ]; then
   export BOB_SETTINGS_FILE
   preload="$preload --import=/usr/local/lib/bob-settings-file.mjs"
 fi
+# bob-outside-workspace.mjs: lays the approval posture over what Bob reads of
+# its settings file, so tools reach the agent's own files in $HOME without an
+# approval; see the Bob README, "Outside the work directory". It comes after
+# bob-settings-file.mjs, so it sees the path Bob names.
+preload="$preload --import=/usr/local/lib/bob-outside-workspace.mjs"
 # Bob's model calls go to the Model Router on the machine's loopback, which Bob's
 # own proxy agent would send through the gateway proxy.
 if [ -n "$PLATFORM_MODEL_ROUTER_URL" ]; then

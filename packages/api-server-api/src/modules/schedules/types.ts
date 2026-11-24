@@ -115,7 +115,7 @@ export interface Schedule {
   name: string;
   agentId: string;
   spec: ScheduleSpec;
-  /** UNIT_BOUNDARY_DESCRIPTION: why the profile this schedule names cannot run on its agent, so a fire refuses with that reason instead of running another model. */
+  /** UNIT_BOUNDARY_DESCRIPTION: why the profile this schedule names cannot run on its agent, which the schedule's row shows; a fire runs on the pair it resolves instead. */
   profileIssue?: string;
   /** UNIT_BOUNDARY_DESCRIPTION: the subagent slot resolved for a fire: the subagent profile's harness and model, or the values the schedule keeps; absent, the agent picks. */
   subagentSettings?: Record<string, string>;

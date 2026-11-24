@@ -1,0 +1,49 @@
+#!/usr/bin/env -S node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON
+//MISE description="k-search's Python lock pins what its image installs, and holds every pin of it"
+//MISE sources=["k-search/image.toml", "k-search/requirements.in", "k-search/requirements.txt", ".mise/tasks/check/k-search-lock"]
+//MISE outputs=[]
+//MISE cache.enabled=true
+import { readFileSync } from "node:fs";
+
+const read = (path) => readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
+const regenerate =
+  "uv pip compile requirements.in --universal --python-version 3.12 --generate-hashes --no-header -o requirements.txt";
+
+const image = read("k-search/image.toml");
+const tool = image.split(/^(?=\[)/m).find((section) => section.startsWith('[tools."pipx:'));
+const field = (key) => tool?.match(new RegExp(`^${key} = "([^"]+)"$`, "m"))?.[1];
+const extras = field("extras");
+const installed = [
+  `${tool?.match(/^\[tools\."pipx:([^"]+)"\]$/m)?.[1]}${extras ? `[${extras}]` : ""}==${field("version")}`,
+  ...[...(field("uvx_args") ?? "").matchAll(/--with (\S+)/g)].map(([, requirement]) =>
+    requirement.replace(/^([^@]+)@(?=\S)/, "$1 @ "),
+  ),
+];
+
+const asked = read("k-search/requirements.in")
+  .split("\n")
+  .filter((line) => line.trim() !== "" && !line.startsWith("#"));
+if (asked.join("\n") !== installed.join("\n")) {
+  console.error(
+    `k-search-lock: image.toml installs ${installed.join(", ")}, but requirements.in asks for ${asked.join(", ")}. ` +
+      "Write what image.toml installs into packages/agents/k-search/requirements.in, then regenerate the lock there with " +
+      regenerate,
+  );
+  process.exit(1);
+}
+
+const lock = read("k-search/requirements.txt");
+const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const missing = asked.filter((requirement) => {
+  const [, name, version, url] =
+    requirement.match(/^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]]*\])?(?:==(\S+)| @ (\S+))$/) ?? [];
+  return version ? !new RegExp(`^${escape(name)}==${escape(version)}( |$)`, "m").test(lock) : !lock.includes(url);
+});
+if (missing.length > 0) {
+  console.error(
+    `k-search-lock: requirements.txt holds no ${missing.join(", ")} that requirements.in asks for. ` +
+      `Regenerate the lock in packages/agents/k-search with ${regenerate}`,
+  );
+  process.exit(1);
+}
+console.log("k-search-lock: ok");

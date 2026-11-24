@@ -108,14 +108,11 @@ export const profileUses = (profile: ProfileWithUsage): number =>
   profile.usage.schedules +
   (profile.usage.artifacts ?? 0);
 
-/** UNIT_BOUNDARY_DESCRIPTION: the one order every list of profiles shows: the default for new agents, then the most used, then by name. Display only: the pickers match a pick to a profile in the server's order, so a reorder never moves a saved reference to a twin with the same values. */
+/** UNIT_BOUNDARY_DESCRIPTION: the one order every list of profiles shows: the most used, then by name. Display only: the pickers match a pick to a profile in the server's order, so a reorder never moves a saved reference to a twin with the same values. */
 export function sortProfiles(
   profiles: readonly ProfileWithUsage[],
 ): ProfileWithUsage[] {
   return [...profiles].sort(
-    (a, b) =>
-      Number(b.newAgentDefault) - Number(a.newAgentDefault) ||
-      profileUses(b) - profileUses(a) ||
-      a.name.localeCompare(b.name),
+    (a, b) => profileUses(b) - profileUses(a) || a.name.localeCompare(b.name),
   );
 }

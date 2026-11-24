@@ -33,7 +33,7 @@ export const createArtifactsSlice: StateCreator<
   openArtifactDirty: false,
   artifactsSectionOpen: readPersistedFlag(
     ARTIFACTS_SECTION_OPEN_STORAGE_KEY,
-    true,
+    false,
   ),
   artifactFolderCollapse: {},
   setOpenArtifactEdit: (edit) => set({ openArtifactEdit: edit }),

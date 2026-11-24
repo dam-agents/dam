@@ -1,6 +1,7 @@
 import {
   type EgressPreset,
   isProtectedAgentEnvName,
+  isTelemetryIdentityEnv,
   providerTypeForTemplateId,
 } from "api-server-api";
 import { useMemo } from "react";
@@ -33,7 +34,6 @@ import {
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
 import { useSchedules } from "../../schedules/api/queries.js";
-import { isUpcoming } from "../../schedules/lib/once-schedule.js";
 import { useProviderConnections } from "../../sessions/api/session-pair.js";
 import { useAgentSpendStatus } from "../../spend/api/queries.js";
 import { agentLimitOf } from "../../spend/lib/agent-limit.js";
@@ -44,6 +44,7 @@ import {
   formatSpent,
 } from "../../spend/lib/format.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
+import { schedulesNavSummary, skillsNavSummary } from "../lib/nav-summaries.js";
 
 type SectionSummaries = Partial<Record<SandboxSection, string>>;
 type SectionWarnings = Partial<Record<SandboxSection, string>>;
@@ -117,7 +118,7 @@ export function useSectionSummaries(agent: AgentView | null): {
   const network = currentPreset ? PRESET_SUMMARY[currentPreset] : undefined;
 
   const envCount = agent?.env?.filter(
-    (e) => !isProtectedAgentEnvName(e.name),
+    (e) => !isProtectedAgentEnvName(e.name) && !isTelemetryIdentityEnv(e),
   ).length;
   const environment =
     envCount === undefined
@@ -146,14 +147,11 @@ export function useSectionSummaries(agent: AgentView | null): {
         (s) => agentId !== undefined && s.grantedAgentIds.includes(agentId),
       )
       .map((s) => s.name);
-    const names =
+    return (
       formatNameList([...new Set(titles), ...satelliteNames]) ??
-      "No connections added";
-    return agent?.requireConnectionAddress
-      ? `${names} · addressed only`
-      : names;
+      "No connections added"
+    );
   }, [
-    agent?.requireConnectionAddress,
     connectionsQuery.data,
     apps,
     providerAppIds,
@@ -167,13 +165,7 @@ export function useSectionSummaries(agent: AgentView | null): {
     if (!hasRun) return "Not known yet";
     const state = skillsState.data;
     if (!state) return undefined;
-    const on = state.installed.length;
-    const created = state.standalone.length;
-    if (on === 0 && created === 0 && sourceCount === 0) return "None yet";
-    const enabled = on === 0 ? "None enabled" : `${on} enabled`;
-    return sourceCount
-      ? `${enabled} from ${plural(sourceCount, "source")}`
-      : enabled;
+    return skillsNavSummary(state, sourceCount);
   }, [hasRun, configPending, skillsState.data, sourceCount]);
 
   const availableChannels = useAgents().data?.availableChannels;
@@ -193,9 +185,7 @@ export function useSectionSummaries(agent: AgentView | null): {
 
   const schedulesSummary = useMemo(() => {
     if (!agent) return undefined;
-    const running = schedules.filter(isUpcoming).length;
-    if (running === 0) return "No schedules";
-    return `${plural(running, "schedule")} running`;
+    return schedulesNavSummary(schedules);
   }, [agent, schedules]);
 
   const providers = useProviderConnections(agent?.id ?? null);

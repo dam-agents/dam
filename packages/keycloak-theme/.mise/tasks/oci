@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-#MISE description="Build the Keycloak image, upstream Keycloak with the theme JAR and its build options pre-built, to dist/oci/keycloak.tar"
-#MISE sources=["src/**/*", "public/**/*", "!public/keycloakify-dev-resources/**", "vite.config.ts", "package.json", ".mise/tasks/build", ".mise/tasks/oci", "{{config_root}}/../../pnpm-lock.yaml", "{{config_root}}/../../.mise/tasks/image/pack", "{{config_root}}/../../.mise/config.toml"]
+#MISE description="Build the Keycloak image, upstream Keycloak with the theme JAR, the Environments extension and its build options pre-built, to dist/oci/keycloak.tar"
+#MISE sources=["src/**/*", "public/**/*", "!public/keycloakify-dev-resources/**", "vite.config.ts", "package.json", ".mise/tasks/build", ".mise/tasks/oci", "{{config_root}}/../keycloak-environments/src/**/*", "{{config_root}}/../keycloak-environments/pom.xml", "{{config_root}}/../../pnpm-lock.yaml", "{{config_root}}/../../.mise/tasks/image/pack", "{{config_root}}/../../.mise/config.toml"]
 #MISE outputs=["dist/oci/keycloak.tar"]
 set -euo pipefail
 base="$(mise config get -f "$MISE_CONFIG_ROOT/../../.mise/config.toml" vars.base_image_keycloak)"
 mise run //packages/keycloak-theme:build
+mise run //packages/keycloak-environments:build
 root="$(mktemp -d)"
 trap 'rm -rf "$root"' EXIT
 mkdir "$root/providers" "$root/quarkus"
 cp dist/jar/keycloak-theme-for-kc-all-other-versions.jar "$root/providers/keycloak-theme.jar"
+cp ../keycloak-environments/target/keycloak-environments.jar "$root/providers/keycloak-environments.jar"
 
 # `kc.sh build` here, with the build options the chart starts Keycloak with, so
 # `start --optimized` skips the Quarkus augmentation every start otherwise runs
@@ -28,8 +30,8 @@ kc="$root/keycloak"
 cp -a "$cache/opt/keycloak" "$kc"
 # mtime 0, as the layer stores it: Keycloak compares a provider's timestamp to
 # the one the build saw.
-touch -d @0 "$root/providers/keycloak-theme.jar"
-cp -p "$root/providers/keycloak-theme.jar" "$kc/providers/"
+touch -d @0 "$root/providers/keycloak-theme.jar" "$root/providers/keycloak-environments.jar"
+cp -p "$root/providers/keycloak-theme.jar" "$root/providers/keycloak-environments.jar" "$kc/providers/"
 "$kc/bin/kc.sh" build --db=postgres --health-enabled=true --features=token-exchange,admin-fine-grained-authz:v1
 cp "$kc"/lib/quarkus/* "$root/quarkus/"
 chmod 0664 "$root"/quarkus/*

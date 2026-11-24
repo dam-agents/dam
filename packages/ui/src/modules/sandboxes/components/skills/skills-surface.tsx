@@ -1,4 +1,4 @@
-import { Save } from "@carbon/icons-react";
+import { Document, Save } from "@carbon/icons-react";
 import type { DragEvent } from "react";
 import { useState } from "react";
 
@@ -12,7 +12,6 @@ import { useWakeAgent } from "../../../agents/hooks/use-wake-agent.js";
 import { useSkillsConfirms } from "../../hooks/use-skills-confirms.js";
 import { useSkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
-import { AgentDisabledNotice } from "./agent-disabled-notice.js";
 import { HiddenSourcesList } from "./hidden-sources-list.js";
 import { LocalSkillsGroup } from "./local-skills-group.js";
 import { PlatformSkillsGroup } from "./platform-skills-group.js";
@@ -27,25 +26,37 @@ import { StandaloneSkillsGroup } from "./standalone-skills-group.js";
 export function SkillsSurface({
   agentId,
   agentState,
-  agentDisabled = false,
   readOnly,
   comingUp,
   managesLibrary,
   canPublish,
+  compact = false,
+  hideSwitches = false,
+  onOpenModal,
+  onManageConnections,
 }: {
   agentId: string | null;
   agentState: AgentState | undefined;
-  agentDisabled?: boolean;
   readOnly: boolean;
   comingUp?: boolean;
   managesLibrary: boolean;
   canPublish: boolean;
+  /** UNIT_BOUNDARY_DESCRIPTION: the composer + menu's Skills panel, as the design draws it: the same search, counts, groups and switches, with no skill-set or row actions and no add rows, which its footer holds; an Agent with no skill of its own shows the design's drop zone. */
+  compact?: boolean;
+  /** UNIT_BOUNDARY_DESCRIPTION: the + menu's read-only state for a viewer who may not change skills: the same groups, with no switches. */
+  hideSwitches?: boolean;
+  /** UNIT_BOUNDARY_DESCRIPTION: where the compact surface's dialogs open: the + menu draws them after it closes, so none is drawn under the menu or closed with it. */
+  onOpenModal?: (modal: SkillsModal) => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: the compact surface's way to the Agent's Connections: the + menu closes first, so the settings never open under it. */
+  onManageConnections?: () => void;
 }) {
   const isError = agentState === "error";
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const wakeAgent = useWakeAgent();
   const { hasRun, pending: configPending } = useResolvedHarnessConfig(agentId);
   const [openModal, setOpenModal] = useState<SkillsModal | null>(null);
+  const showModal = (modal: SkillsModal) =>
+    onOpenModal ? onOpenModal(modal) : setOpenModal(modal);
   const [pageDrag, setPageDrag] = useState(false);
   const [query, setQuery] = useState("");
 
@@ -73,18 +84,15 @@ export function SkillsSurface({
   } = derived;
 
   const openAddSource = () =>
-    setOpenModal({ kind: "add-source", mode: "github", files: [] });
-  const manageConnections = agentId
-    ? () => navigateToSandboxHome(agentId, "connections")
-    : undefined;
+    showModal({ kind: "add-source", mode: "github", files: [] });
+  const manageConnections = compact
+    ? onManageConnections
+    : agentId
+      ? () => openAgentSettings(agentId, "connections")
+      : undefined;
 
   const ran = hasRun || surface.standaloneSnapshot !== undefined;
-  const disabledNotice =
-    agentDisabled && agentId ? (
-      <AgentDisabledNotice agentId={agentId} />
-    ) : undefined;
-
-  const dropEnabled = !readOnly && !!agentId;
+  const dropEnabled = !readOnly && !hideSwitches && !!agentId;
   const surfaceDropProps = dropEnabled
     ? {
         onDragOver: (e: DragEvent<HTMLDivElement>) => {
@@ -101,7 +109,7 @@ export function SkillsSurface({
           setPageDrag(false);
           const files = [...e.dataTransfer.files];
           if (files.length > 0)
-            setOpenModal({ kind: "add-source", mode: "upload", files });
+            showModal({ kind: "add-source", mode: "upload", files });
         },
       }
     : {};
@@ -119,11 +127,11 @@ export function SkillsSurface({
           <SkillSourcesSkeleton />
         ) : (
           <SkillsReadOnlyPanel
+            agentId={agentId}
             surface={surface}
             derived={derived}
             mode={ran ? "stopped" : "never-run"}
             comingUp={!!comingUp}
-            disabledNotice={disabledNotice}
             onStart={() => agentId && wakeAgent.wake(agentId)}
             onAddSource={managesLibrary ? openAddSource : undefined}
             onRemove={
@@ -136,14 +144,15 @@ export function SkillsSurface({
         )
       ) : (
         <>
-          <div className="mb-5">
+          <div className={compact ? "mb-4" : "mb-5"}>
             <SkillsSearchHeader
+              onWord={compact ? "on" : undefined}
               query={query}
               onQueryChange={setQuery}
               totals={totals}
               matchCount={matchCount}
               notice={
-                drifted.length > 0 ? (
+                drifted.length > 0 && !hideSwitches ? (
                   <SkillDriftBanner
                     drifted={drifted}
                     busy={updatingAll}
@@ -152,6 +161,7 @@ export function SkillsSurface({
                 ) : undefined
               }
               actions={
+                !compact &&
                 managesLibrary && (
                   <Button
                     variant="outline"
@@ -164,7 +174,7 @@ export function SkillsSurface({
                           ? undefined
                           : "Turn on at least one skill from a source to save a set"
                     }
-                    onClick={() => setOpenModal({ kind: "save-set" })}
+                    onClick={() => showModal({ kind: "save-set" })}
                   >
                     <Save size={16} /> Save as skill set…
                   </Button>
@@ -173,7 +183,7 @@ export function SkillsSurface({
             />
           </div>
 
-          <div className="flex flex-col gap-8">
+          <div className={cn("flex flex-col", compact ? "gap-6" : "gap-8")}>
             {(shownCreatedHere.length > 0 || !searching) && (
               <StandaloneSkillsGroup
                 skills={shownCreatedHere}
@@ -182,7 +192,7 @@ export function SkillsSurface({
                 canPublish={publishableSources.length > 0}
                 onPublish={
                   canPublish
-                    ? (skill) => setOpenModal({ kind: "publish", skill })
+                    ? (skill) => showModal({ kind: "publish", skill })
                     : undefined
                 }
                 onDownload={(skill) => void downloadStandalone(skill)}
@@ -194,14 +204,18 @@ export function SkillsSurface({
                 }
                 onOpenSkill={
                   agentId
-                    ? (skill) => setOpenModal({ kind: "render-local", skill })
+                    ? (skill) => showModal({ kind: "render-local", skill })
                     : undefined
                 }
                 trackTargets={trackTargets}
+                hideRowActions={compact}
+                emptyState={
+                  compact && !hideSwitches ? <CompactSkillsEmpty /> : undefined
+                }
                 onUpload={
-                  dropEnabled
+                  !compact && dropEnabled
                     ? () =>
-                        setOpenModal({
+                        showModal({
                           kind: "add-source",
                           mode: "upload",
                           files: [],
@@ -218,7 +232,7 @@ export function SkillsSurface({
               onAddSource={
                 managesLibrary
                   ? () =>
-                      setOpenModal({
+                      showModal({
                         kind: "add-source",
                         mode: "github",
                         files: [],
@@ -226,9 +240,9 @@ export function SkillsSurface({
                   : undefined
               }
               onOpenSkill={(source, skill) =>
-                setOpenModal({ kind: "render", source, skill })
+                showModal({ kind: "render", source, skill })
               }
-              onAddSets={() => setOpenModal({ kind: "add-sets" })}
+              onAddSets={() => showModal({ kind: "add-sets" })}
               onToggleAll={(src, on, scope) =>
                 void toggleAllWithConfirm(src, on, scope)
               }
@@ -238,8 +252,10 @@ export function SkillsSurface({
                   : undefined
               }
               onManageConnections={manageConnections}
+              compact={compact}
+              hideSwitches={hideSwitches}
             />
-            {!managesLibrary && (
+            {!managesLibrary && !compact && (
               <HiddenSourcesList
                 sources={surface.hiddenSources}
                 onShow={(id) => surface.setSourceHidden(id, false)}
@@ -251,12 +267,12 @@ export function SkillsSurface({
                 skills={shownPlatform}
                 onOpenSkill={
                   agentId
-                    ? (skill) => setOpenModal({ kind: "render-local", skill })
+                    ? (skill) => showModal({ kind: "render-local", skill })
                     : undefined
                 }
                 onOpenSection={
-                  agentId
-                    ? (section) => navigateToSandboxHome(agentId, section)
+                  agentId && !compact
+                    ? (section) => openAgentSettings(agentId, section)
                     : undefined
                 }
               />
@@ -267,7 +283,7 @@ export function SkillsSurface({
                 skills={shownBuiltIn}
                 onOpenSkill={
                   agentId
-                    ? (skill) => setOpenModal({ kind: "render-local", skill })
+                    ? (skill) => showModal({ kind: "render-local", skill })
                     : undefined
                 }
               />
@@ -283,7 +299,7 @@ export function SkillsSurface({
         derived={derived}
         onPublish={
           canPublish
-            ? (skill) => setOpenModal({ kind: "publish", skill })
+            ? (skill) => showModal({ kind: "publish", skill })
             : undefined
         }
         onDeleteLocal={(skill, pub) =>
@@ -291,6 +307,21 @@ export function SkillsSurface({
         }
         onClose={() => setOpenModal(null)}
       />
+    </div>
+  );
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the design's drop zone for an Agent with no skill of its own in the + menu: a dashed box, a document glyph and the three ways to get one. */
+function CompactSkillsEmpty() {
+  return (
+    <div
+      data-testid="skills-compact-empty"
+      className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-4 py-6 text-center"
+    >
+      <Document size={16} className="text-muted-foreground" />
+      <p className="text-sm text-muted-foreground">
+        Drop a .md file here, add a source, or describe what you need below
+      </p>
     </div>
   );
 }

@@ -1,0 +1,474 @@
+import { describe, it, expect } from "vitest";
+import { configureLogger } from "../../core/logger.js";
+import type { SlackMessage } from "../../modules/channels/infrastructure/slack-gateway.js";
+import { mentionedCommand } from "../../modules/channels/infrastructure/slack-mention-commands.js";
+import {
+  SLACK_HARNESS_OWNER,
+  slackWorkerHarness,
+} from "../helpers/slack-worker.js";
+
+configureLogger({ level: "error", write: () => {} });
+
+const BOUND = "C1";
+const OTHER = "C2";
+const WEB = "s-web";
+
+const tsAt = (i: number) => `${1758000000 + i * 60}.000000`;
+
+const topLevel = (count: number): SlackMessage[] =>
+  Array.from({ length: count }, (_, i) => ({
+    ts: tsAt(i),
+    user: "U777",
+    text: `message ${i}`,
+  }));
+
+type Read = {
+  messages: string[];
+  conversationId: string;
+  hasMore: boolean;
+  cursor?: string;
+};
+
+/**
+ * TEST_OVERVIEW: Channel history, an opt-in on one Agent's Slack binding.
+ * Where it is on, read_channel_history reads that conversation's top-level
+ * messages back in time, page by page, and every thread a page shows becomes
+ * readable with read_thread; a turn there names the tool. Where it is off —
+ * the default — the Agent reaches nothing past the window it is handed. The
+ * in-chat command turns it on and off for the person who connected the Agent
+ * or its owner, and the conversation's agent list says who has it.
+ */
+const harness = (opts: Parameters<typeof slackWorkerHarness>[0] = {}) =>
+  slackWorkerHarness({
+    boundChannelId: BOUND,
+    channels: [{ id: BOUND, name: "general", botIsMember: true }],
+    sessions: [{ sessionId: WEB, platform: { type: "regular" } }],
+    ...opts,
+  });
+
+describe("what read_channel_history reaches", () => {
+  /**
+   * TEST_SCENARIO: The opt-in is per conversation, so a second conversation
+   * the Agent is bound to without it stays closed, and the refusal names the
+   * one that is open so the Agent can tell the person where it can look.
+   */
+  it("reads a conversation with history on and refuses one without, naming where it is on", async () => {
+    const h = harness({ history: true, otherBound: [OTHER] });
+    h.gw.setThreadedHistory(topLevel(3));
+    await h.worker.connect();
+
+    const read = (await h.worker.readChannelHistory("agent-1", {
+      sessionId: WEB,
+    })) as Read;
+    expect(read.conversationId).toBe(BOUND);
+    expect(read.hasMore).toBe(false);
+    expect(read.messages).toHaveLength(3);
+    expect(read.messages[0]).toContain(`ts ${tsAt(0)}]: message 0`);
+    expect(read.messages[2]).toContain("message 2");
+
+    const refused = await h.worker.readChannelHistory("agent-1", {
+      sessionId: WEB,
+      conversationId: OTHER,
+    });
+    expect(refused).toEqual({
+      error: expect.stringContaining(
+        `channel history is not on for you in ${OTHER}`,
+      ),
+    });
+    expect((refused as { error: string }).error).toContain(
+      `it is on for you in ${BOUND}`,
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: Turning history off must close the tool at once, even for
+   * a session that still lists it, because the check runs on every call.
+   */
+  it("is off by default, and refuses every read once it is turned off", async () => {
+    const never = harness();
+    never.gw.setThreadedHistory(topLevel(3));
+    await never.worker.connect();
+    expect(
+      await never.worker.readChannelHistory("agent-1", { sessionId: WEB }),
+    ).toEqual({
+      error: expect.stringContaining("it is on nowhere for you"),
+    });
+
+    const h = harness({ history: true });
+    h.gw.setThreadedHistory(topLevel(3));
+    await h.worker.connect();
+    expect(
+      await h.worker.readChannelHistory("agent-1", { sessionId: WEB }),
+    ).toMatchObject({
+      conversationId: BOUND,
+    });
+    h.history.on = false;
+    expect(
+      await h.worker.readChannelHistory("agent-1", {
+        sessionId: WEB,
+        conversationId: BOUND,
+      }),
+    ).toEqual({ error: expect.stringContaining(`not on for you in ${BOUND}`) });
+  });
+});
+
+describe("which conversation a session may read", () => {
+  /**
+   * TEST_SCENARIO: The people in one channel may not be in another, so a
+   * turn that answers in Slack conversation C2 must not read C1's past, even
+   * where C1 has channel history on; a turn in C1 reads C1.
+   */
+  it("lets a Slack turn read only its own conversation", async () => {
+    const h = harness({
+      history: true,
+      otherBound: [OTHER],
+      sessions: [
+        {
+          sessionId: "s-in-other",
+          platform: { type: "channel_slack", threadTs: `${OTHER}:${tsAt(1)}` },
+        },
+        {
+          sessionId: "s-in-bound",
+          platform: { type: "channel_slack", threadTs: `${BOUND}:${tsAt(1)}` },
+        },
+      ],
+    });
+    h.gw.setThreadedHistory(topLevel(3));
+    await h.worker.connect();
+
+    expect(
+      await h.worker.readChannelHistory("agent-1", {
+        sessionId: "s-in-other",
+        conversationId: BOUND,
+      }),
+    ).toEqual({
+      error: expect.stringContaining(
+        `reads only that conversation's history, ${OTHER}`,
+      ),
+    });
+    expect(
+      await h.worker.readChannelHistory("agent-1", { sessionId: "s-in-bound" }),
+    ).toMatchObject({ conversationId: BOUND });
+  });
+
+  /**
+   * TEST_SCENARIO: A tool call arrives while the platform's own turn runs,
+   * before the runtime may list a new session, so the running turn alone must
+   * tell which conversation the session answers in.
+   */
+  it("knows the conversation of a running Slack turn without the runtime's list", async () => {
+    let read: ((target: string) => Promise<unknown>) | null = null;
+    let during: unknown;
+    const h = harness({
+      history: true,
+      otherBound: [OTHER],
+      sessions: [],
+      makeAcp: (base) => ({
+        ...base,
+        sendPrompt: async (_prompt, opts) => {
+          opts.onSession?.("s-live", "p-1");
+          during = await read!(OTHER);
+          return "the answer";
+        },
+      }),
+    });
+    read = (target) =>
+      h.worker.readChannelHistory("agent-1", {
+        sessionId: "s-live",
+        conversationId: target,
+      });
+    await h.worker.connect();
+    await h.gw.fireMention({
+      user: "U888",
+      channel: BOUND,
+      ts: tsAt(200),
+      text: "what happened in the other channel",
+    });
+    await h.settled(() => during !== undefined);
+
+    expect(during).toEqual({
+      error: expect.stringContaining(
+        `reads only that conversation's history, ${BOUND}`,
+      ),
+    });
+  });
+
+  it("reads nothing for a Telegram chat's turn or a call tied to no session", async () => {
+    const h = harness({
+      history: true,
+      sessions: [
+        {
+          sessionId: "s-telegram",
+          platform: { type: "channel_telegram", threadTs: "tg:42" },
+        },
+      ],
+    });
+    h.gw.setThreadedHistory(topLevel(3));
+    await h.worker.connect();
+
+    expect(
+      await h.worker.readChannelHistory("agent-1", { sessionId: "s-telegram" }),
+    ).toEqual({ error: expect.stringContaining("no Slack history") });
+    for (const query of [{}, { sessionId: "s-unknown" }]) {
+      expect(await h.worker.readChannelHistory("agent-1", query)).toEqual({
+        error: expect.stringContaining("could not be tied to the session"),
+      });
+    }
+  });
+});
+
+describe("paging back through a conversation", () => {
+  /**
+   * TEST_SCENARIO: A page is the newest window, so the older messages are
+   * reached only by the cursor it returns; a cursor names its conversation,
+   * so one from elsewhere is refused rather than read against this one.
+   */
+  it("pages back with the cursor it returns and refuses a cursor from another conversation", async () => {
+    const h = harness({ history: true });
+    h.gw.setThreadedHistory(topLevel(130));
+    await h.worker.connect();
+
+    const first = (await h.worker.readChannelHistory("agent-1", {
+      sessionId: WEB,
+    })) as Read;
+    expect(first.messages).toHaveLength(100);
+    expect(first.messages[0]).toContain("message 30");
+    expect(first.messages[99]).toContain("message 129");
+    expect(first.hasMore).toBe(true);
+    expect(first.cursor).toBeDefined();
+
+    const second = (await h.worker.readChannelHistory("agent-1", {
+      sessionId: WEB,
+      cursor: first.cursor!,
+    })) as Read;
+    expect(second.messages).toHaveLength(30);
+    expect(second.messages[0]).toContain("message 0");
+    expect(second.messages[29]).toContain("message 29");
+    expect(second.hasMore).toBe(false);
+    expect(second.cursor).toBeUndefined();
+
+    for (const cursor of [`C9:${tsAt(5)}`, "not a cursor"]) {
+      expect(
+        await h.worker.readChannelHistory("agent-1", {
+          sessionId: WEB,
+          conversationId: BOUND,
+          cursor,
+        }),
+      ).toEqual({ error: expect.stringContaining("that cursor is not one") });
+    }
+  });
+
+  /**
+   * TEST_SCENARIO: An Agent asked about the last week passes the start once
+   * and then follows cursors, so the cursor must keep that start or the walk
+   * runs on to the beginning of the conversation.
+   */
+  it("keeps the start of the range across pages", async () => {
+    const h = harness({ history: true });
+    h.gw.setThreadedHistory(topLevel(130));
+    await h.worker.connect();
+
+    const first = (await h.worker.readChannelHistory("agent-1", {
+      sessionId: WEB,
+      since: tsAt(10),
+    })) as Read;
+    expect(first.hasMore).toBe(true);
+    const second = (await h.worker.readChannelHistory("agent-1", {
+      sessionId: WEB,
+      cursor: first.cursor!,
+    })) as Read;
+    expect(second.messages).toHaveLength(20);
+    expect(second.messages[0]).toContain("message 10");
+    expect(second.hasMore).toBe(false);
+  });
+
+  it("reads one stretch of time", async () => {
+    const h = harness({ history: true });
+    h.gw.setThreadedHistory(topLevel(30));
+    await h.worker.connect();
+
+    const read = (await h.worker.readChannelHistory("agent-1", {
+      sessionId: WEB,
+      since: tsAt(10),
+      until: tsAt(20),
+    })) as Read;
+    expect(read.messages).toHaveLength(10);
+    expect(read.messages[0]).toContain("message 10");
+    expect(read.messages[9]).toContain("message 19");
+  });
+});
+
+describe("threads a page shows", () => {
+  /**
+   * TEST_SCENARIO: A decision often lives in a thread whose opener is far
+   * older than the window, which read_thread alone refuses. Showing the
+   * thread's tag on a page is what lets the Agent open it.
+   */
+  it("makes a thread it shows readable with read_thread", async () => {
+    const h = harness({ history: true });
+    h.gw.setThreadedHistory([
+      {
+        ts: tsAt(0),
+        user: "U999",
+        text: "when do we ship",
+        threadTs: tsAt(0),
+        replyCount: 1,
+        latestReplyTs: tsAt(1),
+      },
+      {
+        ts: tsAt(1),
+        user: "U777",
+        text: "friday, decided",
+        threadTs: tsAt(0),
+      },
+      { ts: tsAt(2), user: "U888", text: "lunch?" },
+    ]);
+    await h.worker.connect();
+
+    expect(await h.worker.readThread("agent-1", { threadTs: tsAt(0) })).toEqual(
+      { error: expect.stringContaining("not a thread you were shown") },
+    );
+
+    const page = (await h.worker.readChannelHistory("agent-1", {
+      sessionId: WEB,
+    })) as Read;
+    expect(page.messages[0]).toContain("[thread: 1 reply");
+    expect(page.messages[0]).toContain(`ts ${tsAt(0)}]`);
+    expect(page.messages.join("\n")).not.toContain("friday, decided");
+
+    const thread = (await h.worker.readThread("agent-1", {
+      threadTs: tsAt(0),
+    })) as { messages: string[] };
+    expect(thread.messages.join("\n")).toContain("friday, decided");
+
+    h.history.on = false;
+    expect(await h.worker.readThread("agent-1", { threadTs: tsAt(0) })).toEqual(
+      { error: expect.stringContaining("not a thread you were shown") },
+    );
+  });
+});
+
+describe("what a turn is told", () => {
+  /**
+   * TEST_SCENARIO: An Agent asked inside a thread is handed only that thread,
+   * so it learns that it can look further back only from its turn's contract.
+   */
+  it("names read_channel_history with the conversation's chatId only where history is on", async () => {
+    const on = harness({ history: true });
+    await on.worker.connect();
+    await on.gw.fireMention({
+      user: "U888",
+      channel: BOUND,
+      ts: tsAt(200),
+      threadTs: tsAt(150),
+      text: "what did we decide about shipping",
+    });
+    expect(String(on.prompts[0])).toContain(
+      `read_channel_history (chatId="${BOUND}")`,
+    );
+
+    const off = harness();
+    await off.worker.connect();
+    await off.gw.fireMention({
+      user: "U888",
+      channel: BOUND,
+      ts: tsAt(200),
+      text: "what did we decide about shipping",
+    });
+    expect(String(off.prompts[0])).not.toContain("read_channel_history");
+  });
+
+  it("hands a top-level turn the newest 100 top-level messages", async () => {
+    const h = harness();
+    h.gw.setThreadedHistory(topLevel(130));
+    await h.worker.connect();
+    await h.gw.fireMention({
+      user: "U888",
+      channel: BOUND,
+      ts: tsAt(200),
+      text: "hey agent",
+    });
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toMatch(/: message 30$/m);
+    expect(prompt).toMatch(/: message 129$/m);
+    expect(prompt).not.toMatch(/: message 29$/m);
+  });
+});
+
+describe("/dam history", () => {
+  /**
+   * TEST_SCENARIO: The setting is the binder's or owner's call, made like
+   * ambient mode: confirmed to them alone, nothing posted in the channel,
+   * and visible to every member in the agent list.
+   */
+  it("lets the agent's owner turn it on, confirms to them alone, and /dam who shows it", async () => {
+    const h = harness({ linkedSub: SLACK_HARNESS_OWNER });
+    await h.worker.connect();
+
+    expect(
+      await h.gw.fireCommand({
+        text: "history",
+        userId: "U1",
+        channelId: BOUND,
+      }),
+    ).toContain("is off —");
+
+    const ack = await h.gw.fireCommand({
+      text: "history on",
+      userId: "U1",
+      channelId: BOUND,
+    });
+    expect(ack).toContain("Channel history turned on");
+    expect(ack).toContain("/dam history Helper off");
+    expect(h.historyCalls).toEqual([
+      { agentId: "agent-1", channelId: BOUND, history: true },
+    ]);
+    expect(
+      h.gw.readOutbound().filter((r) => r.kind === "message"),
+    ).toHaveLength(0);
+
+    expect(
+      await h.gw.fireCommand({ text: "who", userId: "U2", channelId: BOUND }),
+    ).toContain("Can read this conversation's history.");
+  });
+
+  /**
+   * TEST_SCENARIO: "history" is an everyday word, so "@bot history?" gets no
+   * slash-command tip; only a switch with on or off reads as the command.
+   */
+  it("reads a mention as the history command only with on or off", async () => {
+    const roster = [
+      {
+        teamId: "",
+        instanceName: "agent-1",
+        name: "Helper",
+        owner: SLACK_HARNESS_OWNER,
+        ambient: false,
+        history: false,
+        isDefault: true,
+      },
+    ];
+    const parse = (text: string) =>
+      mentionedCommand(text, roster, async () => []);
+
+    expect(await parse("<@U0BOT> history")).toBeNull();
+    expect(await parse("<@U0BOT> history?")).toBeNull();
+    expect(await parse("<@U0BOT> history of the release")).toBeNull();
+    expect(await parse("<@U0BOT> history on")).toBe("history");
+    expect(await parse("<@U0BOT> history Helper off")).toBe("history");
+  });
+
+  it("refuses a linked person who neither connected the agent nor owns it", async () => {
+    const h = harness({ linkedSub: "kc|member-2" });
+    await h.worker.connect();
+
+    expect(
+      await h.gw.fireCommand({
+        text: "history on",
+        userId: "U2",
+        channelId: BOUND,
+      }),
+    ).toContain("Only the person who connected this channel");
+    expect(h.historyCalls).toEqual([]);
+  });
+});

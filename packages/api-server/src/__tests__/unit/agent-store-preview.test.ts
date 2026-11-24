@@ -34,7 +34,7 @@ const agent = (overrides: {
       ? { deletionTimestamp: overrides.deletionTimestamp }
       : {}),
   } as unknown as KubeObject["metadata"],
-  spec: overrides.spec ?? { image: "agent:1" },
+  spec: { image: "agent:1", backend: { type: "vm" }, ...overrides.spec },
   status: overrides.status ?? {},
 });
 
@@ -204,7 +204,7 @@ describe("agent mapping", () => {
       ["a name no label can carry", agent({ name: "Agent_Uppercase" })],
       ["no owner label", agent({ labels: {} })],
       ["no uid", agent({ uid: "not-a-uid" })],
-      ["no image", agent({ spec: {} })],
+      ["no image", agent({ spec: { image: undefined } })],
       [
         "a persisted mount outside HOME",
         agent({
@@ -231,6 +231,11 @@ describe("agent mapping", () => {
         "an unparseable hibernation timeout",
         agent({ spec: { image: "agent:1", hibernationTimeout: "soon" } }),
       ],
+      [
+        "the container backend",
+        agent({ spec: { image: "agent:1", backend: { type: "container" } } }),
+      ],
+      ["no backend", agent({ spec: { image: "agent:1", backend: undefined } })],
     ];
 
     for (const [name, cr] of cases) {

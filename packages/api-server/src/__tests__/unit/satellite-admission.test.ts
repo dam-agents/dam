@@ -17,6 +17,12 @@ import type {
 } from "../../modules/satellites/domain/types.js";
 import { createSatelliteWorkerOps } from "../../modules/satellites/services/worker-ops.js";
 import { composeSatellitesModule } from "../../modules/satellites/compose.js";
+import {
+  fakeBlobs,
+  fakeRedis,
+  fakeRedisBus,
+  stubFileChannel,
+} from "../helpers/satellite-fakes.js";
 
 /**
  * TEST_OVERVIEW: Admission — whether a tool call becomes a Job at all. It is
@@ -31,6 +37,10 @@ import { composeSatellitesModule } from "../../modules/satellites/compose.js";
 
 const NOW = new Date("2026-09-17T12:00:00Z");
 
+function channelDeps() {
+  return { redis: fakeRedis(), bus: fakeRedisBus(), blobs: fakeBlobs() };
+}
+
 const TOOLS: SatelliteTool[] = [
   { name: "run", inputSchema: { type: "object" } },
   { name: "train", inputSchema: { type: "object" }, maxConcurrent: 1 },
@@ -40,6 +50,8 @@ function satellite(patch: Partial<SatelliteRow> = {}): SatelliteRow {
   return {
     owner: "alice",
     name: "gpu-box",
+    kind: "tools",
+    filesWritable: false,
     description: null,
     host: "gpu-box.internal",
     maxConcurrent: 16,
@@ -151,6 +163,7 @@ describe("draining", () => {
     };
     const ops = createSatelliteWorkerOps({
       repo: repo as never,
+      fileChannel: stubFileChannel(),
       maxConcurrentCeiling: 64,
       deliverOutcome: async () => {},
     });
@@ -173,11 +186,15 @@ describe("draining", () => {
 });
 
 describe("revocation", () => {
-  it("settles what has not started, and tells the agent", async () => {
+  it("settles what has not started, tells the agent, and ends its file operations", async () => {
     const delivered: string[] = [];
     const stopped: { scope: unknown; reason: string }[] = [];
+    const bus = fakeRedisBus();
     const composition = composeSatellitesModule({
       db: {} as never,
+      redis: fakeRedis(),
+      bus,
+      blobs: fakeBlobs(),
       maxConcurrentCeiling: 64,
       ownerOf: async () => "alice",
       isAgentOwnedBy: async () => true,
@@ -200,11 +217,14 @@ describe("revocation", () => {
       };
     (composition.repo as unknown as Record<string, unknown>).revokeAgentGrants =
       async () => {};
+    (composition.repo as unknown as Record<string, unknown>).grantedNames =
+      async () => [{ owner: "alice", name: "gpu-box" }];
 
     await composition.onAgentDeleted("agent-1");
 
     expect(stopped[0]?.scope).toEqual({ agentId: "agent-1" });
     expect(delivered).toEqual(["gpu-box#7"]);
+    expect(bus.published("satfile:end")).toHaveLength(1);
   });
 });
 
@@ -214,6 +234,7 @@ describe("a cancel that races the worker's claim", () => {
     let status = "queued";
     const composition = composeSatellitesModule({
       db: {} as never,
+      ...channelDeps(),
       maxConcurrentCeiling: 64,
       ownerOf: async () => "alice",
       isAgentOwnedBy: async () => true,
@@ -259,6 +280,7 @@ describe("a job that finishes while its agent is waiting", () => {
     let status = "running";
     const composition = composeSatellitesModule({
       db: {} as never,
+      ...channelDeps(),
       maxConcurrentCeiling: 64,
       ownerOf: async () => "alice",
       isAgentOwnedBy: async () => true,
@@ -362,6 +384,8 @@ describe("a call that outlives its inline wait", () => {
       satellites: [
         {
           name: "gpu-box",
+          kind: "tools",
+          filesWritable: false,
           description: null,
           host: null,
           online: true,
@@ -404,6 +428,8 @@ describe("the tool names the platform registers", () => {
   function view(name: string, tools: string[]): SatelliteView {
     return {
       name,
+      kind: "tools",
+      filesWritable: false,
       description: null,
       host: null,
       online: true,
@@ -503,7 +529,6 @@ describe("a claimed call", () => {
     agentId: "agent-1",
     tool: "run",
     args: { cmd: ["./process.sh"] },
-    transferDirection: null,
     status: "running",
     isError: false,
     exitCode: null,
@@ -531,10 +556,11 @@ describe("a claimed call", () => {
       touch: async () => {},
       setDraining: async () => {},
       takeCancellations: async () => [],
-      claimQueued: async () => [{ job, transferToken: "f".repeat(64) }],
+      claimQueued: async () => [job],
     };
     return createSatelliteWorkerOps({
       repo: repo as never,
+      fileChannel: stubFileChannel(),
       maxConcurrentCeiling: 64,
       deliverOutcome: async () => {},
       agentName,

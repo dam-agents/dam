@@ -1874,13 +1874,13 @@ func TestRenderEnvoyBootstrap_AConnectionsOwnCAStillWinsOverExtraCAs(t *testing.
 func TestBuildEnvoyBootstrapConfigMap_CarriesTheTrustBundleOnlyWhenConfigured(t *testing.T) {
 	owner := metav1.OwnerReference{APIVersion: "v1", Kind: "ConfigMap", Name: "owner", UID: "uid"}
 
-	cm, err := BuildEnvoyBootstrapConfigMap("inst-1", "", bootstrapTestCfg, owner, nil, nil, false)
+	cm, err := BuildEnvoyBootstrapConfigMap("inst-1", "", bootstrapTestCfg, owner, nil, nil, gatewayChoices{})
 	require.NoError(t, err)
 	assert.NotContains(t, cm.Data, envoyUpstreamCAKey)
 
 	cfg := *bootstrapTestCfg
 	cfg.GatewayUpstreamTrustBundle = "-----BEGIN CERTIFICATE-----\nbundle\n-----END CERTIFICATE-----\n"
-	cm, err = BuildEnvoyBootstrapConfigMap("inst-1", "", &cfg, owner, nil, nil, false)
+	cm, err = BuildEnvoyBootstrapConfigMap("inst-1", "", &cfg, owner, nil, nil, gatewayChoices{})
 	require.NoError(t, err)
 	assert.Equal(t, cfg.GatewayUpstreamTrustBundle, cm.Data[envoyUpstreamCAKey])
 }
@@ -1889,16 +1889,16 @@ func TestEnvoyGatewayRev_RollsTheGatewayOnlyWhenTheTrustBundleChanges(t *testing
 	secrets := []corev1.Secret{ownerSecret("platform-conn-github", "connection", "github")}
 	hosts := []string{"api.github.com"}
 
-	assert.Equal(t, envoySecretsRev(secrets, hosts), envoyGatewayRev(bootstrapTestCfg, secrets, hosts, false),
+	assert.Equal(t, envoySecretsRev(secrets, hosts), envoyGatewayRev(bootstrapTestCfg, secrets, hosts, gatewayChoices{}),
 		"an install without extra CAs keeps today's revision, so upgrading rolls no gateway")
 
 	withCA := *bootstrapTestCfg
 	withCA.GatewayUpstreamTrustBundle = "bundle one"
 	otherCA := *bootstrapTestCfg
 	otherCA.GatewayUpstreamTrustBundle = "bundle two"
-	assert.NotEqual(t, envoyGatewayRev(bootstrapTestCfg, secrets, hosts, false), envoyGatewayRev(&withCA, secrets, hosts, false))
-	assert.NotEqual(t, envoyGatewayRev(&withCA, secrets, hosts, false), envoyGatewayRev(&otherCA, secrets, hosts, false))
-	assert.Equal(t, envoyGatewayRev(&withCA, secrets, hosts, false), envoyGatewayRev(&withCA, secrets, hosts, false))
+	assert.NotEqual(t, envoyGatewayRev(bootstrapTestCfg, secrets, hosts, gatewayChoices{}), envoyGatewayRev(&withCA, secrets, hosts, gatewayChoices{}))
+	assert.NotEqual(t, envoyGatewayRev(&withCA, secrets, hosts, gatewayChoices{}), envoyGatewayRev(&otherCA, secrets, hosts, gatewayChoices{}))
+	assert.Equal(t, envoyGatewayRev(&withCA, secrets, hosts, gatewayChoices{}), envoyGatewayRev(&withCA, secrets, hosts, gatewayChoices{}))
 }
 
 func signingSecret(name, connection, host string) corev1.Secret {

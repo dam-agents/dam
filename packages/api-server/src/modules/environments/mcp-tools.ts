@@ -1,11 +1,14 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
+  childConnectionsSchema,
+  childEgressSchema,
   ENVIRONMENT_EXPIRY_DEFAULT_DAYS,
   environmentEndpointNameSchema,
   environmentEndpointsSchema,
   environmentNameSchema,
   environmentReadyPathSchema,
+  OWNER_EGRESS_NOTE,
 } from "api-server-api";
 import { json, run } from "../../core/mcp-tool-result.js";
 import type {
@@ -95,7 +98,12 @@ function refuseAccess(access: unknown): void {
  */
 export function registerEnvironmentTools(
   server: McpServer,
-  deps: { environments: OwningAgentEnvironments },
+  deps: {
+    environments: OwningAgentEnvironments;
+    egressWaiting?: (
+      environmentAgentId: string,
+    ) => Promise<{ host: string; id: string }[]>;
+  },
 ): void {
   const envs = deps.environments;
   if (!deps.environments.manage) {
@@ -106,7 +114,7 @@ export function registerEnvironmentTools(
 
   server.tool(
     "create_environment",
-    "Create an Environment: a sandbox of your own that runs software for other people and agents to open — typically one per pull request, running its build. It is a vm machine on the platform's image with Docker, k3s and openrc, with no harness and no connections, and it sleeps when nobody uses it for `idle_timeout` and is deleted at its expiry; either can be `never`, for a server people rely on. Name its endpoints (`app` → 4444): each gets its own address, returned here as `url` once the install serves Environments; give those addresses to an app that needs its public URL (an OIDC issuer, a redirect URI). `start` is a command it runs at every boot, as a Startup Item (an openrc user service in ~/.config/rc inside it), e.g. `docker compose up` or a script that starts k3s and deploys. Deploy into it over SSH: `ssh env-<name>` reaches it over a link only you can open, and `docker save IMAGE | ssh env-<name> k3s ctr images import -` ships an image in. Who may open it is for people to decide, never you: your owner, your editors and the people they name on your page in the app, and anyone your owner adds to this one Environment there.",
+    'Create an Environment: a sandbox of your own that runs software for other people and agents to open — typically one per pull request, running its build. It is a vm machine on the platform\'s image with Docker, k3s and openrc, with no harness and no connections unless you give it yours (`connections` set to parent, kept in step with your own for as long as it lives), and it sleeps when nobody uses it for `idle_timeout` and is deleted at its expiry; either can be `never`, for a server people rely on. Name its endpoints (`app` → 4444): each gets its own address, returned here as `url` once the install serves Environments; give those addresses to an app that needs its public URL (an OIDC issuer, a redirect URI). `start` is a command it runs at every boot, as a Startup Item (an openrc user service in ~/.config/rc inside it), e.g. `docker compose up` or a script that starts k3s and deploys. Deploy into it over SSH: `ssh env-<name>` reaches it over a link only you can open, and `docker save IMAGE | ssh env-<name> k3s ctr images import -` ships an image in. Who may open it is for people to decide, never you: your owner, your editors and the people they name on your page in the app, and anyone your owner adds to this one Environment there. An MCP server on an endpoint is open to those same people from their own MCP clients, which sign in with their platform account: e.g. `claude mcp add --transport http <name> <url>/mcp` for Claude Code; keep such an Environment with `expires: "never"` and `idle_timeout: "never"` so it stays up.',
     {
       name: environmentNameSchema.describe(
         "Unique among your Environments, e.g. pr-42.",
@@ -124,6 +132,16 @@ export function registerEnvironmentTools(
         .regex(/^\d+Gi$/)
         .optional()
         .describe("Disk size, e.g. 40Gi; the install's default otherwise."),
+      connections: childConnectionsSchema
+        .optional()
+        .describe(
+          'Your connections it holds: "none" (the default); "parent", all of yours, granted and revoked with your own; or a list of connection ids of your own, copied once. None with egress "open".',
+        ),
+      egress: childEgressSchema
+        .optional()
+        .describe(
+          'Whose egress rules decide its requests: "parent" (the default), yours, live; "open" or {"open": [rules]}, rules of its own that you set (update_subagent_egress), with no prompt to the user and anything else denied, except that a wildcard host (* or *.example.com), and a rule that lets through a request your own rules do not allow (its host, port, method or path) unless your owner lets your sub-agents and Environments have network access of their own, wait for your owner\'s approval, and the answer names them; or {"scoped": [hosts] or "all"}, a copy of your rules for those hosts that only the user can widen.',
+        ),
       expires: expiresInput,
       idle_timeout: idleTimeout,
       access: noAccessInput,
@@ -132,15 +150,25 @@ export function registerEnvironmentTools(
       run(async () => {
         refuseAccess(args.access);
         const idleTimeoutMin = parseIdleTimeout(args.idle_timeout);
+        const created = await envs.create({
+          name: args.name,
+          endpoints: args.endpoints,
+          ...(args.start ? { start: args.start } : {}),
+          ...(args.storage ? { storage: args.storage } : {}),
+          ...(args.connections ? { connections: args.connections } : {}),
+          ...(args.egress ? { egress: args.egress } : {}),
+          ...(args.expires ? { expiresAt: parseExpiry(args.expires)! } : {}),
+          ...(idleTimeoutMin !== undefined ? { idleTimeoutMin } : {}),
+        });
+        const waiting = (await deps.egressWaiting?.(created.id)) ?? [];
         return json(
-          await envs.create({
-            name: args.name,
-            endpoints: args.endpoints,
-            ...(args.start ? { start: args.start } : {}),
-            ...(args.storage ? { storage: args.storage } : {}),
-            ...(args.expires ? { expiresAt: parseExpiry(args.expires)! } : {}),
-            ...(idleTimeoutMin !== undefined ? { idleTimeoutMin } : {}),
-          }),
+          waiting.length > 0
+            ? {
+                ...created,
+                egressWaitingForOwner: waiting,
+                egressNote: OWNER_EGRESS_NOTE,
+              }
+            : created,
         );
       }),
   );

@@ -77,9 +77,6 @@ data:
     {{- with $tmpl.storageSize }}
     storageSize: {{ . | quote }}
     {{- end }}
-    {{- with $tmpl.hibernationTimeout }}
-    hibernationTimeout: {{ . | quote }}
-    {{- end }}
     {{- if and $tmpl.imagePullSecret $tmpl.imagePullSecretRef }}
     {{- fail (printf "harnessTemplates.%s: set either imagePullSecret (chart-managed Secret) or imagePullSecretRef (pre-existing Secret), not both" $name) }}
     {{- end }}

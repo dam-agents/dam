@@ -4,6 +4,7 @@ import {
   DEFAULT_CONTENT_TYPE,
   defaultFileName,
   detectKind,
+  effectiveContentType,
   extensionOf,
 } from "../../modules/artifact-library/domain/artifact-kind.js";
 import { generateSlug } from "../../modules/artifact-library/domain/share-crypto.js";
@@ -38,6 +39,53 @@ describe("artifact-kind detection", () => {
     expect(detectKind({ fileName: "main.py" })).toBe("code");
     expect(detectKind({ fileName: "data.csv" })).toBe("text");
     expect(detectKind({ fileName: "photo.png" })).toBe("binary");
+  });
+
+  it("takes a generic stored type from the file name's extension", () => {
+    for (const generic of [
+      "application/x-www-form-urlencoded",
+      "application/octet-stream",
+      "",
+    ]) {
+      expect(effectiveContentType("chart.png", generic)).toBe("image/png");
+      expect(effectiveContentType("photo.JPG", generic)).toBe("image/jpeg");
+      expect(effectiveContentType("diagram.pdf", generic)).toBe(
+        "application/pdf",
+      );
+    }
+  });
+
+  it("keeps a type the uploader stated", () => {
+    expect(effectiveContentType("chart.png", "image/webp")).toBe("image/webp");
+    expect(effectiveContentType("report.pdf", "application/pdf")).toBe(
+      "application/pdf",
+    );
+    expect(effectiveContentType("notes.txt", "text/plain; charset=utf-8")).toBe(
+      "text/plain; charset=utf-8",
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: resolving a type from the name must never turn a stored
+   * generic blob into active content the share page would render inline where
+   * it served an attachment before — HTML, and SVG with its scripts.
+   */
+  it("never resolves active content from the name", () => {
+    expect(effectiveContentType("page.html", "application/octet-stream")).toBe(
+      "application/octet-stream",
+    );
+    expect(
+      effectiveContentType("logo.svg", "application/x-www-form-urlencoded"),
+    ).toBe("application/octet-stream");
+  });
+
+  it("reports a generic blob it cannot name as octet-stream", () => {
+    expect(
+      effectiveContentType("bundle.zip", "application/x-www-form-urlencoded"),
+    ).toBe("application/octet-stream");
+    expect(effectiveContentType("bundle.zip", "")).toBe(
+      "application/octet-stream",
+    );
   });
 
   it("sniffs content when there is no useful extension", () => {
@@ -125,6 +173,7 @@ function artifactRow(overrides: Partial<ArtifactRow>): ArtifactRow {
     agentId: null,
     folderId: null,
     sourcePath: null,
+    icon: null,
     title: "T",
     slug: "slug-a",
     kind: "html",
@@ -211,11 +260,11 @@ function fakeRepo(
             .map((id) => [id, viewers.get(id)!]),
         ),
       ),
-    updateSharing: (id, owner, patch, emails, authorize) => {
+    updateSharing: (id, owner, patch, nextViewers) => {
       const row = artifacts.find((a) => a.id === id && a.owner === owner);
       if (!row) return Promise.resolve(null);
       const before = { ...row };
-      authorize(before);
+      const emails = nextViewers(before, [...(viewers.get(id) ?? [])]);
       Object.assign(row, patch, { updatedAt: new Date() });
       if (emails !== undefined) viewers.set(id, [...emails]);
       return Promise.resolve({
@@ -300,7 +349,6 @@ const fakeArtifacts = stubArtifacts();
 function idleAgentApiDeps(): {
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiClient;
-  featureOn: () => Promise<boolean>;
   prompts: ViewerPromptDelivery;
 } {
   return {
@@ -308,7 +356,6 @@ function idleAgentApiDeps(): {
     agentApi: {
       request: () => Promise.reject(new Error("agent api not expected")),
     },
-    featureOn: () => Promise.resolve(true),
     prompts: {
       deliver: () => Promise.reject(new Error("prompt not expected")),
     },
@@ -883,7 +930,7 @@ describe("restricted sharing permissions", () => {
     ).resolves.toBe("allow");
   });
 
-  it.each(["mcp", "cli", "system", "other"] as const)(
+  it.each(["system", "other"] as const)(
     "refuses restricted sharing from %s",
     async (surface) => {
       const row = artifactRow({ visibility: "public" });
@@ -893,7 +940,7 @@ describe("restricted sharing permissions", () => {
       ).rejects.toMatchObject({ code: "FORBIDDEN" });
       await expect(
         service.setSharing(row.id, { viewers: ["viewer@example.com"] }),
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      ).rejects.toThrow(/after `dam login`; an API key cannot set it/);
       row.visibility = "restricted";
       await expect(
         service.setSharing(row.id, { visibility: "public" }),
@@ -905,7 +952,7 @@ describe("restricted sharing permissions", () => {
   it("checks the row locked for writing when the owner restricts it concurrently", async () => {
     const row = artifactRow({ visibility: "public" });
     const repo = fakeRepo([row]);
-    const service = await serviceFor("mcp", {
+    const service = await serviceFor("other", {
       ...repo,
       updateSharing: (...args) => {
         row.visibility = "restricted";
@@ -916,6 +963,129 @@ describe("restricted sharing permissions", () => {
       service.setSharing(row.id, { visibility: "public" }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(row.visibility).toBe("restricted");
+  });
+
+  it.each(["mcp", "cli"] as const)(
+    "lets %s share with named people and change who is on the list",
+    async (surface) => {
+      const row = artifactRow({ visibility: "private" });
+      const service = await serviceFor(surface, fakeRepo([row]));
+      await expect(
+        service.setSharing(row.id, {
+          visibility: "restricted",
+          addViewers: [" Ada@Example.com ", "bob@example.com"],
+        }),
+      ).resolves.toMatchObject({
+        visibility: "restricted",
+        viewers: ["ada@example.com", "bob@example.com"],
+        shareUrl: "https://share.example.com/a/slug-a",
+      });
+      await expect(
+        service.setSharing(row.id, {
+          addViewers: ["cy@example.com", "ada@example.com"],
+          removeViewers: ["BOB@example.com"],
+        }),
+      ).resolves.toMatchObject({
+        visibility: "restricted",
+        viewers: ["ada@example.com", "cy@example.com"],
+      });
+      await expect(service.get(row.id)).resolves.toMatchObject({
+        viewers: ["ada@example.com", "cy@example.com"],
+      });
+    },
+  );
+
+  // TEST_SCENARIO: a restricted artifact stays restricted off the owner's Share dialog: an agent or the CLI changes its viewers, but is refused making it public, making it private, or making it private while dropping every viewer, so no two-step sequence reaches a public link.
+  it.each(["mcp", "cli"] as const)(
+    "keeps %s from moving a restricted artifact off restricted",
+    async (surface) => {
+      const row = artifactRow({ visibility: "restricted" });
+      const repo = fakeRepo([row]);
+      const service = await serviceFor(surface, repo);
+      await service.setSharing(row.id, { addViewers: ["ada@example.com"] });
+      for (const change of [
+        { visibility: "public" as const },
+        { visibility: "private" as const },
+        { visibility: "private" as const, viewers: [] },
+        { visibility: "private" as const, removeViewers: ["ada@example.com"] },
+      ]) {
+        await expect(service.setSharing(row.id, change)).rejects.toThrow(
+          /Only the owner makes it private or opens it to anyone with the link/,
+        );
+        expect(row.visibility).toBe("restricted");
+      }
+      await expect(
+        service.setSharing(row.id, { removeViewers: ["ada@example.com"] }),
+      ).resolves.toMatchObject({ visibility: "restricted", viewers: [] });
+      await expect(
+        service.setSharing(row.id, { visibility: "public" }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect(row.visibility).toBe("restricted");
+    },
+  );
+
+  // TEST_SCENARIO: a private artifact the owner left with its viewer list keeps that restriction: an agent or the CLI can restrict it again but cannot clear the list and then make it public, and an API key cannot make it public either.
+  it.each(["mcp", "cli", "other", "system"] as const)(
+    "keeps %s from making public a private artifact that keeps its viewers",
+    async (surface) => {
+      const row = artifactRow({ visibility: "restricted" });
+      const repo = fakeRepo([row]);
+      const owner = await serviceFor("ui", repo);
+      await owner.setSharing(row.id, { viewers: ["ada@example.com"] });
+      await owner.setSharing(row.id, { visibility: "private" });
+      const service = await serviceFor(surface, repo);
+      await expect(
+        service.setSharing(row.id, { visibility: "public" }),
+      ).rejects.toThrow(/keeps its list of named viewers while private/);
+      expect(row.visibility).toBe("private");
+      if (surface === "mcp" || surface === "cli") {
+        await expect(
+          service.setSharing(row.id, { viewers: [] }),
+        ).rejects.toThrow(/Only the owner clears that list/);
+        await expect(
+          service.setSharing(row.id, { removeViewers: ["ada@example.com"] }),
+        ).rejects.toThrow(/Only the owner clears that list/);
+        await expect(service.get(row.id)).resolves.toMatchObject({
+          viewers: ["ada@example.com"],
+        });
+        await expect(
+          service.setSharing(row.id, { visibility: "restricted" }),
+        ).resolves.toMatchObject({ visibility: "restricted" });
+      }
+    },
+  );
+
+  it("refuses a viewer change that is not one list or one set of edits", async () => {
+    const row = artifactRow({ visibility: "restricted" });
+    const service = await serviceFor("mcp", fakeRepo([row]));
+    await expect(
+      service.setSharing(row.id, {
+        viewers: ["ada@example.com"],
+        addViewers: ["bob@example.com"],
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(
+      service.setSharing(row.id, {
+        addViewers: ["ada@example.com"],
+        removeViewers: ["Ada@example.com"],
+      }),
+    ).rejects.toThrow(/both added and removed/);
+  });
+
+  it("refuses edits that grow the list past its cap", async () => {
+    const { VIEWER_ALLOWLIST_MAX } = await import("api-server-api");
+    const row = artifactRow({ visibility: "restricted" });
+    const service = await serviceFor("mcp", fakeRepo([row]));
+    const people = (from: number, count: number) =>
+      Array.from({ length: count }, (_, i) => `p${from + i}@example.com`);
+    await service.setSharing(row.id, {
+      addViewers: people(0, VIEWER_ALLOWLIST_MAX),
+    });
+    await expect(
+      service.setSharing(row.id, {
+        addViewers: people(VIEWER_ALLOWLIST_MAX, 1),
+      }),
+    ).rejects.toThrow(`at most ${VIEWER_ALLOWLIST_MAX} viewers`);
   });
 
   it("keeps private and public sharing available to agents", async () => {
@@ -929,7 +1099,7 @@ describe("restricted sharing permissions", () => {
     ).resolves.toMatchObject({ visibility: "private" });
   });
 
-  it("projects agent metadata without viewer emails or future owner-only fields", async () => {
+  it("projects agent metadata with its viewers but without future owner-only fields", async () => {
     const { toAgentArtifact } =
       await import("../../modules/artifact-library/agent-artifact.js");
     const { toLibraryArtifact } =
@@ -943,11 +1113,11 @@ describe("restricted sharing permissions", () => {
       futurePrivateField: "private value",
     };
     const projected = toAgentArtifact(artifact);
-    expect(projected).not.toHaveProperty("viewers");
     expect(projected).not.toHaveProperty("futurePrivateField");
     expect(projected).toMatchObject({
       id: artifact.id,
       visibility: "restricted",
+      viewers: ["private@example.com"],
       internal_link: `platform://artifacts/${artifact.id}`,
     });
   });
@@ -1043,13 +1213,14 @@ describe("library service — an interactive artifact is never public", () => {
   async function serviceOver(
     rows: ArtifactRow[],
     surface: import("../../modules/artifact-library/services/artifact-library-service.js").ArtifactSurface = "ui",
+    repo: ArtifactLibraryRepository = fakeRepo(rows),
   ) {
     const { createArtifactLibraryService } =
       await import("../../modules/artifact-library/services/artifact-library-service.js");
     return createArtifactLibraryService({
       ...idleAgentApiDeps(),
       surface,
-      repo: fakeRepo(rows),
+      repo,
       owner: "o1",
       shareBaseUrl: "http://share.localhost",
       artifacts: stubArtifacts(),
@@ -1084,14 +1255,49 @@ describe("library service — an interactive artifact is never public", () => {
     });
   });
 
-  it("keeps restricted sharing out of an agent's reach", async () => {
-    const rows = [artifactRow({ interactive: true, visibility: "private" })];
-    const service = await serviceOver(rows, "mcp");
-    await expect(
-      service.setSharing("a1", { visibility: "restricted" }),
-    ).rejects.toThrow(/set by the owner in the app/);
-    expect(rows[0]!.visibility).toBe("private");
-  });
+  it.each(["mcp", "cli"] as const)(
+    "keeps %s from widening who can prompt the agent through the page",
+    async (surface) => {
+      const rows = [artifactRow({ interactive: true, visibility: "private" })];
+      const service = await serviceOver(rows, surface);
+      await expect(
+        service.setSharing("a1", { visibility: "restricted" }),
+      ).rejects.toThrow(/in the app's Share dialog/);
+      expect(rows[0]!.visibility).toBe("private");
+      rows[0]!.visibility = "restricted";
+      await expect(
+        service.setSharing("a1", { addViewers: ["ada@example.com"] }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(service.get("a1")).resolves.toMatchObject({ viewers: [] });
+    },
+  );
+
+  it.each(["mcp", "cli"] as const)(
+    "lets %s narrow who can open the page",
+    async (surface) => {
+      const rows = [artifactRow({ interactive: true, visibility: "private" })];
+      const repo = fakeRepo(rows);
+      const owner = await serviceOver(rows, "ui", repo);
+      await owner.setSharing("a1", {
+        visibility: "restricted",
+        viewers: ["ada@example.com", "bob@example.com"],
+      });
+      const service = await serviceOver(rows, surface, repo);
+      await expect(
+        service.setSharing("a1", {
+          visibility: "restricted",
+          removeViewers: ["bob@example.com"],
+        }),
+      ).resolves.toMatchObject({
+        visibility: "restricted",
+        viewers: ["ada@example.com"],
+      });
+      await expect(
+        service.setSharing("a1", { visibility: "private" }),
+      ).rejects.toThrow(/Only the owner makes it private or opens it/);
+      expect(rows[0]!.visibility).toBe("restricted");
+    },
+  );
 
   it("still lets the owner set a deletion date", async () => {
     const rows = [artifactRow({ interactive: true, visibility: "private" })];

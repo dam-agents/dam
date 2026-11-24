@@ -217,6 +217,7 @@ function makeRepo(initial: Connection[]) {
       const c = rows.get(id);
       if (c) rows.set(id, { ...c, contributions });
     },
+    adoptDamKey: async () => {},
     mergeInputs: async (id, inputs) => {
       const c = rows.get(id);
       if (c) rows.set(id, { ...c, inputs: { ...c.inputs, ...inputs } });
@@ -271,6 +272,7 @@ function makeService(initial: Connection[] = [signIn()]) {
   const github = makeGitHub();
   const fannedOut: string[] = [];
   const svc = createConnectionsService({
+    damConnectionOffered: async () => true,
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: OWNER,
@@ -604,6 +606,39 @@ describe("GitHub sign-in — changing a connection made from it", () => {
     await expect(
       svc.update(id, { value: "new-client-secret" }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST", message: /sign-in/ });
+  });
+});
+
+describe("GitHub sign-in — where its app is installed", () => {
+  // TEST_SCENARIO: the catalog lists the organizations under the sign-in's row, and a connection made from it shows the same list, so both read GitHub's installations with the sign-in's user token, never with a connection's narrowed one.
+  it("lists the accounts with the sign-in's token, from the sign-in or a connection made from it", async () => {
+    const { svc, github } = makeService();
+    const id = await svc.createFromParent(NARROWED);
+    const before = github.calls.length;
+
+    for (const connectionId of ["conn-signin", id]) {
+      const out = await svc.listGitHubAppInstallations({ connectionId });
+      expect(out.accounts.map((a) => a.login)).toEqual(["acme"]);
+    }
+    expect(
+      github.calls.slice(before).map((c) => [c.url, c.authorization]),
+    ).toEqual([
+      [
+        "https://api.github.com/user/installations?per_page=100&page=1",
+        "Bearer ghu_user",
+      ],
+      [
+        "https://api.github.com/user/installations?per_page=100&page=1",
+        "Bearer ghu_user",
+      ],
+    ]);
+  });
+
+  it("refuses a connection that is not a GitHub sign-in", async () => {
+    const { svc } = makeService();
+    await expect(
+      svc.listGitHubAppInstallations({ connectionId: "missing" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });
 

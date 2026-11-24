@@ -957,15 +957,204 @@
     {
       "idx": 136,
       "version": "7",
-      "when": 1793994925661,
-      "tag": "0136_ui_events",
+      "when": 1794162051647,
+      "tag": "0136_subagents_kept_and_linked",
       "breakpoints": true
     },
     {
       "idx": 137,
       "version": "7",
-      "when": 1793994927688,
-      "tag": "0137_ui_events_views",
+      "when": 1794297179668,
+      "tag": "0137_graduate_interactive_artifacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1794318995373,
+      "tag": "0138_dambledore_provisioned",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1794318995374,
+      "tag": "0139_api_key_revocations",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1794318995375,
+      "tag": "0140_api_key_revocations_connection",
+      "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1794332301328,
+      "tag": "0141_talented_moira_mactaggert",
+      "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1794347890859,
+      "tag": "0142_dambledore_legacy",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1794348561325,
+      "tag": "0143_dambledore_first_result",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1794389459855,
+      "tag": "0144_run_delivered_in_turn",
+      "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1794404739934,
+      "tag": "0145_agent_child_egress_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1794406270812,
+      "tag": "0146_mighty_mulholland_black",
+      "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1794406276560,
+      "tag": "0147_backfill_slack_untagged_reply_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1794479839869,
+      "tag": "0148_unmark_seeded_default_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1794480062000,
+      "tag": "0149_new_agent_defaults",
+      "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1794489996534,
+      "tag": "0150_run_owner_question",
+      "breakpoints": true
+    },
+    {
+      "idx": 151,
+      "version": "7",
+      "when": 1794494652171,
+      "tag": "0151_agent_tool_approval",
+      "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1794762475524,
+      "tag": "0152_graduate_agent_telemetry",
+      "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1794831873004,
+      "tag": "0153_provider_model_prices",
+      "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1794831892596,
+      "tag": "0154_spend_calls_price_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1794840726423,
+      "tag": "0155_artifact_icon",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1794848360952,
+      "tag": "0156_web_search_control",
+      "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1794855915805,
+      "tag": "0157_starter_kit_publisher",
+      "breakpoints": true
+    },
+    {
+      "idx": 158,
+      "version": "7",
+      "when": 1794897361312,
+      "tag": "0158_assistant_schedules",
+      "breakpoints": true
+    },
+    {
+      "idx": 159,
+      "version": "7",
+      "when": 1795010803515,
+      "tag": "0159_melodic_ultimates",
+      "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1795172633195,
+      "tag": "0160_slack_account_full_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1795412431573,
+      "tag": "0161_assistant_schedule_level",
+      "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1795437269972,
+      "tag": "0162_spend_daily_awaiting_calls",
+      "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1795511427306,
+      "tag": "0163_ui_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1795511432135,
+      "tag": "0164_ui_events_views",
       "breakpoints": true
     }
   ]

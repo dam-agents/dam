@@ -14,6 +14,7 @@ const APPROVAL_NEEDS: Record<ApprovalType, AgentPermission | null> = {
   acp_native: "sessions",
   ext_authz: "egressRules",
   egress_proposal: "egressRules",
+  web_search: "egressRules",
   spend_limit: null,
 };
 

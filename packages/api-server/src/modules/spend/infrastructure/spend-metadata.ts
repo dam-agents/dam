@@ -14,6 +14,7 @@ export interface SpendMetadata {
   readonly routerCallId: string | null;
   readonly model: string | null;
   readonly usage: RawUsage;
+  readonly replyCost: string | null;
   readonly replyBytes: number | null;
   readonly complete: boolean;
 }
@@ -61,6 +62,7 @@ export function parseSpendMetadata(
       speed: text(fields.speed),
       inferenceGeo: text(fields.inference_geo),
     },
+    replyCost: decimal(fields.proxy_cost) ?? null,
     replyBytes: amount(fields.bytes) ?? null,
     complete: fields.complete === true,
   };
@@ -74,4 +76,11 @@ function amount(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? value
     : undefined;
+}
+
+function decimal(value: unknown): string | undefined {
+  const number =
+    typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+  const valid = amount(number);
+  return valid === undefined ? undefined : String(valid);
 }

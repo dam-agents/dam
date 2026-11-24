@@ -1,25 +1,35 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { parseNameMeanings, pickNextMeaning } from "../lib/name-meanings.js";
+import { useReducedMotion } from "../components/illustration-kit.js";
+import {
+  parseNameMeanings,
+  planMeaningSequence,
+} from "../lib/name-meanings.js";
 
-const ROTATION_INTERVAL_MS = 4000;
+const FIRST_HOLD_MS = 1200;
+const HOLD_MS = 2030;
 
+// UNIT_BOUNDARY_DESCRIPTION: which meaning of the brand name the sign-in page shows now. It starts on the install's first meaning, moves to the next one of planMeaningSequence after a short hold, and stops for good on the last one, which is the first meaning again. With reduced motion it shows the first meaning and never moves.
 export function useRotatingNameMeaning(
   rawMeanings: string,
 ): string | undefined {
-  const meanings = useMemo(() => parseNameMeanings(rawMeanings), [rawMeanings]);
-  const [meaning, setMeaning] = useState(() =>
-    pickNextMeaning(meanings, undefined),
+  const reduceMotion = useReducedMotion();
+  const sequence = useMemo(
+    () => planMeaningSequence(parseNameMeanings(rawMeanings)),
+    [rawMeanings],
   );
+  const [step, setStep] = useState(0);
 
   useEffect(() => {
-    if (meanings.length < 2) return;
-    const timer = setInterval(
-      () => setMeaning((current) => pickNextMeaning(meanings, current)),
-      ROTATION_INTERVAL_MS,
+    if (reduceMotion || step >= sequence.length - 1) return;
+    const timer = setTimeout(
+      () => setStep(step + 1),
+      step === 0 ? FIRST_HOLD_MS : HOLD_MS,
     );
-    return () => clearInterval(timer);
-  }, [meanings]);
+    return () => clearTimeout(timer);
+  }, [reduceMotion, sequence, step]);
 
-  return meaning;
+  return reduceMotion
+    ? sequence[0]
+    : sequence[Math.min(step, sequence.length - 1)];
 }

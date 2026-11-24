@@ -1,14 +1,17 @@
 import type { z } from "zod";
 import type {
   claimInputSchema,
+  fileResultInputSchema,
   heartbeatInputSchema,
   jobStatusSchema,
   reportInputSchema,
   satelliteImageSchema,
+  satelliteKindSchema,
   satelliteManifestSchema,
   satelliteToolSchema,
 } from "./schemas.js";
 
+export type SatelliteKind = z.infer<typeof satelliteKindSchema>;
 export type SatelliteTool = z.infer<typeof satelliteToolSchema>;
 export type SatelliteImage = z.infer<typeof satelliteImageSchema>;
 export type SatelliteManifest = z.infer<typeof satelliteManifestSchema>;
@@ -22,9 +25,12 @@ export type HeartbeatInput = z.infer<typeof heartbeatInputSchema> & {
 export type ReportInput = z.infer<typeof reportInputSchema> & {
   incarnation?: string;
 };
+export type FileResultInput = z.infer<typeof fileResultInputSchema>;
 
 export interface SatelliteView {
   name: string;
+  kind: SatelliteKind;
+  filesWritable: boolean;
   description: string | null;
   host: string | null;
   online: boolean;
@@ -69,14 +75,53 @@ export interface JobOutcome {
   images: SatelliteImage[];
 }
 
-export interface WorkItem {
-  kind: "call" | "cancel";
+export interface CallWorkItem {
+  kind: "call";
   sequence: number;
   tool: string;
   args: Record<string, unknown>;
   agent?: { id: string; name: string | null };
-  transferToken?: string;
 }
+
+export interface CancelWorkItem {
+  kind: "cancel";
+  sequence: number;
+  tool: string;
+  args: Record<string, unknown>;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: One file operation a files Satellite claims. It is
+ * a work item of its own beside a Job because it has no sequence and no outcome:
+ * it is answered on the request that asked for it, so the id it carries is the
+ * operation's own, and the body rides as base64 beside it.
+ *
+ * The wait travels as a duration, not as an instant: `remainingMs` is what is left
+ * of the operation's 30 seconds when the claim hands it over, and the machine
+ * counts it down against its own clock. A worker that compared the platform's
+ * epoch with its own would be wrong by however far the two clocks disagree,
+ * dropping operations that still had time or running them after the Agent was told
+ * they failed. `deadline` stays the platform's own instant for its own
+ * bookkeeping.
+ */
+export interface FileWorkItem {
+  kind: "file";
+  id: string;
+  op: string;
+  path?: string;
+  args?: Record<string, unknown>;
+  data?: string;
+  remainingMs: number;
+  deadline: number;
+  agent?: { id: string; name: string | null };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a worker claims from its long-poll. A tools
+ * Satellite is handed calls and cancellations; a files Satellite only ever
+ * receives file operations, since it has no tools and no Jobs.
+ */
+export type WorkItem = CallWorkItem | CancelWorkItem | FileWorkItem;
 
 export interface SatellitesService {
   list(): Promise<SatelliteView[]>;
@@ -97,5 +142,6 @@ export interface SatelliteWorkerOps {
   claim(owner: string, input: ClaimInput): Promise<WorkItem[]>;
   heartbeat(owner: string, input: HeartbeatInput): Promise<void>;
   report(owner: string, input: ReportInput): Promise<void>;
+  fileResult(owner: string, input: FileResultInput): Promise<void>;
   drain(owner: string, satellite: string, incarnation?: string): Promise<void>;
 }

@@ -1,6 +1,6 @@
 # OpenShift node configuration
 
-Node configuration for an OpenShift cluster that runs the platform with VM agents.
+Node configuration for an OpenShift cluster that runs the platform, whose agents all run as microVMs.
 Applying either file drains and reboots every node of the pools it reaches, one node at a time per pool, so a cluster admin applies them at a scheduled time.
 [`cluster-owner-requests.md`](cluster-owner-requests.md) lists what else the platform asks of the cluster owner.
 

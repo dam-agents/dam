@@ -41,7 +41,8 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
   await test.step("add a narrow allow rule in the network panel", async () => {
     await page.goto(`/sandboxes/${encodeURIComponent(agentId)}/network`);
     await page.getByTestId("egress-rule-new").click();
-    const dialog = page.getByRole("dialog");
+    // TEST_SCENARIO: the old agent link opens the settings dialog, so the rule form is the second dialog; it is found by its own title.
+    const dialog = page.getByRole("dialog", { name: "New rule" });
     await dialog.getByLabel("Host").fill(host);
     await dialog.getByLabel("Method").selectOption("GET");
     await dialog.getByLabel("Path").fill("/status/*");
@@ -140,6 +141,22 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
   });
 });
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the prompt in the chat is the chat-network-approvals
+ * feature's, off by default. The test below turns it on for the shared account,
+ * and the file turns it off again at its end, so a later spec meets the default.
+ */
+async function setChatApprovals(api: ApiClient, enabled: boolean) {
+  await api.features.setFlag.mutate({
+    feature: "chat-network-approvals",
+    enabled,
+  });
+}
+
+test.afterAll(async () => {
+  await setChatApprovals(createApiClient(await getAccessToken()), false);
+});
+
 test("a waiting network approval shows in the open conversation, retries included", async ({
   page,
 }) => {
@@ -149,6 +166,8 @@ test("a waiting network approval shows in the open conversation, retries include
   const api = createApiClient(token);
   const agentId = await waitForAgentRunning(api, agentName);
   const url = `https://${host}${chatAnsweredPath}`;
+
+  await setChatApprovals(api, true);
 
   const waitingFor = async (path: string) =>
     (await api.approvals.listForInstance.query({ agentId })).filter(

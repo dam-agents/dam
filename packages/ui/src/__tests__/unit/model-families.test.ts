@@ -70,8 +70,8 @@ describe("a model id's family, size and version", () => {
 
   // TEST_SCENARIO: A model of no known family, or of a known family with no size, is not a family model.
   it("returns null for an unknown model", () => {
-    expect(parseModelFamily("rits/moonshotai/Kimi-K2.5")).toBeNull();
     expect(parseModelFamily("meta/llama-4")).toBeNull();
+    expect(parseModelFamily("rits/moonshotai/Kimi-Latest")).toBeNull();
   });
 
   // TEST_SCENARIO: GLM's ids carry no size word, so the family is one tier; DeepSeek's carry Flash, and the v in its version is not part of it.
@@ -159,6 +159,17 @@ describe("a model id's family, size and version", () => {
   it("names a matched model for the chat", () => {
     expect(prettyModelLabel("ibm/aws/claude-opus-5-5")).toBe("Claude Opus 5.5");
     expect(prettyModelLabel("cb/rits/zai-org/glm-5-3")).toBe("GLM 5.3");
+    expect([
+      prettyModelLabel("rits/ibm-research/granite-5.0-230b-preview-r261008a"),
+      prettyModelLabel("rits/meta-models/Muse-Spark-Open-816B-A42B-NVFP4"),
+      prettyModelLabel("meta/muse-spark-1.1"),
+      prettyModelLabel("ibm/granite-3.0-8b-instruct"),
+    ]).toEqual([
+      "Granite 5.0 230B",
+      "Muse Spark 816B",
+      "Muse Spark 1.1",
+      "Granite 3.0 8B",
+    ]);
     expect(prettyModelLabel("bob/premium-ide")).toBe("Bob premium-ide");
     expect(prettyModelLabel("azure/gpt-5.5")).toBe("GPT 5.5");
   });
@@ -298,15 +309,18 @@ describe("the menu's family groups", () => {
     expect(deepseek.more.map((e) => e.label)).toEqual(["3.2"]);
   });
 
-  // TEST_SCENARIO: Nemotron's Ultra is one entry, and Bob's tiers form their own group in the given order; gpt-oss keeps the GPT family and its More.
+  // TEST_SCENARIO: Nemotron's Nano is one entry, and Bob's tiers, the dev-sec-ops ones and ultra among them, form their own group in the given order; gpt-oss keeps the GPT family and its More.
   it("groups Nemotron and Bob", () => {
-    const { families } = familyModelGroups([
-      group("cb", "cb/rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4"),
+    const { families, other } = familyModelGroups([
+      group("cb", "cb/rits/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"),
       group(
         "bob",
         "bob/background",
+        "bob/ultra",
         "bob/premium-ide",
+        "bob/dev-sec-ops-premium-west",
         "bob/wxO-model",
+        "bob/dev-sec-ops-premium",
         "bob/gpt-oss-20b",
       ),
     ]);
@@ -314,13 +328,17 @@ describe("the menu's family groups", () => {
       families
         .find((f) => f.family.name === "Nemotron")!
         .newest.map((e) => e.label),
-    ).toEqual(["Ultra 3"]);
+    ).toEqual(["Nano 3 30B"]);
     const bob = families.find((f) => f.family.name === "Bob")!;
     expect(bob.newest.map((e) => e.label)).toEqual([
       "background",
+      "dev-sec-ops-premium",
+      "dev-sec-ops-premium-west",
       "premium-ide",
+      "ultra",
       "wxO-model",
     ]);
+    expect(other.models).toEqual([]);
     expect(bob.more).toEqual([]);
     expect(
       families.find((f) => f.family.name === "GPT")!.more.map((e) => e.label),
@@ -331,13 +349,11 @@ describe("the menu's family groups", () => {
   it("puts an unknown family under Other", () => {
     const { other } = familyModelGroups([
       ...groups,
-      group("other-provider", "x/rits/moonshotai/Kimi-K2.5"),
+      group("other-provider", "x/meta/llama-4"),
     ]);
-    expect(other.models.map((e) => e.label)).toEqual([
-      "rits/moonshotai/Kimi-K2.5",
-    ]);
-    const kimi = other.models[0]!;
-    expect(kimi.options.map((o) => o.group.connectionId)).toEqual([
+    expect(other.models.map((e) => e.label)).toEqual(["meta/llama-4"]);
+    const llama = other.models[0]!;
+    expect(llama.options.map((o) => o.group.connectionId)).toEqual([
       "other-provider",
     ]);
   });
@@ -399,5 +415,75 @@ describe("the menu's family groups", () => {
       "ibm/claude-opus-4-8",
     ]);
     expect(claude.more.map((e) => e.label)).toEqual(["Opus 4.8"]);
+  });
+
+  // TEST_SCENARIO: The models QA found under Other as raw ids get family names: Gemini by size then version, a preview as its variant, Kimi with the K its vendor writes on the version; the next model of each vendor parses the same way.
+  it("names Gemini and Kimi models", () => {
+    expect([
+      prettyModelLabel("ibm/gcp/gemini-3.1-pro-preview"),
+      prettyModelLabel("ibm/gcp/gemini-4-argon"),
+      prettyModelLabel("ibm/gemini-4-argon"),
+      prettyModelLabel("ibm/rits/moonshotai/Kimi-K2.5"),
+      prettyModelLabel("gemini-5-flash"),
+      prettyModelLabel("kimi-k3"),
+    ]).toEqual([
+      "Gemini Pro 3.1 preview",
+      "Gemini Argon 4",
+      "Gemini Argon 4",
+      "Kimi K2.5",
+      "Gemini Flash 5",
+      "Kimi K3",
+    ]);
+  });
+
+  // TEST_SCENARIO: A preview and the released model of the same version are two entries, and the released one is the newest in either listing order; a fixed Bob name with a preview tail is no Bob tier.
+  it("puts a released model ahead of its preview", () => {
+    for (const ids of [
+      ["ibm/gemini-3.1-pro-preview", "ibm/gemini-3.1-pro"],
+      ["ibm/gemini-3.1-pro", "ibm/gemini-3.1-pro-preview"],
+    ]) {
+      const gemini = familyModelGroups([group("ibm", ...ids)]).families[0]!;
+      expect(gemini.newest.map((e) => e.label)).toEqual(["Pro 3.1"]);
+      expect(gemini.more.map((e) => e.label)).toEqual(["Pro 3.1 preview"]);
+    }
+    expect(parseModelFamily("bob/premium-preview")).toBeNull();
+  });
+
+  // TEST_SCENARIO: IBM ETE lists Gemini 4 Argon twice, as gcp/gemini-4-argon and gemini-4-argon; the menu shows it once, and nothing of that listing stays under Other.
+  it("shows IBM's two Gemini 4 Argon ids as one model", () => {
+    const { families, other } = familyModelGroups([
+      group(
+        "ibm",
+        "ibm/gcp/gemini-3.1-pro-preview",
+        "ibm/gcp/gemini-4-argon",
+        "ibm/gemini-4-argon",
+        "ibm/rits/moonshotai/Kimi-K2.5",
+      ),
+    ]);
+    expect(other.models).toEqual([]);
+    const gemini = families.find((f) => f.family.name === "Gemini")!;
+    expect(gemini.newest.map((e) => e.label)).toEqual([
+      "Argon 4",
+      "Pro 3.1 preview",
+    ]);
+    expect(gemini.newest[0]!.options.map((o) => o.model.name)).toEqual([
+      "ibm/gcp/gemini-4-argon",
+    ]);
+    expect(
+      families
+        .find((f) => f.family.name === "Kimi")!
+        .newest.map((e) => e.label),
+    ).toEqual(["K2.5"]);
+  });
+
+  // TEST_SCENARIO: CurveBender's Nemotron serves the platform's classifier only, so no menu offers it, while a pick saved before keeps its name.
+  it("offers no internal model", () => {
+    const nemotron = "cb/rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4";
+    const { families, other } = familyModelGroups([
+      group("cb", nemotron, "cb/rits/zai-org/glm-5-3"),
+    ]);
+    expect(families.map((f) => f.family.name)).toEqual(["GLM"]);
+    expect(other.models).toEqual([]);
+    expect(prettyModelLabel(nemotron)).toBe("Nemotron Ultra 3 550B");
   });
 });

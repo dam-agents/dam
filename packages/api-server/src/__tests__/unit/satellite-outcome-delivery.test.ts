@@ -9,6 +9,7 @@ import { createAgentsRepository } from "../../modules/agents/infrastructure/agen
 import { createLiveAgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
 import type { KubeObject } from "../../modules/agents/infrastructure/k8s.js";
 import { fakeK8s } from "../helpers/fake-k8s.js";
+import { stubFileChannel } from "../helpers/satellite-fakes.js";
 
 /**
  * TEST_OVERVIEW: Wake on finish. A Job outlives the turn that started it, so a
@@ -32,7 +33,6 @@ function job(patch: Partial<JobRow> = {}): JobRow {
     agentId: "agent-1",
     tool: "run",
     args: { cmd: ["./process.sh", "sales.db"] },
-    transferDirection: null,
     status: "done",
     isError: false,
     exitCode: 0,
@@ -302,6 +302,7 @@ describe("reporting an outcome reaches the wake", () => {
 
     const workerOps = createSatelliteWorkerOps({
       repo: repo as never,
+      fileChannel: stubFileChannel(),
       maxConcurrentCeiling: 64,
       deliverOutcome: async ({ agentId }) => {
         await deliver(agentId);

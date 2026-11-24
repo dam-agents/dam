@@ -17,7 +17,7 @@ export default defineConfig({
         { name: "PLATFORM_BRAND_NAME_MEANINGS", default: "[]" },
         {
           name: "PLATFORM_DOCS_URL",
-          default: "https://pages.github.ibm.com/dam-agents/docs/",
+          default: "https://ibm.biz/dam-docs",
         },
         { name: "PLATFORM_LOGIN_COMMUNITY_LABEL", default: "" },
         { name: "PLATFORM_LOGIN_COMMUNITY_URL", default: "" },

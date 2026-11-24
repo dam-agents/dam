@@ -23,6 +23,7 @@ import {
 } from "../hooks/use-artifact-row-drag.js";
 import {
   ArtifactDeletionChip,
+  ArtifactIcon,
   ArtifactInteractiveBadge,
   ArtifactVisibilityButton,
 } from "./artifact-badges.js";
@@ -113,6 +114,7 @@ export function ArtifactListRow({
             />
           </div>
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            <ArtifactIcon icon={artifact.icon} />
             <span className="min-w-12 shrink-[100000] truncate">
               {artifact.title}
             </span>

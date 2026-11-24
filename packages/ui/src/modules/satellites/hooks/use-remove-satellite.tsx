@@ -17,9 +17,9 @@ export function useRemoveSatelliteWithConfirm() {
     const ok = await showConfirm(
       <>
         <p>
-          Agents lose its tools, and its job history is deleted. Commands
-          already running on the machine are not stopped. A worker still serving
-          it stops; start it again to register it anew.
+          {satellite.kind === "files"
+            ? `Agents lose the mount at /mnt/sat/${satellite.name}, and the satellite stops serving them. Operations already running on the machine are not stopped. A worker still serving it stops; start it again to register it anew.`
+            : "Agents lose its tools, and its job history is deleted. Commands already running on the machine are not stopped. A worker still serving it stops; start it again to register it anew."}
         </p>
         {affected.length > 0 && <AffectedAgents names={affected} />}
       </>,

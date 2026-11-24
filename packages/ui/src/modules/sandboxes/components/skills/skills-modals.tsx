@@ -51,7 +51,8 @@ export function SkillsModals({
   surface: SkillsSurface;
   derived: SkillsDerivations;
   onPublish?: (skill: LocalSkill) => void;
-  onDeleteLocal: (skill: LocalSkill, publish?: SkillPublishRecord) => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: absent for a viewer who may not change the Agent's skills: the preview offers no Delete. */
+  onDeleteLocal?: (skill: LocalSkill, publish?: SkillPublishRecord) => void;
   onClose: () => void;
 }) {
   if (!open) return null;
@@ -141,7 +142,7 @@ export function SkillsModals({
           publish={publish}
           onDownload={() => void surface.downloadStandalone(skill)}
           footer={
-            createdHere ? (
+            createdHere && (onDeleteLocal || (canRepublish && onPublish)) ? (
               <>
                 {canRepublish && onPublish && (
                   <Button
@@ -161,17 +162,19 @@ export function SkillsModals({
                     {publish ? "Publish again…" : "Publish…"}
                   </Button>
                 )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  tone="danger"
-                  onClick={() => {
-                    onClose();
-                    onDeleteLocal(skill, publish);
-                  }}
-                >
-                  Delete skill
-                </Button>
+                {onDeleteLocal && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    tone="danger"
+                    onClick={() => {
+                      onClose();
+                      onDeleteLocal(skill, publish);
+                    }}
+                  >
+                    Delete skill
+                  </Button>
+                )}
               </>
             ) : undefined
           }

@@ -24,6 +24,7 @@ import {
   useAgentLacksLiveUpdates,
 } from "../../agents/api/queries.js";
 import { askAgainWhenReady } from "../../agents/lib/agent-start.js";
+import { markAssistantUsed } from "../../assistants/api/assistant-state.js";
 import { isUnreadSession } from "../../home/lib/unread.js";
 import { nextSessionCursor } from "../lib/sidebar-session-window.js";
 import {
@@ -32,7 +33,7 @@ import {
   readSessionHistory,
   type SessionViewPage,
 } from "./acp-session-ops.js";
-import { acpSessionsKeys } from "./keys.js";
+import { acpSessionsKeys, type SessionListNarrowing } from "./keys.js";
 
 const SESSION_PAGE_SIZE = 50;
 const SESSION_HISTORY_STALE_MS = 5_000;
@@ -158,6 +159,7 @@ export function optimisticInsertSession(
   mode: SessionMode,
   running = false,
 ): void {
+  markAssistantUsed(agentId);
   const stub = sessionStub(agentId, sessionId, mode, running);
   queryClient.setQueriesData<SessionPages>(
     { queryKey: acpSessionsKeys.pages(agentId) },
@@ -238,11 +240,14 @@ export function useSessionPages(
   options?: {
     enabled?: boolean;
     activeSessionId?: string | null;
+    narrowing?: SessionListNarrowing;
   },
 ) {
   const compat = useAgentLacksLiveUpdates(agentId);
   const live = !!agentId && (options?.enabled ?? true);
-  const queryKey = acpSessionsKeys.pagesOf(agentId, categories);
+  const narrowing = options?.narrowing ?? {};
+  const narrowed = !!(narrowing.channelTypes || narrowing.status);
+  const queryKey = acpSessionsKeys.pagesOf(agentId, categories, narrowing);
   const query = useInfiniteQuery({
     queryKey,
     queryFn: live
@@ -251,6 +256,7 @@ export function useSessionPages(
             () =>
               listAgentSessionPage(agentId, {
                 categories: [...categories],
+                ...narrowing,
                 ...(pageParam && { after: pageParam }),
                 limit: SESSION_PAGE_SIZE,
               }),
@@ -258,6 +264,7 @@ export function useSessionPages(
           );
           if (pageParam) return page;
           const coversAll =
+            !narrowed &&
             categories.length === SESSION_CATEGORIES.length &&
             page.nextCursor === null;
           const store = useStore.getState();

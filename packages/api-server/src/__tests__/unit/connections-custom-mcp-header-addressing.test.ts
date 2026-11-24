@@ -92,7 +92,7 @@ describe("two custom MCP connections at one URL, each with its own header secret
    * host it names must be the real one — the address lives only in the path. */
   it("names the real host on the Secret the gateway reads", async () => {
     const contributions = await customMcpWithHeader("secret-a");
-    const annotations = connectionSecretAnnotations(contributions);
+    const annotations = connectionSecretAnnotations(contributions, []);
     const hosts = JSON.parse(
       annotations["agent-platform.ai/injection-hosts"] ?? "[]",
     ) as { host: string; headerName: string }[];

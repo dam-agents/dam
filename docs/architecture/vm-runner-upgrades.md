@@ -1,6 +1,6 @@
 # VM runner upgrades
 
-Last verified: 2026-10-23
+Last verified: 2026-11-13
 
 How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none unless the release declares that its machines must reboot onto it, which rolls the pod instead.
 
@@ -11,8 +11,11 @@ The controller records a hash of the pod it rendered on each runner, leaves a ru
 That hash leaves out every field the controller changes on the running pod in place, and the class the chart sets for every runner at once: the memory limit, which is the owner's pool, and the memory request ([vm-memory](vm-memory.md)), the CPU limit and the zero CPU request the same resize sets, and the PriorityClass, which a pod takes when it is rolled for another reason ([vm-runner](vm-runner.md)).
 None of those alone rolls a runner, so none of them reboots an owner's machines, and a pod created later takes whatever the install renders then.
 The roll width is a count of runners, one by default, or a share of the runners the install has, rounded up to at least one: a count alone cannot keep up, since one runner at a time takes an install of a thousand owners days to roll.
-A runner is mid-roll from that moment until its new pod is ready and every machine that was ready before is ready again, or its agent is gone; a settle timeout bounds the wait for machines, so one that never comes back does not stall everyone else.
-The machines it waits on are listed in the runner's `runner-awaiting` annotation, and [the idle checker](agent-lifecycle.md#hibernate) leaves every one of them awake: a hibernated machine never comes back ready, so a sweep that hibernated one would make the roll wait out its settle timeout and give up on machines that were only idle.
+A runner is mid-roll from that moment until its new pod is ready and every machine that was ready before is ready again, or its Agent no longer asks it to run; a settle timeout bounds the wait for machines, so one that never comes back does not stall everyone else.
+An Agent no longer asks to run when it is gone, a stop was asked of it, or its hibernation is published and nothing woke it since: such a machine never comes back, so the roll stops waiting for it at once rather than at the settle timeout, machine by machine, and still waits for every other machine it lists.
+That is read off the Agent, never off the runner: right after the pod rolls, the new runner has booted no machine yet, so every machine reads stopped or absent there, and a roll that took that as settled would end before any came back.
+A hand-off can read the runner, since its machines keep running in place.
+The machines it waits on are listed in the runner's `runner-awaiting` annotation, and [the idle checker](agent-lifecycle.md#hibernate) leaves every one of them awake: a hibernated machine never comes back ready, so the roll stops waiting for it, and a sweep that hibernated one would settle the roll without seeing a machine that was only idle come back on the new pod.
 The list is written when the roll starts and cleared in the write that settles it or finds its machines did not come back in time, and the idle checker leaves a stalled roll's list alone, since that roll is waiting on nothing of the owner's.
 That release happens on the owner's own turn whether or not any other runner asks for a place: a runner already on the pod it should run asks for none, so the last roll of an upgrade would otherwise keep its wait — and the pin on its machines — standing for good.
 A pod that never became ready is the other half of it: past the settle timeout that roll is marked stalled and keeps its place, so the release goes no further, and the mark is what ends its pin.
@@ -31,7 +34,7 @@ The node is read through the node read grant the chart adds; an install without 
 A runner whose pod is unchanged is not rolled — unless its runner holds the configured release as one whose machines must reboot onto it, which rolls the pod with a revised template ([below](#hand-offs)) — but labels or owner references that drifted on it are put back without touching the pod.
 A new owner's runner is created at once, since there is nothing of theirs to protect.
 A changed runner also waits for its owner's agents to be idle, since a roll ends the turn an agent is in.
-Before it takes a place in the roll, the controller asks each of the owner's ready machines the idle checker's own question, whether its agent's status says idle, all at once, and an agent that does not answer counts as idle.
+Before it takes a place in the roll, the controller asks each of the owner's ready machines whether its agent's status says idle, all at once, and an agent that does not answer counts as idle, since a machine the roll reboots comes back: the idle checker never takes a silence that way.
 A runner with a busy agent holds no place, so other owners roll meanwhile, and the next pass offers it again.
 The install's idle wait, a day by default so that a multi-hour kept job finishes, bounds this from the first pass that found the owner busy, and is recorded on the runner so a controller restart does not start it over; past it, the runner rolls with the agent busy, so an owner who is never idle still gets the release.
 **A runner that cannot reach its node's image cache does not wait out the idle wait.** Such a runner boots only the trees its own machines already hold, so every image its owner has not booted yet is refused ([vm-image-cache](vm-image-cache.md)), and the image update job holds each upgrade rather than moving an Agent back.
@@ -66,7 +69,6 @@ That first stage only executes the share's platform-init, which is the release's
 Its guest kernel is the smolvm release's own libkrunfw, Linux 6.18 with [smol-machines/libkrunfw#31](https://github.com/smol-machines/libkrunfw/pull/31), rebuilt with a patch that adds btrfs ([vm-runner](vm-runner.md)) and zram swap ([vm-memory](vm-memory.md)).
 The image build refuses a rebuilt kernel whose version is not the release's.
 Without that fix, from 6.15 on, FUSE DAX corrupts a mapped file that another process opens, and a guest of 6 GiB or more dies of SIGBUS ([smol-machines/smolvm#1741](https://github.com/smol-machines/smolvm/issues/1741)); 6.18 also stalls a guest whose mapped working set outgrows the DAX window.
-The vm e2e lane boots a 6 GiB guest with the runner's kernel and checks both, so a smolvm release whose kernel fails them fails the lane.
 The Mac's host runner has the same kernel, and its guests have no FUSE DAX.
 The pod's libc does not: a release whose runner does not load in the pod can take it over only as a new pod.
 
@@ -106,6 +108,8 @@ A release that changes only the loader therefore keeps the reboot key the releas
 That key is also how the first loader of this kind reaches a pod: a release staged on the node cannot hand its loader to a loader that predates the protocol, so the release that ships one declares a key of its own, and the roll that hold causes delivers it in the pod's image.
 An upgrade that changes the pod's shape along with the release rolls every runner pod once, onto the configured image, so the loader the image now carries arrives with that roll; the two are not one step, since the controller comes up first and a pod whose roll has not come yet still runs the loader its own image was built with, so a death only that loader can record goes unnamed until the roll reaches it.
 The key is compared whole and never parsed, and a release that changes nothing a machine booted carries the key before it, so the pods it reaches take it in place.
+The smolvm pins the key was declared for — its release, its libkrun and its guest kernel — sit beside it in [`packages/vm-runner/reboot-id.pins`](../../packages/vm-runner/reboot-id.pins) as a tripwire: a pin that moves fails the crate's test, so whoever moves one decides the key and re-declares the pins there.
+Nothing compares the key, and a change to `platform-init` or to the loader takes the same decision with no file to fail on.
 A release built before keys declares none, and so does a pod built from one: with nothing to compare, the keyed release is handed off in place and no machine reboots, until that pod's shape changes for another reason, which rolls it onto a release that carries a key.
 The pod roll a `reboot` hold causes does not wait for the owner's agents to be idle, which would otherwise hold the release back a day from an owner who is never idle.
 That roll ends the turn each busy agent is in, and the controller reports the owner and those agents when it rolls past them.

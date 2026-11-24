@@ -6,11 +6,11 @@ import { WakeToEditButton } from "../../agents/components/wake-to-edit-button.js
 import { useOperableState } from "../../agents/hooks/use-operable-state.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the one place a model picker meets a sleeping
- * agent. The model list is read from the running agent, so while it sleeps
- * the picker gives way to the "Start agent to edit" button, then "Agent is
- * starting…", and comes back once the agent answers. Nothing here wakes the
- * agent on its own.
+ * UNIT_BOUNDARY_DESCRIPTION: the one place a model picker meets an agent
+ * that is not running. The model list is read from the running agent, so the
+ * picker gives way to "Agent is starting…" while the gate wakes the agent, and
+ * comes back once the agent answers; a wake that did not start leaves the
+ * "Start agent to edit" button.
  */
 export function AwakeModelsGate({
   agentId,

@@ -18,10 +18,6 @@ import { createAgentTrpcProxy } from "./agent-proxies/trpc-proxy.js";
 import { createEditorRuntimeAccess } from "./agent-proxies/editor-runtime-access.js";
 import { createEditorSockets } from "./agent-proxies/editor-sockets.js";
 import { composeEditorStanding } from "../../modules/agents/index.js";
-import {
-  createAgentTransfer,
-  createSatelliteFileRoutes,
-} from "../../modules/satellites/index.js";
 import { editorEmailOf, type UserIdentity } from "api-server-api";
 import { createImportProxy } from "./agent-proxies/import-proxy.js";
 import { createSshRelay } from "./agent-proxies/ssh-relay.js";
@@ -38,6 +34,7 @@ import {
 } from "./agent-proxies/upgrade.js";
 import type { ApiServerDeps, ApiVariables } from "./deps.js";
 import { mountRoutes } from "./routes/index.js";
+import { createUiRoutes } from "./routes/ui.js";
 import { createApiContextFactory } from "./trpc/context.js";
 import { createTrpcHttpRoutes } from "./trpc/http.js";
 import { createTrpcWsEndpoint } from "./trpc/ws.js";
@@ -89,7 +86,13 @@ export function startApiServerApp(deps: ApiServerDeps) {
     });
     return standing && { role: "editor" as const, email, ...standing };
   };
-  const composeApiContext = createApiContextFactory(deps);
+  const contextFor = createApiContextFactory(deps);
+  /* UNIT_BOUNDARY_DESCRIPTION: every request that composes a context starts giving a person their assistant, when the install offers them one and they have accepted the Terms of Use; nothing waits for the create, so a slow store delays no page, and a person who already has it pays one read. */
+  const composeApiContext = async (user: UserIdentity, surface: string) => {
+    const ctx = contextFor(user, surface);
+    ctx.provisionAssistant();
+    return ctx;
+  };
 
   const authenticate: Authenticate = (token, site: AuthSite) =>
     authenticatePrincipal(deps.auth.verify, token, site);
@@ -114,13 +117,6 @@ export function startApiServerApp(deps: ApiServerDeps) {
     ),
   );
   mountRoutes(app, deps);
-  app.route(
-    "/",
-    createSatelliteFileRoutes({
-      repo: deps.satellitesBoot.repo,
-      transferFor: (agentId) => createAgentTransfer(agentId, config.namespace),
-    }),
-  );
   app.route("/api/trpc", createTrpcHttpRoutes({ composeApiContext }));
   app.all(
     "/api/agents/:id/trpc/*",
@@ -140,6 +136,12 @@ export function startApiServerApp(deps: ApiServerDeps) {
       ensureReady,
     }),
   );
+
+  const ui = createUiRoutes({
+    root: config.uiRoot,
+    title: config.brand.title || config.brand.name,
+  });
+  if (ui) app.route("/", ui);
 
   const server = serve(
     {

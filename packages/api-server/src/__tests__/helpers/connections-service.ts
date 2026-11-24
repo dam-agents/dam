@@ -6,6 +6,7 @@ import type { ConnectionsRepository } from "../../modules/connections/infrastruc
 import type { SecretStore } from "../../modules/secret-store/index.js";
 import type { XactLock } from "../../core/xact-lock.js";
 import type { ProviderModelCatalog } from "../../modules/connections/services/provider-model-catalog.js";
+import type { DamKeyPort } from "../../modules/connections/domain/dam-connection.js";
 
 /**
  * TEST_OVERVIEW: the in-memory Connections store and service wiring the
@@ -78,6 +79,12 @@ export function memorySecretStore(
       reads.get++;
       return secrets.get(ref.path)?.fields ?? null;
     },
+    putFields: async (ref, fields) =>
+      void secrets.set(ref.path, {
+        fields: { ...(secrets.get(ref.path)?.fields ?? {}), ...fields },
+        annotations: secrets.get(ref.path)?.annotations ?? {},
+        purpose: secrets.get(ref.path)?.purpose ?? "connection",
+      }),
     getField: async (ref) => {
       reads.getField++;
       return secrets.get(ref.path)?.fields[ref.field] ?? null;
@@ -92,6 +99,14 @@ export function serviceHarness(opts: {
   lock?: XactLock;
   brandName: string;
   curveBenderDeploymentKey?: string | null;
+  damKey?: DamKeyPort;
+  damConnectionOffered?: () => Promise<boolean>;
+  insert?: (row: Connection) => Promise<void>;
+  adoptDamKey?: (input: {
+    id: string;
+    keyId: string;
+    previousKeyId: string | null;
+  }) => Promise<void>;
   providerModelCatalog?: ProviderModelCatalog;
 }) {
   const { rows, grants, secrets } = opts.store ?? newConnectionsStore();
@@ -110,18 +125,34 @@ export function serviceHarness(opts: {
     ownerId: "owner",
     templates: opts.templates,
     repo: unused<ConnectionsRepository>({
-      insert: async (c) => {
-        if ([...rows.values()].some((r) => r.name === c.name))
-          throw Object.assign(new Error("duplicate"), { code: "23505" });
-        rows.set(c.id, c);
-      },
+      insert:
+        opts.insert ??
+        (async (c) => {
+          if ([...rows.values()].some((r) => r.name === c.name))
+            throw Object.assign(new Error("duplicate"), { code: "23505" });
+          rows.set(c.id, c);
+        }),
       get: async (id) => rows.get(id) ?? null,
       listByOwner: async () => [...rows.values()],
       listChildren: async (parentId) =>
         [...rows.values()].filter((c) => c.parentId === parentId),
       listByOwnerOldestFirst: async () => [...rows.values()],
+      mergeInputs: async (id, patch) =>
+        void rows.set(id, {
+          ...rows.get(id)!,
+          inputs: { ...rows.get(id)!.inputs, ...patch },
+        }),
+      adoptDamKey:
+        opts.adoptDamKey ??
+        (async ({ id, keyId }) => {
+          const row = rows.get(id);
+          if (!row) return;
+          rows.set(id, { ...row, inputs: { ...row.inputs, apiKeyId: keyId } });
+        }),
       updateContributions: async (id, contributions) =>
         void rows.set(id, { ...rows.get(id)!, contributions }),
+      updateAuth: async (id, auth) =>
+        void rows.set(id, { ...rows.get(id)!, auth }),
       updateName: async (id, name) =>
         void rows.set(id, { ...rows.get(id)!, name }),
       delete: async (id) => {
@@ -160,6 +191,8 @@ export function serviceHarness(opts: {
     connectionLock: opts.lock ?? keyedMutex(),
     resolveKbShare: unused(),
     curveBenderDeploymentKey: opts.curveBenderDeploymentKey ?? null,
+    ...(opts.damKey ? { damKey: opts.damKey } : {}),
+    damConnectionOffered: opts.damConnectionOffered ?? (async () => true),
   });
   return { svc, rows, grants, secrets, fannedOut, secretReads };
 }

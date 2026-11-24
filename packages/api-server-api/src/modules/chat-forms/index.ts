@@ -1,3 +1,4 @@
+export * from "./auto-check.js";
 export * from "./capabilities.js";
 export * from "./catalogs.js";
 export * from "./check.js";

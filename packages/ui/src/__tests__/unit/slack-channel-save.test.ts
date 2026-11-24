@@ -5,6 +5,7 @@ import { planSlackChannelSave } from "../../modules/sandboxes/lib/slack-channel-
 type Binding = {
   slackChannelId: string;
   ambient?: boolean;
+  history?: boolean;
   customEmoji?: string[] | null;
 };
 
@@ -19,9 +20,15 @@ const plan = (
   values: {
     channelId: string;
     ambient: boolean;
+    history?: boolean;
     customEmoji?: string[] | null;
   },
-) => planSlackChannelSave({ agentId: AGENT, channel, values });
+) =>
+  planSlackChannelSave({
+    agentId: AGENT,
+    channel,
+    values: { history: false, ...values },
+  });
 
 describe("planSlackChannelSave — connecting a new conversation", () => {
   it("connects the typed conversation, ambient off by default", () => {
@@ -56,7 +63,7 @@ describe("planSlackChannelSave — editing an existing binding", () => {
     });
     expect(
       plan(bound("C-1", true), { channelId: "C-1", ambient: false }),
-    ).toEqual({ id: AGENT, slackChannelId: "C-1" });
+    ).toEqual({ id: AGENT, slackChannelId: "C-1", ambient: false });
   });
 
   it("never connects a conversation other than the one being edited", () => {
@@ -70,6 +77,31 @@ describe("planSlackChannelSave — editing an existing binding", () => {
     expect(
       plan(bound("C-1", true), { channelId: "C-OTHER", ambient: true }),
     ).toBeNull();
+  });
+});
+
+describe("planSlackChannelSave — channel history", () => {
+  it("carries the history opt-in on a new connection", () => {
+    expect(
+      plan(undefined, { channelId: "C-NEW", ambient: false, history: true }),
+    ).toEqual({ id: AGENT, slackChannelId: "C-NEW", history: true });
+  });
+
+  it("sends only the mode that changed, so the server keeps the other as it stands", () => {
+    const withHistory = { slackChannelId: "C-1", history: true };
+    expect(
+      plan(withHistory, { channelId: "C-1", ambient: true, history: true }),
+    ).toEqual({ id: AGENT, slackChannelId: "C-1", ambient: true });
+  });
+
+  it("writes nothing when history is unchanged, and turns it off with a re-connect", () => {
+    const withHistory = { slackChannelId: "C-1", history: true };
+    expect(
+      plan(withHistory, { channelId: "C-1", ambient: false, history: true }),
+    ).toBeNull();
+    expect(
+      plan(withHistory, { channelId: "C-1", ambient: false, history: false }),
+    ).toEqual({ id: AGENT, slackChannelId: "C-1", history: false });
   });
 });
 

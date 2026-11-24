@@ -48,7 +48,7 @@ export function defaultModelDetail(notice: DefaultModelNotice): string {
     case "no-provider":
       return `Attach a provider, then choose a model. Its ${runs} won't run until then.`;
     case "provider-gone":
-      return `${notice.model ?? "Its default model"} is on a provider this agent no longer holds. Its ${runs} won't run until you choose another.`;
+      return `${notice.model ?? "Its default model"} is on a provider this agent no longer holds, so its ${runs} run on another model until you choose one.`;
     case "changed":
       return `${capitalized(notice.changedFrom ?? "its old model")} could not be kept, so it now runs ${notice.model ?? "another model"}.`;
   }
@@ -72,7 +72,7 @@ export function defaultModelScheduleWarning(
     case "no-provider":
       return "Won’t run: no model provider";
     case "provider-gone":
-      return "Won’t run: default model’s provider is gone";
+      return "Default model’s provider is gone: runs on another model";
     case "changed":
       return "Won’t run: no default model";
   }

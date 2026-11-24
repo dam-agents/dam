@@ -121,7 +121,7 @@ function LoadOlderMarker({
 
 const UNCONFIRMED_LABEL: Record<NonNullable<Message["unconfirmed"]>, string> = {
   sending: "Sending",
-  waking: "Waking the agent",
+  waking: "Starting the agent",
 };
 
 export const ChatMessage = memo(function ChatMessage({
@@ -344,6 +344,9 @@ export const ChatMessage = memo(function ChatMessage({
             rawError={error.message}
             interrupted={interrupted}
             quiet={!isLast}
+            agentId={agentId}
+            sessionId={sessionId}
+            at={message.at}
           />
         ))}
       {turn && agentId !== undefined && sessionId !== undefined && (

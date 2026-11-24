@@ -1,5 +1,11 @@
 import { match } from "ts-pattern";
-import type { CallPrice, PriceRow, TierPrices, TokenPrices } from "./prices.js";
+import type {
+  CallPrice,
+  PriceRow,
+  PriceStep,
+  TierPrices,
+  TokenPrices,
+} from "./prices.js";
 import { promptTokens, type NormalizedUsage } from "./usage.js";
 
 const MILLION = 1_000_000n;
@@ -14,6 +20,8 @@ export function callCostMicros(
     .with({ kind: "row" }, ({ row }) => rowCostMicros(row, usage))
     .with({ kind: "zero" }, () => 0)
     .with({ kind: "credits" }, () => creditsMicros(usage.bobCredits))
+    .with({ kind: "reply" }, ({ micros }) => micros)
+    .with({ kind: "awaiting" }, () => 0)
     .with({ kind: "unpriced" }, () => 0)
     .exhaustive();
 }
@@ -23,6 +31,7 @@ export interface ProxyCostHeaders {
   readonly original: string | null;
   readonly discount: string | null;
   readonly margin: string | null;
+  readonly body: string | null;
 }
 
 const dollars = (text: string | null): number | null => {
@@ -33,26 +42,36 @@ const dollars = (text: string | null): number | null => {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: LiteLLM's own cost of a call: its response cost
  * when that is above zero, else the original cost less the discount plus the
- * margin, the order in which LiteLLM applies them; a missing discount or
- * margin counts as zero.
+ * margin, the order in which LiteLLM applies them, a missing discount or
+ * margin counting as zero; when the headers give no cost above zero, the
+ * cost in a chat stream's usage.
  */
-export function proxyCostDollars(headers: ProxyCostHeaders): number | null {
-  const cost = dollars(headers.cost);
+export function proxyCostDollars(costs: ProxyCostHeaders): number | null {
+  const cost = dollars(costs.cost);
   if (cost !== null && cost > 0) return cost;
-  const original = dollars(headers.original);
-  if (original === null || original <= 0) return null;
-  return (
-    original - (dollars(headers.discount) ?? 0) + (dollars(headers.margin) ?? 0)
-  );
+  const original = dollars(costs.original);
+  const adjusted =
+    original !== null && original > 0
+      ? original - (dollars(costs.discount) ?? 0) + (dollars(costs.margin) ?? 0)
+      : null;
+  if (adjusted !== null && adjusted > 0) return adjusted;
+  const body = dollars(costs.body);
+  return body !== null && body > 0 ? body : null;
+}
+
+export function proxyCostMicros(costs: ProxyCostHeaders): number | null {
+  const proxy = proxyCostDollars(costs);
+  return proxy === null
+    ? null
+    : Math.ceil(Number((proxy * 1_000_000).toPrecision(12)));
 }
 
 export function proxyCostDifference(
   ourMicros: number,
   headers: ProxyCostHeaders,
 ): number | null {
-  const proxy = proxyCostDollars(headers);
-  if (proxy === null || proxy <= 0) return null;
-  const proxyMicros = proxy * 1_000_000;
+  const proxyMicros = proxyCostMicros(headers);
+  if (proxyMicros === null || proxyMicros <= 0) return null;
   return Math.abs(ourMicros - proxyMicros) / proxyMicros;
 }
 
@@ -62,9 +81,9 @@ function rowCostMicros(row: PriceRow, usage: NormalizedUsage): number {
     BigInt(usage.uncachedInputTokens) * BigInt(rates.input) +
     BigInt(usage.outputTokens) * BigInt(rates.output) +
     BigInt(usage.cacheReadTokens) * BigInt(rates.cacheRead) +
-    BigInt(usage.cacheWrite5mTokens) * BigInt(rates.cacheWrite5m) +
-    BigInt(usage.cacheWrite1hTokens + usage.cacheWriteUnsplitTokens) *
-      BigInt(rates.cacheWrite1h);
+    BigInt(usage.cacheWrite5mTokens + usage.cacheWriteUnsplitTokens) *
+      BigInt(rates.cacheWrite5m) +
+    BigInt(usage.cacheWrite1hTokens) * BigInt(rates.cacheWrite1h);
   const factor =
     scaledFactor(speedFactor(row, usage.speed)) *
     scaledFactor(geoFactor(row, usage.inferenceGeo));
@@ -84,12 +103,16 @@ interface ResolvedRates {
 
 function resolveRates(row: PriceRow, usage: NormalizedUsage): ResolvedRates {
   const tier = tierPrices(row, usage.serviceTier);
-  const above =
-    row.threshold !== undefined &&
-    promptTokens(usage) > row.threshold.promptTokens;
+  const prompt = promptTokens(usage);
+  const passed = [...(row.thresholds ?? []), ...(tier?.thresholds ?? [])]
+    .map((step) => step.promptTokens)
+    .filter((tokens) => prompt > tokens);
+  const highestFirst = [...new Set(passed)].sort((a, b) => b - a);
   const layers: readonly (TokenPrices | undefined)[] = [
-    above ? tier?.aboveThreshold : undefined,
-    above ? row.threshold?.prices : undefined,
+    ...highestFirst.flatMap((tokens) => [
+      stepPrices(tier?.thresholds, tokens),
+      stepPrices(row.thresholds, tokens),
+    ]),
     tier?.prices,
     row.prices,
   ];
@@ -104,6 +127,13 @@ function resolveRates(row: PriceRow, usage: NormalizedUsage): ResolvedRates {
     cacheWrite5m,
     cacheWrite1h: pick("cacheWrite1h") ?? cacheWrite5m,
   };
+}
+
+function stepPrices(
+  steps: readonly PriceStep[] | undefined,
+  promptTokens: number,
+): TokenPrices | undefined {
+  return steps?.find((step) => step.promptTokens === promptTokens)?.prices;
 }
 
 function tierPrices(

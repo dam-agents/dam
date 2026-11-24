@@ -25,16 +25,39 @@ export type {
   Resources,
 } from "./modules/templates/types.js";
 
-export { repoSchema } from "./modules/repos/schemas.js";
-export type { Repo, ReposService } from "./modules/repos/types.js";
 export type {
   SlackChannelChoiceView,
   SlackChannelChoicesView,
+  SlackDmBridgeState,
+  SlackDmConnectView,
+  SlackDmDisconnectView,
+  SlackDmStatusView,
 } from "./modules/channels/types.js";
+export {
+  isSlackDirectMessageId,
+  type SharedChannel,
+  sharedChannels,
+  type TelegramChatAudience,
+} from "./modules/channels/shared-conversations.js";
 
 export {
+  childConnectionsSchema,
+  type ChildConnections,
+  childEgressSchema,
+  childEgressRuleSchema,
+  OWNER_EGRESS_NOTE,
+  EGRESS_ANSWERS_NOTE,
+  type ChildEgress,
+  type ChildEgressRule,
   spawnInvocationRequestSchema,
   spawnScriptInvocationRequestSchema,
+  MAX_STOP_REASON_CHARS,
+  stopReasonSchema,
+  stopInvocationRequestSchema,
+  MAX_OWNER_ANSWER_CHARS,
+  MAX_OWNER_OPTIONS,
+  ownerAnswerSchema,
+  ownerQuestionInputSchema,
   invocationOutputStreamSchema,
   INVOCATION_OUTPUT_STREAMS,
   DEFAULT_INVOCATION_TTL_MS,
@@ -55,6 +78,10 @@ export type {
   SpawnInvocationRequest,
   SpawnScriptInvocationRequest,
   SpawnInvocationResponse,
+  StopInvocationRequest,
+  StopInvocationResponse,
+  SetEgressResponse,
+  EgressWaiting,
   InvocationOutput,
   InvocationOutputBlob,
   InvocationOutputLink,
@@ -64,7 +91,13 @@ export type {
   InvocationsControlService,
   InvocationHarnessConfig,
   InvocationsQueryService,
+  KeptSubAgent,
+  DelegationAnswer,
   DelegationNode,
+  DelegationQuestion,
+  DelegationStopped,
+  OwnerQuestion,
+  OwnerQuestionInput,
 } from "./modules/invocations/types.js";
 
 export {
@@ -73,9 +106,11 @@ export {
   createModelDiscovery,
   forHarness,
   harnessCatalogOf,
+  internalModel,
   layerMetadata,
   listingForTemplate,
   nativeListingForTemplate,
+  priceListingForTemplate,
   nativePinOf,
   withNativePin,
   lookupPrice,
@@ -157,6 +192,7 @@ export type {
   AgentsService,
   AgentCreateInput,
   AgentDefaultProvider,
+  AgentStart,
   AgentUpdateInput,
   AgentBackgroundWork,
   BackgroundWorkItemView,
@@ -169,6 +205,7 @@ export type {
   BindTelegramChatResult,
   ListTelegramChatsResult,
   UnbindTelegramChatResult,
+  SlackBindingModes,
   SlackChannel,
   SlackConversationLabel,
   SlackLoopGuardDrop,
@@ -181,6 +218,8 @@ export type {
   AgentListScope,
   SetAgentEditorsResult,
   LeaveAgentResult,
+  ChildInheritance,
+  ChildEgressRuleSeed,
 } from "./modules/agents/types.js";
 export {
   AGENT_ID_RE,
@@ -200,6 +239,8 @@ export {
   type AgentUnreachableBody,
   isProtectedAgentEnvName,
   isStartRefusal,
+  isTelemetryIdentityEnv,
+  TELEMETRY_IDENTITY_ENV,
   TerminationCode,
 } from "./modules/agents/types.js";
 export {
@@ -314,6 +355,7 @@ export type {
   SpendCallsInput,
   SpendCeilingSource,
   SpendCeilingView,
+  SpendAwaiting,
   SpendCounts,
   SpendBinding,
   SpendBindingCandidate,
@@ -386,6 +428,8 @@ export type {
   StarterKitCatalogEntry,
   StarterKitConnectionRequirement,
   StarterKitEgressRule,
+  StarterKitEntryPublisher,
+  StarterKitPublisher,
   OnboardingStep,
   StarterKitSchedule,
   StarterKitScheduleOverride,
@@ -402,6 +446,7 @@ export {
   LINKED_KIT_CATALOG,
   onboardingStepSchema,
   starterKitApplyInputSchema,
+  starterKitCatalogEntrySchema,
   starterKitCatalogSchema,
   starterKitScheduleOverrideSchema,
   starterKitSchema,
@@ -456,6 +501,8 @@ export type {
 export {
   ARTIFACT_PROMPT_TYPE,
   ARTIFACT_PROMPT_MAX_LENGTH,
+  ARTIFACT_PROMPT_CONVERSATION_PATTERN,
+  artifactPromptConversationSchema,
   artifactPromptSchema,
   type ArtifactPrompt,
   ARTIFACT_REQUEST_TYPE,
@@ -473,11 +520,19 @@ export {
   type ArtifactWhoamiResponseMessage,
 } from "./modules/artifact-library/prompt.js";
 export {
+  ARTIFACT_ICON_MAX_LENGTH,
+  ARTIFACT_ICON_RULE,
+  artifactIconDataUrl,
+  artifactIconSvg,
+  isArtifactIcon,
+} from "./modules/artifact-library/icon.js";
+export {
   artifactKindSchema,
   artifactVisibilitySchema,
   artifactSharingInputSchema,
   viewerEmailSchema,
   ARTIFACT_TITLE_MAX_LENGTH,
+  artifactIconSchema,
   INLINE_CONTENT_MAX_BYTES,
   ARTIFACT_TOUCH_MARKER_VERSION,
   artifactTouchPayloadSchema,
@@ -499,6 +554,32 @@ export {
   featureIdSchema,
   featureModeSchema,
 } from "./modules/features/schemas.js";
+export {
+  FEATURES_ON_BY_DEFAULT,
+  featureOnForUser,
+  hiddenHarnessesFor,
+} from "./modules/features/modes.js";
+export type {
+  AssistantFirstResult,
+  AssistantFirstResultInput,
+  AssistantState,
+  AssistantsService,
+  FirstResultKind,
+} from "./modules/assistants/types.js";
+export {
+  assistantFirstResultInputSchema,
+  firstResultKindSchema,
+} from "./modules/assistants/schemas.js";
+export {
+  ASSISTANT_IDEAS,
+  ASSISTANT_LEARN_LINE,
+  ASSISTANT_ONBOARDING_RULES,
+  type AssistantIdea,
+  type AssistantNames,
+  assistantGreetingOpening,
+  assistantIdeas,
+  assistantInstructions,
+} from "./modules/assistants/greeting.js";
 export type {
   AvatarUnlock,
   GettingStartedProgress,
@@ -583,6 +664,8 @@ export {
   PROVIDER_TEMPLATE_IDS,
   SHARED_KB_TEMPLATE_ID,
   S3_COMPATIBLE_TEMPLATE_ID,
+  DAM_TEMPLATE_ID,
+  damKeyName,
   providerTypeForTemplateId,
   templateIdForProvider,
   PROVIDER_ALIASES,
@@ -599,6 +682,7 @@ export {
   connectionEgressPathPrefix,
   connectionEgressPlaceholder,
   stripConnectionEgressPrefix,
+  CONNECTION_EGRESS_ADDRESS_HEADER,
   applyConnectionEgressAddressing,
   carriesCredentialPlaceholder,
   unaddressableRivalHost,
@@ -635,14 +719,12 @@ export type { DefaultAccountKindId } from "./modules/connections/preference-grou
 export type {
   ProfilesService,
   ProfileWithUsage,
+  NewAgentDefaultView,
   ProfileUsage,
   ProfileCreateInput,
   ProfileUpdateInput,
 } from "./modules/profiles/types.js";
-export {
-  DEFAULT_PROFILE_UNDELETABLE,
-  PROFILE_NAME_MAX_LENGTH,
-} from "./modules/profiles/schemas.js";
+export { PROFILE_NAME_MAX_LENGTH } from "./modules/profiles/schemas.js";
 
 export type {
   CaseStudyStatus,
@@ -693,6 +775,8 @@ export type {
 export type {
   ClusterCaProbe,
   GitHubAppInstallationProbe,
+  GitHubAppInstallationAccount,
+  GitHubAppInstallations,
   GitHubUserTokenInstallation,
   GitHubUserTokenProbe,
   GitHubUserTokenScope,
@@ -700,6 +784,7 @@ export type {
   Connection,
   ConnectionStatus,
   ConnectionView,
+  ConnectionAccessChoice,
   ConnectionProviderView,
   ConnectionTemplateView,
   ProviderBalance,
@@ -734,6 +819,7 @@ export {
   connectionCreateInputSchema,
   connectionHeaderNameSchema,
   connectionNameSchema,
+  isGatewayHostname,
   secretlessConnectionCreateInputSchema,
 } from "./modules/connections/schemas.js";
 export type {
@@ -767,10 +853,12 @@ export type {
   OutageAlertAffectedBy,
   OutageAlertAgent,
   OutageAlertNotice,
+  OwnerQuestionNotice,
 } from "./modules/attention/types.js";
 export {
   ATTENTION_FEED_LIMIT,
   ATTENTION_PAGE_LIMIT,
+  ownerQuestionNoticeKey,
 } from "./modules/attention/types.js";
 export type {
   CostReviewOffer,
@@ -778,6 +866,19 @@ export type {
   CostReviewsService,
 } from "./modules/cost-reviews/types.js";
 export { COST_REVIEW_LATER_DAYS } from "./modules/cost-reviews/types.js";
+export type {
+  SecurityCheckLevel,
+  SecurityCheckNotice,
+  SecurityCheckReport,
+  SecurityCheckReportInput,
+  SecurityChecksService,
+} from "./modules/security-checks/types.js";
+export {
+  SECURITY_CHECK_MAX_PROBLEMS,
+  SECURITY_CHECK_PROBLEM_MAX_LENGTH,
+  securityCheckLevelSchema,
+  securityCheckReportInputSchema,
+} from "./modules/security-checks/schemas.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";
 export type { SessionDirectoryService } from "./modules/session-directory/types.js";
 
@@ -860,6 +961,7 @@ export type {
   ApprovalPayload,
   SpendLimitPayload,
   EgressProposalPayload,
+  WebSearchPayload,
   AcpPermissionOption,
   AcpPermissionOptionKind,
   ApprovalView,
@@ -896,8 +998,15 @@ export type {
   EgressRuleUpdateInput,
   EgressRulesService,
   PlatformRuleState,
+  ChildEgressState,
 } from "./modules/egress-rules/types.js";
-export { PLATFORM_ENVIRONMENTS_SOURCE } from "./modules/egress-rules/types.js";
+export {
+  PLATFORM_ENVIRONMENTS_SOURCE,
+  CHILD_DRIVER_SOURCE,
+  isWildcardEgressRule,
+  wildcardHostReach,
+  CHILD_INHERITED_SOURCE,
+} from "./modules/egress-rules/types.js";
 export {
   EGRESS_HOST,
   egressRuleCreateInputSchema,
@@ -915,6 +1024,18 @@ export {
   gatewayRestartImpact,
   promotedHosts,
 } from "./modules/egress-rules/promotion.js";
+export type {
+  WebSearchRuleView,
+  WebSearchService,
+  WebSearchStateView,
+  WebSearchVerdict,
+} from "./modules/web-search/types.js";
+export { webSearchVerdictSchema } from "./modules/web-search/schemas.js";
+export {
+  WEB_SEARCH_FOLLOW_UP_QUERIES,
+  WEB_SEARCH_HARNESSES_COVERED,
+  WEB_SEARCH_HARNESSES_NOT_COVERED,
+} from "./modules/web-search/copy.js";
 
 export {
   platformTurnEndedParamsSchema,
@@ -1162,30 +1283,44 @@ export {
   reportFencedInputSchema,
   MAX_JOB_OUTPUT_BYTES,
   PAYLOAD_ENVELOPE_BYTES,
-  SATELLITE_FILE_MAX_BYTES,
+  SATELLITE_FILE_ERRNOS,
+  SATELLITE_FILE_MAX_DATA_CHARS,
+  SATELLITE_FILE_MAX_PATH,
+  SATELLITE_FILE_MAX_READDIR,
+  SATELLITE_FILE_MAX_READ_BYTES,
+  SATELLITE_FILE_MAX_RESULT_BYTES,
   SATELLITE_IMAGE_MIME_TYPES,
-  SATELLITE_TRANSFER_CLAIM_HEADER,
   escapedTextBytes,
+  fileResultInputSchema,
   formatJobRef,
   isBase64,
   reportInputSchema,
-  satelliteFileNameSchema,
-  satelliteFileWrittenSchema,
+  satelliteFileErrnoSchema,
+  satelliteFileOpMutates,
+  satelliteFileOpSchema,
+  satelliteFilesSchema,
   satelliteImageOf,
+  satelliteKindSchema,
   satelliteConnectInputSchema,
   satelliteImageSchema,
   satelliteImagesSchema,
   satelliteNameSchema,
-  satelliteTransferTokenSchema,
   storedPayloadBytes,
   RESERVED_TOOL_NAMES,
   satelliteToolNameSchema,
   satelliteToolSchema,
   toolArgsSchema,
 } from "./modules/satellites/schemas.js";
-export type { SatelliteFileWritten } from "./modules/satellites/schemas.js";
 export type {
+  SatelliteFileErrno,
+  SatelliteFileOp,
+} from "./modules/satellites/schemas.js";
+export type {
+  CallWorkItem,
+  CancelWorkItem,
   ClaimInput,
+  FileResultInput,
+  FileWorkItem,
   HeartbeatInput,
   JobOutcome,
   JobStarted,
@@ -1193,6 +1328,7 @@ export type {
   JobView,
   ReportInput,
   SatelliteImage,
+  SatelliteKind,
   SatelliteManifest,
   SatelliteTool,
   SatelliteView,

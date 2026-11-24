@@ -13,7 +13,8 @@
 # Playwright lists for its Chromium on trixie. openrc for the services an image
 # built on this one adds: platform-init runs its runlevels in a vm machine
 # (docs/architecture/vm-runner.md), which the base leaves empty. python3 and socat for
-# platform-env, the Environment Link's helper, since Node has no vsock.
+# platform-env, the Environment Link's helper, since Node has no vsock. rsync
+# because a sync into an agent from outside needs it on the agent's side.
 build-essential
 ca-certificates
 catatonit
@@ -31,6 +32,7 @@ openssl
 patch
 procps
 python3
+rsync
 socat
 sqlite3
 unzip

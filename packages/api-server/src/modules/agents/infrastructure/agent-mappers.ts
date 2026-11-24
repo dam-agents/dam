@@ -434,7 +434,6 @@ export function assembleAgent(
     ),
     error: infra.error,
     stopRequested: infra.stopRequested,
-    disabled: infra.disabled,
     overBudget: infra.overBudget,
     overBudgetMessage: infra.overBudgetMessage,
     startWaitMessage: infra.startWaitMessage,

@@ -12,6 +12,10 @@ const labelSlug = (label: string): string =>
 export const invocationScheduleId = (agentId: string): string =>
   `invocation:${agentId}`;
 
+// UNIT_BOUNDARY_DESCRIPTION: the id of a run's task event, which is the run's id: the target's schedule id and the moment the run was started.
+export const runEventId = (agentId: string, at: Date): string =>
+  `${invocationScheduleId(agentId)}:${at.getTime()}`;
+
 export const invocationTargetName = (hex: string, label?: string): string => {
   const slug = label === undefined ? "" : labelSlug(label);
   const name = slug === "" ? `invocation-${hex}` : `invocation-${slug}-${hex}`;

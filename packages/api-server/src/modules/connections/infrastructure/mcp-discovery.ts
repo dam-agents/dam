@@ -1,4 +1,6 @@
 export interface DiscoveredMcpAuth {
+  source: "protected-resource" | "authorization-server";
+  resource: string;
   authorizationEndpoint: string;
   tokenEndpoint: string;
   registrationEndpoint?: string;
@@ -12,12 +14,13 @@ interface AuthServerMetadata {
   token_endpoint?: string;
   registration_endpoint?: string;
   client_id_metadata_document_supported?: boolean;
-  scopes_supported?: string[];
   grant_types_supported?: string[];
 }
 
 interface ProtectedResourceMetadata {
+  resource?: string;
   authorization_servers?: string[];
+  scopes_supported?: string[];
 }
 
 function protectedResourceCandidates(mcpUrl: URL): string[] {
@@ -28,11 +31,16 @@ function protectedResourceCandidates(mcpUrl: URL): string[] {
     : [originWellKnown];
 }
 
+function canonicalResource(url: URL): string {
+  return url.origin + url.pathname.replace(/\/+$/, "");
+}
+
 export async function discoverMcpAuth(
   mcpUrl: URL,
   fetchImpl: typeof fetch = fetch,
 ): Promise<DiscoveredMcpAuth | null> {
   const base = `${mcpUrl.protocol}//${mcpUrl.host}`;
+  const expectedResource = canonicalResource(mcpUrl);
 
   for (const candidate of protectedResourceCandidates(mcpUrl)) {
     try {
@@ -41,15 +49,49 @@ export async function discoverMcpAuth(
       });
       if (!res.ok) continue;
       const data = (await res.json()) as ProtectedResourceMetadata;
+      if (data.resource !== undefined) {
+        if (typeof data.resource !== "string") continue;
+        const resourceUrl = new URL(data.resource);
+        const declaredResource = canonicalResource(resourceUrl);
+        const originCandidate =
+          candidate === `${base}/.well-known/oauth-protected-resource`;
+        const matchesResource =
+          declaredResource === expectedResource ||
+          (originCandidate && declaredResource === mcpUrl.origin);
+        if (
+          resourceUrl.hash ||
+          resourceUrl.username ||
+          resourceUrl.password ||
+          (resourceUrl.search && resourceUrl.search !== mcpUrl.search) ||
+          !matchesResource
+        )
+          continue;
+      }
       const asUrl = data.authorization_servers?.[0];
       if (asUrl) {
         const meta = await fetchAuthServerMetadata(asUrl, fetchImpl);
-        if (meta) return meta;
+        if (meta) {
+          return {
+            ...meta,
+            source: "protected-resource",
+            resource: data.resource ?? expectedResource,
+            ...(data.scopes_supported !== undefined
+              ? { scopes: data.scopes_supported }
+              : {}),
+          };
+        }
       }
     } catch {}
   }
 
-  return fetchAuthServerMetadata(base, fetchImpl);
+  const metadata = await fetchAuthServerMetadata(base, fetchImpl);
+  return metadata
+    ? {
+        ...metadata,
+        source: "authorization-server",
+        resource: expectedResource,
+      }
+    : null;
 }
 
 function wellKnownCandidates(asUrl: string): string[] {
@@ -62,7 +104,7 @@ function wellKnownCandidates(asUrl: string): string[] {
 async function fetchAuthServerMetadata(
   asUrl: string,
   fetchImpl: typeof fetch,
-): Promise<DiscoveredMcpAuth | null> {
+): Promise<Omit<DiscoveredMcpAuth, "resource" | "scopes" | "source"> | null> {
   for (const url of wellKnownCandidates(asUrl)) {
     try {
       const res = await fetchImpl(url, { signal: AbortSignal.timeout(5000) });
@@ -77,9 +119,6 @@ async function fetchAuthServerMetadata(
             : {}),
           ...(data.client_id_metadata_document_supported === true
             ? { clientIdMetadataDocumentSupported: true }
-            : {}),
-          ...(data.scopes_supported && data.scopes_supported.length > 0
-            ? { scopes: data.scopes_supported }
             : {}),
         };
       }

@@ -1,8 +1,8 @@
 /**
  * TEST_OVERVIEW: The Model Catalog lists every granted provider Connection's
  * models under provider-qualified names, with per-model metadata layered from
- * the provider's own listing, the vendored LiteLLM price table and the
- * preset's per-endpoint constants, in that order. Each harness sees only the
+ * the provider's own listing, a deployment the platform measured, the vendored
+ * LiteLLM price table and the preset's per-endpoint constants, in that order. Each harness sees only the
  * providers whose dialects it speaks, named the way its manifest asks. A
  * failed listing keeps that Connection's last good list and never touches
  * another's. An Anthropic subscription token is listed like the key and
@@ -165,8 +165,9 @@ const BOTH: Listing = {
 describe("the model catalog", () => {
   /** TEST_SCENARIO: An agent with IBM and Curve Bender gets both providers'
    * models under `ibm/…` and `cb/…`, providers in alias order, with limits
-   * and prices from the table for the Claude and GLM families, the preset's
-   * limits for a model the table lacks, and the layer recorded per value. */
+   * and prices from the table for the Claude family, CurveBender's GLM and
+   * Nemotron from what the platform knows of their deployments, and the layer
+   * recorded per value. */
   it("lists both providers with layered metadata", async () => {
     const { catalog } = catalogWith(BOTH, [ibmLayer, cbLayer]);
     await catalog.refresh();
@@ -184,8 +185,7 @@ describe("the model catalog", () => {
     expect(opus.metadata.source).toEqual({ limits: "table", prices: "table" });
     expect(opus.metadata.cacheControl).toBe("anthropic");
     const glm = catalog.resolve("cb/rits/zai-org/glm-5-3")!;
-    expect(glm.metadata.source.limits).toBe("table");
-    expect(glm.metadata.thinkingFormat).toBe("zai");
+    expect(glm.metadata.source).toEqual({ limits: "known", prices: "table" });
     expect(glm.metadata.reasoning).toBe(true);
     const nemotron = catalog.resolve("cb/rits/nvidia/NVIDIA-Nemotron-3-Ultra")!;
     expect(nemotron.metadata.source).toEqual({
@@ -198,10 +198,17 @@ describe("the model catalog", () => {
 
   /** TEST_SCENARIO: One endpoint serves models of very different lengths, so
    * the preset's endpoint-wide constant is right for only the one it was
-   * measured on: Nemotron keeps the 262144 its deployment serves while every
-   * other model of the same Connection still reads the preset. */
+   * measured on: Nemotron keeps the 262144 its deployment serves while a
+   * model the platform knows nothing of still reads the preset. */
   it("keeps a measured window ahead of the endpoint's constant", async () => {
-    const { catalog } = catalogWith(BOTH, [cbLayer]);
+    const { catalog } = catalogWith(
+      {
+        "https://cb.example": {
+          ids: ["rits/nvidia/NVIDIA-Nemotron-3-Ultra", "rits/acme/unknown-1"],
+        },
+      },
+      [cbLayer],
+    );
     await catalog.refresh();
     expect(
       catalog.resolve("cb/rits/nvidia/NVIDIA-Nemotron-3-Ultra")!.metadata,
@@ -209,9 +216,88 @@ describe("the model catalog", () => {
       contextWindow: 262_144,
       source: { limits: "known" },
     });
+    expect(catalog.resolve("cb/rits/acme/unknown-1")!.metadata).toMatchObject({
+      contextWindow: 256_000,
+      source: { limits: "preset" },
+    });
+  });
+
+  /** TEST_SCENARIO: CurveBender's models carry the values a Pi tuned against
+   * CurveBender runs with, ahead of the price table's family row: each
+   * deployment's window, whether it takes images, and the reasoning effort
+   * each thinking level sends. GLM takes OpenAI-style effort there, not its
+   * vendor's thinking switch, which the endpoint ignores; a GLM the platform
+   * does not know keeps that switch. Input and output share a deployment's
+   * window, so the output limit is the window too, ahead of the table's GLM
+   * cap and the preset's constant. */
+  it("describes CurveBender's deployments as measured", async () => {
+    const { catalog } = catalogWith(
+      {
+        "https://cb.example": {
+          ids: [
+            "rits/zai-org/glm-5-3",
+            "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+            "rits/meta-models/Muse-Spark-Open-816B-A42B-NVFP4",
+            "rits/ibm-research/granite-5.0-230b-preview-r261008a",
+            "zai-org/glm-5-3",
+          ],
+        },
+      },
+      [cbLayer],
+    );
+    await catalog.refresh();
+    const meta = (name: string) => {
+      const {
+        contextWindow,
+        maxOutputTokens,
+        vision,
+        thinkingFormat,
+        thinkingLevelMap,
+      } = catalog.resolve(name)!.metadata;
+      return {
+        contextWindow,
+        maxOutputTokens,
+        vision,
+        thinkingFormat,
+        thinkingLevelMap,
+      };
+    };
+    expect(meta("cb/rits/zai-org/glm-5-3")).toEqual({
+      contextWindow: 1_048_576,
+      maxOutputTokens: 1_048_576,
+      vision: false,
+      thinkingFormat: null,
+      thinkingLevelMap: { off: "none", xhigh: "xhigh", max: "max" },
+    });
+    expect(meta("cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017")).toEqual({
+      contextWindow: 1_048_576,
+      maxOutputTokens: 1_048_576,
+      vision: true,
+      thinkingFormat: null,
+      thinkingLevelMap: { off: "none", max: "max" },
+    });
+    expect(meta("cb/rits/meta-models/Muse-Spark-Open-816B-A42B-NVFP4")).toEqual(
+      {
+        contextWindow: 1_048_576,
+        maxOutputTokens: 1_048_576,
+        vision: true,
+        thinkingFormat: null,
+        thinkingLevelMap: { off: null, minimal: "low", xhigh: "xhigh" },
+      },
+    );
     expect(
-      catalog.resolve("cb/rits/zai-org/glm-5-3")!.metadata.source.limits,
-    ).toBe("table");
+      meta("cb/rits/ibm-research/granite-5.0-230b-preview-r261008a"),
+    ).toEqual({
+      contextWindow: 524_288,
+      maxOutputTokens: 524_288,
+      vision: false,
+      thinkingFormat: null,
+      thinkingLevelMap: { off: null, minimal: "low" },
+    });
+    expect(meta("cb/zai-org/glm-5-3")).toMatchObject({
+      thinkingFormat: "zai",
+      thinkingLevelMap: null,
+    });
   });
 
   /** TEST_SCENARIO: Bob's gateway model-info carries the model's own limits and
@@ -257,7 +343,7 @@ describe("the model catalog", () => {
       "cb/rits/zai-org/glm-5-3",
       "cb/rits/nvidia/NVIDIA-Nemotron-3-Ultra",
     ]);
-    expect(catalog.providers()[0]?.displayName).toBe("CurveBender (shared)");
+    expect(catalog.providers()[0]?.displayName).toBe("CurveBender");
 
     const keyed = catalogWith(BOTH, [cbLayer]);
     await keyed.catalog.refresh();
@@ -578,5 +664,22 @@ describe("the vendored price table", () => {
       lookupPrice(VENDORED_PRICE_TABLE, "rits/zai-org/glm-5-3"),
     ).not.toBeNull();
     expect(lookupPrice(VENDORED_PRICE_TABLE, "no-such-model-9000")).toBeNull();
+  });
+
+  /** TEST_SCENARIO: The IBM proxy serves Gemini under `gcp/…`; the table
+   * describes gemini-4-argon, newer than the table's first vendoring, and
+   * gemini-3.1-pro as reasoning models with a 1,048,576-token window, so they
+   * do not fall back to the preset's defaults. */
+  it("describes the IBM proxy's Gemini models as reasoning with a 1 M window", () => {
+    for (const id of [
+      "gcp/gemini-4-argon",
+      "gemini-4-argon",
+      "gcp/gemini-3.1-pro-preview",
+    ]) {
+      expect(lookupPrice(VENDORED_PRICE_TABLE, id)).toMatchObject({
+        supports_reasoning: true,
+        max_input_tokens: 1_048_576,
+      });
+    }
   });
 });

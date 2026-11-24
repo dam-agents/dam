@@ -21,7 +21,10 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 vi.mock("../../query-client.js", () => ({ queryClient: {} }));
 vi.mock("../../trpc.js", () => ({
-  trpc: { connections: { catalog: { queryOptions: () => ({}) } } },
+  trpc: {
+    connections: { catalog: { queryOptions: () => ({}) } },
+    profiles: { newAgentDefault: { queryOptions: () => ({}) } },
+  },
 }));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) => select({}),
@@ -38,7 +41,6 @@ vi.mock("../../modules/profiles/api/mutations.js", () => ({
   useCreateProfile: () => ({ isPending: state.pending, mutate: state.mutate }),
   useUpdateProfile: () => ({ isPending: state.pending, mutate: state.mutate }),
   useDeleteProfile: () => ({}),
-  useSetDefaultProfile: () => ({}),
 }));
 vi.mock("../../modules/connections/api/mutations.js", () => ({
   useCreateConnection: () => ({

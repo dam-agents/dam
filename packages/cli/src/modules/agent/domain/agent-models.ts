@@ -97,6 +97,14 @@ function renderDefault(view: AgentModelsView, kind: DefaultKind): string {
     : renderPair(own, view.providers);
 }
 
+function renderToolApproval(view: AgentModelsView): string {
+  if (view.unreadable.defaults || view.defaults === null)
+    return unreadable(view.unreadable.defaults ?? "unknown");
+  return (
+    view.defaults.toolApproval ?? "not set (each harness starts on its own)"
+  );
+}
+
 export function modelEntries(view: AgentModelsView): [string, string][] {
   return [
     ["PROVIDERS", renderProviders(view)],
@@ -104,6 +112,7 @@ export function modelEntries(view: AgentModelsView): [string, string][] {
     ["DEFAULT", renderDefault(view, "chat")],
     ["CHANNEL DEFAULT", renderDefault(view, "channel")],
     ["SCHEDULED DEFAULT", renderDefault(view, "scheduled")],
+    ["TOOL APPROVAL", renderToolApproval(view)],
   ];
 }
 

@@ -1,10 +1,19 @@
+import { createRemoteJWKSet } from "jose";
 import { readFileSync } from "node:fs";
 import { composeLoginTestimonialsModule } from "./modules/login-testimonials/index.js";
-import { controlAgents, createDb, runMigrations } from "db";
+import {
+  controlAgents,
+  createDb,
+  inArray,
+  invocations,
+  runMigrations,
+} from "db";
 import {
   type TriggerEventPayload,
+  type InvocationCancelEventPayload,
   workspaceMutationEventKinds,
 } from "agent-runtime-api";
+import { CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID } from "api-server-api";
 import {
   createAgentInformer,
   createApi,
@@ -21,6 +30,7 @@ import {
 } from "./modules/agent-store/feed.js";
 import { createControlAgentStateCache } from "./modules/agent-store/cache.js";
 import { createControlAgentsRepository } from "./modules/agent-store/agents-repository.js";
+import { createL7HostsPortFor } from "./modules/agent-store/l7-hosts.js";
 import {
   readAgentRows,
   readOneAgent,
@@ -64,6 +74,11 @@ import {
   LABEL_OWNER,
 } from "./modules/agents/infrastructure/labels.js";
 import {
+  childrenMirroringConnections,
+  inheritanceCleanup,
+  nearestOwnEgress,
+  childEgressGrants,
+  ownEgressAgentIds,
   composeAgentEditors,
   composeAgentsModule,
   composePublicAgentPage,
@@ -77,14 +92,16 @@ import {
   findChannelOwnerByAgent,
   deleteChannelsByAgent,
   listChannelsByOwner,
-  findSlackBindingsByChannelId,
   claimUnscopedSlackBindings,
+  findSlackBindingsByChannelId,
   findSlackChannelsByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
+  setSlackChannelHistory,
   setSlackChannelDefault,
   createAgentSweep,
   createImageUpdate,
+  createIdleOverrideSweep,
   agentServiceIsIdle,
   createAvatarImagesRepository,
   MAX_AVATAR_BYTES,
@@ -109,11 +126,14 @@ import {
 } from "./modules/kb-shares/index.js";
 import { createAcpClient, type AcpClientFactory } from "./core/acp-client.js";
 import { retryWhileUnreachable } from "./core/retry-unreachable.js";
+import { provisionBucketInBackground } from "./modules/artifacts/services/provision-bucket.js";
+import { isStoreUnavailable } from "./modules/artifacts/infrastructure/store-unavailable.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
 import {
   createSlackWorker,
-  type SlackOAuthPending,
   type ChannelRegistry,
+  type SlackDmBridgePort,
+  type SlackOAuthPending,
 } from "./modules/channels/infrastructure/slack.js";
 import { createImgbbAgentIcons } from "./modules/channels/infrastructure/agent-avatar-icons.js";
 import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
@@ -121,6 +141,7 @@ import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js"
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
 import { createPublicImageUrlsRepository } from "./modules/channels/infrastructure/public-image-urls-repository.js";
 import { createSlackIgnoredAppsRepository } from "./modules/channels/infrastructure/slack-ignored-apps-repository.js";
+import { createSlackUntaggedReplyNotesRepository } from "./modules/channels/infrastructure/slack-untagged-reply-notes-repository.js";
 import { createSlackOwnedThreadsRepository } from "./modules/channels/infrastructure/slack-owned-threads-repository.js";
 import { createSlackLoopGuardDropsRepository } from "./modules/channels/infrastructure/slack-loop-guard-drops-repository.js";
 import {
@@ -135,6 +156,8 @@ import {
   type ChannelRpcRequest,
 } from "./modules/channels/services/channel-manager.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
+import { createSlackDmRevoker } from "./modules/channels/services/slack-dm-bridge-service.js";
+import { createSlackDmBridgesRepository } from "./modules/channels/infrastructure/slack-dm-bridges-repository.js";
 import {
   findIdentityByExternalUser,
   findExternalUsersByIdentity,
@@ -167,6 +190,9 @@ import {
 } from "./modules/channels/infrastructure/slack-installs-repository.js";
 import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
+import { createSlackAppTokenService } from "./modules/channels/services/slack-app-token-service.js";
+import { slackAppTokenSource } from "./modules/channels/services/slack-app-token-source.js";
+import { createRedisSpentRefreshTokens } from "./modules/channels/infrastructure/slack-spent-refresh-tokens.js";
 import { createChannelProfiles } from "./modules/channels/infrastructure/channel-profile.js";
 import { createChannelProviderOutage } from "./modules/channels/infrastructure/provider-outage-copy.js";
 import {
@@ -188,6 +214,7 @@ import {
   composeScheduleModelForFire,
   composeHarnessConfigReset,
   composeSessionChoicesValidator,
+  composeSharedCurveBender,
   createInitializationPairResolver,
   createRunBoundary,
   isNoDefaultModelError,
@@ -205,6 +232,8 @@ import {
 } from "./modules/attention/index.js";
 import { createSessionWatchClient } from "./modules/attention/infrastructure/session-watch-client.js";
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
+import { createAssistantsRepository } from "./modules/assistants/index.js";
+import { createAssistantUsageMarker } from "./modules/assistants/services/usage-marker.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import { composeGettingStartedModule } from "./modules/getting-started/index.js";
 import { composeSidebarOrderModule } from "./modules/sidebar-order/index.js";
@@ -246,6 +275,9 @@ import {
 } from "./apps/api-server/admission/auth.js";
 import { startJwksWarmup } from "./apps/api-server/admission/jwks-warmup.js";
 import { createSessionPresence } from "./apps/api-server/agent-proxies/session-presence.js";
+import { readAgentSkill } from "./apps/api-server/routes/agent-discovery.js";
+import { createBrandIconRoutes } from "./apps/api-server/routes/brand.js";
+import { createAgentFavicon } from "./modules/artifact-library/infrastructure/agent-favicon.js";
 import {
   composeApiKeysModule,
   createApiKeysCleanupHook,
@@ -271,7 +303,8 @@ import {
   shareSessionCookie,
   type ArtifactLibraryFor,
 } from "./modules/artifact-library/index.js";
-import { createReposRepository } from "./modules/repos/infrastructure/repos-repository.js";
+import { withChannelArtifactLinks } from "./modules/artifact-library/channel-links.js";
+import type { LinkOutboundArtifacts } from "./modules/channels/infrastructure/outbound-artifact-links.js";
 import { composeArtifactsModule } from "./modules/artifacts/compose.js";
 import { createTemplatesRepository } from "./modules/templates/infrastructure/templates-repository.js";
 import {
@@ -300,13 +333,16 @@ import {
 import {
   composeInvocationLivenessSweep,
   composeSubAgentOutcomeDelivery,
+  composeQuestionDeadlines,
   createDriverResolutionAdapter,
   createSpawnSessionsAdapter,
   createInvocationTasksAdapter,
   createInvocationStartAdapter,
+  createInvocationEgressHoldAdapter,
   createInvocationsCleanupHook,
   createDelegationFramesClient,
   createInvocationSetupFailure,
+  createInvocationCancelOutcome,
   composeScriptOutputs,
   runtimeRunsScripts,
   HARNESS_CONFIG_STEP,
@@ -325,6 +361,9 @@ import { composeAgentKeys } from "./modules/agent-keys/index.js";
 import {
   composeApprovalsSystem,
   composeEgressProposals,
+  composeChildEgressRequests,
+  childEgressWaiting,
+  startChildEgressAnsweredSaga,
   composeSpendLimitQuestions,
   composeToolApprovalReports,
   createApprovalsCleanupHook,
@@ -334,6 +373,7 @@ import {
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
 import { createChatFormPreferencesCleanup } from "./modules/chat-forms/index.js";
 import { createCostReviewsCleanup } from "./modules/cost-reviews/index.js";
+import { createAssistantSchedulesCleanup } from "./modules/assistant-schedules/index.js";
 import {
   composeSpendSystem,
   createSpendLimitsCleanupHook,
@@ -346,13 +386,20 @@ import { composeOutageAlerts } from "./modules/outage-alerts/index.js";
 import { startSpendAlerts } from "./modules/spend-alerts/index.js";
 import {
   createEgressRuleMatchAdapter,
+  ruleSpeaksFor,
   createEgressRulesCleanupHook,
   createK8sAgentL7Source,
   createL7PromotionReconcile,
   createPresetSeederAdapter,
+  createChildEgressSeederAdapter,
   listEgressRuleAgentIds,
   markTrustedRowsTakenOverAdapter,
 } from "./modules/egress-rules/compose.js";
+import {
+  createWebSearchCleanupHook,
+  createWebSearchGatePorts,
+  listWebSearchRuleAgentIds,
+} from "./modules/web-search/compose.js";
 import {
   composeConnectionsAtBoot,
   composeAgentSecretRequests,
@@ -360,16 +407,19 @@ import {
   createConnectionGrantsCleanupHook,
   createConnectionNames,
   createGrantedConnectionTemplates,
+  createPricedConnections,
   createProviderEgressScopes,
+  createReadOnlyConnections,
   listConnectionGrantAgentIds,
   listConnectionTemplateIds,
   listManagedConnectionOwners,
 } from "./modules/connections/compose.js";
 import { oauthCallbackUrl } from "./modules/connections/domain/oauth-callback-url.js";
+import { damKeyPortFor } from "./modules/connections/domain/dam-connection.js";
 import { SECRET_REQUEST_TTL_MS } from "./modules/connections/services/secret-requests.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
 import { sweepManagedConnections } from "./modules/connections/sagas/managed-connections.js";
-import { composeFeaturesForOwner } from "./modules/features/index.js";
+import { createFeaturesRepository } from "./modules/features/infrastructure/features-repository.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
 import {
   createAgentArtifactsSweeper,
@@ -382,7 +432,7 @@ import {
   keycloakRealmUrl,
   type AddressSet,
 } from "./core/address-sets.js";
-import { createXactLock } from "./core/xact-lock.js";
+import { createXactLock, createXactTxLock } from "./core/xact-lock.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { createBusRpc } from "./core/bus-rpc.js";
 import { createRedisBlobHandoff } from "./core/blob-handoff.js";
@@ -394,6 +444,10 @@ import {
 import { createOutOfMemoryWatch } from "./modules/agents/infrastructure/out-of-memory-watch.js";
 import { createReadyWatch } from "./modules/agents/infrastructure/ready-watch.js";
 import { agentRemovalWatch } from "./modules/agents/infrastructure/agent-removal-watch.js";
+import {
+  clearLegacyDisabledMarks,
+  pauseEnabledRecurringSchedules,
+} from "./modules/agents/sagas/clear-legacy-disabled.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import {
@@ -484,11 +538,15 @@ export async function bootstrap() {
         }
       : null,
   });
-  await retryWhileUnreachable(
-    "object storage",
-    () => artifactsModule.ensureReady(),
-    bootRetry,
-  );
+  if (config.objectStorageEndpoint)
+    void provisionBucketInBackground(() => artifactsModule.ensureReady(), {
+      retryable: isStoreUnavailable,
+      log: {
+        info: (msg) => getLogger().info(msg),
+        warn: (msg) => getLogger().warn(msg),
+        error: (msg) => getLogger().error(msg),
+      },
+    });
   const artifacts = artifactsModule.service;
   const snapshotStore = artifactsModule.store
     ? {
@@ -526,7 +584,12 @@ export async function bootstrap() {
     readsRows(config.agentStore) &&
     (config.agentStore === "postgres" || absorbsEmpty)
   ) {
-    if (agentStoreMarker?.store !== "postgres")
+    if (agentStoreMarker?.store !== "postgres") {
+      await retryWhileUnreachable(
+        "object storage",
+        () => artifactsModule.ensureReady(),
+        { ...bootRetry, retryable: isStoreUnavailable },
+      );
       await absorbAgentStore({
         db,
         logger: getLogger(),
@@ -555,6 +618,7 @@ export async function bootstrap() {
         absorbedByVersion: config.appVersion,
         now: new Date(),
       });
+    }
   }
 
   if (readsRows(config.agentStore)) {
@@ -746,6 +810,7 @@ export async function bootstrap() {
       return [
         {
           name: c.name,
+          builtin: c.kind === "path",
           ...located,
           entryHosts: catalogEntryHosts(kitGitHosts, located.gitUrl),
         },
@@ -762,7 +827,6 @@ export async function bootstrap() {
         storeAvatarImage(createAvatarImagesRepository(db), bytes, ownerSub),
     },
   });
-  const reposService = createReposRepository(config.gitReposPath);
   const userDirectory = createKeycloakUserDirectory({
     keycloakUrl: config.keycloakUrl,
     keycloakRealm: config.keycloakRealm,
@@ -851,6 +915,11 @@ export async function bootstrap() {
     identityOf: (agentId) => agentsRepo.resolveIdentity(agentId),
     log: (m) => getLogger().warn(`[agent-keys] ${m}`),
   });
+  const environmentTokenKeys = createRemoteJWKSet(
+    new URL(
+      `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
+    ),
+  );
   const { gate: environmentGate, frontDoor: environmentFrontDoor } =
     composeEnvironmentGate({
       db,
@@ -886,6 +955,10 @@ export async function bootstrap() {
         ],
         isApiKey: isApiKeyToken,
       },
+      oauth: {
+        issuer: keycloakRealmUrl(addresses.public, config.keycloakRealm),
+        keys: environmentTokenKeys,
+      },
       ensureReady: (agentId, opts) => agentsRepo.ensureReady(agentId, opts),
       stampActivity: (agentId) =>
         agentsRepo.patchAnnotation(
@@ -920,14 +993,16 @@ export async function bootstrap() {
     readsRows(config.agentStore)
       ? {
           l7Hosts: createControlAgentL7HostsPort(db),
-          listAgentL7State: async () =>
-            (await readAgentRows(db)).map((row) => ({
+          listAgentL7State: async () => {
+            const own = await ownEgressAgentIds(db)();
+            return (await readAgentRows(db)).map((row) => ({
               agentId: row.agent.id,
               current: row.hosts,
-              ...(row.agent.environmentOf
+              ...(row.agent.environmentOf && !own.has(row.agent.id)
                 ? { environmentOf: row.agent.environmentOf }
                 : {}),
-            })),
+            }));
+          },
         }
       : createK8sAgentL7Source(k8sClient),
     (m) => getLogger().info(`[l7-reconcile] ${m}`),
@@ -944,14 +1019,25 @@ export async function bootstrap() {
     },
   );
 
+  /* UNIT_BOUNDARY_DESCRIPTION: the `dam` skill this image carries, the one the api-server serves to a person's own agent; the DAM Connection writes these same files into an Agent. */
+  const damSkill = (readAgentSkill(config.agentSkillPath)?.files ?? []).map(
+    (file) => ({
+      path: file.path,
+      content: new TextDecoder().decode(file.bytes),
+    }),
+  );
   const resolveAgentOwner = async (agentId: string) =>
     (await agentsRepo.get(agentId).catch(() => null))?.owner ?? null;
   const resolveAgentName = async (agentId: string) =>
     (await agentsRepo.getLive(agentId, undefined))?.name ?? null;
+  const resolveWebSearchControl = async (agentId: string) =>
+    (await agentsRepo.getLive(agentId, undefined))?.spec.webSearchControl ===
+    true;
 
   const runtimeDelivery = composeRuntimeDelivery({
     db,
     namespace: config.namespace,
+    damSkill,
     bullConnection,
     agentRunningPort: {
       isRunning: (agentId) => agentsRepo.isReady(agentId),
@@ -964,9 +1050,11 @@ export async function bootstrap() {
     telemetryEnv: harnessCatalog.telemetryEnv,
     resolveOwner: resolveAgentOwner,
     resolveAgentName,
+    resolveWebSearchControl,
     resolveEvent: async (agentId, event) => {
       const paired = await resolveInitializationPair(agentId, event);
-      return paired && resolveInvocationStart(agentId, paired);
+      const released = paired && (await holdForEgress(agentId, paired));
+      return released && resolveInvocationStart(agentId, released);
     },
     deliveryConcurrency: config.runtimeDeliveryConcurrency,
   });
@@ -987,6 +1075,10 @@ export async function bootstrap() {
       ? { providers: [] }
       : connectionsServiceFor(owner).modelCatalog(agentId);
   };
+  /* UNIT_BOUNDARY_DESCRIPTION: bound below, once the Connections services exist, and asked for only where the deployment offers its shared CurveBender; a run for an Agent holding no provider kicks it and reports itself as still setting up. */
+  let grantSharedCurveBender: (agentId: string) => Promise<void> = async () =>
+    undefined;
+  const sharedCurveBenderConfigured = config.curveBenderDeployment !== null;
   const firePair = composeFirePair({
     db,
     catalog: harnessCatalog,
@@ -995,6 +1087,9 @@ export async function bootstrap() {
     getCapabilities: capabilitiesOf,
     specHarness: async (agentId) =>
       (await agentsRepo.get(agentId))?.spec.harness,
+    ...(sharedCurveBenderConfigured && {
+      onNoProvider: (agentId) => void grantSharedCurveBender(agentId),
+    }),
   });
   /* UNIT_BOUNDARY_DESCRIPTION: the one helper every path that builds a run's payload uses, so a channel fallback, a schedule following its default and the defaults event cannot skip the derivation (D193B). */
   const runBoundary = createRunBoundary({
@@ -1008,6 +1103,24 @@ export async function bootstrap() {
   const resolveInvocationStart = createInvocationStartAdapter(db, (msg) =>
     getLogger().warn(msg),
   );
+  const egressWaitingOf = childEgressWaiting(db);
+  const holdForEgress = createInvocationEgressHoldAdapter(db, egressWaitingOf);
+  /* UNIT_BOUNDARY_DESCRIPTION: why a sub-agent has not started, for its driver and for the reason it fails with if it never does: its owner's memory is full, or a network rule its driver set at launch waits for the owner. */
+  const startWaitReason = async (agentId: string): Promise<string | null> => {
+    const wait = startWaitOf(agentsRepo.peekCached(agentId));
+    if (wait) return wait;
+    const waiting = await egressWaitingOf(agentId);
+    return waiting.length > 0
+      ? `It waits for your owner to answer the network rules you set for it: ${[...new Set(waiting.map((w) => w.host))].join(", ")}.`
+      : null;
+  };
+  startChildEgressAnsweredSaga((childId) => {
+    void runtimeDelivery.queue.enqueue(childId).catch((err: unknown) => {
+      getLogger().warn(
+        `[invocation-egress-hold] ${childId}: redelivery after the owner's answer not queued: ${formatError(err)}`,
+      );
+    });
+  });
   const resolveInitializationPair = createInitializationPairResolver({
     firePair: async (agentId, preferred) => {
       await convertDefault(agentId);
@@ -1059,6 +1172,9 @@ export async function bootstrap() {
   ) => Promise<boolean> = async () => false;
   const satellitesBoot = composeSatellitesModule({
     db,
+    redis: sharedRedis,
+    bus: redisBus,
+    blobs: createRedisBlobHandoff(sharedRedis),
     maxConcurrentCeiling: config.satelliteMaxConcurrentCeiling,
     ownerOf: (agentId) => agentsRepo.getOwner(agentId),
     agentName: async (agentId) => (await agentsRepo.get(agentId))?.name ?? null,
@@ -1102,6 +1218,9 @@ export async function bootstrap() {
   await periodicJobs.register("satellite-lease-sweep", 60_000, () =>
     satellitesBoot.sweepLeases().then(() => undefined),
   );
+  await periodicJobs.register("satellite-file-summary", 60_000, () =>
+    satellitesBoot.fileChannel.flushSummary(),
+  );
   const retrySatelliteOutcomes = createOutcomeWakeRetry(
     outcomeDeliveryDeps,
     deliverSatelliteOutcome,
@@ -1123,6 +1242,9 @@ export async function bootstrap() {
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
+    damBaseUrl: config.apiserverUrl,
+    brandName: config.brand.name,
+    damSkill,
     curveBenderDeployment: config.curveBenderDeployment !== null,
     e2eEnabled: config.e2eEnabled,
     secretStore,
@@ -1168,6 +1290,8 @@ export async function bootstrap() {
         ...(config.defaultGithubEnterpriseAppSlug
           ? { appSlug: config.defaultGithubEnterpriseAppSlug }
           : {}),
+        hosts: config.defaultGithubEnterpriseHosts,
+        retiredHosts: config.defaultGithubEnterpriseRetiredHosts,
       },
       ...(config.defaultSlackClientId && config.defaultSlackClientSecret
         ? {
@@ -1179,10 +1303,29 @@ export async function bootstrap() {
         : {}),
     },
   });
+  const featuresRepo = createFeaturesRepository(db);
+  /* UNIT_BOUNDARY_DESCRIPTION: whether an owner is offered the Connection that drives this install, for every composition root that needs it — the per-request one in the tRPC context, and this one, which feeds the harness grant provisioner and so an Agent that spawns another: the install's mode decides, and in `experimental` the person's own switch. */
+  const damConnectionOfferedFor = async (ownerId: string): Promise<boolean> => {
+    const mode = config.featureModes.damConnection;
+    if (mode === "on") return true;
+    if (mode !== "experimental") return false;
+    const stored = await featuresRepo.listEnabled(ownerId);
+    return stored.damConnection === true;
+  };
+  const damKeyFor = (ownerId: string) =>
+    damKeyPortFor(
+      apiKeysModule.createService({ ownerSub: ownerId, surface: "platform" }),
+      {
+        activeKeyIds: apiKeysModule.activeKeyIds,
+        ledger: apiKeysModule.keyLedger(ownerId),
+      },
+      config.brand.name,
+    );
   const connectionsServiceFor = (ownerId: string) =>
     composeConnectionsForOwner({
       ownerId,
       db,
+      mirroredChildren: childrenMirroringConnections(db),
       templates: connectionsBoot.templates,
       oauthEngine: connectionsBoot.oauthEngine,
       githubAppEngine: connectionsBoot.githubAppEngine,
@@ -1197,6 +1340,8 @@ export async function bootstrap() {
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses: harnessCatalog,
       providerModelCatalog: connectionsBoot.providerModelCatalog,
+      damKey: damKeyFor(ownerId),
+      damConnectionOffered: () => damConnectionOfferedFor(ownerId),
     });
   await periodicJobs
     .register("oauth-refresh", 60_000, () =>
@@ -1205,6 +1350,18 @@ export async function bootstrap() {
     .catch((err) => {
       getLogger().error(
         `periodic job oauth-refresh registration failed: ${formatError(err)}`,
+      );
+      process.exit(1);
+    });
+  await periodicJobs
+    .register("api-key-revocation-sweep", 60_000, async () => {
+      const swept = await apiKeysModule.sweepRevocations();
+      if (swept > 0)
+        getLogger().info(`api-key revocation sweep: ${swept} key(s) revoked`);
+    })
+    .catch((err) => {
+      getLogger().error(
+        `periodic job api-key-revocation-sweep registration failed: ${formatError(err)}`,
       );
       process.exit(1);
     });
@@ -1431,6 +1588,38 @@ export async function bootstrap() {
       log: (msg) => getLogger().info(msg),
     });
   convertDefault = (agentId) => defaultConverter.convert(agentId);
+  const sharedCurveBender = composeSharedCurveBender({
+    db,
+    enabled: sharedCurveBenderConfigured,
+    catalog: harnessCatalog,
+    resolveProfile,
+    resolveProfileOn: composeProfileResolverOn(subPseudonymizer),
+    getCapabilities: capabilitiesOf,
+    specHarness: async (agentId) =>
+      (await agentsRepo.get(agentId))?.spec.harness,
+    ownerCatalog: ownerCatalogOf,
+    /* UNIT_BOUNDARY_DESCRIPTION: the one call the UI's Try now makes, so a granted Agent holds the shared CurveBender as it holds any provider, and its owner's Connection is reconciled first in case it was never created. */
+    grant: async (agentId) => {
+      const owner = (await agentsRepo.get(agentId))?.owner;
+      if (!owner) return false;
+      const connections = connectionsServiceFor(owner);
+      await connections.reconcileManagedConnections();
+      const shared = (await connections.listConnections()).find(
+        (c) => c.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+      );
+      if (!shared) return false;
+      await connections.updateAgentConnections(agentId, {
+        grant: [shared.id],
+        revoke: [],
+      });
+      return true;
+    },
+    boundary: runBoundary,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
+    log: (msg) => getLogger().info(msg),
+  });
+  grantSharedCurveBender = sharedCurveBender.grant;
+  defaultConversionSaga.add(sharedCurveBender.helloSaga);
 
   const sessionWatch = createSessionWatchClient(config.namespace, (m) =>
     getLogger().warn(`[attention] ${m}`),
@@ -1600,11 +1789,19 @@ export async function bootstrap() {
   const payerOf = async (agentId: string) =>
     (await invocationDriverResolution.resolveRoot(agentId)) ?? agentId;
 
+  const assistantsRepo = createAssistantsRepository(db);
+  /* UNIT_BOUNDARY_DESCRIPTION: the assistant's "used" mark follows the install's mode, so an install that offers no assistants writes nothing for any session report. */
   const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
-    composeSessionDirectory(db);
+    composeSessionDirectory(
+      db,
+      config.featureModes.dambledore === "off"
+        ? undefined
+        : createAssistantUsageMarker({ repo: assistantsRepo }),
+    );
   const spend = composeSpendSystem({
     db,
     redis: sharedRedis,
+    meter: metrics.getMeter("platform-apiserver"),
     priceOverrides: config.spendPriceOverrides,
     owners: {
       ownerOf: async (agentId) =>
@@ -1641,7 +1838,27 @@ export async function bootstrap() {
     sessions: sessionDirectory,
     subAgents: createSpawnSessionsAdapter(db),
     telemetryStoreOn: metricsReader !== null,
+    pricedConnections: createPricedConnections({ db, secretStore }),
   });
+  await periodicJobs.register("spend-provider-prices", 60 * 60_000, () =>
+    spend.readAllPrices(),
+  );
+  void spend
+    .readPricesIfEmpty()
+    .catch((err: unknown) =>
+      getLogger().error(
+        { reason: formatError(err) },
+        "spend.first_price_read_failed",
+      ),
+    );
+  void spend
+    .repriceDeployPriced()
+    .catch((err: unknown) =>
+      getLogger().error(
+        { reason: formatError(err) },
+        "spend.start_reprice_failed",
+      ),
+    );
   await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>
     spend.ingest.settleUnrecordedCalls(),
   );
@@ -1704,15 +1921,31 @@ export async function bootstrap() {
         owner: row.owner,
         teamId: row.teamId,
         ambient: row.ambient,
+        history: row.history,
         isDefault: row.isDefault,
       }));
     },
     resolveSlackChannelsByInstance: findSlackChannelsByAgent(db),
   };
 
-  const slackAppToken = config.slackAppToken;
+  const helmAppToken = config.slackAppToken;
+  const slackAppTokens = helmAppToken
+    ? slackAppTokenSource({
+        helmToken: helmAppToken,
+        rotation: config.slackAppTokenRotation,
+        createRotating: () =>
+          createSlackAppTokenService({
+            helmToken: helmAppToken,
+            helmRefreshToken: config.slackAppRefreshToken,
+            secrets: secretStore,
+            lock: createXactLock(db),
+            rotation: slackTokenRotation,
+            spentRefreshTokens: createRedisSpentRefreshTokens(sharedRedis),
+          }),
+      })
+    : null;
 
-  const slackGatewayFactory = slackAppToken
+  const slackGatewayFactory = slackAppTokens
     ? () =>
         createBoltSlackGateway({
           resolveBotToken: slackInstalls.resolveBotToken,
@@ -1720,9 +1953,10 @@ export async function bootstrap() {
           renewTokens: slackInstalls.renewAll,
           forgetBotToken: slackInstalls.forgetBotToken,
           helmBotToken: config.slackBotToken,
-          appToken: slackAppToken,
+          appToken: slackAppTokens.source,
           commandName: `/${config.brand.short}`,
           onCredentialRejected: slackInstalls.markRejected,
+          companionAppIds: new Set(config.slackCompanionAppIds),
         })
     : fakeSlackGateway
       ? () => fakeSlackGateway
@@ -1755,15 +1989,6 @@ export async function bootstrap() {
     });
 
   const agentApiClient = createAgentApiClient(config.namespace);
-  const interactiveArtifactsOn = async (owner: string) =>
-    (
-      await composeFeaturesForOwner({
-        db,
-        owner,
-        surface: "system",
-        modes: config.featureModes,
-      }).features.flags()
-    )["interactive-artifacts"];
   const artifactPrompts = composeArtifactPromptDelivery({
     makeAcpClient,
     ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
@@ -1774,7 +1999,6 @@ export async function bootstrap() {
     boundary: runBoundary,
   });
   const shareBridge = composeShareBridge({
-    featureOn: interactiveArtifactsOn,
     ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
     agentApi: agentApiClient,
     prompts: artifactPrompts,
@@ -1784,6 +2008,11 @@ export async function bootstrap() {
     store: artifacts,
     getAgent: (id) => agentStateCache.get(id),
     grepDeadlineMs: config.kbShareGrepDeadlineMs,
+  });
+  const brandIcon = createBrandIconRoutes();
+  const agentFavicon = createAgentFavicon({
+    getAgent: (id, owner) => agentsRepo.get(id, owner),
+    loadImage: createAvatarImagesRepository(db).load,
   });
   const shareHostGate = createByLinkHostGate(
     shareSignIns.map((signIn) => ({
@@ -1795,6 +2024,7 @@ export async function bootstrap() {
             brandName: config.brand.name,
             sessionCookie: signIn.cookie,
           }),
+          brandIcon,
           viewer: createShareViewerApp({
             viewer: shareViewer,
             auth: signIn.auth,
@@ -1806,6 +2036,7 @@ export async function bootstrap() {
             contentBaseUrl: signIn.set.contentBaseUrl,
             shareBaseUrl: signIn.set.shareBaseUrl,
             bridge: shareBridge,
+            agentFavicon,
           }),
           environments:
             signIn === publicShareSignIn ? environmentFrontDoor : null,
@@ -1833,7 +2064,59 @@ export async function bootstrap() {
       : null;
   void agentIcons?.warm();
 
+  const artifactLibraryFor: ArtifactLibraryFor = (owner, surface, opts) =>
+    composeArtifactLibraryForOwner({
+      db,
+      artifacts,
+      owner,
+      surface,
+      shareBaseUrl: config.shareBaseUrl,
+      agentExists: opts?.agentExists,
+      scope: opts?.scope,
+      ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+      agentApi: agentApiClient,
+      prompts: artifactPrompts,
+      validateChoice: opts?.validateChoice,
+    }).artifactLibrary;
+
+  const linkChannelArtifacts: LinkOutboundArtifacts = ({
+    agentId,
+    owner,
+    surface,
+    ownerDirectMessage,
+    text,
+  }) =>
+    withChannelArtifactLinks(text, {
+      surface,
+      appArtifactUrl: (id) => `${config.uiBaseUrl}/artifacts/${id}`,
+      lookup: (id) =>
+        owner === null
+          ? Promise.resolve(null)
+          : artifactLibraryFor(owner, "mcp", {
+              scope: { kind: "agent", agentId },
+            }).get(id),
+      ownerDirectMessage: async () => ownerDirectMessage,
+    });
+
   const slackOwnedThreads = createSlackOwnedThreadsRepository(db);
+
+  /* UNIT_BOUNDARY_DESCRIPTION: The DM Bridge's own record, and the worker's view
+   * of it: a revoked pairing closes turns and delivery into that DM for that
+   * Agent whatever a binding or a link still says, and an in-chat unbind
+   * releases what the record settled — the threads its Sessions owned there and,
+   * when nothing else is bound, that person's email pairing. A proven link and
+   * every unrelated binding stay, which is why nothing here deletes by
+   * conversation alone. */
+  const slackDmBridges = createSlackDmBridgesRepository(db);
+  const slackDmRevoker = createSlackDmRevoker({ bridges: slackDmBridges });
+  const dmBridges: SlackDmBridgePort = {
+    blocks: (agentId, teamId, dmChannelId) =>
+      slackDmBridges.blocked(agentId, teamId, dmChannelId),
+    releaseInChat: (args) => slackDmRevoker.releaseInChat(args),
+    pendingInChat: (args) => slackDmRevoker.pendingInChat(args),
+    closedFor: (agentId, slackChannelId) =>
+      slackDmBridges.closedFor(agentId, slackChannelId),
+  };
 
   const slackWorker = slackGatewayFactory
     ? createSlackWorker({
@@ -1852,18 +2135,27 @@ export async function bootstrap() {
         pendingOAuthFlows: pendingSlackOAuthFlows,
         getInstanceOwner: (agentId) => agentsRepo.getOwner(agentId),
         ownerDisplayName: (sub) => userDirectory.resolveDisplayNameBySub(sub),
+        templateDescription: async (id) =>
+          (await templatesRepo.readSpec(id))?.spec.description ?? null,
         channelRegistry,
         unbindSlackChannel: deleteSlackChannelBinding(db),
+        dmBridges,
         setSlackChannelAmbient: setSlackChannelAmbient(db),
+        setSlackChannelHistory: setSlackChannelHistory(db),
         agentsFor: (owner) => harnessAgentsServiceFor(owner),
         ignoredApps: createSlackIgnoredAppsRepository(db),
         ownedThreads: slackOwnedThreads,
+        untaggedReplyNotes: createSlackUntaggedReplyNotesRepository(
+          db,
+          subPseudonymizer,
+        ),
         loopGuardDrops,
         setSlackDefault: setSlackChannelDefault(db),
         brand: { name: config.brand.name, short: config.brand.short },
         isTermsAccepted,
         spendHold: channelSpendHold,
         providerOutage: channelProviderOutage,
+        linkArtifacts: linkChannelArtifacts,
         uiBaseUrl: config.uiBaseUrl,
         attendance: turnAttendance,
         workspaceFiles: (agentId) =>
@@ -1919,6 +2211,7 @@ export async function bootstrap() {
           ownerDisplayName: (sub) => userDirectory.resolveDisplayNameBySub(sub),
           spendHold: channelSpendHold,
           providerOutage: channelProviderOutage,
+          linkArtifacts: linkChannelArtifacts,
           uiBaseUrl: config.uiBaseUrl,
           brandName: config.brand.name,
           logLevel: config.logLevel,
@@ -1987,6 +2280,31 @@ export async function bootstrap() {
 
   const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
   const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
+  let egressIdentity: ReturnType<typeof createEgressIdentityResolver> | null =
+    null;
+  const subAgentTitles = createInvocationTasksAdapter(db);
+  const childEgressSeeder = createChildEgressSeederAdapter(
+    db,
+    createL7HostsPortFor({ authority: config.agentStore, k8s: k8sClient, db }),
+    async (agentId) =>
+      (await egressIdentity?.resolve(agentId))?.agentId ?? null,
+    (driverId) => childEgressGrants(db).isGrantedFor(driverId),
+    composeChildEgressRequests({
+      db,
+      ownerOf: resolveAgentOwner,
+      nameOf: async (agentId) => {
+        const owner = await resolveAgentOwner(agentId);
+        const task = owner
+          ? (await subAgentTitles.tasksOf(owner, [agentId])).get(agentId)
+          : undefined;
+        return task?.name || (await resolveAgentName(agentId));
+      },
+      isEnvironment: async (agentId) =>
+        Boolean(
+          (await agentsRepo.get(agentId).catch(() => null))?.spec.environmentOf,
+        ),
+    }),
+  );
   await markTrustedRowsTakenOverAdapter(db, trustedHosts)
     .then((marked) => {
       if (marked > 0)
@@ -2017,15 +2335,34 @@ export async function bootstrap() {
   } = composeApprovalsSystem({
     db,
     bus: redisBus,
-    identityResolver: createEgressIdentityResolver({
+    identityResolver: (egressIdentity = createEgressIdentityResolver({
       resolveRoot: (agentId) => invocationDriverResolution.resolveRoot(agentId),
       identityOf: (agentId) => agentsRepo.resolveIdentity(agentId),
       environmentName: environmentNameLookup(db),
-    }),
+      nearestOwnEgress: nearestOwnEgress(db),
+    })),
     ruleMatcher: createEgressRuleMatchAdapter(db),
+    waitingRuleSpeaksFor: ruleSpeaksFor,
     providerScopes: createProviderEgressScopes(db),
+    readOnlyConnections: createReadOnlyConnections(
+      db,
+      connectionsBoot.templates,
+    ),
     attendance: turnAttendance,
     spend: spend.check,
+    webSearch: {
+      ...createWebSearchGatePorts(
+        db,
+        async (agentId) =>
+          (await agentsRepo.get(agentId))?.spec.webSearchControl === true,
+      ),
+      sessions: {
+        isScheduled: async (agentId, sessionId) =>
+          (await sessionDirectory.categorize([agentId], [sessionId])).get(
+            sessionId,
+          ) === "scheduled",
+      },
+    },
     wrapperFrameSender,
     holdSeconds: config.approvalHoldSeconds,
     platformAllowedAuthorities: objectStoreAgentUrl
@@ -2034,9 +2371,10 @@ export async function bootstrap() {
         ]
       : [],
   });
-  if (config.slackAppToken) {
+  if (slackAppTokens) {
+    const renewAppToken = slackAppTokens.renew;
     await periodicJobs.register("slack-token-renew", 10 * 60_000, () =>
-      slackInstalls.renewAll(),
+      Promise.all([slackInstalls.renewAll(), renewAppToken?.()]),
     );
   }
   await periodicJobs.register("approvals-delivery-sweep", 30_000, () =>
@@ -2073,15 +2411,6 @@ export async function bootstrap() {
     wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
     ensureDefault: (agentId) => defaultConverter.ensureForFire(agentId),
     scheduleModelFor,
-    defaultPendingAfterMove: async (agentId) => {
-      if (!(await defaultConverter.pendingAfterMove(agentId))) return false;
-      void defaultConverter
-        .ensureForFire(agentId)
-        .catch((err: unknown) =>
-          getLogger().warn({ err, agentId }, "default conversion failed"),
-        );
-      return true;
-    },
     restoreActivity: (agentId, stamp) =>
       agentsRepo.restoreActivityIfUnchanged(agentId, stamp),
     redis: sharedRedis,
@@ -2093,8 +2422,6 @@ export async function bootstrap() {
       );
     },
     spendHold,
-    agentDisabled: async (agentId) =>
-      (await agentsRepo.get(agentId))?.disabled === true,
   });
 
   const outageAlerts = composeOutageAlerts({
@@ -2103,9 +2430,7 @@ export async function bootstrap() {
     notify: (ownerSub, notice) => channelManager.notifyPerson(ownerSub, notice),
     describeAgent: async (agentId) => {
       const agent = await agentsRepo.get(agentId);
-      return agent?.owner
-        ? { ownerSub: agent.owner, name: agent.name, disabled: agent.disabled }
-        : null;
+      return agent?.owner ? { ownerSub: agent.owner, name: agent.name } : null;
     },
     sessionCategories: (agentIds, sessionIds) =>
       sessionDirectory.categorize(agentIds, sessionIds),
@@ -2117,10 +2442,7 @@ export async function bootstrap() {
   const spendAlertsSaga = startSpendAlerts({
     redis: sharedRedis,
     notify: (ownerSub, notice) => channelManager.notifyPerson(ownerSub, notice),
-    agentName: async (agentId) => {
-      const agent = await agentsRepo.get(agentId);
-      return agent && !agent.disabled ? agent.name : null;
-    },
+    agentName: async (agentId) => (await agentsRepo.get(agentId))?.name ?? null,
     connectionNames: (ownerSub) => spendAlertsConnectionNames.namesOf(ownerSub),
     sessionCategories: (agentIds, sessionIds) =>
       sessionDirectory.categorize(agentIds, sessionIds),
@@ -2160,21 +2482,6 @@ export async function bootstrap() {
     },
   );
 
-  const artifactLibraryFor: ArtifactLibraryFor = (owner, surface, opts) =>
-    composeArtifactLibraryForOwner({
-      db,
-      artifacts,
-      owner,
-      surface,
-      shareBaseUrl: config.shareBaseUrl,
-      agentExists: opts?.agentExists,
-      scope: opts?.scope,
-      ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
-      agentApi: agentApiClient,
-      featureOn: interactiveArtifactsOn,
-      prompts: artifactPrompts,
-      validateChoice: opts?.validateChoice,
-    }).artifactLibrary;
   const environments = composeEnvironments({
     db,
     agentsFor: (owner) => harnessAgentsServiceFor(owner),
@@ -2218,6 +2525,7 @@ export async function bootstrap() {
     agentsFor: (owner) => harnessAgentsServiceFor(owner),
     frames: delegationFrames,
     store: artifacts,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
   });
 
   const agentCleanupSources: AgentCleanupSource[] = [
@@ -2227,6 +2535,11 @@ export async function bootstrap() {
       name: "egress-rules",
       listAgentIds: () => listEgressRuleAgentIds(db),
       cleanup: createEgressRulesCleanupHook(db),
+    },
+    {
+      name: "web-search-rules",
+      listAgentIds: () => listWebSearchRuleAgentIds(db),
+      cleanup: createWebSearchCleanupHook(db),
     },
     {
       name: "pending-approvals",
@@ -2263,8 +2576,20 @@ export async function bootstrap() {
       ...createChatFormPreferencesCleanup(db),
     },
     {
+      name: "agent-inheritance",
+      ...inheritanceCleanup(db),
+    },
+    {
+      name: "child-egress-grants",
+      ...childEgressGrants(db),
+    },
+    {
       name: "cost-reviews",
       ...createCostReviewsCleanup(db),
+    },
+    {
+      name: "assistant-schedules",
+      ...createAssistantSchedulesCleanup(db),
     },
     {
       name: "sidebar-order",
@@ -2300,6 +2625,7 @@ export async function bootstrap() {
         agentsFor: (owner) => harnessAgentsServiceFor(owner),
         frames: delegationFrames,
         outputs: scriptOutputs,
+        runtimeMutator: runtimeDelivery.runtimeMutator,
       }),
     },
     {
@@ -2403,11 +2729,29 @@ export async function bootstrap() {
   );
   periodicJobs.start();
 
-  schedulesBoot.runner.restoreAll().catch((err) => {
-    process.stderr.write(
-      `[schedules] restoreAll failed: ${(err as Error).message}\n`,
+  const clearLegacyDisabled = () =>
+    clearLegacyDisabledMarks(agentsRepo, (agentId, owner) =>
+      pauseEnabledRecurringSchedules(schedulesBoot, agentId, owner),
     );
-  });
+  void clearLegacyDisabled()
+    .catch((err: unknown) =>
+      getLogger().warn(
+        { reason: formatError(err) },
+        "agent.legacy_disabled.cleanup_failed",
+      ),
+    )
+    .finally(() => {
+      schedulesBoot.runner.restoreAll().catch((err) => {
+        process.stderr.write(
+          `[schedules] restoreAll failed: ${(err as Error).message}\n`,
+        );
+      });
+    });
+  await periodicJobs.register(
+    "agent-legacy-disabled-cleanup",
+    10 * 60_000,
+    () => clearLegacyDisabled().then(() => undefined),
+  );
   await periodicJobs.register("schedules-reconcile", 5 * 60_000, () =>
     schedulesBoot.runner.restoreAll(),
   );
@@ -2420,8 +2764,12 @@ export async function bootstrap() {
   const wakeAgentFor = async (agentId: string) => {
     await agentsRepo.wakeIfHibernated(agentId);
   };
-  const harnessAgentsServiceFor = (owner: string) =>
+  const harnessAgentsServiceFor = (
+    owner: string,
+    as?: { actor: string; actorKind: "user" | "system" },
+  ) =>
     composeAgentsModule({
+      ...as,
       api,
       readSlackLoopGuardDrops: (ids) => loopGuardDrops.readMany(ids),
       storageGate: composeStorageGate({ k8s: k8sClient, owner }),
@@ -2441,6 +2789,7 @@ export async function bootstrap() {
       db,
       readTemplateSpec: templatesRepo.readSpec,
       presetSeeder,
+      childEgress: childEgressSeeder,
       cleanupHooks: agentCleanupHooks,
       runtimeMutator: runtimeDelivery.runtimeMutator,
       contributionsProgress: contributionsProgressPort,
@@ -2460,6 +2809,7 @@ export async function bootstrap() {
 
   const invocationLivenessSweep = composeInvocationLivenessSweep({
     db,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
     agentsFor: harnessAgentsServiceFor,
     readHarnessConfigSupport,
     runsScripts: async (agentId) => {
@@ -2476,8 +2826,7 @@ export async function bootstrap() {
           }
         : null;
     },
-    readStartWait: async (agentId) =>
-      startWaitOf(agentsRepo.peekCached(agentId)),
+    readStartWait: startWaitReason,
     hasAgent: async (agentId) => (await agentsRepo.get(agentId)) !== null,
     batchSize: 200,
     frames: delegationFrames,
@@ -2499,7 +2848,9 @@ export async function bootstrap() {
     db,
     agentsFor: harnessAgentsServiceFor,
     frames: delegationFrames,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
   });
+  const invocationCancelOutcome = createInvocationCancelOutcome(db);
   for (const kind of workspaceMutationEventKinds)
     runtimeDelivery.registerEventOutcomeHandler(kind, async (event, input) => {
       if (input.outcome === "ok") return;
@@ -2529,6 +2880,20 @@ export async function bootstrap() {
         event.agentId,
         "run",
         input.detail ?? input.outcome,
+        event.id,
+        input.sessionId,
+      );
+    },
+  );
+  runtimeDelivery.registerEventOutcomeHandler(
+    "invocation-cancel",
+    async (event, input) => {
+      const { run } = event.payload as Partial<InvocationCancelEventPayload>;
+      if (!run) return;
+      await invocationCancelOutcome(
+        run,
+        input.outcome === "ok",
+        input.sessionId,
       );
     },
   );
@@ -2553,6 +2918,15 @@ export async function bootstrap() {
   await periodicJobs.register("sub-agent-outcome-wake-retry", 3_600_000, () =>
     subAgentOutcomes.retry(),
   );
+  const questionDeadlines = composeQuestionDeadlines({
+    db,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
+    wakeAgent: wakeAgentFor,
+    batchSize: 100,
+  });
+  await periodicJobs.register("sub-agent-question-deadlines", 30_000, () =>
+    questionDeadlines(),
+  );
 
   const agentSweep = createAgentSweep({
     listAgents: () => liveAgentsRepo.list(),
@@ -2576,6 +2950,26 @@ export async function bootstrap() {
   await periodicJobs.register("image-update", 60_000, () => imageUpdate.tick());
   await periodicJobs.retire("retired-image-migration");
 
+  const idleOverrideSweep = createIdleOverrideSweep({
+    listAgents: () => agentsRepo.list(),
+    invocationIds: async (ids) =>
+      new Set(
+        (
+          await db
+            .select({ id: invocations.id })
+            .from(invocations)
+            .where(inArray(invocations.id, ids))
+        ).map((row) => row.id),
+      ),
+    clear: (id) =>
+      agentsRepo.updateSpec(id, undefined, { hibernationTimeout: null }),
+  });
+  await periodicJobs.register("idle-override-sweep", 60 * 60_000, async () => {
+    const cleared = await idleOverrideSweep();
+    if (cleared > 0)
+      getLogger().info({ cleared }, "agents.idle_overrides_cleared");
+  });
+
   await periodicJobs.register(
     "session-directory-retention",
     7 * 24 * 60 * 60 * 1000,
@@ -2594,6 +2988,7 @@ export async function bootstrap() {
     config,
     api,
     db,
+    assistantFirstResultLock: createXactTxLock(db),
     outboxRepo: runtimeDelivery.outboxRepo,
     channelManager,
     identityLinkService,
@@ -2630,6 +3025,7 @@ export async function bootstrap() {
     approvalsRelay,
     wrapperFrameSender,
     presetSeeder,
+    childEgressSeeder,
     platformAccess: agentKeys.access,
     trustedHosts,
     agentCleanupHooks,
@@ -2675,7 +3071,6 @@ export async function bootstrap() {
     linkedKits,
     firePair,
     runBoundary,
-    reposService,
     apiKeysModule,
     satellitesBoot,
     auth,
@@ -2763,6 +3158,7 @@ export async function bootstrap() {
     wakeAgent: wakeAgentFor,
     readHarnessConfigSupport,
     scriptOutputs,
+    childEgressSeeder,
     sessionMessages: runtimeDelivery.sessionMessages,
     markOnboardingComplete: (agentId: string, owner: string) =>
       createOnboardingMarker({
@@ -2805,6 +3201,8 @@ export async function bootstrap() {
     spend.extendSaga.unsubscribe();
     spend.lastKnownNameSaga.unsubscribe();
     spend.connectionLimitsSaga.unsubscribe();
+    spend.readPricesSaga.unsubscribe();
+    spend.priceBookReload.unsubscribe();
     providerStatusSaga.unsubscribe();
     outageAlertsSaga.unsubscribe();
     spendAlertsSaga.unsubscribe();

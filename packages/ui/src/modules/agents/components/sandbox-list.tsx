@@ -17,7 +17,7 @@ export function SandboxList({
   workingByAgent,
 }: Props) {
   const selectAgent = useStore((s) => s.selectAgent);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
 
   return (
     <div className="flex flex-col gap-3">
@@ -28,8 +28,8 @@ export function SandboxList({
           working={workingByAgent?.get(agent.id)}
           temporaryCount={temporaryCountByDriver.get(agent.id)}
           onSelect={() => selectAgent(agent.id)}
-          onConfigure={() => navigateToSandboxHome(agent.id)}
-          configureLabel="Configure agent"
+          onConfigure={() => openAgentSettings(agent.id)}
+          configureLabel="Agent settings"
         />
       ))}
     </div>

@@ -277,3 +277,35 @@ func TestRenderOwnerGateway_AGenerationReplacesOnlyTheInternalListener(t *testin
 	assert.Equal(t, plain.CDS, regenerated.CDS, "no cluster moves")
 	assert.NotContains(t, plain.LDS, "repair_generation", "an ordinary render carries no generation")
 }
+
+// TEST_SCENARIO: every agent of an owner shares one Envoy, one loopback and one pod address, so a dial through a sibling's forward proxy arrives at the pod's loopback or its own address and would enter that listener as a machine does. The chains of an agent's outer listener therefore admit only connections from outside the pod, while the internal listeners, which the pod's own routes reach, and the health listener, which the kubelet probes, keep admitting them.
+func TestRenderOwnerGateway_OuterListenerAdmitsOnlyExternalSources(t *testing.T) {
+	got, err := renderOwnerGateway(ownerTestAgents(), bootstrapTestCfg, nil)
+	require.NoError(t, err)
+	outerChains := 0
+	for _, l := range resourcesOf(t, got.LDS) {
+		name := l["name"].(string)
+		raw, _ := yaml.Marshal(l)
+		if !strings.HasPrefix(name, "agent_egress_") {
+			assert.NotContains(t, string(raw), "source_type", "%s is reached from inside the pod", name)
+			continue
+		}
+		for i, c := range l["filter_chains"].([]any) {
+			match, _ := c.(map[string]any)["filter_chain_match"].(map[string]any)
+			assert.Equal(t, "EXTERNAL", match["source_type"], "chain %d of %s", i, name)
+			if i == 0 {
+				assert.Equal(t, "tls", match["transport_protocol"], "the transparent-TLS match keeps its own key")
+			}
+			outerChains++
+		}
+	}
+	assert.Equal(t, 4, outerChains, "the transparent-TLS chain and the proxy chain of each of the two agents")
+	assert.NotContains(t, got.Bootstrap, "source_type", "the kubelet probes the shared health listener from the node")
+}
+
+// TEST_SCENARIO: a per-agent gateway is the only workload of its pod, so its listener has no sibling to keep out and its render stays byte for byte what it was.
+func TestRenderEnvoyBootstrap_AgentGatewayCarriesNoSourceType(t *testing.T) {
+	got, err := renderEnvoyBootstrap("agent-a", "", bootstrapTestCfg, nil, true)
+	require.NoError(t, err)
+	assert.NotContains(t, got, "source_type")
+}

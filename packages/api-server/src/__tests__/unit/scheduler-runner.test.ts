@@ -15,6 +15,7 @@ import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 import type {
   FirePair,
   RunBoundary,
+  SessionChoicesValidator,
 } from "../../modules/harness-config/index.js";
 import { NoDefaultModelError } from "../../modules/harness-config/domain/no-default-model.js";
 import type { AgentActivityStamp } from "../../modules/agents/index.js";
@@ -94,27 +95,19 @@ function makeDeps(opts?: {
   onboardingPending?: boolean;
   once?: boolean;
   onceResult?: string;
-  agentDisabled?: boolean;
   enabled?: boolean;
   /** UNIT_BOUNDARY_DESCRIPTION: a schedule as the repository hands it back, for a shape the parameters cannot express. */
   schedule?: Schedule;
   firePair?: FirePair;
   boundary?: RunBoundary;
   ensureDefault?: (agentId: string) => Promise<AgentActivityStamp | null>;
-  defaultPendingAfterMove?: (agentId: string) => Promise<boolean>;
+  runNowWakeCapMs?: number;
   choices?: {
     harness?: string;
     model?: string;
     settings?: Record<string, string>;
   };
-  validateSessionChoices?: (
-    agentId: string,
-    choices: {
-      harness?: string;
-      model?: string;
-      settings?: Record<string, string>;
-    },
-  ) => Promise<string | undefined>;
+  validateSessionChoices?: SessionChoicesValidator;
 }) {
   const calls: string[] = [];
   const fires: { result: string; nextRun: Date | null }[] = [];
@@ -241,8 +234,9 @@ function makeDeps(opts?: {
     ...(opts?.firePair ? { firePair: opts.firePair } : {}),
     ...(opts?.boundary ? { boundary: opts.boundary } : {}),
     ensureDefault: opts?.ensureDefault ?? (async () => null),
-    defaultPendingAfterMove:
-      opts?.defaultPendingAfterMove ?? (async () => false),
+    ...(opts?.runNowWakeCapMs !== undefined
+      ? { runNowWakeCapMs: opts.runNowWakeCapMs }
+      : {}),
     scheduleModelFor: async (_agentId, model) => model,
     ...(opts?.validateSessionChoices
       ? { validateSessionChoices: opts.validateSessionChoices }
@@ -262,7 +256,6 @@ function makeDeps(opts?: {
     ...(opts?.onboardingPending !== undefined
       ? { onboardingPending: async () => opts.onboardingPending === true }
       : {}),
-    agentDisabled: async () => opts?.agentDisabled === true,
     log: () => {},
     now: () => new Date("2026-06-12T10:30:00Z"),
   });
@@ -378,28 +371,52 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
   });
 
   /** TEST_SCENARIO: A schedule that names a profile which cannot run on its
-   * agent fails with that reason; it never runs the agent's default and is
-   * never recorded as following one. */
-  it("fails a fire whose profile cannot run, without falling back", async () => {
-    let fired = 0;
-    const { runner, events } = makeDeps({
-      firePair: async () => {
-        fired += 1;
-        return { harness: "claude-code", provider: "conn-1", model: "m" };
-      },
+   * agent is read with the profile's values dropped, so the fire runs on the
+   * pair it resolves and never fails over a profile the run does not use. */
+  it("runs a fire whose profile cannot run on the resolved pair", async () => {
+    const { runner, payloads } = makeDeps({
+      firePair: async () => ({
+        harness: "claude-code",
+        provider: "conn-1",
+        model: "anthropic/claude-opus-5-5",
+      }),
       schedule: {
         ...makeSchedule(),
         spec: { ...makeSchedule().spec, profile: "profile-1" },
         profileIssue: "CurveBender (shared) is not connected",
       },
     });
-    await expect(
-      runner.buildFireHandler()(SCHEDULE_ID, new Date("2026-06-12T10:30:00Z")),
-    ).rejects.toThrow(
-      /profile cannot run: CurveBender \(shared\) is not connected/,
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
     );
-    expect(fired).toBe(0);
+    expect(payloads[0]).toMatchObject({
+      provider: "conn-1",
+      model: "anthropic/claude-opus-5-5",
+    });
+  });
+
+  /** TEST_SCENARIO: The agent's provider is still being granted, so a retry
+   * can find it: the attempt is retried rather than recorded, and the schedule
+   * keeps its due occurrence instead of moving on. */
+  it("retries a fire while the agent's provider is on its way", async () => {
+    const { runner, enqueued, stampedResults, events } = makeDeps({
+      firePair: async () => {
+        throw new NoDefaultModelError({ pending: true });
+      },
+    });
+    await expect(
+      runner.buildFireHandler()(
+        SCHEDULE_ID,
+        new Date("2026-06-12T10:30:00Z"),
+        false,
+      ),
+    ).rejects.toThrow(/still setting up/);
+    expect(enqueued).toEqual([]);
     expect(events).toEqual([]);
+    expect(stampedResults.map((r) => r.result)).toEqual([
+      "this agent is still setting up its model; try again in a minute",
+    ]);
   });
 
   /** TEST_SCENARIO: The agent has no model provider to run on. A retry cannot change
@@ -432,7 +449,7 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
   it("asks for the early wake before resolving the pair and checking the choices", async () => {
     const order: string[] = [];
     const { runner } = makeDeps({
-      choices: { model: "ibm/gpt-5.5" },
+      choices: { harness: "claude-code", model: "ibm/gpt-5.5" },
       ensureDefault: async () => {
         order.push("wake");
         return null;
@@ -554,14 +571,72 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
     expect(payloads[0]?.onDefault).toBe(true);
   });
 
-  /** TEST_SCENARIO: Run now never waits for an agent that is still setting up
-   * its default after a move; it says so at once. */
-  it("refuses run now while the default is being set up", async () => {
+  /** TEST_SCENARIO: Run now on an asleep agent moved to a new image waits for
+   * the wake onto it, as a fire does, and then starts the run: one press is
+   * enough (#6811). */
+  it("waits for the wake onto a new image, then runs now", async () => {
+    const order: string[] = [];
+    let woken: (stamp: AgentActivityStamp) => void = () => {};
     const { runner, events } = makeDeps({
-      defaultPendingAfterMove: async () => true,
+      ensureDefault: () =>
+        new Promise((resolve) => {
+          order.push("wake");
+          woken = resolve;
+        }),
+      firePair: async () => {
+        order.push("pair");
+        return { harness: "claude-code", provider: "lite", model: "m" };
+      },
+    });
+    const pressed = runner.runNow(SCHEDULE_ID);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(events).toEqual([]);
+    woken({ previous: null, written: WAKE_STAMP });
+    expect(await pressed).toBe("started");
+    expect(order).toEqual(["wake", "pair"]);
+    expect(events).toHaveLength(1);
+  });
+
+  /** TEST_SCENARIO: a wake onto a new image that does not finish within Run
+   * now's cap still ends in "still setting up", leaving the schedule's record
+   * alone, as before (#6811). */
+  it("says run now is setting up when the wake outlasts its cap", async () => {
+    const { runner, events, stampedFires, stampedResults } = makeDeps({
+      runNowWakeCapMs: 20,
+      ensureDefault: () => new Promise(() => {}),
     });
     expect(await runner.runNow(SCHEDULE_ID)).toBe("default-pending");
     expect(events).toEqual([]);
+    expect(stampedFires).toEqual([]);
+    expect(stampedResults).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: the new runtime does not say hello in time, so the wake
+   * fails as still setting up: Run now says so rather than running on the old
+   * runtime's view. */
+  it("says run now is setting up when the new runtime never says hello", async () => {
+    const { runner, events } = makeDeps({
+      ensureDefault: async () => {
+        throw new NoDefaultModelError({ pending: true });
+      },
+    });
+    expect(await runner.runNow(SCHEDULE_ID)).toBe("default-pending");
+    expect(events).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: Run now on an agent whose provider is still being granted
+   * is not refused as having none: it says the Agent is setting up and leaves
+   * the schedule's record alone, so the owner tries again in a minute. */
+  it("says run now is setting up while the agent's provider is on its way", async () => {
+    const { runner, events, stampedFires, stampedResults } = makeDeps({
+      firePair: async () => {
+        throw new NoDefaultModelError({ pending: true });
+      },
+    });
+    expect(await runner.runNow(SCHEDULE_ID)).toBe("default-pending");
+    expect(events).toEqual([]);
+    expect(stampedFires).toEqual([]);
+    expect(stampedResults).toEqual([]);
   });
 
   /** TEST_SCENARIO: Run now on an agent with no model provider is refused
@@ -577,8 +652,9 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
   });
 
   /** TEST_SCENARIO: The schedule names a harness, a qualified model and a
-   * setting. The fire re-checks them, asks the pair resolver for that harness
-   * and model, and carries the settings on the trigger. */
+   * setting. The fire re-checks the harness and the settings as the pair it
+   * resolved carries them, asks the pair resolver for that harness and model,
+   * and carries the settings on the trigger. */
   it("fires on the schedule's harness, model and settings", async () => {
     const asked: unknown[] = [];
     const checked: unknown[] = [];
@@ -588,8 +664,8 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
         model: "openai/gpt-5.5",
         settings: { effort: "high" },
       },
-      validateSessionChoices: async (_agentId, choices) => {
-        checked.push(choices);
+      validateSessionChoices: async (_agentId, choices, fire) => {
+        checked.push({ choices, fire });
         return undefined;
       },
       firePair: async (_agentId, kind, preferred) => {
@@ -604,9 +680,8 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
     );
     expect(checked).toEqual([
       {
-        harness: "codex",
-        model: "openai/gpt-5.5",
-        settings: { effort: "high" },
+        choices: { harness: "codex", settings: { effort: "high" } },
+        fire: { harness: "codex", provider: "oai", model: "openai/gpt-5.5" },
       },
     ]);
     expect(asked).toEqual([{ harness: "codex", model: "openai/gpt-5.5" }]);
@@ -657,30 +732,40 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
       new Date("2026-06-12T10:30:00Z"),
     );
     const both = { effort: "high", ...subagent };
-    expect(checked).toEqual([
-      { harness: "codex", model: "openai/gpt-5.5", settings: both },
-    ]);
+    expect(checked).toEqual([{ harness: "codex", settings: both }]);
     expect(payloads[0]).toMatchObject({ settings: both });
   });
 
   /** TEST_SCENARIO: Since the schedule was saved the agent lost the provider
-   * its model names. The fire fails with that reason on the schedule rather
-   * than running on a substitute model. */
-  it("fails the fire with the reason a choice no longer holds", async () => {
-    const { runner, stampedResults, events } = makeDeps({
-      choices: { model: "openai/gpt-5.5" },
-      validateSessionChoices: async () => "this agent holds no openai provider",
+   * its model names. A fire is not a save, so its checked choices carry the
+   * pair it resolved rather than the stale model, and the occurrence runs on
+   * the fallback instead of refusing every time. */
+  it("fires on the fallback when the schedule's model lost its provider", async () => {
+    const checked: { model?: string; fire?: string | null }[] = [];
+    const { runner, payloads, fires } = makeDeps({
+      choices: { model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017" },
+      validateSessionChoices: async (_agentId, choices, fire) => {
+        checked.push({ model: choices.model, fire: fire?.model });
+        return choices.model === undefined
+          ? undefined
+          : "this agent holds no cb provider";
+      },
       firePair: async () => ({
         harness: "claude-code",
-        provider: null,
-        model: "openai/gpt-5.5",
+        provider: "anth",
+        model: "anthropic/claude-opus-5-5",
       }),
     });
-    await expect(
-      runner.buildFireHandler()(SCHEDULE_ID, new Date("2026-06-12T10:30:00Z")),
-    ).rejects.toThrow(/holds no openai provider/);
-    expect(events).toEqual([]);
-    expect(stampedResults[0]?.result).toMatch(/holds no openai provider/);
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+    expect(checked).toEqual([]);
+    expect(payloads[0]).toMatchObject({
+      provider: "anth",
+      model: "anthropic/claude-opus-5-5",
+    });
+    expect(fires[0]?.result).toBe("success");
   });
 
   /** TEST_SCENARIO: A refusal happens before the trigger is committed, so the
@@ -692,7 +777,7 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
     const { runner, fires, stampedResults, enqueued, events, lastRun } =
       makeDeps({
         lastRun: "2026-06-12T09:00:00.000Z",
-        choices: { model: "openai/gpt-5.5" },
+        choices: { harness: "codex" },
         validateSessionChoices: async () =>
           "this agent holds no openai provider",
       });
@@ -722,7 +807,7 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
     const { runner, payloads } = makeDeps({
       precheck: "test -f /tmp/ready",
       lastRun: "2026-06-12T09:00:00.000Z",
-      choices: { model: "openai/gpt-5.5" },
+      choices: { harness: "codex" },
       validateSessionChoices: async () => refusal,
       firePair: async () => ({
         harness: "codex",
@@ -746,29 +831,6 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
 });
 
 describe("scheduler-runner fire", () => {
-  // TEST_SCENARIO: a disabled agent does nothing, so a recurring fire neither commits a trigger nor wakes it; the occurrence is held with a reason the schedules page shows, and the next one is armed for when the agent is enabled again. A held fire never ran, so it leaves the last-run stamp on the run that did.
-  it("holds the occurrence while the agent is disabled", async () => {
-    const { runner, calls, stampedResults, enqueued, lastRun } = makeDeps({
-      agentDisabled: true,
-      lastRun: "2026-06-12T09:00:00.000Z",
-    });
-
-    await runner.buildFireHandler()(
-      SCHEDULE_ID,
-      new Date("2026-06-12T10:30:00Z"),
-    );
-
-    expect(calls).toEqual([]);
-    expect(stampedResults).toEqual([
-      {
-        result: "held: agent disabled",
-        nextRun: new Date("2026-06-12T11:00:00Z"),
-      },
-    ]);
-    expect(lastRun()).toBe("2026-06-12T09:00:00.000Z");
-    expect(enqueued).toEqual([new Date("2026-06-12T11:00:00Z")]);
-  });
-
   it("holds the occurrence while the agent has not finished onboarding, and keeps the cadence", async () => {
     const { runner, calls, stampedResults, enqueued } = makeDeps({
       onboardingPending: true,
@@ -835,22 +897,6 @@ describe("scheduler-runner fire", () => {
       `wake:${AGENT_ID}`,
     ]);
     expect(fires).toEqual([{ result: "delivering", nextRun: null }]);
-  });
-
-  // TEST_SCENARIO: a one-time task due while its agent is disabled is recorded missed, as a task past its window is, and neither commits a trigger nor wakes the agent.
-  it("misses a one-time fire while the agent is disabled", async () => {
-    const { runner, calls, fires } = makeDeps({
-      once: true,
-      agentDisabled: true,
-    });
-
-    await runner.buildFireHandler()(
-      SCHEDULE_ID,
-      new Date("2026-06-12T10:30:00Z"),
-    );
-
-    expect(calls).toEqual([]);
-    expect(fires).toEqual([{ result: "missed", nextRun: null }]);
   });
 
   // TEST_SCENARIO: once the event is committed the task will run when the Agent is Ready, so a poke that fails afterwards must not overwrite delivering with the error — the settle listener replaces delivering only, and a failed result would hide a task that ran.
@@ -1449,7 +1495,7 @@ describe("scheduler-runner runNow", () => {
   // TEST_SCENARIO: the owner is watching this one, so a fire refused before its trigger is committed must reach them with the reason — a plain Error is redacted to "internal server error" on the way out, which is exactly the case where nobody can act on it.
   it("reports a refused fire with its reason", async () => {
     const { runner } = makeDeps({
-      choices: { model: "openai/gpt-5.5" },
+      choices: { harness: "codex" },
       validateSessionChoices: async () => "this agent holds no openai provider",
     });
 

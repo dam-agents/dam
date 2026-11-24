@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: until the runtime confirms it has a sent message (platform/promptAccepted or platform/promptStarted), the chat says the message is on its way, never that the agent is working. The words sit under the person's own message: "Sending", or "Waking the agent" when the send woke the agent, shown only after a second so a fast send goes straight to the working dots. The agent's slot, the session's row in the sidebar and the quiet-turn line show nothing of the agent's until then.
+// TEST_OVERVIEW: until the runtime confirms it has a sent message (platform/promptAccepted or platform/promptStarted), the chat says the message is on its way, never that the agent is working. The words sit under the person's own message: "Sending", or "Starting the agent" when the send woke the agent, shown only after a second so a fast send goes straight to the working dots. The agent's slot, the session's row in the sidebar and the quiet-turn line show nothing of the agent's until then.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
@@ -69,10 +69,10 @@ describe("a send the runtime has not confirmed", () => {
     expect(html).toContain("anim-in-late");
   });
 
-  // TEST_SCENARIO: the send woke a sleeping agent, which takes up to a couple of minutes. The person's message says the agent is waking, which is what they wait for.
-  test("says Waking the agent when the send woke it", () => {
+  // TEST_SCENARIO: the send woke an agent stopped for idleness, which takes up to a couple of minutes. The person's message says the agent is starting, which is what they wait for.
+  test("says Starting the agent when the send woke it", () => {
     const html = render({ ...sent, unconfirmed: "waking" });
-    expect(html).toContain("Waking the agent");
+    expect(html).toContain("Starting the agent");
     expect(html).not.toContain('data-testid="working-dots"');
   });
 

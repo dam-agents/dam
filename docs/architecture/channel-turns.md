@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-11-05
+Last verified: 2026-11-20
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -55,8 +55,8 @@ A few observations the diagram glosses over:
   So the relay refuses and the turn carries on with that one call denied, rather than waiting on an answer that cannot come — the same rule the credentialed-egress gate applies to an unattended turn ([security-and-credentials](security-and-credentials.md)).
   That holds where the harness offers a way to say no; where it offers only ways to say yes the sole honest answer left is to cancel, which ends the whole turn rather than the one call in it.
   The relay never picks an approval to keep a turn alive; the one approval it ever picks is the allow-once below.
-  What an Agent may do on a channel turn is therefore exactly what the default tool approval — Auto mode, else Bypass — lets it do *without* asking; a channel turn takes no approval of its own ([harness-config](harness-config.md#session-settings)).
-  The turn contract hands the Agent that explanation, because the platform does not tell the sender: a call the permission check refused is the mode's doing, never a platform setting, and no setting changes it.
+  What an Agent may do on a channel turn is therefore exactly what the agent's tool approval, else the default one — Auto mode, else Bypass — lets it do *without* asking; a channel turn takes no approval of its own ([tool approval](tool-approval.md)).
+  The turn contract hands the Agent that explanation, because the platform does not tell the sender: a call the permission check refused is the mode's doing, and only the agent's tool approval changes it.
   Codex has no such dial: its image runs it never asking, so it raises no prompt to refuse ([harness-config](harness-config.md)).
   The platform's own tool surface is kept outside that dial: asked about one of the two MCP servers the platform injects, the relay answers allow-once, so disposing of a turn, reporting an invocation result and reading a knowledge base survive a mode that asks — wherever the prompt offers allowing once at all, since that is the only approval the relay will pick.
   Reach on those tools is the platform's to enforce (per-Agent endpoint, mesh identity, the binding), never the harness's, so approving them widens nothing.
@@ -102,8 +102,9 @@ A few observations the diagram glosses over:
   A resume that fails (the home does not hold it, session expired) falls back to a fresh session with thread history injected from the messenger API — no regression, just a colder start.
   A fresh session opens on the pair the channel's own profile resolves to ([harness configuration](harness-config.md)); a channel that names none, one written before profiles, follows the Agent's channel or chat default, and picking on the channel's row, in the chat's own picker, changes what its next fresh session runs on.
   The channel's subagent slot, a profile or values of its own, joins the primary as a chat default's does; an empty one lets the Agent pick.
-  A profile that cannot run on the Agent refuses the turn with its reason and a reply that names the profile and the row to change it on, never the Agent's default.
-  With no default model it runs on the [automatic model](harness-config.md#session-settings); with no model provider to run on, or a default on a provider the Agent no longer holds, the turn fails with the `no-default-model` reason and a reply naming the agent's Providers section, and when no granted provider fits, it fails rather than running elsewhere.
+  A profile that cannot run on the Agent leaves the turn on the Agent's channel default.
+  With no default model, or one whose provider is gone, it runs on the [automatic model](harness-config.md#session-settings).
+  An Agent holding no model provider is granted the deployment's shared CurveBender, and the reply says it is still setting up; without one the turn fails with the `no-default-model` reason and a reply naming its Providers section, and with no fitting provider it fails rather than running elsewhere.
   A resumed session from before the Model Router, which carries no model, gets the channel default pinned on it first.
   A **resumed** thread keeps the values it already runs on, as a session that picked does (D94 A, D119): the channel's profile is applied when a session is created, so a profile edit reaches the next fresh thread and never a running one ([sessions](sessions.md#session-inside-the-machine)).
 - **A resumed conversation is caught up on what it missed, best-effort (Slack).** A session belongs to one Agent, so it sees a conversation's history only on its first turn there; a mention-only binding is never handed what does not tag it, and an Agent stopped or unreachable is handed nothing at all.
@@ -166,7 +167,7 @@ A few observations the diagram glosses over:
   On Telegram a conversation has no threads, so a read-along turn resumes the conversation's one session, the one its addressed turns use.
 - **Every turn relay is evented.** Both workers announce the finished turn on the in-process bus, naming the messenger, the Agent, and whether it succeeded.
   It carries no platform identity — channel turns resolve none — so attribution rides the messenger-native id of the sender instead.
-  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, `no-default-model`, a model provider that is down, a refusal by the model, `spend-limit` or `spend-ceiling`, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
+  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, `no-default-model`, a model provider that is down, a refusal by the model or a failed model call, `spend-limit` or `spend-ceiling`, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
   A failure because the provider is down also names the Connection template that the turn ran on.
   A delivery nudge announces itself on the same bus rather than amending the turn's own event, so a relay that had to be repaired shows as two: the turn as it first ended, then the nudge and whether it drew an answer.
   That second one names itself in its reason whichever way it went, so a repaired turn is never mistaken for a plain one.
@@ -182,10 +183,10 @@ A steer held for a running turn has no time limit either; the turn is judged onl
 
 An addressed turn that fails is answered in plain language keyed to what happened, never a raw error — and answered not at all where the thread already carries the agent's own post or a deliberate decline or hand-off.
 A turn that failed because the model provider is down or overloaded is answered with what [Provider Status](provider-status.md#screens) knows: the provider's outage and since when, a fault on the platform's side, or only that the provider did not respond.
-A turn the model refused ends with ACP's `refusal` stop reason rather than an error, and the relay counts it as failed with the `model-refused` reason.
-The reply says the model refused the message and links the agent's Providers section, where the owner can switch models.
-On Slack it also advises a new thread: the refused message stays in the thread's session, so asking there again is refused too.
-For the same reason the refused message counts as delivered, and the next turn's catch-up does not hand it to the agent again.
+A turn the model refused (ACP's `refusal` stop reason) fails as `model-refused`; one whose model call failed, as `model-call-rejected` or `model-call-failed`.
+Either reply links the agent's Providers section; a failed call's reply also quotes the provider's error, never the agent's text, and links the session.
+On Slack a refusal's reply advises a new thread, since the thread's session keeps the refused message.
+Either message counts as delivered, so the next turn's catch-up does not hand it to the agent again.
 A turn that a spend limit or the ceiling stops partway fails with the harness's report of the gate's refusal, and the relay counts it as failed with the `spend-limit` or `spend-ceiling` reason.
 Its reply is the notice that a turn the limit holds before it starts gets, with the time the agent answers again ([spend-limits](spend-limits.md#unattended-work)).
 The failure reason still rides the turn event either way.
@@ -236,7 +237,7 @@ What the agent sees:
   `start_thread` posts too, and owns the thread ([slack-threads](slack-threads.md)).
   A post into a channel still counts as answering the newest turn in flight there, whichever thread that turn is in, so that turn is not nudged.
   Telegram has no thread to reply into, so there it is also how a turn is answered.
-  On Slack its result names the conversation and `ts` of the post, so the agent can later `reply` into the thread it started; a post Slack makes by sharing its file, or a file sent alone, names no `ts`.
+  On Slack its result names the conversation and `ts` of the post, so the agent can later `reply` into the thread it started; for a post Slack makes by sharing its file, the `ts` is read back from the file.
   Where a target is ambiguous the worker refuses and names the candidates rather than picking one.
 - **The agent meets people as ids, and resolves them itself.** A messenger names a person only by their user id — in speaker labels, injected history, and mentions inside message text — so `describe_channel_users` turns ids into people, as far as the workspace discloses.
   An id means something only inside one workspace, so the lookup asks the workspace of the conversation it is named or called from, and an Agent in several workspaces that settles neither is refused rather than answered from a guess.
@@ -269,7 +270,7 @@ What the agent sees:
   Slack only.
 - **Slack turn tools** — `reply`, `react`, and `hand_off_to_agent` — are how an Agent disposes of the turn it is handling.
   A reply may additionally surface in the channel (Slack's native "also send to channel"), off by default, and may carry one file, as `post` can.
-  Like `post`, a reply's result names its conversation and `ts`, so the agent can `react` to it; a post Slack makes by sharing its file names no `ts`, since that share does not return one, and neither does a private reply to a whisper, which only its sender sees.
+  Like `post`, a reply's result names its conversation and `ts`, so the agent can `react` to it; a shared file's post names it as `post` does, and a private reply to a whisper, which only its sender sees, names none.
   A message with a file is **one post**: the file is shared with the Agent's text and its footer on it, so the picture sits on the answer it belongs to rather than in a bare post of its own.
   Slack's file share refuses a `markdown` block, so the text rides on it as mrkdwn `section` blocks converted from the Agent's Markdown.
   Where one post cannot carry it — the reply also goes to the channel, the message turns link or media previews off, the text is too long for one post, or Slack refuses the share with the text on it — the text is posted first and the file shared after it, so an upload the workspace refuses still leaves the answer delivered, and is reported beside a success rather than as a failed post.
@@ -295,12 +296,14 @@ What the agent sees:
   It posts nothing and touches no channel, but it does mark the turn declined — which keeps a sanctioned silence out of the unanswered-turn signal.
   On Slack it always names the turn it ends, for the same reason a hand-off does; Telegram has no thread id to pass, so the name is required by the Slack worker rather than the tool.
   An unnamed call while any Slack turn is live, and one naming a turn the Agent is not running, are both refused: answering them as though a turn had been declined would record nothing, and the turn would then be repaired as undelivered — posting the very answer the Agent chose to withhold.
-- **Slack reach is where the owner is a member.** A bound Agent may post beyond its bound conversations, into a channel that both the bot and the Agent's owner are members of (known from the owner's linked Slack identity), public or private alike: reaching a channel means being able to post there, and Slack lets a person post only where they have joined, so seeing a public channel is not reaching it.
-  Other channels are left out of `describe_channel` and refused as a target, and an owner with no linked identity reaches none.
+- **Slack reach is the bound conversations.** A bound Agent posts into a channel only when that channel is bound to it: the binding is the channel's consent.
+  A channel its owner is in, or one the bot happens to be in, is not enough, since the people there never connected the Agent; `describe_channel` lists the bound conversations alone, and any other channel is refused as a target, with a refusal that tells the Agent not to post elsewhere instead.
+  The one exception is the turn being answered: in its channel, bound or not, the Agent may answer it, but never starts a post or thread there.
   A Slack user id opens a DM, but only with the owner, the person in a bound 1:1 DM, or a member of a bound channel, and a DM id is held to the same rule: the shared bot can open a DM with anyone in the workspace, so without it an Agent could message people who never met it or its owner.
-  Membership is verified at send time; a bound conversation short-circuits every check, since the binding is the channel's consent.
+  That DM rule is its own check, apart from the channel rule, so it can change alone.
+  A bound conversation short-circuits every check.
   Every outbound post is made by the bot and footed with an [Agent Footer](#the-agent-footer).
-  The binding governs who may drive the Agent inbound; the owner's membership governs where it may go outbound.
+  The binding governs both who may drive the Agent inbound and where it may post outbound.
   Telegram has no analogue: its outbound targets stay the chats bound to the Agent, any forum topic in them included.
 - **Tools are always registered.** Calls are rejected at invocation time when no channel is connected for the Agent — no dynamic tool list, no per-session toggle.
   `describe_channel_users`, `describe_message_reactions` and `fetch_message_attachment` stay registered too, and report the scope their workspace withheld (see [Slack scopes: required vs. optional](channels.md#slack-scopes-required-vs-optional)).

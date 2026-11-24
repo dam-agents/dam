@@ -12,7 +12,6 @@ import { ProcessStats } from "./process-stats.js";
 interface Props {
   agentId: string;
   row: ProcessRowData;
-  alwaysOn: boolean;
   now: Date;
   outputOpen: boolean;
   onOpenOutput: (key: string) => void;
@@ -21,7 +20,6 @@ interface Props {
 export function ProcessRow({
   agentId,
   row,
-  alwaysOn,
   now,
   outputOpen,
   onOpenOutput,
@@ -58,7 +56,6 @@ export function ProcessRow({
       <ProcessActionsMenu
         agentId={agentId}
         row={row}
-        alwaysOn={alwaysOn}
         outputOpen={outputOpen}
         onToggleOutput={toggleOutput}
       />

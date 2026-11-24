@@ -92,6 +92,13 @@ pub struct Launch {
     pub workdir: Option<String>,
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the guest vsock ports of the link, the same on every machine. smolvm maps a machine's published sockets to ports from 6100 up, in their order, and the runner publishes the dial socket first and the accept socket second, so a guest dials the host on 6100 and the init accepts on 6101; each VMM has a vsock device of its own, so two machines never meet but through the runner. The init serves each accepted connection itself, so the link needs nothing from the image.
+pub const LINK_VSOCK_PORT: u32 = 6100;
+pub const LINK_ACCEPT_VSOCK_PORT: u32 = 6101;
+// UNIT_BOUNDARY_DESCRIPTION: the launch env that makes a machine an Environment: the id of the agent that owns it, which the controller sets. An Environment never dials.
+pub const ENVIRONMENT_OF_ENV: &str = "PLATFORM_ENVIRONMENT_OF";
+// UNIT_BOUNDARY_DESCRIPTION: the launch env naming the one agent that may open the link into this machine, which the controller sets: an Environment's owning agent, or a sub-agent's driver. The runner admits a link into the machine only from that agent, and the init accepts the link only when it is set, or when the machine is an Environment of an older controller, which named no one but its owner.
+pub const LINK_FROM_ENV: &str = "PLATFORM_LINK_FROM";
 // UNIT_BOUNDARY_DESCRIPTION: the one guest path a machine keeps. It is fixed rather than configured — the image bakes this home into its user and the controller sets it as HOME on both backends — which is what lets the whole storage model be a constant instead of a plan the runner has to write and the guest has to parse.
 pub const AGENT_HOME: &str = "/home/agent";
 

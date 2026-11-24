@@ -17,6 +17,7 @@ import type {
   ArtifactStat,
   ArtifactStore,
 } from "../domain/artifact-store.js";
+import { contentDisposition } from "../../../core/content-disposition.js";
 
 export function createS3ArtifactStore(deps: {
   client: S3Client;
@@ -132,7 +133,7 @@ export function createS3ArtifactStore(deps: {
         new GetObjectCommand({
           Bucket: deps.bucket,
           Key: key,
-          ResponseContentDisposition: `attachment; filename="${opts.filename}"`,
+          ResponseContentDisposition: contentDisposition(opts.filename),
         }),
         { expiresIn: opts.expiresSeconds },
       );

@@ -25,9 +25,13 @@ export function documentTitle(
   route: {
     view: View;
     settingsTab: SettingsTab;
-    sandboxSectionTitle?: string;
   },
-  names: { agent?: string; session?: string | null; kit?: string },
+  names: {
+    agent?: string;
+    session?: string | null;
+    kit?: string;
+    artifact?: string;
+  },
   brandName: string,
 ): string {
   const parts: (string | null | undefined)[] = (() => {
@@ -36,14 +40,14 @@ export function documentTitle(
         return ["Home"];
       case "artifacts":
         return ["Artifacts"];
+      case "artifact":
+        return [names.artifact ?? "Artifact"];
       case "starter-kits":
         return ["Starter kits"];
       case "chat":
         return [names.session, names.agent];
       case "settings":
         return [SETTINGS_TAB_TITLE[route.settingsTab], "Settings"];
-      case "sandbox-home":
-        return [route.sandboxSectionTitle, names.agent];
       case "starter-kit":
         return [names.kit ?? "Starter kit"];
       case "terms":

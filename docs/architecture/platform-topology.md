@@ -1,10 +1,10 @@
 # Platform topology
 
-Last verified: 2026-10-27
+Last verified: 2026-11-20
 
 ## Overview
 
-Platform runs as four long-lived subsystems on Kubernetes: a Go **controller** that reconciles the Agent custom resource, a TypeScript **api-server** that brokers user requests and relays agent traffic, per-owner **VM runner** pods whose microVM machines host each agent's **agent-runtime**, paired with a per-agent **gateway** pod as its egress proxy, and a React **ui** served by the api-server.
+Platform runs as four long-lived subsystems on Kubernetes: a Go **controller** that reconciles the Agent custom resource, a TypeScript **api-server** that brokers user requests, relays agent traffic and serves the React **ui**'s static files, per-owner **VM runner** pods whose microVM machines host each agent's **agent-runtime**, and a per-agent **gateway** pod as its egress proxy.
 A machine keeps its durable state on its own disk on the owner's claim, which is what makes the hibernate/wake cycle (stop the machine and scale its gateway to zero, start both back up) safe.
 The controller and api-server never talk to each other directly — they coordinate through the K8s API, using the `spec` / `status` subresource split on each custom resource so that writes never contend.
 
@@ -13,7 +13,6 @@ The controller and api-server never talk to each other directly — they coordin
 ```mermaid
 flowchart LR
   browser[browser]
-  ui[ui]
   api-server[api-server]
   controller[controller]
   subgraph runner[vm-runner pod]
@@ -22,9 +21,7 @@ flowchart LR
   gateway[gateway pod]
   k8s-api[(K8s API)]
 
-  browser -->|HTTP + WS| ui
-  ui -->|tRPC| api-server
-  ui -->|ACP / WS| api-server
+  browser -->|HTTP + WS: tRPC, ACP| api-server
   api-server -->|ACP relay / WS| agent-runtime
   api-server -->|tRPC proxy| agent-runtime
   agent-runtime -->|hello / MCP| api-server
@@ -54,7 +51,8 @@ See [`packages/controller/`](../../packages/controller/).
 A TypeScript server that hosts the user-facing surface and the ACP relay.
 It runs two listeners:
 
-- **Public port** — user-authenticated tRPC, REST (OAuth callbacks, health, version), and the ACP relay WebSocket.
+- **Public port** — the ui's static files, user-authenticated tRPC, REST (OAuth callbacks, health, version), and the ACP relay WebSocket.
+  The ui is served from this port and the API's own origin rather than by a static host in front of it: the shell always revalidates so a deploy lands on the next load, and the content-hashed files under `/assets/` are cached forever.
   The tRPC surface is reachable over two transports on the same router: HTTP (used by the CLI) and a WebSocket endpoint that authenticates on its first frame rather than a URL token, and answers a refused connection's first request with the denial code before closing it, provided that request arrives within a one-second grace window.
   Terms acceptance is enforced per procedure inside the router — everything except the terms procedures refuses until the caller has accepted the current terms — so either transport alone suffices for the full app, first-run acceptance included; the HTTP door additionally rejects gated calls with 412 before they reach the router, which is what the CLI's terms prompt keys off.
   Terms versions ship with deploys (a new version implies a server restart) and acceptance is irrevocable, so per-process acceptance caching can only be stale in the safe direction.
@@ -71,14 +69,12 @@ Channel-relayed turns (Slack, Telegram) are watched for **liveness, not duration
 
 The api-server proxies all ACP traffic to agents; clients never dial an agent directly.
 It also wakes hibernated agents on demand before forwarding the first message of a session.
-Every relay and proxy verifies the caller — either a Keycloak JWT or an API key, dispatched by token prefix, taken from the `Authorization: Bearer` slot on HTTP and from a query parameter on a WebSocket upgrade, where a browser cannot set headers — and checks ownership, the operate scope and any key-to-agent binding at the public port.
+Every relay and proxy verifies the caller — either a Keycloak JWT or an API key, dispatched by token prefix, taken from the `Authorization: Bearer` slot on HTTP, and on a WebSocket upgrade from that slot or, where a browser cannot set headers, from a query parameter — and checks ownership, the operate scope and any key-to-agent binding at the public port.
 The caller's credential is then **stripped**, not translated: nothing is forwarded in its place, and agent-runtime authenticates nobody.
 It serves unauthenticated on the assumption that the runner's NetworkPolicy, admitting a machine's published ports only from api-server and controller pods, is the auth boundary, which is where that guarantee actually lives.
 See [security-and-credentials](security-and-credentials.md) and [`packages/api-server/`](../../packages/api-server/).
 
 The public port also accepts streamed bundled file imports per agent and proxies them to the target agent-runtime without buffering — ownership-checked and size-capped at the proxy boundary.
-The same port carries a satellite's file transfer: one file in per request, streamed both ways without buffering, authorised by the Job whose claim holds the token, and counted at the relay so the cap holds even when the workspace understates a file.
-That route is the only one that writes bytes a machine outside the cluster sent into an Agent's workspace, so it is the runtime, not the proxy, that decides where a file lands and refuses a path it will not open ([satellites](satellites.md)).
 
 Recurring background reconciliation (expiry sweeps and similar) runs as scheduled jobs on per-job queues backed by the platform Redis — one execution per period across the api-server replicas, with each tick idempotent.
 Subsystem pages describe their own jobs (e.g. [artifact-library](artifact-library.md)); all recurring sweeps (runtime outbox, approvals delivery, OAuth refresh, activity retention, agent and invocation reapers) run this way, and each replica re-asserts its scheduler registrations periodically so a Redis dataset loss cannot silently stop the sweeps.
@@ -114,7 +110,7 @@ The UI's session *list*, though, is no longer an ACP read: agent-runtime compose
 A title the platform stores — from a [schedule](schedules.md#session-continuity), the user, or the agent renaming its own session — wins over the harness's until cleared, and the harness is never told.
 A harness that mints its own id for a terminal session's conversation (Codex, Bob) pins that id in a directory its runtime manifest names (`terminalSessionPins`), one file per terminal session; the union lists the pinned conversation once, under the terminal session's id and with the harness's title, so opening it resumes the conversation rather than starting an empty terminal under the harness's id.
 The list read never starts a harness, and a terminal session sends no prompt the platform could take a title from, so when its terminal detaches or exits the runtime asks that session's harness for its listing once (a `session/list` naming the harness in `_meta.platform`) and keeps the first line of the harness's title as the session's own, unless a title is already kept or set.
-The read is paged, newest activity first: a client asks for one page, optionally narrowed to session categories, one schedule or a single session, and follows a cursor for older ones; the runtime filters before it cuts, so a narrowed page is full of matches.
+The read is paged, newest activity first: a client asks for one page, optionally narrowed to session categories, the sidebar's channel types (chat, Slack, Telegram, artifact page, schedule, terminal), a status (a turn in flight, or activity newer than last seen), one schedule or a single session, and follows a cursor for older ones; the runtime filters before it cuts, so a narrowed page is full of matches.
 Behind it the runtime gathers the harness's whole listing and reuses it until a session change or short expiry drops it.
 A read waits briefly for a starting harness, then answers from the platform's records, marked incomplete so no reader takes a missing session as gone.
 The same read carries each session's live turn status: whether a turn is in flight, or for terminal sessions (which have no turn) whether the PTY has produced output recently.
@@ -136,7 +132,7 @@ Its responsibilities are:
 - Accept ACP WebSocket connections (relayed from the api-server) — several at once, from any mix of clients — and speak JSON-RPC 2.0 to the agent process.
   Chat-mode sessions spawn `/usr/local/bin/harness-chat` as the ACP subprocess.
 - Accept terminal-mode WebSocket connections on `/api/terminal` (relayed from the api-server).
-  Each session gets a PTY running `/usr/local/bin/harness-terminal`; agent-runtime relays a binary input/output/resize frame protocol both ways and serializes scrollback so reattaching replays the screen.
+  Each session gets a PTY running `/usr/local/bin/harness-terminal`, or the agent user's login shell for a shell session ([sessions](sessions.md#session-inside-the-machine)); agent-runtime relays a binary input/output/resize frame protocol both ways and serializes scrollback so reattaching replays the screen.
   A detached PTY survives while the harness keeps producing output and is reaped once it has been quiet for five minutes (30 s detach grace for tab refreshes).
   A harness that starts a new session inside a running PTY (Claude Code's `/clear`) reports the new id from a hook; the PTY moves to that session id and the viewer gets a session frame and follows it, so the old session stays listed with its own transcript and the new one is the one the terminal shows.
 - Accept SSH WebSocket connections on `/api/ssh` (relayed from the api-server).
@@ -182,7 +178,7 @@ See [security-and-credentials](security-and-credentials.md).
 
 ### ui
 
-A React + Vite single-page app served by the api-server.
+A React + Vite single-page app, built into the api-server's image and served by it from the API's origin.
 It uses tRPC over a single authenticated WebSocket for resource management, permission flows, and live updates — server-pushed invalidation hints replace list polling, and agent-sourced state follows the agent the same way, so the remaining polls are runtime metrics (a telemetry-store aggregation, not agent-sourced), the agent's background-work report (30 s, only while the agent is awake), skill-install state, Home's approval reads, and a compatibility poll for agents whose runtime predates live updates — those fall back to the HTTP proxy and the passive ACP list, flagged in the session panel with an update action when a newer image exists, until their image is updated — and ACP WebSockets for bidirectional agent communication.
 A tab holds several ACP channels per Agent at once: the live channel for the session on screen, short-lived ones for history replay, and — while a brand-new session's first prompt is on its way — a channel of its own, which either becomes the live one or carries that turn to completion after the user has moved on.
 Permission prompts, tool calls, and streaming output all flow over the live ACP connection.
@@ -227,6 +223,8 @@ Each turn's end names it.
 Output joins its turn's open reply only while nothing but waiting prompts came after it; otherwise it starts a new reply at the end.
 So a reply never lands above a newer message, unprompted work shows as the latest message, and Stop leaves the reply open until its turn ends, so the last words the harness flushes join it rather than starting another.
 
+An Agent's chat also reaches the Agent's settings and its skills, schedules and Connections without leaving the conversation ([chat-view](chat-view.md)).
+
 ## Protocols
 
 | Edge                                                                                        | Protocol                           | Purpose                                                                                                                                                                                                                                                                                                                                                                                                         |
@@ -245,8 +243,8 @@ So a reply never lands above a newer message, unprompted work shows as the lates
 | ui → api-server → agent-runtime, cli → api-server → agent-runtime                           | HTTP (multipart, streamed)         | Bundled file import (UI bulk, CLI `dam import`)                                                                                                                                                                                                                                                                                                                                                                 |
 | agent-runtime → api-server (`<rel>-apiserver-harness`, via paired gateway → Istio waypoint) | HTTP                               | MCP tool access, runtime-channel `hello`, and the knowledge-base publish handshake — the runtime requests a publish (work order out) and reports completion                                                                                                                                                                                                                                                     |
 | agent-runtime → object store (via paired gateway)                                           | HTTPS (presigned PUT)              | Knowledge-base snapshot uploads. The agent holds no object-store credential: it can only write the specific keys the api-server signed for it, and only until those links expire                                                                                                                                                                                                                                |
-| gateway → api-server (`<rel>-extauthz-<id>`)                                                | gRPC                               | HITL ext_authz Check; per-agent Service pinned by AuthorizationPolicy to the gateway's SA principal                                                                                                                                                                                                                                                                                                             |
-| gateway → api-server (`<rel>-extauthz-<id>`)                                                | gRPC (access log stream)           | The spend meter's record of each model call, on the same pinned Service ([spend-limits](spend-limits.md))                                                                                                                                                                                                                                                                                                       |
+| gateway → api-server (`<rel>-extauthz-<id>`)                                                | gRPC                               | HITL ext_authz Check; the per-agent Service names the Agent, admitted from the agent namespace                                                                                                                                                                                                                                                                                                                  |
+| gateway → api-server (`<rel>-extauthz-<id>`)                                                | gRPC (access log stream)           | The spend meter's record of each model call, on the same per-agent Service ([spend-limits](spend-limits.md))                                                                                                                                                                                                                                                                                                    |
 | controller → K8s API                                                                        | watch / list / write               | Resource reconciliation and status writes                                                                                                                                                                                                                                                                                                                                                                       |
 | api-server → K8s API                                                                        | REST + watch                       | Resource CRUD, spec writes, agent wake; a watch per replica keeps the Agent read cache current ([agent-lifecycle](agent-lifecycle.md))                                                                                                                                                                                                                                                                          |
 | api-server → agent-runtime                                                                  | HTTP (tRPC)                        | Runtime-channel `applyState` delivery from the outbox worker; knowledge-base share config sync (roots, limits, flush nudge)                                                                                                                                                                                                                                                                                     |
@@ -282,7 +280,15 @@ The controller-reconciled domain resources are CRDs under the `agent-platform.ai
 
 Two domain resources are deliberately not CRDs: **Templates** are chart-rendered ConfigMaps loaded by the api-server at boot (read-only, never reconciled), and **Schedules** are Postgres rows owned by the api-server — see [persistence](persistence.md).
 
-For each `Agent`, the controller reconciles a **machine** on its owner's [VM runner](#vm-runner) (stopped when hibernated), a **gateway StatefulSet** (at replicas 0 when hibernated and 1 when running), **two per-agent Services** (the agent's, which selects the runner and maps the agent port onto the one its machine publishes there, and the gateway's `<agent>-gateway` proxy DNS), a **per-agent ServiceAccount** (in the agent ns), a **per-agent ext-authz Service** (`<release>-extauthz-<id>`, in the release ns), **two per-agent Istio AuthorizationPolicies** (harness path-prefix at the waypoint, ext-authz Service principal), the gateway's ingress and egress NetworkPolicies, and a per-agent Envoy bootstrap ConfigMap + leaf-TLS Certificate; with the owner gateway on, the owner's one gateway Deployment takes the gateway StatefulSet's place ([credential-gateway](credential-gateway.md#owner-gateway)).
+An Agent's backend is no longer a choice: the container backend and the runtime migration that carried an Agent's home off it are gone, so every Agent an install reconciles is a machine whatever its definition still names.
+An install that upgraded with an Agent still on the container backend would boot it as a machine on a home its data is not on — the volume the home sits on would never be mounted again, and nothing after that release could move it.
+Two refusals stand in the way of that, and neither stops the fleet: the chart's render reads the install's Agents from the cluster before Helm applies anything, which places it ahead of the api-server's startup migrations, and the controller, while the custom resources are the fleet, refuses such an Agent in its own reconcile — a not-ready condition naming what to do, with no machine, gateway or storage made for it, and every other Agent still reconciled.
+Only an install applied without Helm escapes the first: it runs the migrations, and the controller's own refusal is then what keeps that Agent from booting.
+The chart reads those Agents under every authority whose custom resources still describe the fleet, and not under `contract`, where they are frozen copies nothing boots; that read is one `list` of Agents in the agent namespace, so an upgrade fails closed unless the identity rendering it may perform it — the HelmRelease's service account, which is not the application controller's.
+An Agent that names no backend is one of them, since that is how a release before this one left a container Agent; a definition read from the rows carries no backend at all and is a machine like every other.
+The move is the previous release's to make, with its own migration, so each refusal names the Agents to move first.
+
+For each `Agent`, the controller reconciles a **machine** on its owner's [VM runner](#vm-runner) (stopped when hibernated), a **gateway StatefulSet** (at replicas 0 when hibernated and 1 when running), **two per-agent Services** (the agent's, which selects the runner and maps the agent port onto the one its machine publishes there, and the gateway's `<agent>-gateway` proxy DNS), a **per-agent ServiceAccount** (in the agent ns), a **per-agent ext-authz Service** (`<release>-extauthz-<id>`, in the release ns), **two per-agent Istio AuthorizationPolicies** (harness path-prefix at the waypoint, and an ext-authz one on a Service no waypoint serves, so it is not enforced), the gateway's ingress and egress NetworkPolicies, and a per-agent Envoy bootstrap ConfigMap + leaf-TLS Certificate; with the owner gateway on, the owner's one gateway Deployment takes the gateway StatefulSet's place ([credential-gateway](credential-gateway.md#owner-gateway)).
 Installing the CRDs requires cluster-admin at install time — moving to CRDs deliberately gave up the namespace-scoped install the earlier ConfigMap model allowed; the controller also needs write access to ServiceAccounts and Istio AuthorizationPolicies.
 See [`helm/`](../../helm/) for the install layout.
 
@@ -301,12 +307,12 @@ See [`helm/`](../../helm/) for the install layout.
   An HTTP body over the limit gets 413; a WebSocket message over it closes the connection with code 1009.
   Each limit sits well above the largest legitimate input: a `skills.createLocal` call for users, a 20 000-file kb-publish plan for agents.
   The MCP SDK also holds each MCP endpoint to 4 MiB and 100 messages per JSON-RPC batch.
-  A tRPC HTTP batch, user or agent, holds at most 1 000 calls; a tRPC WebSocket batch is bounded only by the message byte limit, because the WebSocket adapter has no batch limit.
+  A tRPC batch holds at most 1 000 calls, over HTTP (user or agent) and over the user WebSocket.
 - **Credential isolation.** Agents never hold real upstream credentials.
   The gateway intercepts agent TLS using a per-agent leaf cert and injects the credential header from a K8s Secret mounted only on the gateway — the machine has no path anywhere except through its gateway.
   See [security-and-credentials](security-and-credentials.md).
-- **SPIFFE identity per hop.** Three hops, the latter two gated by per-agent Istio AuthorizationPolicies: (1) machine → gateway on the proxy port, through the owner's runner (admitted by NetworkPolicy — the runner sits outside the ambient mesh), (2) gateway → harness via the waypoint (all agent egress traverses the gateway's Envoy, including the harness call), (3) gateway → ext-authz on the per-agent ext-authz Service.
-  The waypoint-fronted harness Service enforces principal == URL `:id`; per-agent ext-authz Services enforce principal == matching SA.
+- **SPIFFE identity per hop.** Three hops, the harness one gated by a per-agent Istio AuthorizationPolicy: (1) machine → gateway on the proxy port, through the owner's runner (admitted by NetworkPolicy — the runner sits outside the ambient mesh), (2) gateway → harness via the waypoint (all agent egress traverses the gateway's Envoy, including the harness call), (3) gateway → ext-authz on the per-agent ext-authz Service.
+  The waypoint-fronted harness Service enforces principal == URL `:id`; ext-authz admits the agent namespace and trusts the Agent the gateway names.
   The gateway runs as the per-agent SA, so the hops after it carry the agent's identity.
   No app-layer header *admits* any of these hops: the gateway does stamp a trusted attribution header onto the agent traffic it forwards, but that names the producing agent for [observability](observability.md) and is never read as an admission decision.
   A local no-mesh cluster renders these policies but enforces none ([security](security-and-credentials.md#dev-cluster)).

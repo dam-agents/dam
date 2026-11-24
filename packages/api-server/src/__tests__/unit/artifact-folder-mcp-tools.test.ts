@@ -75,6 +75,7 @@ describe("artifact MCP tools — publishing into the user's folders (#4892)", ()
       name: "create_artifact",
       arguments: {
         title: "Weekly report",
+        icon: "📅",
         content: "# Week",
         folder_id: "f-reports",
       },

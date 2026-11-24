@@ -1,5 +1,4 @@
 import {
-  Attachment as AttachmentIcon,
   Document,
   SendAltFilled,
   StopFilledAlt,
@@ -28,12 +27,17 @@ import type { Attachment } from "../../../types.js";
 import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
 import { useCommandMenu } from "../hooks/use-command-menu.js";
 import { usePromptHistory } from "../hooks/use-prompt-history.js";
+import { useRotatingExample } from "../hooks/use-rotating-example.js";
 import { useSkillCommands } from "../hooks/use-skill-commands.js";
 import { draftKey, EMPTY_DRAFT } from "../lib/draft-key.js";
+import type { PlusMenuPanel } from "../lib/plus-menu.js";
 import { ChatColumn } from "./chat-column.js";
 import { CommandMenu } from "./command-menu.js";
+import { ExamplePromptHint } from "./example-prompt-hint.js";
+import { ComposerPlusMenu } from "./plus-menu/composer-plus-menu.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+const NO_EXAMPLES: readonly string[] = [];
 
 export interface ChatInputProps {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -46,6 +50,9 @@ export interface ChatInputProps {
   onBlockedClick?: () => void;
   stopBlockedReason?: string | null;
   harness?: string | null;
+  emptyPlaceholder?: string | null;
+  examples?: readonly string[] | null;
+  onOpenSettings?: (section: PlusMenuPanel) => void;
 }
 
 export function ChatInput({
@@ -59,6 +66,9 @@ export function ChatInput({
   onBlockedClick,
   stopBlockedReason,
   harness = null,
+  emptyPlaceholder = null,
+  examples = null,
+  onOpenSettings,
 }: ChatInputProps) {
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
@@ -182,6 +192,14 @@ export function ChatInput({
   const showStop = isComputing;
   const showSend = !isComputing || hasContent;
   const sendDisabled = !isComputing && !hasContent;
+  const shownExample = useRotatingExample(
+    examples ?? NO_EXAMPLES,
+    !!key &&
+      !blockedReason &&
+      input === "" &&
+      attachments.length === 0 &&
+      !isComputing,
+  );
 
   const recallPrompt = useCallback(
     (text: string) => {
@@ -190,6 +208,20 @@ export function ChatInput({
       requestAnimationFrame(() => {
         const el = textareaRef.current;
         if (el) el.setSelectionRange(0, 0);
+      });
+    },
+    [key, setDraft, textareaRef],
+  );
+  /* UNIT_BOUNDARY_DESCRIPTION: a starting prompt from the + menu goes in the composer, as the design does, with the caret at its end. */
+  const describeToAgent = useCallback(
+    (text: string) => {
+      if (!key) return;
+      setDraft(key, { text });
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(text.length, text.length);
       });
     },
     [key, setDraft, textareaRef],
@@ -209,13 +241,18 @@ export function ChatInput({
     apply: applyCommand,
   });
 
+  const [heldSendFor, setHeldSendFor] = useState<string | null>(null);
   const send = useCallback(() => {
-    if (!key || loadingSession || blockedReason) return;
+    if (!key || blockedReason) return;
     const current = useStore.getState().drafts[key] ?? EMPTY_DRAFT;
     const text = current.text.trim();
     const files =
       current.attachments.length > 0 ? current.attachments : undefined;
     if (!text && !files) return;
+    if (loadingSession) {
+      setHeldSendFor(key);
+      return;
+    }
     promptHistory.reset();
     clearDraftContent(key);
     onSend(text, files);
@@ -228,6 +265,24 @@ export function ChatInput({
     promptHistory,
   ]);
 
+  /* UNIT_BOUNDARY_DESCRIPTION: a send typed while the session loads waits for it
+   * and goes out when the conversation is open, so a message to a waking agent is
+   * never dropped. Any other end leaves it in the draft, unsent: the person moved
+   * to another conversation, the load failed, or the composer is blocked. */
+  useEffect(() => {
+    if (heldSendFor === null) return;
+    if (heldSendFor !== key) {
+      setHeldSendFor(null);
+      return;
+    }
+    if (loadingSession) return;
+    setHeldSendFor(null);
+    const failed = useStore.getState().sessionError;
+    if (blockedReason || failed?.sessionId === useStore.getState().sessionId)
+      return;
+    send();
+  }, [heldSendFor, loadingSession, blockedReason, key, send]);
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (commandMenu.onKeyDown(e)) {
       e.preventDefault();
@@ -235,6 +290,11 @@ export function ChatInput({
     }
     if (!isMobile() && promptHistory.navigate(e)) {
       e.preventDefault();
+      return;
+    }
+    if (e.key === "Tab" && !e.shiftKey && shownExample && key) {
+      e.preventDefault();
+      setDraft(key, { text: shownExample.text });
       return;
     }
     if (
@@ -255,7 +315,8 @@ export function ChatInput({
   };
 
   const placeholder =
-    blockedReason ?? (isComputing ? "Queue a message…" : "Message…");
+    blockedReason ??
+    (isComputing ? "Queue a message…" : (emptyPlaceholder ?? "Message…"));
   useAutoResize(textareaRef, input, placeholder);
 
   return (
@@ -278,6 +339,7 @@ export function ChatInput({
           }}
         />
         <div
+          data-testid="chat-composer"
           className={`relative flex flex-col rounded-xl border bg-background transition-colors focus-within:border-primary ${dragOver ? "border-primary bg-accent-light/30" : "border-border"}`}
         >
           <CommandMenu menu={commandMenu} />
@@ -292,36 +354,44 @@ export function ChatInput({
               ))}
             </div>
           )}
+          {heldSendFor !== null && (
+            <div className="px-3 pt-3 text-2xs text-muted-foreground">
+              Sending as soon as this conversation opens…
+            </div>
+          )}
           <div className="flex items-end gap-1 px-2 min-h-[56px]">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="shrink-0 mb-[9px] text-muted-foreground hover:text-primary disabled:opacity-40"
-              onClick={() => fileInputRef.current?.click()}
+            <ComposerPlusMenu
+              agentId={agentId}
               disabled={loadingSession || !key || !!blockedReason}
-              aria-label="Attach file"
-              tooltip="Attach file"
-            >
-              <AttachmentIcon size={16} />
-            </Button>
-            <Textarea
-              ref={textareaRef}
-              className={`flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-sm leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0${blockedReason && onBlockedClick ? " cursor-pointer" : ""}`}
-              value={input}
-              {...commandMenu.inputProps}
-              onChange={(e) => {
-                promptHistory.reset();
-                commandMenu.track(e.target);
-                if (key) setDraft(key, { text: e.target.value });
-              }}
-              onKeyDown={onKeyDown}
-              onPaste={onPaste}
-              onClick={blockedReason ? onBlockedClick : undefined}
-              placeholder={placeholder}
-              rows={1}
-              readOnly={!!blockedReason}
-              disabled={!key || (!!blockedReason && !onBlockedClick)}
+              onAttachFile={() => fileInputRef.current?.click()}
+              onDescribe={describeToAgent}
+              onManage={onOpenSettings}
             />
+            <div className="relative flex min-w-0 flex-1">
+              {shownExample && <ExamplePromptHint example={shownExample} />}
+              <Textarea
+                ref={textareaRef}
+                className={cn(
+                  "flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-sm leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0",
+                  blockedReason && onBlockedClick && "cursor-pointer",
+                  shownExample && "placeholder:text-transparent",
+                )}
+                value={input}
+                {...commandMenu.inputProps}
+                onChange={(e) => {
+                  promptHistory.reset();
+                  commandMenu.track(e.target);
+                  if (key) setDraft(key, { text: e.target.value });
+                }}
+                onKeyDown={onKeyDown}
+                onPaste={onPaste}
+                onClick={blockedReason ? onBlockedClick : undefined}
+                placeholder={placeholder}
+                rows={1}
+                readOnly={!!blockedReason}
+                disabled={!key || (!!blockedReason && !onBlockedClick)}
+              />
+            </div>
             {showStop && (
               <Button
                 variant="ghost"
@@ -342,9 +412,7 @@ export function ChatInput({
                 size="icon"
                 className={`shrink-0 mb-[9px] ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
-                disabled={
-                  sendDisabled || loadingSession || !key || !!blockedReason
-                }
+                disabled={sendDisabled || !key || !!blockedReason}
                 aria-label={isComputing ? "Queue" : "Send"}
                 tooltip={isComputing ? "Queue" : "Send"}
               >

@@ -1,9 +1,9 @@
 import type { Db, DbTx } from "db";
-import type { HarnessCatalog, OwnerModelCatalogView } from "api-server-api";
+import type { HarnessCatalog, SessionPair } from "api-server-api";
 import type { SubPseudonymizer } from "../../core/sub-pseudonymizer.js";
 import { createProfilesRepository } from "./infrastructure/profiles-repository.js";
 import {
-  bindDefaultProfile,
+  bindNewAgentDefault,
   createProfilesService,
   newAgentDefault,
   profileResolver,
@@ -25,18 +25,17 @@ export function composeProfilesForOwner(deps: {
   owner: string;
   agentBinding: readonly string[] | "*";
   catalog: Pick<HarnessCatalog, "default" | "harnesses">;
-  seed: { harness: string; model: string } | null;
-  ownerCatalog: () => Promise<OwnerModelCatalogView>;
+  sharedCurveBender: boolean;
   reconcileConnections?: () => Promise<void>;
   republish: (agentId: string) => Promise<string | null>;
+  settingsProblem: (pair: SessionPair) => Promise<string | null>;
 }) {
   const repo = createProfilesRepository(deps.db, deps.subPseudonymizer);
   const owner = {
     repo,
     owner: deps.owner,
     catalog: deps.catalog,
-    seed: deps.seed,
-    ownerCatalog: deps.ownerCatalog,
+    sharedCurveBender: deps.sharedCurveBender,
   };
   const resolveProfile = profileResolver(repo);
   return {
@@ -45,21 +44,22 @@ export function composeProfilesForOwner(deps: {
       agentBinding: deps.agentBinding,
       resolve: resolveProfile,
       republish: deps.republish,
+      settingsProblem: deps.settingsProblem,
     }),
     resolveProfile,
-    defaultProfile: async () => {
+    newAgentDefault: async () => {
       const chosen = await newAgentDefault({
         ...owner,
         reconcileConnections: deps.reconcileConnections,
       });
       return (
         chosen && {
-          name: chosen.profile.name,
-          model: chosen.profile.model,
-          harness: chosen.profile.harness,
+          name: chosen.profile?.name ?? null,
+          model: chosen.pair.model,
+          harness: chosen.pair.harness,
           connectionId: chosen.connectionId,
           bind: (agentId: string) =>
-            bindDefaultProfile(owner, agentId, chosen.profile),
+            bindNewAgentDefault(owner, agentId, chosen),
         }
       );
     },

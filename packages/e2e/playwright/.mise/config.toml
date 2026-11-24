@@ -22,10 +22,27 @@ outputs = []
 deny_net = true
 deny_write = true
 
+[tasks."check:project-order"]
+description = "Full scenarios wait for smoke setup and do not overlap shared user, agent or controller mutations"
+run = "node .mise/lib/project-order.mjs"
+sources = ["playwright.config.ts", ".mise/lib/project-order.mjs"]
+outputs = []
+deny_net = true
+deny_write = true
+cache.enabled = true
+
 [tasks."check:trpc-failures"]
 description = "A failed tRPC call names its procedure, its status and the answer's body, and a passing one is untouched"
 run = "node src/lib/trpc-failures.ts"
 sources = ["src/lib/trpc-failures.ts"]
+outputs = []
+deny_net = true
+deny_write = true
+
+[tasks."check:auth-first"]
+description = "No Playwright project starts before the auth project ends, with or without the full/ tier"
+run = "node src/lib/auth-first.ts"
+sources = ["src/lib/auth-first.ts", "playwright.config.ts", "pr-scope.json"]
 outputs = []
 deny_net = true
 deny_write = true

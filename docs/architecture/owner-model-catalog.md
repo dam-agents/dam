@@ -1,6 +1,6 @@
 # Owner model catalog
 
-Last verified: 2026-11-05
+Last verified: 2026-11-16
 
 ## Overview
 
@@ -13,9 +13,13 @@ A chat picker also asks for the owner's other providers, which it lists like the
 A provider Connection's env pins are plain URLs in its Contributions, and its credential is in the secret store.
 The api-server already calls provider endpoints with that credential for the key check and the balance lookup; credential injection through the egress gateway is only how a sandbox's traffic gets the key.
 The catalog uses the same listing specs, discovery parser and metadata layers as the [per-agent model catalog](harness-config.md#the-model-catalog), and sends each credential the way its provider expects, Bob's `Apikey` scheme included.
+The IBM LiteLLM and CurveBender proxies are listed from LiteLLM's model info (`/v1/model/info`), which gives each model's context window, reasoning and vision, so a model newer than the vendored price table still runs with its real limits.
+When model info fails, by a refusal, a timeout or an empty list, the proxy is listed from `/v1/models`, with the table's metadata; the CurveBender deployment always lists that way, because its shared key reaches only an exact list of paths.
 Harness fit comes from the shipped harness catalog, and a model known to hold under 32k is left out of the harnesses it would otherwise fit.
 A Bedrock Connection lists Claude Code's native tier names, and, for Pi, the inference profiles of the Connection's region, read from the Connection's control-plane URL with its key.
 A model is named the plain `<alias>/<id>` a session stores; the runtime renders a harness's own spelling when it starts.
+No model menu of the web UI, and no `dam agent models` listing, offers an **internal** model, one the catalog keeps for the platform's own calls: CurveBender's Nemotron, which runs the auto-mode classifier and Bob's `security` check.
+The agent's catalog and each harness's own model list keep it, so a session, profile or schedule that already names one keeps running on it and shows its name.
 
 ## Shipped harness capabilities
 
@@ -24,6 +28,7 @@ The source stays the agent runtime manifests.
 The api-server image build copies each one under its harness name, and the api-server parses only the `modelRouter` and `harness-config` facts it needs ([runtime delivery](runtime-delivery.md#the-manifest)).
 A manifest the image lacks leaves that harness without capabilities rather than failing the catalog.
 This is what lets Settings › Profiles offer effort, mode and Bedrock tiers with no agent.
+A harness whose feature flag is off is left out of the list, as it is of an agent's harness-config status, since the flag decides what is offered; the agent's own catalog keeps it, so a session that names it still runs ([features](features.md)).
 
 ## Cost and freshness
 

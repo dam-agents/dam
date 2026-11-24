@@ -33,6 +33,10 @@ export const satelliteToolNameSchema = z
  * MCP `tools/list` entry trimmed to what the platform re-exposes. `inputSchema`
  * travels as opaque JSON Schema: the platform never reads inside it, because
  * only the machine knows what its own arguments mean.
+ *
+ * A tool's `transfer` marker is sent only by a `dam satellite files` from before
+ * the mount. Registration refuses it on sight, so the field outlives every tool
+ * that declared it.
  */
 export const satelliteToolSchema = z.object({
   name: satelliteToolNameSchema,
@@ -43,17 +47,54 @@ export const satelliteToolSchema = z.object({
   transfer: z.enum(["download", "upload"]).optional(),
 });
 
-export const satelliteManifestSchema = z.object({
-  name: satelliteNameSchema,
-  description: z.string().max(280).optional(),
-  maxConcurrent: z
-    .number()
-    .int()
-    .positive()
-    .max(1024)
-    .default(DEFAULT_MAX_CONCURRENT),
-  tools: z.array(satelliteToolSchema).min(1).max(256),
-});
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a Satellite offers. A tools Satellite offers
+ * tools and nothing else; a files Satellite offers one directory as a mount and
+ * has no tools at all, so its tool list may be empty and its `files` block says
+ * whether the worker was started writable. The pair is checked rather than each
+ * field alone: a manifest that claims files without saying how they behave, or
+ * carries a `files` block while offering tools, is one the platform cannot serve.
+ */
+export const satelliteKindSchema = z.enum(["tools", "files"]);
+
+export const satelliteFilesSchema = z
+  .object({ writable: z.boolean() })
+  .strict();
+
+export const satelliteManifestSchema = z
+  .object({
+    name: satelliteNameSchema,
+    kind: satelliteKindSchema.optional(),
+    description: z.string().max(280).optional(),
+    maxConcurrent: z
+      .number()
+      .int()
+      .positive()
+      .max(1024)
+      .default(DEFAULT_MAX_CONCURRENT),
+    tools: z.array(satelliteToolSchema).max(256),
+    files: satelliteFilesSchema.optional(),
+  })
+  .refine(
+    (manifest) =>
+      manifest.kind === "files"
+        ? manifest.tools.length === 0
+        : manifest.tools.length > 0,
+    {
+      message:
+        "a tools satellite offers at least one tool, and a files satellite none",
+      path: ["tools"],
+    },
+  )
+  .refine(
+    (manifest) =>
+      (manifest.kind === "files") === (manifest.files !== undefined),
+    {
+      message:
+        "a files satellite declares files: { writable }, and a tools satellite does not",
+      path: ["files"],
+    },
+  );
 
 export const jobStatusSchema = z.enum([
   "queued",
@@ -291,59 +332,238 @@ export const jobRefSchema = z.object({
   job: z.number().int().positive(),
 });
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: One file crossing between the machine and the
- * Agent's workspace, in either direction. The cap is the agent runtime's own
- * per-file ceiling, so a transfer can never carry a file the workspace would
- * refuse to hold. The bytes travel over their own request, never through a
- * Job's arguments or its 1 MiB result, which is what keeps a transfer out of
- * the Agent's context.
- */
-export const SATELLITE_FILE_MAX_BYTES = 50 * 1024 * 1024;
+export const SATELLITE_FILE_MAX_PATH = 1024;
+export const SATELLITE_FILE_MAX_DATA_CHARS = 1_572_864;
+export const SATELLITE_FILE_MAX_RESULT_BYTES = 1024 * 1024;
+export const SATELLITE_FILE_MAX_READ_BYTES = 128 * 1024;
+export const SATELLITE_FILE_MAX_READDIR = 256;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The transfer token a worker is handed with the
- * work item it claimed, and must present with any file request for that Job.
- * It is minted per claim, stored as a hash on the Job row, and consumed by the
- * transfer it authorises, so a transfer belongs to one claimant of one running
- * Job and can happen once. That is what makes a transfer request prove the
- * operation the Agent asked for, rather than merely naming a Job that happens
- * to be running.
+ * UNIT_BOUNDARY_DESCRIPTION: The errnos a file operation may end in, and the
+ * only vocabulary the mount server translates back to the kernel. A result is
+ * dropped rather than reported under a name the server does not know, so a
+ * machine cannot make a read fail with something the Agent's tools would read
+ * as success.
  */
-export const SATELLITE_TRANSFER_CLAIM_HEADER = "x-dam-claim";
+export const SATELLITE_FILE_ERRNOS = [
+  "ENOENT",
+  "EACCES",
+  "EROFS",
+  "EPERM",
+  "ESTALE",
+  "EHOSTDOWN",
+  "EIO",
+  "ENOTDIR",
+  "EISDIR",
+  "EEXIST",
+  "ENOTEMPTY",
+  "ENOSPC",
+  "EXDEV",
+  "ENOTSUP",
+  "EBUSY",
+  "EINVAL",
+  "ENAMETOOLONG",
+] as const;
 
-export const satelliteTransferTokenSchema = z
-  .string()
-  .regex(/^[0-9a-f]{64}$/, "a transfer token is 64 hex characters");
+export const satelliteFileErrnoSchema = z.enum(SATELLITE_FILE_ERRNOS);
+export type SatelliteFileErrno = z.infer<typeof satelliteFileErrnoSchema>;
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: The name a transferred file takes in the Agent's
- * workspace. The platform takes it from the Job's own arguments — the path the
- * Agent asked for — so a name is one segment and nothing else: no separator, no
- * `..`, no NUL.
- */
-export const satelliteFileNameSchema = z
+const filePathSchema = z
   .string()
   .min(1)
-  .max(200)
+  .max(SATELLITE_FILE_MAX_PATH)
   .refine(
-    (name) =>
-      !name.includes("/") &&
-      !name.includes("\\") &&
-      !name.includes("\0") &&
-      name !== "." &&
-      name !== "..",
-    "a file name is a single path segment, with no separator, no .. and no NUL",
+    (path) => !path.includes("\0"),
+    "a path may not carry a NUL; the segments themselves are checked on the machine",
   );
 
-export const satelliteFileWrittenSchema = z.object({
-  path: z.string().min(1),
-  size: z.number().int().nonnegative(),
-  sha256: z
-    .string()
-    .regex(/^[0-9a-f]{64}$/, "sha256 is 64 lowercase hex digits"),
-});
-export type SatelliteFileWritten = z.infer<typeof satelliteFileWrittenSchema>;
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The bytes a write carries or a read hands back, as
+ * base64. Empty is allowed and means what it says: a read at the end of a file
+ * answers no bytes, and a write of none is a no-op the kernel may ask for.
+ */
+const fileDataSchema = z
+  .string()
+  .max(SATELLITE_FILE_MAX_DATA_CHARS)
+  .refine((data) => data === "" || isBase64(data), "data must be base64");
+
+const fileDevSchema = z.number().int().nonnegative();
+const fileInoSchema = z.number().int().positive();
+const fileModeSchema = z.number().int().nonnegative().max(0o7777);
+const fileOffsetSchema = z.number().int().nonnegative();
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: One file operation an Agent's mount asks the
+ * machine for. Strict in both directions: an unknown key is refused rather than
+ * dropped, because a field the platform silently forgets is a field the machine
+ * silently fills with its own answer. The platform never reads a path's
+ * segments — only the machine proves them — but it does bound the path's length,
+ * the read's size, the listing's window and the bytes a write may carry, since
+ * all of those are stored and relayed before the machine sees them.
+ */
+export const satelliteFileOpSchema = z.discriminatedUnion("op", [
+  z
+    .object({
+      op: z.literal("lookup"),
+      path: filePathSchema,
+      parentDev: fileDevSchema.optional(),
+      parentIno: fileInoSchema.optional(),
+    })
+    .strict(),
+  z.object({ op: z.literal("getattr"), path: filePathSchema }).strict(),
+  z
+    .object({
+      op: z.literal("readdir"),
+      path: filePathSchema,
+      offset: fileOffsetSchema.default(0),
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .max(SATELLITE_FILE_MAX_READDIR)
+        .default(SATELLITE_FILE_MAX_READDIR),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("read"),
+      path: filePathSchema,
+      offset: fileOffsetSchema,
+      size: z.number().int().positive().max(SATELLITE_FILE_MAX_READ_BYTES),
+      dev: fileDevSchema,
+      ino: fileInoSchema,
+    })
+    .strict(),
+  z.object({ op: z.literal("readlink"), path: filePathSchema }).strict(),
+  z
+    .object({
+      op: z.literal("open"),
+      path: filePathSchema,
+      write: z.boolean(),
+      dev: fileDevSchema.optional(),
+      ino: fileInoSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("create"),
+      path: filePathSchema,
+      mode: fileModeSchema,
+      exclusive: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("write"),
+      path: filePathSchema,
+      offset: fileOffsetSchema,
+      data: fileDataSchema,
+      dev: fileDevSchema,
+      ino: fileInoSchema,
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("truncate"),
+      path: filePathSchema,
+      size: fileOffsetSchema,
+      dev: fileDevSchema,
+      ino: fileInoSchema,
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("setattr"),
+      path: filePathSchema,
+      mode: fileModeSchema.optional(),
+      atimeMs: z.number().int().nonnegative().optional(),
+      mtimeMs: z.number().int().nonnegative().optional(),
+      dev: fileDevSchema,
+      ino: fileInoSchema,
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("mkdir"),
+      path: filePathSchema,
+      mode: fileModeSchema,
+    })
+    .strict(),
+  z.object({ op: z.literal("rmdir"), path: filePathSchema }).strict(),
+  z.object({ op: z.literal("unlink"), path: filePathSchema }).strict(),
+  z
+    .object({
+      op: z.literal("rename"),
+      from: filePathSchema,
+      to: filePathSchema,
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("symlink"),
+      target: z.string().min(1).max(SATELLITE_FILE_MAX_PATH),
+      path: filePathSchema,
+    })
+    .strict(),
+  z.object({ op: z.literal("statfs"), path: filePathSchema }).strict(),
+]);
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Whether an operation changes the tree. A Satellite
+ * started without `--write` refuses each of them before the work is queued, so
+ * an Agent learns it cannot write from the operation it asked for rather than
+ * from a refusal the machine makes a round trip later. `open` carries both: a
+ * read is admitted, a write is a change.
+ */
+const MUTATING_FILE_OPS: readonly string[] = [
+  "create",
+  "write",
+  "truncate",
+  "setattr",
+  "mkdir",
+  "rmdir",
+  "unlink",
+  "rename",
+  "symlink",
+];
+
+export type SatelliteFileOp = z.infer<typeof satelliteFileOpSchema>;
+
+export function satelliteFileOpMutates(op: SatelliteFileOp): boolean {
+  return op.op === "open" ? op.write : MUTATING_FILE_OPS.includes(op.op);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a worker answers for one file operation. The
+ * result is opaque to the platform — only the machine knows what an entry's
+ * attributes are — so its size is all that is checked, beside the bytes a read
+ * hands back. The registration is required: no file worker predates it, and an
+ * answer has to name the machine the operation was queued for or it cannot be
+ * told from another machine's. One operation is answered once: the id is the
+ * operation's own, and a second answer for it finds nothing to settle.
+ */
+export const fileResultInputSchema = z
+  .object({
+    satellite: satelliteNameSchema,
+    id: z.string().uuid(),
+    incarnation: z.string().uuid(),
+    ok: z.boolean(),
+    errno: satelliteFileErrnoSchema.optional(),
+    result: z.unknown().optional(),
+    data: fileDataSchema.optional(),
+  })
+  .strict()
+  .refine((input) => input.ok === (input.errno === undefined), {
+    message:
+      "a failed operation names its errno, and a successful one does not",
+    path: ["errno"],
+  })
+  .refine(
+    (input) =>
+      input.result === undefined ||
+      JSON.stringify(input.result).length <= SATELLITE_FILE_MAX_RESULT_BYTES,
+    `a result must fit in ${SATELLITE_FILE_MAX_RESULT_BYTES} bytes`,
+  );
 
 export const satelliteGrantInputSchema = z.object({
   satellite: satelliteNameSchema,

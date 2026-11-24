@@ -32,12 +32,14 @@ function makeService() {
   const probed: string[] = [];
   const fannedOut: string[] = [];
   const svc = createConnectionsService({
+    damConnectionOffered: async () => true,
     harnesses: { default: "claude-code", harnesses: [] },
     ownerId: "owner",
     templates: createConnectionTemplateRegistry(buildCatalog()),
     repo: unused<ConnectionsRepository>({
       insert: async (c) => void rows.set(c.id, c),
       get: async (id) => rows.get(id) ?? null,
+      adoptDamKey: async () => {},
       mergeInputs: async (id, patch) => {
         const row = rows.get(id)!;
         rows.set(id, { ...row, inputs: { ...row.inputs, ...patch } });

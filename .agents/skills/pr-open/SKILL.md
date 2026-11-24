@@ -17,13 +17,12 @@ description: >
 
 # PR open
 
-The first review round reads three things: the diff, the PR body, and the
-issue the body links. It loses rounds to a defect the author could have seen
-in their own diff, to a change the body does not declare, and to a deliberate
-choice it cannot tell from a mistake. This skill closes all three before the
-first review. The fix rounds after a review are the `review-remediation`
-skill's; it reuses **Self-review** and **The author-decisions block** from
-here.
+The first review round reads the diff, the PR body and the issue the body
+links. Before it, close three gaps: a defect visible in your own diff, a
+change the body does not declare, and a deliberate choice the reviewer cannot
+tell from a mistake. The fix rounds after a review are the
+`review-remediation` skill's; it reuses **Self-review** and **The
+author-decisions block** from here.
 
 ## Inputs
 
@@ -31,9 +30,9 @@ here.
   unless the caller names another), and the **repo slug** — derived from the
   checkout when the caller does not give them.
 - The conversation that built the branch: the request, the questions put to
-  the person and their answers. Where the harness gives the caller a search
-  over their own earlier sessions, the sessions that developed this branch
-  count too — find them by the branch name.
+  the person and their answers — and, where the harness can search the
+  caller's earlier sessions, the ones that developed this branch (find them by
+  the branch name).
 - `gh` authenticated for the repository. Use plain REST (`gh api`)
   everywhere: behind an auth proxy that rewrites only REST paths,
   GraphQL-backed `gh` subcommands fail.
@@ -42,9 +41,9 @@ here.
 
 - `git fetch origin <base>`, then `git log origin/<base>..HEAD` and
   `git diff origin/<base>...HEAD` — this range is what the reviewer reads.
-- The linked issue: from the conversation, the branch name or a commit
-  message. Read it with `gh api repos/<repo>/issues/<n>` and its comments; it
-  is what was asked, and the reviewer checks the diff against it.
+- The linked issue — from the conversation, the branch name or a commit
+  message: `gh api repos/<repo>/issues/<n>` and its comments. The reviewer
+  checks the diff against it.
 - An open pull request for the branch:
   `gh api "repos/<repo>/pulls?head=<owner>:<branch>&state=open"`. When one
   exists, its body is the starting point — keep what is true, keep its
@@ -56,8 +55,7 @@ here.
 ## 2. Self-review
 
 Read the whole range once, the way the reviewer will: every hunk is a
-candidate. Fix what you find, in new commits. The questions are the classes
-that most often block a round:
+candidate. Fix what you find, in new commits. Ask:
 
 1. **Failure arms.** Every call you added that can fail — a lookup, a parse,
    a probe, an upload, a spawned process — has an error branch, and the
@@ -73,9 +71,9 @@ that most often block a round:
    the states that are not the happy one: absent, empty, disabled, refused,
    failed. Text shown under a condition is true under that condition, tense
    included.
-4. **Tests.** A test you added fails when your change is reverted, and its
-   name promises only what its assertions check. A test that asserts a call
-   was made, not the state it produces, is the weak shape the reviewer names.
+4. **Tests.** A test you added fails when your change is reverted, its name
+   promises only what its assertions check, and it asserts the state a call
+   produces, not only that the call was made.
 5. **Statements.** Every sentence you added or changed is true of the code in
    this pull request — not of a planned follow-up. For every rule you changed,
    `git grep` its old term, its new term and its name over the whole tree, and
@@ -97,10 +95,10 @@ you changed — the ones it already defines, not commands invented here.
 Fill the repository's template when it has one; otherwise use these parts.
 Write the body in English, in ASD-STE100 (Simplified Technical English):
 
-- One topic per sentence, at most 20 words. Split a longer sentence.
-- Active voice, simple tenses, one term per concept, no idioms.
-- Short: a reader gets the whole change in two minutes. A bullet is better
-  than a paragraph. Do not restate the title or the diff.
+- One topic per sentence, at most 20 words; active voice, simple tenses, one
+  term per concept, no idioms.
+- Short: a reader gets the whole change in two minutes. Prefer bullets to
+  paragraphs; do not restate the title or the diff.
 
 The parts:
 
@@ -108,8 +106,7 @@ The parts:
   does about it.
 - **Reviewer guide** — see **Reviewer guide** below.
 - **Scope** — every behavior, surface and file group the diff changes, the
-  side changes included (a doc, a config key, a migration). The reviewer
-  reads anything the body does not declare as undeclared scope.
+  side changes included (a doc, a config key, a migration).
 - **Issue** — `Closes #<n>` only when the change delivers all the issue asks;
   `Refs #<n>` and one line on what stays open otherwise. With no issue, one
   line says that no issue tracks the change. A link to a pull request is
@@ -121,11 +118,10 @@ Every claim in the body is true of this diff, not of a later one.
 
 ### Reviewer guide
 
-A section for a person who reads the body and not the code. After it, they
-know what the pull request decides and where to look. Name concepts,
-behaviors and components, not lines or symbols. Write at most twenty lines.
-For a change with no decision in it (a typo, a version bump), write one line
-that says so.
+For a person who reads the body and not the code: what the pull request
+decides and where to look. Name concepts, behaviors and components, not
+lines or symbols; at most twenty lines. A change with no decision in it (a
+typo, a version bump) gets one line that says so.
 
 - **What changes in substance** — each architectural decision, one bullet:
   what the pull request decided, the alternative it did not take, and what
@@ -136,11 +132,9 @@ that says so.
   security boundary, a behavior change no test covers. Say what could go
   wrong there.
 - **Ruled out** — each option you tried or weighed and dropped, one bullet:
-  what it was and why it failed or lost. The reviewer then does not propose
-  it again. Omit the part when you weighed no option.
+  what it was and why it failed or lost. Omit the part when you weighed none.
 - **Gates you changed** — every test you skipped, deleted or rewrote to a new
   expected value, and every check or threshold you relaxed, with the reason.
-  The reviewer reads each one first.
 - **Who decided.** A decision the person made or confirmed also has its
   `author-decisions` entry. A decision you made alone appears only here,
   marked `(open)`, so the reviewer judges it.
@@ -158,17 +152,17 @@ that says so.
 3. **Report** the link, the checks that ran, and the decisions the block
    records, one line each. The first review starts on its own; this skill
    never requests one.
-4. **Same account as the reviewer.** GitHub refuses an approval or a change
-   request from the pull request's own author. When the new pull request's
+4. **Same account as the reviewer.** When the new pull request's
    `user.login` is the login of the automated reviews on this repository's
-   recent pull requests — a GitHub App (`<app>[bot]`) that several agents
-   share, typically — tell the caller: that reviewer can only comment on it.
+   recent pull requests (typically a shared GitHub App, `<app>[bot]`), tell
+   the caller: GitHub lets that reviewer only comment on it, never approve or
+   request changes.
 
 ## The author-decisions block
 
-The pull request body carries one hidden block that tells the reviewer which
-choices the person made on purpose. Write it when the pull request opens, and
-update it in every later body edit:
+One hidden block in the body tells the reviewer which choices the person made
+on purpose. Write it when the pull request opens, and update it in every later
+body edit:
 
 ```markdown
 <!-- author-decisions
@@ -201,13 +195,11 @@ summary: <two or three sentences: what the person asked for, and how the
 
 ## Done
 
-- The range passed the self-review, and the repository's own build and test
-  commands pass.
-- The body declares every change in the diff, links the issue with the right
-  keyword, says what was tested, and its reviewer guide names every
-  architectural decision, with the ones you made alone marked `(open)`, the
-  options you ruled out and every gate you changed.
-- The `author-decisions` block holds the person's decisions that a reviewer
-  could read as a defect.
+- The range passed the self-review; the repository's build and test commands
+  pass.
+- The body declares every change, links the issue with the right keyword,
+  says what was tested, and its reviewer guide names every decision (yours
+  alone marked `(open)`), the options ruled out and every gate you changed;
+  the `author-decisions` block holds the person's decisions.
 - The branch is pushed; the pull request is open, or the caller holds the
   body and the command that opens it.

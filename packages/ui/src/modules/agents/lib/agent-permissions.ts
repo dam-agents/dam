@@ -9,6 +9,7 @@ const SECTION_PERMISSIONS: Record<SandboxSection, readonly AgentPermission[]> =
     providers: ["connections", "spendLimits", "settings"],
     connections: ["connections", "credentialInjection"],
     network: ["egressRules"],
+    browser: ["sessions"],
     environment: ["envVars"],
     channels: ["channels"],
     "chat-forms": ["chatForms"],
@@ -26,7 +27,7 @@ export function holds(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Whether a section of an Agent's page is locked
+ * UNIT_BOUNDARY_DESCRIPTION: Whether a section of an Agent's settings is locked
  * for the viewer: they hold none of the Agent Permissions it needs. A section
  * where they hold some of them is not locked; it disables only the controls
  * they lack.

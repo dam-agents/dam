@@ -6,21 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-import {
-  AlwaysOnTag,
-  StatusBadge,
-} from "../../../components/status-indicator.js";
+import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
 import { AgentChannelChips } from "../../sandboxes/components/channels/agent-channel-chips.js";
 import { useKeptWorkCount } from "../../sessions/api/background-work.js";
 import { KitUpdateTag } from "../../starter-kits/components/kit-update-tag.js";
 import { OnboardingTag } from "../../starter-kits/components/onboarding-tag.js";
-import { reclaimSentence } from "../lib/reclaim-notices.js";
 import { statusTone } from "../lib/status-tone.js";
 import { agentKindBadge, starterKitBadge } from "../utils/agent-kind.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
 import type { AgentUsage } from "../utils/sandbox-subtitle.js";
-import { AgentAvatar, avatarMood } from "./avatar/agent-avatar.js";
+import { AgentAvatar } from "./avatar/agent-avatar.js";
 import {
   agentFailures,
   ContributionFailuresBadge,
@@ -63,9 +59,7 @@ export function AgentRow({
   const kindBadge = agentKindBadge(agent);
   const kitBadge = starterKitBadge(agent);
   const keptWork = useKeptWorkCount(agent.id);
-  const statusNote =
-    agent.overBudgetMessage ??
-    (display.state === "hibernated" ? reclaimSentence(agent) : undefined);
+  const statusNote = agent.overBudgetMessage ?? undefined;
   return (
     <Card
       data-testid="agent-row"
@@ -76,7 +70,6 @@ export function AgentRow({
         name={agent.name}
         avatar={agent.avatar}
         size={64}
-        mood={avatarMood(display.state, agent)}
         className="mr-1 self-start"
       />
       <div className="min-w-0 flex-1">
@@ -95,7 +88,7 @@ export function AgentRow({
               {kindBadge.label}
             </Badge>
           )}
-          <KitUpdateTag agentId={agent.id} />
+          <KitUpdateTag agentId={agent.id} onOpenAgent={onSelect} />
           <ContributionFailuresBadge failures={agentFailures(agent)} />
           <GatewayFailureBadge agent={agent} />
           <UnsupportedContributionsBadge agent={agent} />
@@ -156,7 +149,6 @@ export function AgentRow({
           busy={updateBusy}
           onUpdate={onUpdate}
         />
-        {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
         <Button
           variant="ghost"
           size="icon-sm"

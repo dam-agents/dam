@@ -12,11 +12,16 @@ function renderHuman(channels: readonly ChannelConfig[]): string {
   return channels.length === 0
     ? "No channels connected.\n"
     : renderTable([
-        ["TYPE", "IDENTIFIER", "AMBIENT"],
+        ["TYPE", "IDENTIFIER", "AMBIENT", "HISTORY"],
         ...channels.map((c) =>
           c.type === ChannelType.Slack
-            ? ["slack", c.slackChannelId, c.ambient ? "on" : "off"]
-            : ["telegram", "—", "—"],
+            ? [
+                "slack",
+                c.slackChannelId,
+                c.ambient ? "on" : "off",
+                c.history ? "on" : "off",
+              ]
+            : ["telegram", "—", "—", "—"],
         ),
       ]);
 }

@@ -75,7 +75,7 @@ function chunk(sessionUpdate: string, text: string): string {
   });
 }
 
-const FORM = '<a2ui-json>\n[{"version":"v1.0"}]\n</a2ui-json>';
+const FORM = '<a2ui-json>\n[{"version":"1.0"}]\n</a2ui-json>';
 
 const FORM_REPLY = [
   chunk("user_message_chunk", "Update the kit."),

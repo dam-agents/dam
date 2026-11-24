@@ -38,6 +38,7 @@ export const starterKitsRouter = t.router({
           ...(result.agent.defaultProvider && {
             defaultProvider: result.agent.defaultProvider,
           }),
+          ...(result.agent.startsOn && { startsOn: result.agent.startsOn }),
         },
       };
     }),

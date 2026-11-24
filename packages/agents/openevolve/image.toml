@@ -1,7 +1,7 @@
 # The openevolve config environment, packed onto the default image.
 
 [tools."pipx:openevolve"]
-version = "0.4.0"
+version = "0.4.1"
 
 [oci.env]
 # Its root generation segment, after the default image's key (oci's build_thin).

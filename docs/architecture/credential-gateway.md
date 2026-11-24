@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-11-04
+Last verified: 2026-11-20
 
 ## Overview
 
@@ -29,7 +29,8 @@ On the wire:
 
 Whatever chain forwards it, the gateway pod's own egress NetworkPolicy bounds where the dial may land — public addresses plus the platform pods and private ranges it names — so no approved name can resolve into the cluster or the metadata endpoint ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)).
 
-**L7 promotion.** An egress rule that narrows a host by path, method, or port is invisible to the L4 catch-all (it sees only SNI), so the rule's host must be *promoted* onto a TLS-terminating chain to be enforceable over HTTPS.
+**L7 promotion.** An egress rule that narrows a host by path, method, or a port other than 443 is invisible to the L4 catch-all (it sees only SNI), so the rule's host must be *promoted* onto a TLS-terminating chain to be enforceable over HTTPS.
+A rule that names port 443 and nothing else narrows nothing the catch-all cannot check — it dials 443, and its Check reads the request as TLS on 443 — so its host stays on passthrough, exactly as with no port.
 The promotion signal is the Agent resource's `l7Hosts` spec list — per-agent intent, exactly like connection grants: promoting a host on one agent rolls only that agent's gateway, never a sibling's; an [Environment](environments.md#network-access) is the one exception, and carries its Owning Agent's list.
 Promoted hosts get an uncredentialed L7 chain (gate sees method/path; nothing is injected) and extend the leaf certificate's SAN list.
 
@@ -111,6 +112,14 @@ A rewrite route keeps its plain prefix: it adds only the rewrite.
 On such a chain the gateway gives each call an id the agent cannot set, removes the request's compression offer so that the reply stays readable, reads the usage in the reply without changing it, records the session and harness that the Model Router stamped, and sends a spend record per call to the api-server.
 On every chain, the gateway removes that stamp before the request leaves.
 The depth is on [spend-limits](spend-limits.md).
+For an agent with web search control on, such a chain also sends each request's whole body with its check, and refuses a body too long to send whole ([web-search-control](web-search-control.md#the-gateway)).
+
+**Checking a request body.** A Connection's Secret can ask for the body: its host's chain then sends each request's whole body with its ext_authz check, up to 4 MiB, far above one MCP tool call, and answers a longer body with a 413, since a body read in part could hide a tool call after the part that was read.
+The Connections context asks for it on the host of a Template that declares read tools, whatever the Connection's choice is, so a switch between read only and full access restarts nothing ([connections](connections.md#connection)).
+Such a chain also sends the TLS server name the request came on: the chain and its credential are chosen by that name, while the Host header is the agent's to write, so the gate reads both.
+Every other TLS chain of that agent, the Agent Key chain included, sends its server name too, so a TLS request that comes without one is from a gateway that has not restarted onto the check yet.
+What a chain sends is part of what the gateway renders, so a Secret that starts to ask rolls that agent's gateway once, or replaces that agent's listener on an owner gateway.
+The check also carries the address step's marker, set by the gateway and never by the agent, so the gate knows which Connection a request names.
 
 ## The Agent Key chain
 
@@ -126,8 +135,27 @@ An Agent opens an [Environment](environments.md#agents-at-the-gate) as itself be
   An install whose addresses are plain HTTP, as the local cluster's are, reaches the same filters: the proxy listener sends an authority of one label under the domain, any port, to an internal listener that runs them.
 - **Where it goes.** The route sends every request to the api-server's public Service inside the cluster, plain HTTP, Host kept, WebSocket upgrades included, and never to an address the name resolves to: that works on a cluster whose environments domain resolves only from outside, and behind a proxy.
   A Host outside the domain is answered 421 at the gateway, before ext_authz, so the key reaches the gate and no other route of the api-server; `X-Forwarded-For` and `X-Real-IP` are removed, as the ingress would.
-- **The port.** The gateway's egress policy admits the api-server's public port only on an install that serves Environments; every route there authenticates its caller, as the ingress already sends the whole internet to it, and only the gateway reaches it, never the machine behind it.
+- **The port.** The gateway's egress policy admits the api-server's public port on every install; the routes that carry an owner's data authenticate their caller, as the ingress already sends the whole internet to it, and only the gateway reaches it, never the machine behind it.
+  A few routes on that port answer without a bearer — health, readiness, the version, the auth config, the brand, the public avatars and testimonials, the terms, and the OAuth callbacks — and none of them serves an owner's data.
   The controller reads the domain and the port from `PLATFORM_ENVIRONMENTS_DOMAIN` and `PLATFORM_APISERVER_PORT`.
+
+## The chain to the install's own Service
+
+The [Connection that drives the install](connection-presets.md#platform-preset-this-install-itself) points at the api-server's own public Service, by the name that Service answers to inside the cluster.
+The Agent dials that name over HTTPS, so the chain is an ordinary terminating one — the leaf names it like any other chain's host, and the install's own CA is what the Agent trusts — and its credential is injected on `/api/` exactly as any other's is.
+
+What differs is the upstream: the chain is **pinned** to the [api-server's public Service](security-and-credentials.md#envoy-credential-injection) by name and port, over plain TCP that the ambient mesh carries, instead of dialing whatever the name resolves to.
+So neither an Agent's `Host` header nor a name it caused to resolve can send that key anywhere but the Service the install published, and a peer Connection on the same name cannot move the port or the CA: the chain takes both from this Connection alone.
+Its routes are the API paths alone — `/api/` in all its spellings, including the addressed one — and a request to any other path on that name is answered 404 at the gateway, never forwarded.
+A peer Connection mounted on that name is dropped from the chain rather than merged, so nothing widens those routes, adds a second credential or rewrites a path on the install's own Service.
+The chain also removes `X-Forwarded-For` and `X-Real-IP`: the api-server reads the first as the caller's address in its audit log, and an address the Agent chose is not one to write there.
+That is what makes the route work on every install: a plain-HTTP one, like the local cluster's, has no public name to reach, and this chain never needs one.
+
+**How the hop is protected.** The api-server's ingress needs no rule of its own for this: its public port is already admitted from anywhere in the cluster and HBONE from the agent namespace, and the key the chain injects is what authenticates the hop — a gateway whose Agents hold no such Connection has none to send, and the few routes on that port that carry no bearer serve no owner's data.
+The chain terminates the Agent's TLS at the gateway and forwards inside the cluster, so the Agent's key is encrypted on the machine-to-gateway leg and then travels cluster-internal.
+Its encryption there is the ambient mesh's: the gateway pod and the api-server are enrolled, and ztunnel carries the hop as mTLS under their workloads' identities.
+An install that turns mesh enforcement off — `istio.enforce: false`, which only a local cluster may, and `--no-mesh` with it — enrolls nothing, and there the hop is plaintext inside the cluster, as every other in-cluster hop is.
+Nothing about the chain validates the upstream's certificate: the upstream is a Service this install owns, and the pinning that matters is the name and port it was rendered for.
 
 ## Request signing
 
@@ -152,7 +180,7 @@ A Connection without a bucket keeps signing the whole host, and the key's upstre
 
 The signed body has to be plain.
 A client that streams an upload as `aws-chunked` — a `STREAMING-` content hash, signed or unsigned, with a trailing checksum — has produced a body the gateway cannot re-sign, so the same guard refuses such a request with a readable 400 saying the egress gateway, not the storage service, refused it, that it re-signs requests and cannot re-sign a streaming upload, and which client setting turns streaming off.
-The profiles the platform writes already carry that setting ([connections](connections.md#app-preset-s3-compatible-storage)), so the refusal reaches only a client that overrode them, as its own message rather than a signature mismatch from upstream.
+The profiles the platform writes already carry that setting ([connections](connection-presets.md#app-preset-s3-compatible-storage)), so the refusal reaches only a client that overrode them, as its own message rather than a signature mismatch from upstream.
 
 Rotation needs no roll: the signing step watches the mounted credentials file, and a key pair rewritten in place by the Connections context — after it has re-proven the new keys against the endpoint — is in use within seconds, as any credential rewritten in place is (**Rotation**, above), with the agent's placeholders untouched.
 Adding or removing the credentials file is a configuration change and rolls the gateway, as an SDS key appearing or vanishing does.
@@ -167,12 +195,17 @@ The trust model it rests on lives on [security-and-credentials](security-and-cre
 **Identity is the agent's own Service.** Each Agent keeps its own gateway Service and ClusterIP, which its machine's allowlist and resolver name, so moving an agent changes no machine spec.
 The controller gives each agent a slot on the owner gateway, a proxy port and a resolver port recorded on that Service, and the Service maps every port it declares onto that slot alone.
 A ClusterIP carries nothing on a port it does not declare (measured on OVN-Kubernetes and k3s), so a guest pinned to its own address reaches only its own listener.
+A slot belongs to its Service for the Service's whole lifetime, whether that Service is on the owner gateway, moved back to its own gateway, or left by an agent already deleted while its machine still runs, and only deleting the Service frees the slot, so a machine dialling its own ClusterIP never reaches the listener of the agent that takes the slot next.
 
 **One Envoy, one listener per agent.** The owner gateway's bootstrap holds only what its agents share: the harness, object store, dynamic forward proxy and collector clusters.
 Each agent's listener, internal listener and clusters, every name suffixed with the agent, are files Envoy watches beside it, along with the Lua bodies the chains read and the leaf's file source.
 Each listener carries exactly that agent's chains, credentials, egress checks, spend meter, attribution and ext_authz destination, rendered as above.
+An agent's listener accepts only connections from outside the pod.
+The agents share the pod's loopback and its own address, so a dial through a sibling's forward proxy to either would otherwise enter that listener, checked as the sibling.
 A change to one agent replaces only its own listener, which drains only its own connections; a file that does not load leaves the last good one serving.
 The whole set, its credentials and its leaf file source live in one Secret of 1 MiB; an owner past it is refused with that reason, and its agents go back to their own gateways as they do with the flag off.
+The refusal holds until what the owner's agents render changes (agents, grants, credentials, promoted hosts, Service addresses), so a refused owner is not re-rendered on every reconcile.
+It is also re-checked on the first reconcile after ten minutes, so an owner that would now fit is admitted without waiting for its agents to change.
 
 **Harness guard.** The mesh sees one principal for all of the owner's agents, so it cannot keep one agent off a sibling's harness paths.
 Each agent's listener sends the harness authority, by CONNECT or plain HTTP, into a guard that admits only that agent's own path prefix, normalizing the path and refusing escaped slashes first, and refuses anything else with a 403.
@@ -187,6 +220,7 @@ The resolver is one CoreDNS with one block per agent's resolver port, each answe
 It reads one file of that Secret and is handed a volume of its own that projects that key alone, so a process in the resolver container can no more read a signing key than one outside the pod can.
 
 **Readiness.** An agent's listener answers the gateway health path with a revision of what was rendered for it.
+The pod's own readiness is the kubelet's probe of that path, which the mesh delivers from the fixed link-local source istio-cni rewrites a host probe to, so the owner gateway's ingress policy admits that source on the health port alone.
 An agent moves onto the owner gateway only once the owner pod answers its revision; after the move its gateway readiness is that probe through its own Service, a stale listener reads as starting, and a failing owner pod gives every agent it serves that pod's failure.
 Once moved, the agent's own gateway pod and the objects around it are removed.
 Turning the flag off, or a refused owner, renders them again, and each agent moves back once its own gateway pod is ready.

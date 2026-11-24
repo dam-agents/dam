@@ -115,6 +115,11 @@ export function buildMetricsCommand(deps: {
               .map((s) => [s.sessionId, s.title as string]),
           );
         };
+        /* UNIT_BOUNDARY_DESCRIPTION: a session list opens the ACP relay, which wakes a sleeping Agent. A session title is not worth a wake when the whole point of the read is to diagnose an Agent that is asleep. */
+        const titlesWorthAWake =
+          agent.state === "running" ||
+          agent.state === "starting" ||
+          agent.state === "preparing_workspace";
         const metrics = deps.createMetricsService(host);
         const metering = await metrics.metering();
         exitOnServiceError(metering, host);
@@ -136,7 +141,9 @@ export function buildMetricsCommand(deps: {
             sinceHours,
             limit,
           }),
-          fetchTitles().catch(() => new Map<string, string>()),
+          titlesWorthAWake
+            ? fetchTitles().catch(() => new Map<string, string>())
+            : Promise.resolve(new Map<string, string>()),
         ]);
         exitOnServiceError(breakdown, host);
         exitOnServiceError(sessions, host);
@@ -204,6 +211,7 @@ export function buildMetricsCommand(deps: {
               totals,
               byModel,
               sessions: sessionRows,
+              sessionsTruncated: sessions.value.truncated,
               calls,
             })}\n`,
             EXIT_SUCCESS,

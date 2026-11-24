@@ -10,13 +10,11 @@
 # base change propagate to its children automatically (a stale base ⇒ the child's
 # last-touching commit moves ⇒ its reuse tag moves too), and the registry check is
 # self-correcting: a missing image (never built, build failed, off-main branch)
-# just falls back to BUILD. A merge group (EVENT=merge_group) also reuses an
-# earlier group's build, from its cache tag (mq_tag); nothing else reads it.
+# just falls back to BUILD.
 #
 # Usage:
 #   mise run image:resolve -- resolve <component>        -> "BUILD" | "REUSE <full-ref>"
 #   mise run image:resolve -- source-sha <component>     -> the commit that last touched its effective source
-#   mise run image:resolve -- mq-tag <component>         -> the merge-queue cache tag of its effective source's content
 #   mise run image:resolve -- gha-outputs                -> key=value lines for $GITHUB_OUTPUT (all components)
 #   mise run image:resolve -- list-workloads            -> the workload components, each packed onto the default image
 #   mise run image:resolve -- list-harnesses            -> the harness directories the default image carries, no image of their own
@@ -31,12 +29,12 @@
 # (the leading `--` keeps mise from parsing the subcommand's own `--`)
 #
 # Env: IMAGE_PREFIX (default quay.io/dam-agents), GITHUB_SHA, EVENT (gha-outputs
-# archs + workload skip: pull_request never builds workloads; merge_group
-# builds both archs like main, without workloads or the mock), GITHUB_REF
+# archs + workload skip: pull_request never builds workloads), GITHUB_REF
 # (gha-outputs image_archs: only a v* tag builds the IMAGES for arm64),
 # RESOLVE_NO_REUSE=1 forces BUILD everywhere (CI tag/schedule/dispatch: publish
-# all, which also picks up newer Debian packages and uncached tool trees). A
-# main push reuses every image whose effective source did not move.
+# all, which also picks up uncached tool trees; a newer Debian package only
+# once the week the apt base is keyed by rolls). A main push reuses every image
+# whose effective source did not move.
 # Written for bash 3.2 (macOS) — no associative arrays.
 set -euo pipefail
 
@@ -55,7 +53,7 @@ UNSHIPPED=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*_test.go :(exclu
 # directory: the task, image:pack and image:name-layout that put them
 # together, and the base. The root config names their Debian base; a bump of
 # another tool there re-tags them too, which errs toward rebuilds.
-MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci packages/agents/.mise/lib/agents-md.sh .mise/tasks/image/pack .mise/tasks/image/name-layout packages/agents/base .mise/config.toml packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/driver-sdk-py packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
+MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci packages/agents/.mise/lib/agents-md.sh .mise/tasks/image/pack .mise/tasks/image/name-layout packages/agents/base .mise/config.toml packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/driver-sdk-py packages/cli packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
 # agent images; CI's `agents` build/merge matrix. The default image carries
 # every harness, whose directories are its sources and no image of their own.
@@ -74,7 +72,7 @@ PNPM_ROOT="package.json pnpm-workspace.yaml pnpm-lock.yaml packages/dev-config"
 # The images build.yml's build-images job builds, one job per arch of
 # image_archs. A Mac's cluster:install builds these five itself and never
 # pulls them, so only a v* tag, for release consumers, builds them for arm64.
-IMAGES="controller ui api-server keycloak vm-runner"
+IMAGES="controller api-server keycloak vm-runner"
 
 # Components whose chart or kit tag is rewritten from a source sha by pin-tags:
 # the default image, keycloak, the vm-runner and every workload, since a starter kit
@@ -130,15 +128,14 @@ own_paths() {
     vm-runner) echo "packages/vm-runner .mise/tasks/image/name-layout .mise/config.toml mise.lock" ;;
     # Each TS image's own package and its workspace dependencies, transitively.
     controller) echo "packages/controller $PACK_TOOLING" ;;
-    ui) echo "packages/ui packages/agent-runtime-api packages/api-server-api $PNPM_ROOT $PACK_TOOLING" ;;
-    api-server) echo "packages/api-server packages/agent-runtime-api packages/api-server-api packages/db packages/e2e/agents/mock-api $PNPM_ROOT $PACK_TOOLING" ;;
+    api-server) echo "packages/api-server packages/ui packages/agent-runtime-api packages/api-server-api packages/db packages/e2e/agents/mock-api $PNPM_ROOT $PACK_TOOLING" ;;
     # keycloak = upstream Keycloak, pinned in the root config, + the
-    # Keycloakify theme, packed onto it by image:pack. The theme build also
+    # Keycloakify theme and the Environments extension, packed onto it by image:pack. The theme build also
     # depends on dev-config and (any) lockfile change — lockfile and root
     # config bumps re-tag it even when unrelated, which errs toward rebuilds. Its source-sha tag is what the published chart
     # pins as the image tag, so a release that doesn't touch these paths
     # doesn't roll the Keycloak pod.
-    keycloak) echo "packages/keycloak-theme packages/dev-config pnpm-lock.yaml .mise/tasks/image/pack .mise/config.toml" ;;
+    keycloak) echo "packages/keycloak-theme packages/keycloak-environments packages/dev-config pnpm-lock.yaml .mise/tasks/image/pack .mise/config.toml" ;;
     default) echo "$MISE_IMAGE_PATHS packages/agents/default $(for h in $HARNESSES; do printf ' packages/agents/%s' "$h"; done)" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
@@ -148,7 +145,7 @@ base_of() {
   if is_workload "$1"; then echo "default"; return; fi
   case "$1" in
     mock) echo "default" ;;
-    controller|ui|api-server|keycloak|vm-runner|default) echo "" ;;
+    controller|api-server|keycloak|vm-runner|default) echo "" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
 }
@@ -163,10 +160,6 @@ registry_has() { crane digest "$1" >/dev/null 2>&1; }
 # Last commit touching the component's effective source (tests excluded).
 # Empty when git/history is unavailable — callers pick their own fallback.
 source_sha() { git log -1 --format=%H -- $(effective_paths "$1") $UNSHIPPED 2>/dev/null || true; }
-# A merge group's cache tag: build-images pushes it there, and only a merge
-# group reuses it. It names the effective source's content, not a commit: a
-# queue rebuilt after an ejection gets new commits, the same content.
-mq_tag() { echo "mq-$(git ls-files -s -- $(effective_paths "$1") $UNSHIPPED | git hash-object --stdin)"; }
 
 resolve() {
   local comp="$1" paths sha ref
@@ -178,10 +171,6 @@ resolve() {
   [ -z "$sha" ] && { echo BUILD; return; }
   ref="${IMAGE_PREFIX}/${comp}:${sha}"
   registry_has "$ref" && { echo "REUSE $ref"; return; }
-  if [ "${EVENT:-}" = merge_group ]; then
-    ref="${IMAGE_PREFIX}/${comp}:$(mq_tag "$comp")"
-    registry_has "$ref" && { echo "REUSE $ref"; return; }
-  fi
   echo BUILD
 }
 
@@ -208,9 +197,9 @@ gha_outputs() {
   agents_json="$(stale_json $AGENTS)"
   # A PR builds its images and the mock in e2e, which resolves them itself,
   # and never builds workloads: slow, rarely-changing builds on the default
-  # image. A merge group also builds its images in build-images, on amd64.
-  [ "${EVENT:-}" = pull_request ] || images_json="$(stale_json $IMAGES)"
-  if [ "${EVENT:-}" != pull_request ] && [ "${EVENT:-}" != merge_group ]; then
+  # image.
+  if [ "${EVENT:-}" != pull_request ]; then
+    images_json="$(stale_json $IMAGES)"
     workloads_json="$(stale_json $WORKLOADS)"
     [ "$(resolve mock | cut -d' ' -f1)" = BUILD ] && mock=true
   fi
@@ -252,11 +241,11 @@ self_check() {
   has "$(effective_paths gepa)" packages/agents/.mise/lib/agents-md.sh
   chk "$(base_of keycloak)" ""
   chk "$(base_of controller)" ""
-  chk "$(base_of ui)" ""
   chk "$(base_of api-server)" ""
   has "$(effective_paths controller)" packages/controller
-  has "$(effective_paths ui)" packages/api-server-api
-  has "$(effective_paths ui)" pnpm-lock.yaml
+  has "$(effective_paths api-server)" packages/ui
+  has "$(effective_paths api-server)" packages/api-server-api
+  has "$(effective_paths api-server)" pnpm-lock.yaml
   has "$(effective_paths api-server)" packages/db
   has "$(effective_paths api-server)" .mise/tasks/image/pack
   chk "$(base_of vm-runner)" ""
@@ -294,7 +283,7 @@ archs=["amd64","arm64"]'
   has "$out" '"keycloak":"'
   has "$out" '"vm-runner":"'
   has "$out" '"mock":"'
-  has "$out" 'images=["controller","ui","api-server","keycloak","vm-runner"]'
+  has "$out" 'images=["controller","api-server","keycloak","vm-runner"]'
   has "$out" 'mock=true'
   # PRs never build workloads — the EVENT gate short-circuits before any
   # resolve; NO_REUSE keeps the other components' resolves hermetic.
@@ -304,43 +293,18 @@ archs=["amd64","arm64"]'
   has "$out" 'mock=false'
   has "$out" '
 archs=["amd64"]'
-  out="$(EVENT=merge_group GITHUB_REF=refs/heads/gh-readonly-queue/main/pr-1-deadbeef GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_REF GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
-  has "$out" 'workloads=[]'
-  has "$out" 'images=["controller","ui","api-server","keycloak","vm-runner"]'
-  has "$out" 'mock=false'
-  has "$out" '
-archs=["amd64","arm64"]'
-  has "$out" 'image_archs=["amd64"]'
   # A release builds every image for both archs.
   out="$(EVENT=push GITHUB_REF=refs/tags/v1.2.3 GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_REF GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
   has "$out" 'image_archs=["amd64","arm64"]'
   # A reused component, last in its list, leaves it out and fails nothing.
   out="$(resolve() { case "$1" in b) echo "REUSE x" ;; *) echo BUILD ;; esac; }; stale_json a b)" || { echo "FAIL: stale_json failed on a reused last component" >&2; f=1; }
   chk "$out" '["a"]'
-  # Only a merge group reuses a cache tag, which follows content alone. The
-  # git and registry stand-ins keep it hermetic.
-  local tag1 tag2
-  tag1="$(git() { case "$1" in ls-files) echo "100644 aa 0 packages/vm-runner/x" ;; *) command git "$@" ;; esac; }; mq_tag vm-runner)"
-  tag2="$(git() { case "$1" in ls-files) echo "100644 bb 0 packages/vm-runner/x" ;; *) command git "$@" ;; esac; }; mq_tag vm-runner)"
-  case "$tag1" in mq-????????????????????????????????????????) ;; *) echo "FAIL: mq tag [$tag1]" >&2; f=1 ;; esac
-  [ "$tag1" != "$tag2" ] || { echo "FAIL: mq tag ignores content" >&2; f=1; }
-  mq_resolve() (
-    git() { case "$1" in status) ;; ls-files) echo "100644 aa 0 packages/vm-runner/x" ;; *) command git "$@" ;; esac; }
-    source_sha() { echo cafe; }
-    registry_has() { case "$1" in *:mq-*) ;; *) return 1 ;; esac; }
-    EVENT="$1" resolve vm-runner
-  )
-  chk "$(mq_resolve merge_group)" "REUSE $IMAGE_PREFIX/vm-runner:$tag1"
-  chk "$(mq_resolve pull_request)" BUILD
-  chk "$(mq_resolve push)" BUILD
-  chk "$(mq_resolve '')" BUILD
   [ "$f" = 0 ] && echo "self-check OK" || exit 1
 }
 
 case "${1:-}" in
   resolve)        resolve "$2" ;;
   source-sha)     source_sha "$2" ;;
-  mq-tag)         mq_tag "$2" ;;
   gha-outputs)    gha_outputs ;;
   list-workloads) echo $WORKLOADS ;;
   list-harnesses) echo $HARNESSES ;;
@@ -352,5 +316,5 @@ case "${1:-}" in
   import-path)    import_path "$2" ;;
   oci-out)        echo "$OCI_OUT" ;;
   --self-check)   self_check ;;
-  *) echo "usage: image:resolve {resolve|source-sha|mq-tag|gha-outputs|list-workloads|list-harnesses|list-pinned-tags|list-components|list-third-party|paths|tar-path|import-path|oci-out|--self-check}" >&2; exit 2 ;;
+  *) echo "usage: image:resolve {resolve|source-sha|gha-outputs|list-workloads|list-harnesses|list-pinned-tags|list-components|list-third-party|paths|tar-path|import-path|oci-out|--self-check}" >&2; exit 2 ;;
 esac

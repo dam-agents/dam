@@ -7,13 +7,14 @@ import {
   injectChannelOf,
 } from "../infrastructure/acp-frames.js";
 import { securityLog } from "../../../core/security-log.js";
-import { getLogger } from "../../../core/logger.js";
-import { formatError } from "../../../core/format-error.js";
 import { emit, EventType } from "../../../events.js";
 import { hasDotSegment } from "../domain/dot-segment.js";
 import { canonicalEgressHost, PLATFORM_REFUSAL_HEADER } from "api-server-api";
 import type { SpendCheck } from "../../spend/index.js";
 import type { SpendLimitQuestions } from "./spend-limit-questions.js";
+import { type SettledVerdict, waitForVerdict } from "./held-verdict.js";
+import type { ModelCallBody, WebSearchGate } from "./web-search-gate.js";
+import type { ReadOnlyGate } from "./read-only-gate.js";
 
 export type ExtAuthzVerdict = "allow" | "deny";
 
@@ -27,11 +28,9 @@ export type ExtAuthzDecision =
   | ExtAuthzVerdict
   | {
       readonly verdict: "refuse";
-      readonly basis: "spend" | "rule";
+      readonly basis: "spend" | "rule" | "web-search" | "read-only";
       readonly response: DeniedResponse;
     };
-
-export const approvalChannelOf = (id: string) => `approval:${id}`;
 
 type SpendCall = Omit<
   Parameters<SpendCheck["checkCall"]>[0],
@@ -46,18 +45,26 @@ interface ExtAuthzGateInput {
   method: string;
   path: string;
   spendCall?: SpendCall | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: set when the request came over a model-provider chain, whose spend meter marks every request, billable or not, so a path spelled to look unbillable is still read for web search. `sessionId` is the Model Router's stamp when the meter kept it. */
+  modelCall?: { sessionId: string | null };
+  body?: ModelCallBody;
+  /* UNIT_BOUNDARY_DESCRIPTION: the Connection the gateway's address step says the request names. The gateway removes the marker the agent sent and writes its own, so the agent cannot choose it freely: it can only name a Connection in the request itself. */
+  connectionId?: string | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the server name of the request's TLS session, which a chain that checks bodies sends. It names the chain that carries the request, whatever Host header the agent wrote. */
+  tlsHost?: string | null;
 }
 
 export interface ExtAuthzGate {
   gateRequest(input: ExtAuthzGateInput): Promise<ExtAuthzDecision>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whose rules and approvals a request falls under: the agent itself, the driver of an invocation sub-agent, or the Owning Agent of an Environment, which `environment` then names so the approval says where the request came from.
+// UNIT_BOUNDARY_DESCRIPTION: whose rules and approvals a request falls under: the agent itself, the driver of an invocation sub-agent, or the Owning Agent of an Environment, which `environment` then names so the approval says where the request came from; or a child whose egress is its own (`own`), whose open rules deny what they do not allow, and whose scoped rules are widened only by the user, on its parent.
 export interface AgentIdentityResolver {
   resolve(agentId: string): Promise<{
     ownerSub: string;
     agentId: string;
     environment?: string;
+    own?: { mode: "open" | "scoped"; parentAgentId: string };
   } | null>;
 }
 
@@ -78,6 +85,18 @@ export interface EgressRuleMatcher {
     path: string,
   ): Promise<{ verdict: ExtAuthzVerdict; rule: MatchedEgressRule } | null>;
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a rule a child's driver asked for, which waits for the owner, would speak for a request once written, read as the gate's own lookup reads a stored rule.
+export type WaitingRuleSpeaksFor = (
+  rule: { host: string; port?: number; method: string; pathPattern: string },
+  request: {
+    host: string;
+    port: number;
+    tls: boolean;
+    method: string;
+    path: string;
+  },
+) => boolean;
 
 export interface ProviderScopes {
   covers(
@@ -100,8 +119,11 @@ interface CreateExtAuthzGateDeps {
   attendance: EgressAttendance;
   spend: Pick<SpendCheck, "checkCall">;
   questions: SpendLimitQuestions;
+  webSearch?: WebSearchGate;
+  readOnly: ReadOnlyGate;
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
+  waitingRuleSpeaksFor: WaitingRuleSpeaksFor;
 }
 
 export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
@@ -114,6 +136,10 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       method,
       path,
       spendCall,
+      modelCall,
+      body,
+      connectionId,
+      tlsHost,
     }) {
       const host = canonicalEgressHost(requestHost);
       const identity = await deps.identityResolver.resolve(agentId);
@@ -174,6 +200,43 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           };
         }
       }
+
+      if (modelCall && deps.webSearch) {
+        const searched = await deps.webSearch.check({
+          agentId,
+          identity,
+          via,
+          host,
+          path,
+          body,
+          sessionId: modelCall.sessionId,
+        });
+        if (!searched.pass)
+          return {
+            verdict: "refuse",
+            basis: "web-search",
+            response: searched.response,
+          };
+      }
+
+      const read = await deps.readOnly.check({
+        agentId,
+        identity,
+        via,
+        host,
+        tls,
+        tlsHost: tlsHost ? canonicalEgressHost(tlsHost) : null,
+        method,
+        path,
+        connectionId: connectionId ?? null,
+        body,
+      });
+      if (!read.pass)
+        return {
+          verdict: "refuse",
+          basis: "read-only",
+          response: read.response,
+        };
 
       if (deps.platformAllowedAuthorities.includes(`${host}:${port}`)) {
         securityLog("info", "egress.decision", {
@@ -254,9 +317,82 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           : matched.verdict;
       }
 
+      if (identity.own?.mode === "open") {
+        const waiting = (
+          await deps.repo.listPendingChildEgressRequests(identity.agentId)
+        ).find(
+          (row) =>
+            row.payload.kind === "egress_proposal" &&
+            deps.waitingRuleSpeaksFor(
+              {
+                host: row.payload.host,
+                ...(row.payload.port !== undefined
+                  ? { port: row.payload.port }
+                  : {}),
+                method: row.payload.method,
+                pathPattern: row.payload.path,
+              },
+              { host, port, tls, method, path },
+            ),
+        );
+        if (waiting) {
+          securityLog("warn", "egress.hold", {
+            category: "egress",
+            actor: identity.ownerSub,
+            actorKind: "agent",
+            surface: "ext-authz",
+            agentId: identity.agentId,
+            target: host,
+            decision: "hold",
+            correlationId: waiting.id,
+            detail: { method, path, via, basis: "child-rule-waiting" },
+          });
+          const settled = await waitForVerdict(deps, waiting.id, {
+            ownsRequest: false,
+          });
+          securityLog(
+            settled.verdict === "deny" ? "warn" : "info",
+            "egress.decision",
+            {
+              category: "egress",
+              actor: identity.ownerSub,
+              actorKind: "agent",
+              surface: "ext-authz",
+              agentId: identity.agentId,
+              target: host,
+              decision:
+                settled.reason === "hold-expired" ? "expired" : settled.verdict,
+              correlationId: waiting.id,
+              reason: settled.reason,
+              detail: { method, path, basis: "child-rule-waiting", via },
+            },
+          );
+          return settled.verdict === "allow"
+            ? "allow"
+            : {
+                verdict: "refuse",
+                basis: "rule",
+                response: waitingRefusal(host, settled.reason),
+              };
+        }
+        securityLog("warn", "egress.decision", {
+          category: "egress",
+          actor: identity.ownerSub,
+          actorKind: "agent",
+          surface: "ext-authz",
+          agentId: identity.agentId,
+          target: host,
+          decision: "deny",
+          reason: "open-child-unlisted",
+          detail: { method, path, via },
+        });
+        return "deny";
+      }
+
+      const attendee = identity.own?.parentAgentId ?? identity.agentId;
       const unattended =
-        (await deps.attendance.hasOpenChannelTurn(identity.agentId)) &&
-        !(await deps.attendance.hasInteractiveSession(identity.agentId));
+        (await deps.attendance.hasOpenChannelTurn(attendee)) &&
+        !(await deps.attendance.hasInteractiveSession(attendee));
 
       const nonDefaultPort = port === (tls ? 443 : 80) ? undefined : port;
       const existing = await deps.repo.findActivePendingExtAuthz({
@@ -284,6 +420,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
             ...(identity.environment
               ? { viaEnvironment: identity.environment }
               : {}),
+            ...(identity.own ? { forAgentId: identity.own.parentAgentId } : {}),
           },
           expiresAt: new Date(Date.now() + deps.holdSeconds * 1000),
         });
@@ -292,6 +429,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           approvalId: pendingId,
           agentId: identity.agentId,
           ownerSub: identity.ownerSub,
+          ...(identity.own ? { forAgentId: identity.own.parentAgentId } : {}),
         });
       }
 
@@ -373,60 +511,32 @@ function ruleRefusal(host: string, rule: MatchedEgressRule): DeniedResponse {
   };
 }
 
-type SettledVerdict =
-  | { verdict: ExtAuthzVerdict; reason: "hold-resolved" }
-  | { verdict: "deny"; reason: "hold-expired"; flipped: boolean };
-
-async function waitForVerdict(
-  deps: CreateExtAuthzGateDeps,
-  id: string,
-): Promise<SettledVerdict> {
-  return new Promise<SettledVerdict>((resolve) => {
-    let settled = false;
-    const settle = (s: SettledVerdict) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      resolve(s);
-    };
-
-    const checkResolved = async () => {
-      const row = await deps.repo.getPending(id);
-      if (!row || row.status !== "resolved") return;
-      settle({
-        verdict:
-          row.verdict === "allow" || row.verdict === "allow_once"
-            ? "allow"
-            : "deny",
-        reason: "hold-resolved",
-      });
-    };
-
-    const unsubscribe = deps.bus.subscribe(
-      approvalChannelOf(id),
-      () => void checkResolved(),
-    );
-    void checkResolved();
-
-    const poll = setInterval(() => void checkResolved(), 15_000);
-    poll.unref();
-
-    const timeout = setTimeout(async () => {
-      const flipped = await deps.repo.expirePending(id).catch((err) => {
-        getLogger().error(
-          { pendingId: id, reason: formatError(err) },
-          "egress.hold_expire_error",
-        );
-        return false;
-      });
-      settle({ verdict: "deny", reason: "hold-expired", flipped });
-    }, deps.holdSeconds * 1000);
-    timeout.unref();
-
-    function cleanup() {
-      unsubscribe();
-      clearInterval(poll);
-      clearTimeout(timeout);
-    }
-  });
+function waitingRefusal(
+  host: string,
+  reason: SettledVerdict["reason"],
+): DeniedResponse {
+  const why = match(reason)
+    .with(
+      "hold-resolved",
+      () => "the agent's owner declined the network rule that would allow it",
+    )
+    .with(
+      "hold-withdrawn",
+      () =>
+        "the network rule that would allow it is no longer asked of the agent's owner",
+    )
+    .with(
+      "hold-expired",
+      () =>
+        "the network rule that would allow it still waits for the owner's approval, and the owner did not answer in time",
+    )
+    .exhaustive();
+  return {
+    status: 403,
+    headers: {
+      "content-type": "text/plain",
+      [PLATFORM_REFUSAL_HEADER]: "egress",
+    },
+    body: `Blocked by the egress gateway, not the upstream: this request to ${host} was not allowed because ${why}. The agent that launched this one set the rule; its owner approves it on Home.`,
+  };
 }

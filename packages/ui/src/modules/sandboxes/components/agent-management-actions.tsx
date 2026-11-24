@@ -1,10 +1,8 @@
-import { Cloud, Power, Restart, TrashCan } from "@carbon/icons-react";
-import { useEffect } from "react";
+import { Cloud, Restart, TrashCan } from "@carbon/icons-react";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
-import { AGENT_ENABLE_ANCHOR } from "../../agents/lib/overlay-copy.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import {
   useEnvironments,
@@ -20,35 +18,13 @@ export function AgentManagementActions({
   agent: AgentView;
   display: AgentDisplay;
 }) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const management = useAgentManagement();
   const environmentsEnabled = useEnvironmentsEnabled();
   const environments = useEnvironments(environmentsEnabled ? agent.id : null);
   const accessListReach = environments.data?.length === 0;
 
-  useEffect(() => {
-    if (location.hash === `#${AGENT_ENABLE_ANCHOR}`)
-      document
-        .getElementById(AGENT_ENABLE_ANCHOR)
-        ?.scrollIntoView({ block: "center" });
-  }, []);
-
   const lifecycle: Action[] = [
-    {
-      id: AGENT_ENABLE_ANCHOR,
-      kind: "button",
-      icon: <Power />,
-      title: agent.disabled ? "Enable agent" : "Disable agent",
-      description: agent.disabled
-        ? "The agent is disabled. Enable it to let messages, schedules and connections wake it again."
-        : "Stop the agent and keep it asleep.",
-      button: {
-        label: agent.disabled ? "Enable" : "Disable",
-        disabled: management.disabling,
-        onClick: () => void management.toggleDisabled(agent),
-        testId: "agent-toggle-disabled",
-      },
-    },
     {
       kind: "button",
       icon: <Restart />,
@@ -56,11 +32,9 @@ export function AgentManagementActions({
       description:
         display.powerAction === "restart"
           ? "Interrupt in-flight work and start the agent fresh."
-          : agent.disabled
-            ? "The agent is disabled. Enable it to restart it."
-            : display.powerAction === "start"
-              ? "The agent is not running. It starts fresh when it wakes."
-              : "The agent is starting. You can restart it once it runs.",
+          : display.powerAction === "start"
+            ? "The agent is not running. It starts fresh the next time it is used."
+            : "The agent is starting. You can restart it once it runs.",
       button: {
         label: "Restart",
         disabled: display.powerAction !== "restart",
@@ -76,7 +50,7 @@ export function AgentManagementActions({
           title: "Choose who may open Environments",
           description:
             "This agent has none yet and creates them itself. Name the people who may open the ones it creates.",
-          onClick: () => navigateToSandboxHome(agent.id, "environments"),
+          onClick: () => openAgentSettings(agent.id, "environments"),
         },
       ]
     : [];

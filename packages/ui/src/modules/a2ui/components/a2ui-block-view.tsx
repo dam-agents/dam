@@ -44,6 +44,13 @@ export function A2uiBlockView({ blockKey, source }: Props) {
   const outcome = useA2uiConversationState()?.conversation.blocks.get(blockKey);
   if (!outcome) return null;
   const { owned, touched, closed, errors, functionCalls, streaming } = outcome;
+  if (streaming)
+    return (
+      <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+        <Spinner />
+        Preparing a form…
+      </span>
+    );
   return (
     <div className="flex flex-col gap-3">
       {owned.map((id) => (
@@ -61,12 +68,6 @@ export function A2uiBlockView({ blockKey, source }: Props) {
         />
       ))}
       {errors.length > 0 && <A2uiInvalid errors={errors} source={source} />}
-      {streaming && owned.length === 0 && touched.length === 0 && (
-        <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-          <Spinner />
-          Preparing a form…
-        </span>
-      )}
     </div>
   );
 }

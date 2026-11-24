@@ -6,7 +6,7 @@ import {
   type ApprovalResolved,
 } from "../../../events.js";
 import type { RedisBus } from "../../../core/redis-bus.js";
-import { approvalChannelOf } from "../services/ext-authz-gate.js";
+import { approvalChannelOf } from "../services/held-verdict.js";
 import { getLogger } from "../../../core/logger.js";
 import { formatError } from "../../../core/format-error.js";
 

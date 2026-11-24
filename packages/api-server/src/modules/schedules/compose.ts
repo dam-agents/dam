@@ -60,7 +60,6 @@ export interface ComposeSchedulesAtBootOpts {
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<AgentActivityStamp | null>;
   ensureDefault: (agentId: string) => Promise<AgentActivityStamp | null>;
-  defaultPendingAfterMove: (agentId: string) => Promise<boolean>;
   scheduleModelFor: (
     agentId: string,
     model: string,
@@ -72,7 +71,6 @@ export interface ComposeSchedulesAtBootOpts {
   redis: Redis;
   onboardingPending?: (agentId: string) => Promise<boolean>;
   spendHold?: SpendHoldGate;
-  agentDisabled: (agentId: string) => Promise<boolean>;
 }
 
 export function composeSchedulesAtBoot(
@@ -89,7 +87,6 @@ export function composeSchedulesAtBoot(
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
     ensureDefault: opts.ensureDefault,
-    defaultPendingAfterMove: opts.defaultPendingAfterMove,
     scheduleModelFor: opts.scheduleModelFor,
     restoreActivity: opts.restoreActivity,
     activityStamps: createRedisTtlStore<AgentActivityStamp>(
@@ -104,7 +101,6 @@ export function composeSchedulesAtBoot(
       ? { validateSessionChoices: opts.validateSessionChoices }
       : {}),
     ...(opts.spendHold ? { spendHold: opts.spendHold } : {}),
-    agentDisabled: opts.agentDisabled,
     log,
   });
   const worker = startScheduleWorker({

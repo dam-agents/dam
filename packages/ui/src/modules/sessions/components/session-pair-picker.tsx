@@ -11,7 +11,7 @@ import type {
   SessionChoiceSlots,
   SessionPair,
 } from "api-server-api";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Button } from "@/components/ui/button";
@@ -86,6 +86,10 @@ interface CommonProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onConnectProviders: () => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: where Manage providers goes; without it, the Agent's settings modal at Providers. The chat passes its own. */
+  onManageProviders?: () => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: the row the panel opens on when something other than the chip asked for it, as the CurveBender notice's "Use a different provider" asks for the provider choice. */
+  initialFocus?: "provider";
 }
 
 type Props = CommonProps &
@@ -107,6 +111,8 @@ type Props = CommonProps &
           slots: SessionChoiceSlots;
           label: string;
           placeholder: string;
+          /** UNIT_BOUNDARY_DESCRIPTION: what this pick follows while it holds no model, whose Connection the panel shows and whose model a fresh pick starts on. */
+          defaultPair?: SessionPair | null;
           /** UNIT_BOUNDARY_DESCRIPTION: the agent's own default, which this pick follows while neither primary slot is set: a switch on the panel, the values read-only while it is on, and its values copied into the pick when it is switched off. */
           agentDefault?: {
             /** UNIT_BOUNDARY_DESCRIPTION: what the pick follows, a sentence the row card reads under "Use agent default" and the list's first row repeats; with no default set it says so. */
@@ -223,13 +229,15 @@ function withoutSubagentSettings(pair: SessionPair): SessionPair {
  * the agent's Providers page.
  */
 export function SessionPairPicker(props: Props) {
-  const { agentId, open, onOpenChange, onConnectProviders } = props;
+  const { agentId, open, onOpenChange, onConnectProviders, initialFocus } =
+    props;
+  const providerTrigger = useRef<HTMLButtonElement>(null);
   const carried = props.pending ? [] : props.carried;
   const routed = props.pending ? false : (props.routed ?? false);
   const edit = props.pending ? undefined : props.edit;
   const target = props.pending ? undefined : props.target;
   const row = props.pending ? false : (props.row ?? false);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
@@ -238,7 +246,10 @@ export function SessionPairPicker(props: Props) {
   );
   const chosen = edit || target ? null : picked;
   const [fromProfile, setFromProfile] = usePickedProfile(agentId ?? "");
-  const { data: profiles = [] } = useProfiles(agentId);
+  /* UNIT_BOUNDARY_DESCRIPTION: with no agent, only a target lists profiles: the owner's default for new agents may name one, a profile's own editor may not. */
+  const { data: profiles = [] } = useProfiles(
+    agentId ?? (target ? undefined : null),
+  );
   const setPair = useStore((s) => s.setNextSessionPair);
 
   const connections = useProviderConnections(agentId);
@@ -326,10 +337,14 @@ export function SessionPairPicker(props: Props) {
   const lentSubagent = referenceProfile
     ? lentSubagentOfProfile(referenceProfile)
     : null;
+  /* UNIT_BOUNDARY_DESCRIPTION: a profile names a provider template, so the panel and a pick from it name the Connection of that template the destination holds, not the first one that lists the model. */
   const targetPrimary = referenceProfile
     ? {
         harness: referenceProfile.harness,
-        provider: null,
+        provider:
+          providers.granted.find(
+            (p) => p.templateId === referenceProfile.providerTemplate,
+          )?.id ?? null,
         model: referenceProfile.model,
         settings: referenceProfile.settings,
       }
@@ -544,8 +559,8 @@ export function SessionPairPicker(props: Props) {
     providerTemplate: providers.owned.find(
       (p) =>
         p.id ===
-        (findModel(groups, pair?.model ?? null)?.group.connectionId ??
-          pair?.provider),
+        (pair?.provider ??
+          findModel(groups, pair?.model ?? null)?.group.connectionId),
     )?.templateId,
     subagent: subagentFor(
       pair,
@@ -575,11 +590,18 @@ export function SessionPairPicker(props: Props) {
     const provider = providers.granted.find((p) => p.id === id);
     return void showConfirm(
       <DetachProviderMessage
+        agentId={agentId ?? null}
         name={name}
         usage={
           provider
             ? usage(provider)
-            : { kinds: [], schedules: [], pages: [], profiles: [] }
+            : {
+                kinds: [],
+                schedules: [],
+                turnedOffSchedules: 0,
+                pages: [],
+                profiles: [],
+              }
         }
       />,
       `Disconnect ${name} from this agent?`,
@@ -645,9 +667,11 @@ export function SessionPairPicker(props: Props) {
           harnessName(pair.harness) ?? pair.harness,
         );
   const manageProviders = () =>
-    agentId
-      ? navigateToSandboxHome(agentId, "providers")
-      : onConnectProviders();
+    props.onManageProviders
+      ? props.onManageProviders()
+      : agentId
+        ? openAgentSettings(agentId, "providers")
+        : onConnectProviders();
   const agentDefault = target?.agentDefault;
   /* UNIT_BOUNDARY_DESCRIPTION: neither primary slot set is this pick following the agent's default. */
   const following =
@@ -675,10 +699,10 @@ export function SessionPairPicker(props: Props) {
         : undefined;
     const profileProvider =
       explicitProvider ??
-      findModel(groups, profile.model)?.group.connectionId ??
-      connectionId ??
       providers.granted.find((p) => p.templateId === profile.providerTemplate)
         ?.id ??
+      findModel(groups, profile.model)?.group.connectionId ??
+      connectionId ??
       null;
     const values = {
       ...profileValues(pair, profile, profileCapability),
@@ -691,9 +715,12 @@ export function SessionPairPicker(props: Props) {
     <SessionModelPicker
       agentId={agentId}
       carried={carried}
+      providerTriggerRef={providerTrigger}
+      initialFocus={initialFocus}
       harnesses={names}
       pair={pair}
       defaultHarness={defaultHarness}
+      defaultPair={target?.defaultPair ?? null}
       profiles={edit ? undefined : profiles}
       selectedProfileId={primary?.id ?? null}
       {...(!edit && {
@@ -818,6 +845,11 @@ export function SessionPairPicker(props: Props) {
               ? "Profile harness and model"
               : "New session harness and model")
           }
+          onOpenAutoFocus={(event) => {
+            if (initialFocus !== "provider" || !providerTrigger.current) return;
+            event.preventDefault();
+            providerTrigger.current.focus();
+          }}
           onInteractOutside={keepOpenWhileDialog}
           tail={false}
           className={cn(
@@ -832,6 +864,7 @@ export function SessionPairPicker(props: Props) {
         <ToolApprovalPicker
           capability={capability}
           settings={settings}
+          agentApproval={saved?.toolApproval}
           onChange={(changes) => {
             if (!agentId) return;
             setPair(agentId, {
@@ -951,7 +984,7 @@ function HarnessList({
             onClick={() => onPick(h.name)}
             className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:bg-muted aria-pressed:font-medium aria-pressed:text-foreground"
           >
-            <span className="text-muted-foreground">
+            <span className="text-muted-foreground" aria-hidden="true">
               <HarnessIcons harnesses={[h.name]} size="xs" />
             </span>
             {h.displayName}

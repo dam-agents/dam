@@ -15,7 +15,7 @@ func TestBuildEnvoyBootstrapConfigMap_TheLeafIsReadThroughAWatchedSDSFile(t *tes
 	owner := metav1.OwnerReference{APIVersion: "v1", Kind: "ConfigMap", Name: "owner", UID: "uid"}
 	secret := withHostSDS(credSecret("platform-conn-echo", "httpbingo.org"), "httpbingo.org")
 
-	cm, err := BuildEnvoyBootstrapConfigMap("inst-1", "", bootstrapTestCfg, owner, []corev1.Secret{secret}, nil, false)
+	cm, err := BuildEnvoyBootstrapConfigMap("inst-1", "", bootstrapTestCfg, owner, []corev1.Secret{secret}, nil, gatewayChoices{})
 	require.NoError(t, err)
 
 	bootstrap := cm.Data["envoy.yaml"]

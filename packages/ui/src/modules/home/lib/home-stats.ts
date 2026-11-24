@@ -58,7 +58,7 @@ export function agentStates(
   const bucket = (a: AgentView): AgentBucket =>
     a.state === "error" || a.state === "over_budget" || a.overBudget
       ? "trouble"
-      : a.state === "hibernated" || a.state === "hibernating" || a.disabled
+      : a.state === "hibernated" || a.state === "hibernating"
         ? "asleep"
         : workingAgentIds.has(a.id)
           ? "working"

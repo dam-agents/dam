@@ -1,4 +1,6 @@
 import type {
+  CallWorkItem,
+  FileResultInput,
   SatelliteImage,
   SatelliteManifest,
   SatelliteTool,
@@ -66,6 +68,18 @@ export interface WorkerTransport {
   drain(input: { satellite: string; incarnation?: string }): Promise<void>;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a files worker needs of the same transport. A
+ * File Operation has no Job to report against: it is answered on its own request
+ * with `fileResult`, by the registration it was queued for.
+ */
+export type FileWorkerTransport = Pick<
+  WorkerTransport,
+  "connect" | "claim" | "heartbeat" | "drain"
+> & {
+  fileResult(input: FileResultInput): Promise<void>;
+};
+
 export class SatelliteRemovedError extends Error {
   constructor(satellite: string) {
     super(`${satellite} is no longer registered on the platform`);
@@ -97,7 +111,7 @@ export interface WorkerLog {
   line(text: string): void;
 }
 
-function agentLabel(agent: WorkItem["agent"]): string {
+function agentLabel(agent: CallWorkItem["agent"]): string {
   if (agent === undefined) return "an agent";
   return agent.name === null ? agent.id : `${agent.name} (${agent.id})`;
 }
@@ -490,7 +504,7 @@ export function createWorker(deps: {
     tools,
   });
 
-  function startJob(item: WorkItem): void {
+  function startJob(item: CallWorkItem): void {
     running.add(item.sequence);
     claimed.set(item.sequence, incarnation);
     const startedAt = Date.now();
@@ -503,9 +517,6 @@ export function createWorker(deps: {
         sequence: item.sequence,
         tool: item.tool,
         args: item.args,
-        ...(item.transferToken === undefined
-          ? {}
-          : { transferToken: item.transferToken }),
       })
       .then((outcome) => {
         log.line(describeOutcome(item.sequence, outcome, startedAt));
@@ -551,7 +562,7 @@ export function createWorker(deps: {
       if (item.kind === "cancel") {
         log.line(`CANCEL REQUESTED #${item.sequence}`);
         backend.cancel(item.sequence);
-      } else {
+      } else if (item.kind === "call") {
         startJob(item);
         started++;
       }

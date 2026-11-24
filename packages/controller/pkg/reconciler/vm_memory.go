@@ -289,6 +289,9 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 	var up []string
 	lock := r.ownerLock(owner)
 	for _, a := range agents {
+		if r.specFromCustomResources() && !a.Spec.IsVM() {
+			continue
+		}
 		running, err := r.peerShouldRun(ctx, a.Name)
 		if err != nil || !running {
 			continue
@@ -430,7 +433,7 @@ const vmAwaitingWarmUpMessage = "Your VM agents are still starting up after thei
 // UNIT_BOUNDARY_DESCRIPTION: is doing, and the wait ends as a refusal with
 // UNIT_BOUNDARY_DESCRIPTION: vmMemoryFullMessage once nothing has freed room for it
 // UNIT_BOUNDARY_DESCRIPTION: inside memoryReclaimWait.
-const vmAwaitingMemoryMessage = "Your VM agents' memory is full, so an idle agent of yours is being put to sleep to make room. This one starts on its own in a moment."
+const vmAwaitingMemoryMessage = "Your VM agents' memory is full, so the platform is making room from an idle agent of yours. This one starts on its own in a moment."
 
 // UNIT_BOUNDARY_DESCRIPTION: a start the runner refused for memory frees the
 // UNIT_BOUNDARY_DESCRIPTION: room it lacks from the owner's idle agents, and
@@ -461,9 +464,43 @@ func (r *AgentReconciler) reclaimForRefusedStart(ctx context.Context, agent *api
 	}, false, true)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the reclaim for a start the node has not granted room for, measured against what the node holds for the runner. The runner refused the start against its own count of what its machines commit, and that count can be above the controller's: a machine that boots or warms counts at the warm-up floor there, and the controller's reading of it is up to a memory pass old. A need taken from the lower count reads as no need at all, and the start would wait for room nothing frees. So the room held is the larger of the two counts, and a runner whose usage cannot be read leaves the controller's own.
+func (r *AgentReconciler) reclaimForAllocationWait(ctx context.Context, agent *apiv1.Agent, owner string) (int, error) {
+	return r.reclaimRunnerMemory(ctx, owner, agent.Name, func() (int, error) {
+		bound, err := r.runnerAdmitMiB(ctx, owner)
+		if err != nil || bound <= 0 {
+			return 0, err
+		}
+		held, err := r.heldRunnerDemand(ctx, owner, agent, false)
+		if err != nil {
+			return 0, err
+		}
+		heldMiB := held.memoryMiB
+		if committed, ok := r.runnerCommittedMiB(ctx, owner); ok {
+			heldMiB = max(heldMiB, committed)
+		}
+		own := r.accountedMemoryMiB(ctx, owner, agent.Name)
+		return heldMiB + own + r.config.VM.Runner.ReserveMiB - bound, nil
+	}, false, true)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what the owner's runner itself counts its machines as committing, from its usage read, or false when the runner cannot be reached or read.
+func (r *AgentReconciler) runnerCommittedMiB(ctx context.Context, owner string) (int, bool) {
+	runner, err := r.runnerFor(ctx, owner)
+	if err != nil {
+		return 0, false
+	}
+	usage, err := runner.Usage(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "vm memory: reading the runner's committed memory for a start waiting for the node", "owner", owner, "error", err)
+		return 0, false
+	}
+	return int(usage.Memory.CommittedMiB), true
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the refusal quotes the pool out of the same total Home shows, the runner's whole limit, and the room the start itself needs, since a start is refused for that need while the pool can still look half empty. A runner outside the cluster admits against a share of its host's memory the controller never learns, so its refusal goes without figures rather than quote the chart's limit.
 func (r *AgentReconciler) vmMemoryFullMessage(ctx context.Context, agent *apiv1.Agent, owner string) string {
-	const next = "It starts on its own once room frees up, since the platform puts idle agents to sleep to make room when it can, or you can disable an agent you aren't using."
+	const next = "It starts on its own once room frees up, since the platform puts idle agents to sleep to make room when it can, or you can delete an agent you no longer use."
 	if r.config.VM.Runner.HostAddress != "" {
 		return "Your VM agents' memory is full, so this agent can't start yet. " + next
 	}

@@ -1,4 +1,11 @@
-import type { ChannelConfig, ChannelType } from "api-server-api";
+import type {
+  ChannelConfig,
+  ChannelType,
+  SlackBindingModes,
+  SlackDmConnectView,
+  SlackDmDisconnectView,
+  SlackDmStatusView,
+} from "api-server-api";
 import { err, ok, type Result } from "../../../result.js";
 import {
   classifyTrpcError,
@@ -20,10 +27,11 @@ type ChannelList = readonly ChannelConfig[];
 
 export interface ChannelService {
   available(): Promise<ChannelResult<Partial<Record<ChannelType, boolean>>>>;
+  telegramBot(): Promise<ChannelResult<{ username: string } | null>>;
   connectSlack(
     id: string,
     slackChannelId: string,
-    ambient?: boolean,
+    modes?: SlackBindingModes,
   ): Promise<
     Result<
       ChannelList,
@@ -38,6 +46,23 @@ export interface ChannelService {
     id: string,
     slackChannelId?: string,
   ): Promise<ChannelResult<ChannelList>>;
+  slackDmStatus(): Promise<ChannelResult<SlackDmStatusView>>;
+  slackDmConnect(
+    agentId: string,
+    purpose?: string,
+  ): Promise<
+    Result<
+      SlackDmConnectView,
+      | TransportError
+      | AuthRequiredError
+      | ChannelConflictError
+      | ChannelPreconditionError
+      | ChannelInvalidInputError
+    >
+  >;
+  slackDmDisconnect(
+    agentId: string,
+  ): Promise<ChannelResult<SlackDmDisconnectView>>;
 }
 
 export function createChannelService(deps: {
@@ -47,12 +72,16 @@ export function createChannelService(deps: {
     async available() {
       return trpcCall(() => deps.trpc.channels.available.query());
     },
-    async connectSlack(id, slackChannelId, ambient) {
+    async telegramBot() {
+      return trpcCall(() => deps.trpc.channels.telegramBot.query());
+    },
+    async connectSlack(id, slackChannelId, modes) {
       try {
         const agent = await deps.trpc.agents.connectSlack.mutate({
           id,
           slackChannelId,
-          ...(ambient ? { ambient: true } : {}),
+          ...(modes?.ambient !== undefined ? { ambient: modes.ambient } : {}),
+          ...(modes?.history !== undefined ? { history: modes.history } : {}),
         });
         return ok(agent.channels);
       } catch (e) {
@@ -66,6 +95,33 @@ export function createChannelService(deps: {
           return err({ kind: "invalid-input", message });
         return classifyTrpcError(e);
       }
+    },
+    async slackDmStatus() {
+      return trpcCall(() => deps.trpc.channels.slackDmStatus.query());
+    },
+    async slackDmConnect(agentId, purpose) {
+      try {
+        const result = await deps.trpc.channels.slackDmConnect.mutate({
+          agentId,
+          ...(purpose === undefined ? {} : { purpose }),
+        });
+        return ok(result);
+      } catch (e) {
+        const code = trpcErrorCode(e);
+        const message = errorMessage(e);
+        if (code === "CONFLICT")
+          return err({ kind: "channel-conflict", message });
+        if (code === "PRECONDITION_FAILED" || code === "NOT_FOUND")
+          return err({ kind: "channel-precondition", message });
+        if (code === "BAD_REQUEST")
+          return err({ kind: "invalid-input", message });
+        return classifyTrpcError(e);
+      }
+    },
+    async slackDmDisconnect(agentId) {
+      return trpcCall(() =>
+        deps.trpc.channels.slackDmDisconnect.mutate({ agentId }),
+      );
     },
     async disconnectSlack(id, slackChannelId) {
       return trpcCall(async () => {

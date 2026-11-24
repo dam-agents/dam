@@ -17,7 +17,6 @@ const fake = vi.hoisted(() => ({
 
 vi.mock("../../hooks/use-is-desktop.js", () => ({
   useIsDesktop: () => fake.wide,
-  useIsWideDesktop: () => fake.wide,
 }));
 vi.mock("../../store.js", () => {
   const setChecklistExpanded = (expanded: boolean) => {

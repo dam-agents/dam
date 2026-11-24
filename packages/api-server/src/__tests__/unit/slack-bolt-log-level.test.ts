@@ -20,6 +20,7 @@ vi.mock("@slack/bolt", async (importOriginal) => ({
     event() {}
     command() {}
     view() {}
+    action() {}
     error() {}
     async start() {}
     async stop() {}
@@ -38,9 +39,10 @@ describe("Slack Bolt logging", () => {
       renewTokens: async () => {},
       forgetBotToken: () => {},
       helmBotToken: null,
-      appToken: "xapp-test",
+      appToken: { kind: "static", token: "xapp-test" },
       commandName: "/platform",
       onCredentialRejected: async () => {},
+      companionAppIds: new Set<string>(),
     });
 
     expect(await gateway.start({} as SlackGatewayHandlers)).toBe(true);

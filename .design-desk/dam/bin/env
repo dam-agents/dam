@@ -2,7 +2,8 @@
 # bin/env — the design-desk engine for this repository (design-desk docs/profile.md → The engine contract).
 # A live prototype is this repository's own install in an Environment, from the prototype's worktree:
 # `cluster:install --environment` pulls every image the registry already has and builds only the
-# changed ones, which for a design change is the UI. The cluster-ops skill owns those tasks.
+# changed ones, which for a design change is the api-server, the image that serves the UI. The
+# cluster-ops skill owns those tasks.
 # Environment: PROTO_NAME, PROTO_WORKTREE, PROTO_BASE, PROTO_PROFILE_DIR, PROTO_STATE, and PROTO_PORT
 # when the caller picks the backchannel port (the screens instances do).
 set -u
@@ -39,7 +40,7 @@ case "$verb" in
     ;;
   update)
     cd "$PROTO_WORKTREE" || exit 1
-    mise run cluster:build -- --environment "$PROTO_NAME" ui
+    mise run cluster:build -- --environment "$PROTO_NAME" api-server
     ;;
   status)
     if ! ssh -o BatchMode=yes -o ConnectTimeout=20 "env-$PROTO_NAME" true 2>/dev/null; then

@@ -3,7 +3,10 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 import { useArtifactPrint } from "../hooks/use-artifact-print.js";
-import { useArtifactPrompt } from "../hooks/use-artifact-prompt.js";
+import {
+  type ArtifactSessionPrompt,
+  useArtifactPrompt,
+} from "../hooks/use-artifact-prompt.js";
 import { useArtifactRequest } from "../hooks/use-artifact-request.js";
 
 const MODAL_ANIMATION_MS = 220;
@@ -22,7 +25,7 @@ export function DeferredFrame({
   className: string;
   deferMs?: number;
   onSendPrompt?: (prompt: string) => Promise<void>;
-  onNewSessionPrompt?: (prompt: string) => Promise<void>;
+  onNewSessionPrompt?: ArtifactSessionPrompt;
   agentApiArtifactId?: string;
 }) {
   const [mounted, setMounted] = useState(deferMs === 0);

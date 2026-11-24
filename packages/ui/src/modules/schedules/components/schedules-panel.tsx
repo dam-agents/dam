@@ -7,6 +7,7 @@ import { AddRow, ListSection } from "@/components/ui/list-section";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import type { Schedule } from "../../../types.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { AgentModelPicker } from "../../sandboxes/components/agent-model-picker.js";
 import type { SectionHeaderSlot } from "../../sandboxes/components/sandbox-home-header.js";
 import { useSchedules } from "../api/queries.js";
@@ -37,6 +38,7 @@ export function SchedulesPanel({
   onCreated?: (draft: CreatedSchedule) => void;
 }) {
   const schedulesQuery = useSchedules(agentId);
+  const oneTimeTasks = useFeatures().data?.["one-time-tasks"] ?? false;
   const schedules = schedulesQuery.data ?? [];
   const upcoming = schedules.filter((s) => !isPastOnce(s));
   const past = schedules
@@ -91,7 +93,11 @@ export function SchedulesPanel({
         loading={schedulesQuery.isPending}
         error={schedulesQuery.isError && "Couldn't load schedules."}
         isEmpty={upcoming.length === 0}
-        empty="No schedules yet. Create one to run a task on a timetable or once."
+        empty={
+          oneTimeTasks
+            ? "No schedules yet. Create one to run a task on a timetable or once."
+            : "No schedules yet. Create one to run a task on a timetable."
+        }
         onNew={() => setForm({ mode: "create" })}
         newLabel="Create schedule"
         newTestId="schedule-new"
@@ -107,7 +113,9 @@ export function SchedulesPanel({
                 Create schedule
               </p>
               <p className="mt-0.5 text-sm text-muted-foreground">
-                Run a task on a timetable, or once.
+                {oneTimeTasks
+                  ? "Run a task on a timetable, or once."
+                  : "Run a task on a timetable."}
               </p>
             </div>
           </AddRow>
@@ -136,7 +144,9 @@ export function SchedulesPanel({
           )}
         </section>
       )}
-      {!panel && <AgentModelPicker agentId={agentId} kind="scheduled" />}
+      {!panel && upcoming.length > 0 && (
+        <AgentModelPicker agentId={agentId} kind="scheduled" />
+      )}
 
       {form && (
         <ScheduleFormModal

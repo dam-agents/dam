@@ -35,6 +35,9 @@ vi.mock("../../modules/agents/api/queries.js", () => ({
 vi.mock("../../modules/agents/hooks/use-wake-agent.js", () => ({
   useWakeAgent: () => ({ wake: vi.fn() }),
 }));
+vi.mock("../../modules/home/api/queries.js", () => ({
+  useAttention: () => ({ data: undefined }),
+}));
 vi.mock("../../modules/approvals/api/queries.js", () => ({
   useApprovalsForAgent: () => ({ data: [] }),
 }));
@@ -77,6 +80,7 @@ vi.mock("../../modules/sessions/api/queries.js", () => ({
     refetch: vi.fn(),
   }),
   useProvisionalSessions: () => undefined,
+  useAgentSession: () => ({ data: undefined }),
 }));
 
 const { useAgentSessionList } =

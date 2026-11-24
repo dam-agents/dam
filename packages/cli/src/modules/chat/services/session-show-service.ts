@@ -31,6 +31,7 @@ export type ShowError =
 export interface TurnState {
   running: boolean;
   turnStartedAt: string | null;
+  lastError: string | null;
 }
 
 export type WatchEvent =
@@ -77,7 +78,10 @@ function stampOf(params: unknown): string | undefined {
   return typeof at === "string" && at !== "" ? at : undefined;
 }
 
-function turnFromLoad(result: unknown, listed: SessionView): TurnState {
+function turnFromLoad(
+  result: unknown,
+  listed: SessionView,
+): Pick<TurnState, "running" | "turnStartedAt"> {
   const parsed = platformReplayTurnMetaSchema.safeParse(
     platformOf(result)?.turn,
   );
@@ -91,20 +95,27 @@ function turnFromLoad(result: unknown, listed: SessionView): TurnState {
   };
 }
 
+function errorText(error: { message: string; details?: string }): string {
+  return error.details && !error.message.includes(error.details)
+    ? `${error.message}: ${error.details}`
+    : error.message;
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Opens one Session of an Agent for reading, for
  * `dam session show`. Over one connection to the Agent's ACP relay it lists
  * the Agent's sessions, so an unknown id is refused before anything loads,
  * then loads the Session and reads its Session Transcript into steps. The load
  * answer says whether a turn is running and, from a runtime that knows it,
- * when that turn started. After the load, the same connection keeps hearing
- * the Session live: new steps, and `platform/turnStarted` and
+ * when that turn started; a turn that ended with an error leaves that error
+ * on the state, which a new turn clears. After the load, the same connection
+ * keeps hearing the Session live: new steps, and `platform/turnStarted` and
  * `platform/turnEnded`, which the caller may follow until it closes. Every
  * turn end, replayed or live, closes the tool calls its turn left open; a
- * replayed one does not change the turn state, since the load answer already
- * says how the turn stands, and a load that finds no turn running closes what
- * is still open. It never sends a prompt and never answers a permission
- * request.
+ * replayed one changes only the error the last turn left, since the load
+ * answer already says how the turn stands, and a load that finds no turn
+ * running closes what is still open. It never sends a prompt and never
+ * answers a permission request.
  */
 export function createSessionShowService(
   deps: SessionShowServiceDeps,
@@ -125,7 +136,11 @@ export function createSessionShowService(
       };
       let loaded = false;
       let loadToken = "";
-      const turn: TurnState = { running: false, turnStartedAt: null };
+      const turn: TurnState = {
+        running: false,
+        turnStartedAt: null,
+        lastError: null,
+      };
 
       let conn: RunConnection;
       try {
@@ -143,6 +158,16 @@ export function createSessionShowService(
               method === "platform/turnEnded"
                 ? platformTurnEndedParamsSchema.safeParse(params)
                 : null;
+            const started =
+              method === "platform/turnStarted"
+                ? platformTurnStartedParamsSchema.safeParse(params)
+                : null;
+            if (started?.success) turn.lastError = null;
+            if (ended?.success)
+              turn.lastError =
+                ended.data.error === undefined
+                  ? null
+                  : errorText(ended.data.error);
             if (ended?.success) {
               const settled = log.settle(
                 stampOf(params) ?? now().toISOString(),
@@ -152,10 +177,7 @@ export function createSessionShowService(
                 for (const change of settled) emit({ kind: "step", change });
             }
             if (!loaded || platformOf(params)?.replayFor === loadToken) return;
-            if (
-              method === "platform/turnStarted" &&
-              platformTurnStartedParamsSchema.safeParse(params).success
-            ) {
+            if (started?.success) {
               turn.running = true;
               turn.turnStartedAt = now().toISOString();
               emit({ kind: "turn", turn: { ...turn } });

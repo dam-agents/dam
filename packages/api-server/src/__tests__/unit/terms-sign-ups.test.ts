@@ -1,5 +1,5 @@
 // TEST_OVERVIEW: The signUps install value decides whether a user who has never accepted the Terms of Use may accept them and start. Open admits everyone; closed turns away only those new users, while a user with any earlier acceptance still accepts a new Terms version.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AcceptedAcceptance, ApiContext, SignUps } from "api-server-api";
 import { appRouter } from "api-server-api/router";
 import type { TermsAcceptancesRepository } from "../../modules/terms/infrastructure/terms-acceptances-repository.js";
@@ -29,11 +29,13 @@ function setup(signUps: SignUps, acceptedVersions: string[] = []) {
     repo,
     signUps,
   });
+  const provisionAssistant = vi.fn(async () => {});
   const ctx = {
     terms,
+    provisionAssistant,
     user: { sub: "user-1", preferredUsername: "u", scopes: [], agentIds: "*" },
   } as unknown as ApiContext;
-  return { caller: appRouter.createCaller(ctx), terms };
+  return { caller: appRouter.createCaller(ctx), terms, provisionAssistant };
 }
 
 describe("terms.accept under the signUps value", () => {
@@ -41,6 +43,20 @@ describe("terms.accept under the signUps value", () => {
     const { caller, terms } = setup("open");
     await caller.terms.accept({ version: "v2" });
     expect(await terms.isAccepted("user-1")).toBe(true);
+  });
+
+  // TEST_SCENARIO: accepting is the moment a person becomes admitted, so the request that accepts also gives them their assistant, if the install offers one and the feature is on for them.
+  it("offers the assistant once the acceptance lands", async () => {
+    const { caller, provisionAssistant } = setup("open");
+    await caller.terms.accept({ version: "v2" });
+    expect(provisionAssistant).toHaveBeenCalledTimes(1);
+  });
+
+  // TEST_SCENARIO: a refused acceptance admits nobody, so no assistant is offered either.
+  it("offers nothing when the acceptance is refused", async () => {
+    const { caller, provisionAssistant } = setup("closed");
+    await expect(caller.terms.accept({ version: "v2" })).rejects.toThrow();
+    expect(provisionAssistant).not.toHaveBeenCalled();
   });
 
   // TEST_SCENARIO: The kill switch — a user with no acceptance on record is refused with FORBIDDEN and a message the Terms page shows, and nothing is recorded, so the Terms gate keeps them out of every other route.

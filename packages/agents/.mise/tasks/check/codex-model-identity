@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+#MISE description="Codex's model instructions open with the platform's model, not the release's GPT-5 one"
+#MISE sources=["codex/rootfs/etc/codex/model-instructions.md", ".mise/tasks/check/codex-model-identity"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+# The file is the pinned release's gpt-5.5 entry copied from the release, and a
+# pin bump re-copies it. Its own opening said "a coding agent based on GPT-5"
+# whatever the router served, and QA caught 3 of 3 DeepSeek sessions on dam-dev
+# repeating that, while the chip and Usage said DeepSeek. The platform's
+# opening replaces it; the rest of the file stays the release's.
+set -euo pipefail
+cd "$(dirname "$0")/../../.."
+f=codex/rootfs/etc/codex/model-instructions.md
+want="You are Codex, a coding agent.
+The model that serves you is the one the user picked on the platform, and it is not necessarily an OpenAI model, so do not assume you are GPT-5 or that OpenAI trained you.
+If the user asks which model runs and you cannot tell, say the platform picked it and the session's model picker names it."
+got="$(head -n 3 "$f")"
+if [ "$got" != "$want" ]; then
+  echo "codex-model-identity: $f must open with the platform's three lines, not the release's:" >&2
+  printf '  %s\n' "$got" >&2
+  exit 1
+fi
+if bad="$(tail -n +4 "$f" | grep -nE '\bGPT-[0-9]|trained by OpenAI')"; then
+  echo "codex-model-identity: $f names an OpenAI model below the opening, which the router need not serve:" >&2
+  echo "$bad" >&2
+  exit 1
+fi
+echo "codex-model-identity: ok"

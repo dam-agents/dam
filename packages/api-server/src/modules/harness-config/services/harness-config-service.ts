@@ -4,10 +4,8 @@ import {
   harnessCapability,
   harnessConfigCatalog,
   routesByModelName,
+  agentToolApprovalSetting,
   routesSessionPairs,
-  isPlatformSubagentSetting,
-  platformSubagentSettingsError,
-  sessionSettingsError,
   type HarnessCapability,
   type HarnessConfigCatalog,
 } from "agent-runtime-api";
@@ -31,7 +29,7 @@ import {
   qualifiedPairModel,
   sameModelName,
   resolveSessionPair,
-  runSubagentSettings,
+  defaultSettingsProblem,
   splitPlatformSubagent,
   withoutPairApproval,
   withPlatformSubagent,
@@ -205,6 +203,26 @@ export function createHarnessConfigService(deps: {
       notifyDefaultChanged(agentId);
     },
 
+    async setToolApproval(agentId, toolApproval) {
+      await requireOwned(agentId);
+      const carried = harnessesOf(await deps.getCapabilities(agentId)) ?? [];
+      const taken = carried.some(
+        (h) =>
+          agentToolApprovalSetting(h.harnessConfigCatalog, toolApproval, {
+            model: null,
+            unattended: false,
+          }) !== null,
+      );
+      if (toolApproval !== null && carried.length > 0 && !taken)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `none of this agent's harnesses takes the ${toolApproval} tool approval from the agent`,
+        });
+      await deps.pairRepo.writeToolApproval(agentId, toolApproval);
+      await deps.publishDefaults(agentId);
+      notifyDefaultChanged(agentId);
+    },
+
     async rememberSessionPair(agentId, kind, pair, references) {
       await requireOwned(agentId);
       if ((references?.profileId ?? null) !== null && kind !== "chat")
@@ -342,33 +360,16 @@ export function createHarnessConfigService(deps: {
         code: "BAD_REQUEST",
         message: `the ${pair.harness} harness cannot run on that provider`,
       });
-    const harness = carried.find((h) => h.name === pair.harness);
-    /* UNIT_BOUNDARY_DESCRIPTION: a save checks the settings a run would take, native subagent values derived by the one rule against the owner catalog the picker lists, yet it neither returns nor stores them: the default stays platform-level (D193B). */
-    const derived = runSubagentSettings(
-      harness,
+    const invalid = defaultSettingsProblem(
+      carried,
       await deps.ownerCatalog(agentId),
       pair,
-      pair.settings,
     );
-    const unsupported = Object.keys(derived).find(
-      (id) =>
-        !(isPlatformSubagentSetting(id)
-          ? harness?.platformSubagentSettings
-          : harness?.sessionSettings?.includes(id)),
-    );
-    const invalid = unsupported
-      ? `the ${pair.harness} harness cannot keep ${unsupported} as a default`
-      : (sessionSettingsError(
-          harness?.harnessConfigCatalog,
-          derived,
-          pair.model,
-        ) ??
-        platformSubagentSettingsError(
-          derived,
-          (h) => carried.find((c) => c.name === h)?.harnessConfigCatalog,
-        ));
     if (invalid) throw new TRPCError({ code: "BAD_REQUEST", message: invalid });
-    return withoutPairApproval(pair, harness?.harnessConfigCatalog);
+    return withoutPairApproval(
+      pair,
+      carried.find((h) => h.name === pair.harness)?.harnessConfigCatalog,
+    );
   }
 
   function notifyDefaultChanged(agentId: string): void {
@@ -523,6 +524,8 @@ export interface PairResolverDeps {
   ownerCatalog: (
     agentId: string,
   ) => Promise<Pick<OwnerModelCatalogView, "providers">>;
+  /* UNIT_BOUNDARY_DESCRIPTION: present only where the deployment offers its shared CurveBender: an Agent holding no provider at all is then refused as still setting up while that grant is asked for, since the provider is on its way and the next run finds it. */
+  onNoProvider?: (agentId: string) => void;
 }
 
 export async function resolveRememberedPair(
@@ -537,8 +540,14 @@ export async function resolveRememberedPair(
  * UNIT_BOUNDARY_DESCRIPTION: the pair an unattended run asks the agent for —
  * the one it names, or, naming only a model, that model on the agent's own
  * harness, or else the default saved for its kind of run (chat, channel or
- * scheduled, the last two falling back to chat). With no model named or
- * saved for the harness, the run takes the automatic model. Undefined when
+ * scheduled, the last two falling back to chat). With no model in the
+ * resolved pair, the run takes the automatic model of the providers the
+ * agent holds, whether it saved a model its provider no longer serves or a
+ * chat profile that cannot run, and the saved harness is kept. A pair that
+ * still has no model while the agent holds a fitting provider goes to the
+ * agent as it is, for the runtime to resolve; only an agent holding no
+ * provider at all is refused, as still setting up where the deployment's
+ * shared CurveBender is on its way to it. Undefined when
  * the agent's runtime holds one harness only and would ignore a pair, or runs
  * a harness the catalog does not offer, such as a custom template's own.
  */
@@ -564,8 +573,16 @@ export async function resolveFirePair(
   if (!deps.catalog.harnesses.some((h) => h.name === agentHarness))
     return undefined;
   const routed = routesByModelName(capabilities);
-  const requestedHarness = preferred.harness ?? stored?.harness ?? agentHarness;
-  const savedForHarness = stored?.harness === requestedHarness ? stored : null;
+  /* UNIT_BOUNDARY_DESCRIPTION: a chat profile that cannot run reads as no default, so the pair it names stands in for the run rather than the agent's default harness, its model included: the pair resolver keeps that model only where a provider the agent holds serves it, and drops it for the automatic model otherwise. */
+  const profileFallback =
+    stored === null
+      ? ((await deps.pairRepo.readSaved(agentId)).chatProfilePair ?? null)
+      : null;
+  const runPair = stored ?? profileFallback;
+  const requestedHarness =
+    preferred.harness ?? runPair?.harness ?? agentHarness;
+  const savedForHarness =
+    runPair?.harness === requestedHarness ? runPair : null;
   const remembered: SessionPair | null = routed
     ? {
         harness: requestedHarness,
@@ -584,10 +601,11 @@ export async function resolveFirePair(
       : preferred.model !== undefined
         ? {
             harness: agentHarness,
-            provider: stored?.harness === agentHarness ? stored.provider : null,
+            provider:
+              runPair?.harness === agentHarness ? runPair.provider : null,
             model: preferred.model,
           }
-        : stored;
+        : runPair;
   const pair = resolveSessionPair({
     remembered,
     agentHarness,
@@ -597,28 +615,18 @@ export async function resolveFirePair(
       harnessFits(deps.catalog, harness, type, templateId),
     routed,
   });
-  /** UNIT_BOUNDARY_DESCRIPTION: a chat profile that cannot run reads as no default, yet it is the owner's choice, so it is refused, never replaced by the automatic model. */
-  const refusedProfile = async (): Promise<boolean> => {
-    const saved = await deps.pairRepo.readSaved(agentId);
-    return (
-      saved.chatProfileId !== null &&
-      saved.chat === null &&
-      (kind === "chat" || saved[kind] === null)
-    );
-  };
-  if (routed && pair?.model === null && !remembered?.model) {
-    if (await refusedProfile()) {
-      if (requireLeases)
-        throw new NoDefaultModelError(undefined, { profile: true });
-      return pair;
-    }
+  if (routed && pair?.model === null) {
     const automatic = automaticModel(
       (await deps.ownerCatalog(agentId)).providers,
       pair,
     );
     if (automatic) return { ...pair, ...automatic };
+    /* UNIT_BOUNDARY_DESCRIPTION: a fitting provider that has listed nothing yet still runs the pair once its listing lands, so the runtime resolves the model; an agent holding no provider at all is refused as still setting up where a shared CurveBender is being granted to it, and asked for that grant here, since it may have said hello before the deployment offered its key. */
+    if (requireLeases && granted.length === 0) {
+      if (!deps.onNoProvider) throw new NoDefaultModelError();
+      deps.onNoProvider(agentId);
+      throw new NoDefaultModelError({ pending: true });
+    }
   }
-  if (requireLeases && routed && pair?.model === null && granted.length > 0)
-    throw new NoDefaultModelError(remembered?.model ?? undefined);
   return pair;
 }

@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { Db } from "db";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import {
   connectionAuthConfigSchema,
   type Connection,
@@ -11,6 +13,9 @@ import { gitHubAppMintLockKey } from "../../modules/connections/services/github-
 import { createGitHubAppEngine } from "../../modules/connections/infrastructure/github-app-engine.js";
 import { sdsFileKeyForHost } from "../../modules/connections/domain/connection-sds.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
+
+const securityLog = vi.hoisted(() => vi.fn());
+vi.mock("../../core/security-log.js", () => ({ securityLog }));
 
 const NOW_MS = 1_800_000_000_000;
 
@@ -52,11 +57,18 @@ const CONN: Connection = {
 function makeDeps(opts: {
   privateKey: string | null;
   reReadAuth?: ConnectionAuthConfig;
+  tokenStatus?: number;
+  keyAfterMint?: string | null;
+  writeMatches?: boolean;
 }) {
   const reReadAuth = opts.reReadAuth ?? AUTH;
   const putCalls: { path: string; fields: Record<string, string> }[] = [];
+  let keyReads = 0;
   const secretStore = {
-    getField: async () => opts.privateKey,
+    getField: async () =>
+      keyReads++ > 0 && opts.keyAfterMint !== undefined
+        ? opts.keyAfterMint
+        : opts.privateKey,
     putFields: async (
       ref: { path: string },
       fields: Record<string, string>,
@@ -65,12 +77,21 @@ function makeDeps(opts: {
     },
   } as unknown as SecretStore;
 
-  const dbUpdates: { auth: unknown }[] = [];
+  const dbUpdates: { auth: unknown; where?: SQL }[] = [];
   const db = {
     update: () => ({
       set: (row: { auth: unknown }) => {
-        dbUpdates.push(row);
-        return { where: async () => ({ rowCount: 1 }) };
+        const update: { auth: unknown; where?: SQL } = { ...row };
+        dbUpdates.push(update);
+        return {
+          where: (where: SQL) => {
+            update.where = where;
+            return Object.assign(Promise.resolve([]), {
+              returning: async () =>
+                opts.writeMatches === false ? [] : [{ id: "matched" }],
+            });
+          },
+        };
       },
     }),
     select: () => ({
@@ -97,6 +118,11 @@ function makeDeps(opts: {
     fetchImpl: (async (url: RequestInfo | URL, init?: RequestInit) => {
       tokenCalls.push(String(url));
       tokenBodies.push(typeof init?.body === "string" ? init.body : undefined);
+      if (opts.tokenStatus)
+        return new Response(JSON.stringify({ message: "refused" }), {
+          status: opts.tokenStatus,
+          headers: { "content-type": "application/json" },
+        });
       return new Response(
         JSON.stringify({
           token: "ghs_next",
@@ -264,5 +290,93 @@ describe("github-app re-mint with picked repository ids", () => {
     const parsed = connectionAuthConfigSchema.safeParse(ID_AUTH);
     expect(parsed.success).toBe(true);
     if (parsed.success) expect(parsed.data).toEqual(ID_AUTH);
+  });
+});
+
+describe("github-app re-mint refused on the installation's key", () => {
+  const PARENT_ID = "installation-1";
+  const CHILD: Connection = { ...CONN, parentId: PARENT_ID };
+
+  // TEST_SCENARIO: GitHub answers 401 to a connection made from an installation: the key is dead, so the installation itself is marked, under its own mint lock, and then says its key needs replacing.
+  it("marks the installation when GitHub refuses its key", async () => {
+    securityLog.mockClear();
+    const deps = makeDeps({ privateKey: PRIVATE_KEY_PEM, tokenStatus: 401 });
+    await expect(remintGitHubAppOne(CHILD, AUTH, deps)).rejects.toThrow(/401/);
+    expect(deps.lockKeys).toEqual([
+      gitHubAppMintLockKey(CHILD.id),
+      gitHubAppMintLockKey(PARENT_ID),
+    ]);
+    expect(deps.dbUpdates).toHaveLength(1);
+    expect(deps.dbUpdates[0]).toHaveProperty("updatedAt");
+    expect(securityLog).toHaveBeenCalledWith(
+      "warn",
+      "connection.installation_key_refused",
+      expect.objectContaining({ target: PARENT_ID, decision: "expired" }),
+    );
+  });
+
+  // TEST_SCENARIO: the mark targets the installation's own row, only while it is a GitHub App installation that is not marked yet.
+  it("writes the mark to the installation's row only, once", async () => {
+    const deps = makeDeps({ privateKey: PRIVATE_KEY_PEM, tokenStatus: 401 });
+    await expect(remintGitHubAppOne(CHILD, AUTH, deps)).rejects.toThrow(/401/);
+    const where = new PgDialect().sqlToQuery(deps.dbUpdates[0]!.where!);
+    expect(where.sql).toContain(`"connections"."id" = $1`);
+    expect(where.params[0]).toBe(PARENT_ID);
+    expect(where.sql).toContain(`->> 'kind' = 'github-app'`);
+    expect(where.sql).toContain(`-> 'refreshFailedAt') IS NULL`);
+  });
+
+  // TEST_SCENARIO: an installation already marked matches no row, so the event is not logged again.
+  it("logs nothing when the installation is already marked", async () => {
+    securityLog.mockClear();
+    const deps = makeDeps({
+      privateKey: PRIVATE_KEY_PEM,
+      tokenStatus: 401,
+      writeMatches: false,
+    });
+    await expect(remintGitHubAppOne(CHILD, AUTH, deps)).rejects.toThrow(/401/);
+    expect(deps.dbUpdates).toHaveLength(1);
+    expect(securityLog).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: a key replaced while the mint was out is not the key GitHub refused, so the installation is not marked.
+  it("leaves the installation alone when its key was replaced meanwhile", async () => {
+    const deps = makeDeps({
+      privateKey: PRIVATE_KEY_PEM,
+      tokenStatus: 401,
+      keyAfterMint: "a newer key",
+    });
+    await expect(remintGitHubAppOne(CHILD, AUTH, deps)).rejects.toThrow(/401/);
+    expect(deps.lockKeys).toContain(gitHubAppMintLockKey(PARENT_ID));
+    expect(deps.dbUpdates).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: a refused scope (422) or a removed installation (404) is not a dead key; a new key would not fix it, so only the connection fails.
+  it.each([422, 404])(
+    "leaves the installation alone on a %i",
+    async (tokenStatus) => {
+      const scoped: Extract<ConnectionAuthConfig, { kind: "github-app" }> = {
+        ...AUTH,
+        repositories: ["docs"],
+      };
+      const deps = makeDeps({
+        privateKey: PRIVATE_KEY_PEM,
+        reReadAuth: scoped,
+        tokenStatus,
+      });
+      await expect(
+        remintGitHubAppOne({ ...CHILD, auth: scoped }, scoped, deps),
+      ).rejects.toThrow(String(tokenStatus));
+      expect(deps.lockKeys).toEqual([gitHubAppMintLockKey(CHILD.id)]);
+      expect(deps.dbUpdates).toHaveLength(0);
+    },
+  );
+
+  // TEST_SCENARIO: a connection with no parent has no installation to mark; its own failure marker stays the refresh loop's.
+  it("marks nothing else for a connection with no parent", async () => {
+    const deps = makeDeps({ privateKey: PRIVATE_KEY_PEM, tokenStatus: 401 });
+    await expect(remintGitHubAppOne(CONN, AUTH, deps)).rejects.toThrow(/401/);
+    expect(deps.lockKeys).toEqual([gitHubAppMintLockKey(CONN.id)]);
+    expect(deps.dbUpdates).toHaveLength(0);
   });
 });

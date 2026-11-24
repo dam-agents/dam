@@ -27,6 +27,7 @@ export function SkillsSearchHeader({
   matchCount,
   notice,
   actions,
+  onWord = "enabled",
 }: {
   query: string;
   onQueryChange: (query: string) => void;
@@ -34,10 +35,12 @@ export function SkillsSearchHeader({
   matchCount: number | null;
   notice?: ReactNode;
   actions?: ReactNode;
+  /** UNIT_BOUNDARY_DESCRIPTION: the word for installed skills in the counts line: "enabled" in the Agent's settings, "on" in the + menu, as the design writes it there. */
+  onWord?: string;
 }) {
   const countsText =
     matchCount === null
-      ? `${plural(totals.skills, "skill")} · ${plural(totals.sources, "connected source")} · ${totals.on} enabled`
+      ? `${plural(totals.skills, "skill")} · ${plural(totals.sources, "connected source")} · ${totals.on} ${onWord}`
       : `${plural(matchCount, "skill")} ${matchCount === 1 ? "matches" : "match"} “${query}”`;
   const announced = useDebouncedValue(countsText, 300);
   return (

@@ -71,6 +71,8 @@ interface CollectedUpdate {
 
 export type ConnectionState = "idle" | "live" | "reloading" | "reconnecting";
 
+type PendingReload = "channel-dropped" | "load-error-cleared";
+
 interface UseAcpConnectionOptions {
   selectedAgent: string | null;
   sessionId: string | null;
@@ -121,6 +123,7 @@ interface UseAcpConnectionResult {
   clearRuntimeIdle: (sid: string) => void;
   connectionRef: React.MutableRefObject<LiveConnection | null>;
   retry: () => void;
+  reloadOnFreshChannel: () => void;
   reset: () => void;
 }
 
@@ -147,7 +150,7 @@ export function useAcpConnection(
   const reconnectAttemptRef = useRef(0);
   const isMountedRef = useRef(true);
   const reconnectFnRef = useRef<(() => void) | null>(null);
-  const pendingReloadRef = useRef(false);
+  const pendingReloadRef = useRef<PendingReload | null>(null);
   const generationRef = useRef(0);
   const agentForksRef = useRef(false);
   const startInFlightRef = useRef<{
@@ -182,7 +185,8 @@ export function useAcpConnection(
         if (connectionRef.current?.ws !== ws) return;
         connectionRef.current = null;
         clearEngagement();
-        if (useStore.getState().sessionId) pendingReloadRef.current = true;
+        if (useStore.getState().sessionId)
+          pendingReloadRef.current = "channel-dropped";
         delivery.cancelAll();
         setMessages((prev) => failQueuedOnDisconnect(prev));
         setState("idle");
@@ -215,7 +219,7 @@ export function useAcpConnection(
       attachCloseHandler(ws);
       connectionRef.current = { connection, ws };
       bindEngagement(startedSessionId);
-      pendingReloadRef.current = false;
+      pendingReloadRef.current = null;
       generationRef.current += 1;
       ensureInFlightRef.current = null;
       setState("live");
@@ -251,6 +255,7 @@ export function useAcpConnection(
       }
       const continuedFrom = read?.kind === "ready" ? read.copy : null;
 
+      let generation = generationRef.current;
       let listening = true;
       let settled = false;
       let kept = false;
@@ -258,7 +263,8 @@ export function useAcpConnection(
       const { connection, ws, forksSessions } = await openInitializedConnection(
         selectedAgent,
         withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
-          if (listening) handler(update, updateSessionId, frame);
+          if (listening && generation === generationRef.current)
+            handler(update, updateSessionId, frame);
         }),
       );
       ws.addEventListener("close", () => releaseStartSlot(holders));
@@ -319,6 +325,7 @@ export function useAcpConnection(
             continuedFrom,
             capabilities,
           );
+          generation = generationRef.current;
           return true;
         },
         finish: () => {
@@ -391,10 +398,12 @@ export function useAcpConnection(
     const existing = connectionRef.current;
     if (existing && existing.ws.readyState === WebSocket.OPEN) return existing;
     if (!selectedAgent) throw new Error("No agent selected");
+    const generation = generationRef.current;
     const handler = makeUpdateHandler();
     const { connection, ws, forksSessions } = await openInitializedConnection(
       selectedAgent,
       withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
+        if (generation !== generationRef.current) return;
         const collector = collectorRef.current;
         if (
           collector &&
@@ -407,6 +416,10 @@ export function useAcpConnection(
         handler(update, updateSessionId, frame);
       }),
     );
+    if (generation !== generationRef.current) {
+      ws.close();
+      throw new Error("The session changed while its connection was opening");
+    }
     attachCloseHandler(ws);
     connectionRef.current = { connection, ws };
     agentForksRef.current = forksSessions;
@@ -579,7 +592,7 @@ export function useAcpConnection(
           idleSessionsRef.current.set(sid, Date.now());
         else idleSessionsRef.current.delete(sid);
         bindEngagement(sid);
-        pendingReloadRef.current = false;
+        pendingReloadRef.current = null;
         setState("live");
       }
       return replayed;
@@ -601,9 +614,8 @@ export function useAcpConnection(
     if (!selectedAgent) return null;
     const generation = generationRef.current;
 
-    const reloadSid = pendingReloadRef.current
-      ? useStore.getState().sessionId
-      : null;
+    const pendingReload = pendingReloadRef.current;
+    const reloadSid = pendingReload ? useStore.getState().sessionId : null;
 
     const live = await openConnection();
     if (generation !== generationRef.current) {
@@ -614,7 +626,7 @@ export function useAcpConnection(
     }
 
     if (reloadSid) {
-      setState("reloading");
+      if (pendingReload === "channel-dropped") setState("reloading");
       let fresh: Message[];
       try {
         fresh = await loadSessionHistory(reloadSid);
@@ -706,7 +718,7 @@ export function useAcpConnection(
     connectionRef.current?.ws.close();
     connectionRef.current = null;
     clearEngagement();
-    pendingReloadRef.current = false;
+    pendingReloadRef.current = null;
     generationRef.current += 1;
     ensureInFlightRef.current = null;
     startInFlightRef.current = null;
@@ -744,9 +756,24 @@ export function useAcpConnection(
     ensureLive().catch(() => {});
   }, [ensureLive]);
 
+  const reloadOnFreshChannel = useCallback(() => {
+    const stale = connectionRef.current;
+    connectionRef.current = null;
+    clearEngagement();
+    generationRef.current += 1;
+    ensureInFlightRef.current = null;
+    pendingReloadRef.current = "load-error-cleared";
+    stale?.ws.close();
+    ensureLive().catch(() => {
+      pendingReloadRef.current = null;
+      ensureLive().catch(() => reconnectFnRef.current?.());
+    });
+  }, [clearEngagement, ensureLive]);
+
   return {
     state,
     retry,
+    reloadOnFreshChannel,
     ensureLive,
     engageAside,
     beginSession,

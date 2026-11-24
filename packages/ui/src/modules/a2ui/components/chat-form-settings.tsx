@@ -72,9 +72,12 @@ export function ChatFormSettings({ agentId }: { agentId: string }) {
   const save = useSetChatFormPreferences();
   if (!enabled)
     return (
-      <p className="text-sm text-muted-foreground">
-        Chat forms are an experimental feature, and it is off for your account.
-      </p>
+      <section className="mb-8">
+        <p className="text-sm text-muted-foreground">
+          Chat forms are an experimental feature, and it is off for your
+          account.
+        </p>
+      </section>
     );
   if (!data) return null;
 

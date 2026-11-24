@@ -45,6 +45,13 @@ export const sessionsRouter = t.router({
       sessionId: await ctx.sessions.byRef(input.ref),
     })),
 
+  invocationRun: t.procedure
+    .input(sessionByRefInputSchema)
+    .query(async ({ ctx, input }) => {
+      const found = await ctx.sessions.invocationRun(input.ref);
+      return { run: found?.run ?? null, sessionId: found?.sessionId ?? null };
+    }),
+
   storeDelegationFrames: t.procedure
     .input(storeDelegationFramesInputSchema)
     .mutation(({ ctx, input }) => ctx.sessions.storeDelegationFrames(input)),

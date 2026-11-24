@@ -13,6 +13,10 @@ modelRouter:
   native:
     templates: [bedrock]
     models: listed
+  # A web terminal can start with no model, and neither does the saved
+  # default always name one the router lists; pi-dynamic-providers then starts
+  # Pi on the platform's preferred work model, not the catalog's first.
+  preferredModelEnv: PLATFORM_PREFERRED_MODEL
 
 # Pi's bash tool sets the session's id on every command it runs, and pi-acp
 # uses Pi's own id as the session's, so git's trace names the session that

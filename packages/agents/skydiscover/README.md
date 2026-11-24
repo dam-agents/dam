@@ -38,7 +38,7 @@ How the pod reaches models without holding keys (`openai/`-prefixed model ids
 
 ```sh
 mise run //packages/agents:oci -- skydiscover   # the default image plus this workload's mise environment
-mise run cluster:build -- agents                 # rebuild + restart agent pods in the dev cluster
+mise run cluster:build -- agents                 # rebuild + restart agents in the dev cluster
 ```
 
 The pinned commit is the `version` in [`image.toml`](image.toml).

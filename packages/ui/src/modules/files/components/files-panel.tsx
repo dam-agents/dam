@@ -30,6 +30,7 @@ import { InlineNameRow } from "./inline-name-row.js";
 export function FilesPanel({
   open,
   onToggle,
+  onClose,
   className,
   style,
   ref,
@@ -37,6 +38,7 @@ export function FilesPanel({
 }: {
   open: boolean;
   onToggle?: () => void;
+  onClose?: () => void;
   className?: string;
   style?: CSSProperties;
   ref?: Ref<HTMLDivElement>;
@@ -98,6 +100,7 @@ export function FilesPanel({
       title="Files"
       open={open}
       onToggle={onToggle}
+      onClose={onClose}
       headerRight={headerActions}
       className={className}
       headerClassName="border-t border-border"

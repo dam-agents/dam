@@ -7,6 +7,7 @@ interface AwaitResult {
   failed?: unknown[];
   running?: unknown[];
   unknown?: unknown[];
+  deliveredAsTurn?: unknown[];
 }
 
 export function isAwaitSubAgentsChip(chip: ToolChip): boolean {
@@ -44,8 +45,10 @@ export function awaitChipTitle(chip: ToolChip): string {
     ["failed", result.failed?.length ?? 0],
     ["running", result.running?.length ?? 0],
     ["unknown", result.unknown?.length ?? 0],
+    ["delivered as a turn", result.deliveredAsTurn?.length ?? 0],
   ] as const;
   const total = counts.reduce((sum, [, n]) => sum + n, 0);
   const parts = counts.filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k}`);
-  return `Waited on ${plural(total, "sub-agent")} — ${parts.join(", ")}`;
+  const waited = `Waited on ${plural(total, "sub-agent")}`;
+  return parts.length > 0 ? `${waited} — ${parts.join(", ")}` : waited;
 }

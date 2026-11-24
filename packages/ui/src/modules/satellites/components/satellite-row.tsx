@@ -62,13 +62,22 @@ export function SatelliteRow({
 }: Props) {
   const [toolsShown, setToolsShown] = useState(false);
   const rowId = `satellite-${satellite.name}`;
-  const tag = [toolCount(satellite.tools.length), satellite.host]
-    .filter(Boolean)
-    .join(" · ");
+  const tag =
+    satellite.kind === "files"
+      ? [
+          "files",
+          satellite.filesWritable ? "writable" : "read-only",
+          satellite.host,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : [toolCount(satellite.tools.length), satellite.host]
+          .filter(Boolean)
+          .join(" · ");
 
   return (
     <div data-testid={rowId}>
-      <div className="flex items-center gap-2 px-4 py-3">
+      <div className="@container flex items-center gap-2 px-4 py-3">
         <div className="flex min-w-[160px] flex-1 flex-wrap items-center gap-2">
           <Satellite size={16} className="shrink-0 text-foreground/80" />
           <p
@@ -93,9 +102,11 @@ export function SatelliteRow({
           label={`Actions for ${satellite.name}`}
           testId={`${rowId}-menu`}
         >
-          <DropdownMenuItem onSelect={() => setToolsShown((v) => !v)}>
-            {toolsShown ? "Hide tools" : "Show tools"}
-          </DropdownMenuItem>
+          {satellite.kind === "tools" && (
+            <DropdownMenuItem onSelect={() => setToolsShown((v) => !v)}>
+              {toolsShown ? "Hide tools" : "Show tools"}
+            </DropdownMenuItem>
+          )}
           {grant?.granted && (
             <DropdownMenuItem onSelect={() => grant.onToggle(false)}>
               Remove from this agent
@@ -112,7 +123,9 @@ export function SatelliteRow({
           )}
         </RowActionsMenu>
       </div>
-      {toolsShown && <SatelliteTools tools={satellite.tools} />}
+      {toolsShown && satellite.kind === "tools" && (
+        <SatelliteTools tools={satellite.tools} />
+      )}
     </div>
   );
 }

@@ -141,7 +141,7 @@ function PlaceLink({
   agentId: string | null;
 }) {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const place = levelPlace(level);
   if (!place || (place.kind === "agent" && !agentId)) return null;
   return (
@@ -154,7 +154,7 @@ function PlaceLink({
         onClick={() =>
           place.kind === "settings"
             ? navigateToSettings(place.tab)
-            : agentId && navigateToSandboxHome(agentId, place.section)
+            : agentId && openAgentSettings(agentId, place.section)
         }
       >
         {place.label}

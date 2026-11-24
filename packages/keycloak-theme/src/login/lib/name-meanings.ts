@@ -13,12 +13,26 @@ export function parseNameMeanings(raw: string): string[] {
   return [...new Set(meanings)];
 }
 
-export function pickNextMeaning(
+export const MEANING_PICKS = 3;
+
+export function planMeaningSequence(
   meanings: readonly string[],
-  current: string | undefined,
   random: () => number = Math.random,
-): string | undefined {
-  const candidates = meanings.filter((m) => m !== current);
-  if (candidates.length === 0) return meanings[0];
-  return candidates[Math.floor(random() * candidates.length)];
+): string[] {
+  const [anchor, ...rest] = meanings;
+  if (anchor === undefined) return [];
+  const pool = [...rest];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j]!, pool[i]!];
+  }
+  const picks = pool.slice(0, MEANING_PICKS);
+  return picks.length === 0 ? [anchor] : [anchor, ...picks, anchor];
+}
+
+export const MEANING_LINES = 3;
+
+export function splitMeaningLines(meaning: string): string[] {
+  const lines = meaning.match(/^(\S.*?)\s+(A.*?)\s+(M.*)$/);
+  return lines ? lines.slice(1) : [meaning];
 }

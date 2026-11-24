@@ -1,5 +1,7 @@
 import type { Env, Handler } from "hono";
 
+import { contentDisposition } from "../../../core/content-disposition.js";
+import { effectiveContentType } from "../domain/artifact-kind.js";
 import type { ShareViewerService } from "../services/share-viewer-service.js";
 import {
   isRestricted,
@@ -22,19 +24,22 @@ export function createRawHandler(
     const artifact = authorized.artifact;
     if (!namesCurrentVersion(artifact, c.req.query("v")))
       return c.text("not found", 404);
-    const safeName = artifact.fileName.replace(/[\r\n"\\]/g, "");
 
     const blob = await viewer.contentStream(artifact);
     if (!blob) return c.text("not found", 404);
 
-    const isImage = blob.contentType.startsWith("image/");
+    const contentType = effectiveContentType(
+      artifact.fileName,
+      blob.contentType,
+    );
+    const isImage = contentType.startsWith("image/");
     const forceDownload = c.req.query("download") === "1";
     const headers = new Headers({
-      "Content-Type": isImage ? blob.contentType : "application/octet-stream",
+      "Content-Type": isImage ? contentType : "application/octet-stream",
       "Content-Length": String(blob.sizeBytes),
     });
     if (!isImage || forceDownload) {
-      headers.set("Content-Disposition", `attachment; filename="${safeName}"`);
+      headers.set("Content-Disposition", contentDisposition(artifact.fileName));
     }
     if (isRestricted(artifact)) headers.set("Cache-Control", PRIVATE_NO_STORE);
     return new Response(blob.stream, { headers });

@@ -11,6 +11,8 @@ export const egressRulesKeys = {
     [...egressRulesKeys.all, "agent", agentId, "preset"] as const,
   platformRule: (agentId: string | null) =>
     [...egressRulesKeys.all, "agent", agentId, "platform"] as const,
+  childEgress: (agentId: string | null) =>
+    [...egressRulesKeys.all, "agent", agentId, "child-egress"] as const,
 };
 
 const RULES_ERROR_TOAST = "Couldn't load egress rules";
@@ -50,6 +52,16 @@ export function usePlatformRule(agentId: string | null) {
     queryKey: egressRulesKeys.platformRule(agentId),
     queryFn: agentId
       ? () => api.egressRules.platformRule.query({ agentId })
+      : skipToken,
+  });
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the agent's sub-agents and Environments may have network access of their own, wider than its own rules, or the toggle is not offered.
+export function useChildEgress(agentId: string | null) {
+  return useQuery({
+    queryKey: egressRulesKeys.childEgress(agentId),
+    queryFn: agentId
+      ? () => api.egressRules.childEgress.query({ agentId })
       : skipToken,
   });
 }

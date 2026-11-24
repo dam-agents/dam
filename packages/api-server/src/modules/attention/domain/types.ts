@@ -1,7 +1,12 @@
 export const ATTENTION_RETENTION_DAYS = 90;
 
 export type AttentionItemKind =
-  "session" | "approval" | "default-model" | "outage-alert";
+  | "session"
+  | "approval"
+  | "default-model"
+  | "outage-alert"
+  | "owner-question"
+  | "security-check";
 
 export interface AttentionRecordRow {
   agentId: string;

@@ -28,11 +28,11 @@ export function FeedDefaultModelCard({
   onDismiss,
   onOpen,
 }: Props) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const changed = notice.state === "changed";
   const open = () => {
     onOpen?.();
-    navigateToSandboxHome(notice.agentId, "providers");
+    openAgentSettings(notice.agentId, "providers");
   };
 
   return (

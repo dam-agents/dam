@@ -1,4 +1,5 @@
 import type { SlackConversationLabel } from "api-server-api";
+import type { SlackPostOrigin } from "./slack-post-origin.js";
 import type { SlackSender } from "./slack-sender.js";
 
 export interface SlackImageFile {
@@ -53,9 +54,75 @@ export interface SlackSlashCommand {
 
 export type SlackChannelMessageEvent = SlackMentionEvent;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A post whose text someone changed after it was
+ * sent. It names the post by its own send time, not the time of the edit,
+ * carries the text as it reads now, the post as a later history read would
+ * return it, and whether the edit is what first tagged the bot.
+ */
+export interface SlackMessageEditedEvent {
+  sender: SlackSender;
+  channel: string;
+  channelType?: string;
+  teamId: SlackWorkspace;
+  ts: string;
+  threadTs?: string;
+  text: string;
+  message: SlackMessage;
+  mentionAdded: boolean;
+  files?: SlackImageFile[];
+}
+
 export type SlackAck = (response?: { text: string }) => Promise<void>;
 
-export type SlackRespond = (text: string) => Promise<void>;
+export type SlackRespond = (
+  text: string,
+  blocks?: SlackBlock[],
+) => Promise<void>;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What an interaction with an element of a post
+ * carries beyond the element's identifier: the post and its thread, the
+ * moment of the interaction, and what the person did. A button gives its
+ * label. Any other element gives its own state, as Slack sends it. `fields`
+ * is the state of every stateful element of the post at that moment, which
+ * is how the values of a form reach the app when its button is clicked.
+ */
+export interface SlackClickedPost {
+  ts: string;
+  threadTs?: string;
+  clickedAt: string;
+  elementType: string;
+  label?: string;
+  changed?: Record<string, unknown>;
+  fields?: Record<string, unknown>;
+}
+
+export interface SlackMessageAction {
+  actionId: string;
+  value: string;
+  ephemeral: boolean;
+  userId: string;
+  channelId: string;
+  channelName?: string;
+  teamId: SlackWorkspace;
+  post?: SlackClickedPost;
+}
+
+export interface SlackMessageReplacement {
+  text: string;
+  blocks: SlackBlock[];
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Puts new content in place of the message a
+ * clicked button sits in, or removes that message when given null. It goes
+ * through the response URL Slack sends with the click, so it works on an
+ * ephemeral message, which no other call can change.
+ */
+export type SlackReplaceMessage = (
+  message: SlackMessageReplacement | null,
+) => Promise<void>;
 
 export type SlackTokenResolver = (
   teamId: SlackWorkspace,
@@ -84,8 +151,13 @@ export interface SlackGatewayHandlers {
   ) => Promise<void>;
   onMessage: (event: SlackChannelMessageEvent) => Promise<void>;
   onDirectMessage: (event: SlackChannelMessageEvent) => Promise<void>;
+  onMessageEdited: (event: SlackMessageEditedEvent) => Promise<void>;
   onBotJoinedChannel: (event: SlackBotJoinedChannelEvent) => Promise<void>;
   onViewSubmission: (event: SlackViewSubmission) => Promise<void>;
+  onMessageAction: (
+    event: SlackMessageAction,
+    replace: SlackReplaceMessage,
+  ) => Promise<void>;
   onSessionStopped: (event: SlackSessionStoppedEvent) => Promise<void>;
 }
 
@@ -144,6 +216,7 @@ export interface SlackMessage {
   subtype?: string;
   botId?: string;
   botName?: string;
+  origin?: SlackPostOrigin;
   metadata?: SlackMessageMetadata;
   fileIds?: string[];
   attachments?: SlackImageFile[];
@@ -170,6 +243,16 @@ export interface SlackPostMessage {
   metadata?: SlackMessageMetadata;
 }
 
+export interface SlackUpdateMessage {
+  channel: string;
+  ts: string;
+  text: string;
+  blocks: SlackBlock[];
+  metadata: SlackMessageMetadata;
+  fileIds?: string[];
+  teamId: SlackWorkspace;
+}
+
 export interface SlackPostEphemeral {
   channel: string;
   user: string;
@@ -179,16 +262,6 @@ export interface SlackPostEphemeral {
   teamId: SlackWorkspace;
   username?: string;
   iconUrl?: string;
-}
-
-export interface SlackUpload {
-  channelId: string;
-  file: Buffer;
-  filename: string;
-  title?: string;
-  blocks?: SlackBlock[];
-  threadTs?: string;
-  teamId: SlackWorkspace;
 }
 
 export interface SlackStopStream {
@@ -250,6 +323,45 @@ export interface SlackUserInfo {
   isDeleted?: boolean;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A Slack person found by their mailbox, with the
+ * evidence that says whether that mailbox is a trustworthy identity for them at
+ * all. Slack reports no single "trusted" flag, so every way a person can stand
+ * outside a workspace's own membership is carried here for the caller to
+ * refuse: the workspace Slack attributes them to (never the one we asked
+ * about), the ones an enterprise says they belong to, and the guest and
+ * external markers. A marker Slack did not report is `null` — unknown, not
+ * false — and the adapter answers nothing at all when the payload leaves a
+ * membership fact out.
+ */
+export interface SlackEmailUser {
+  id: string;
+  teamId: string;
+  enterpriseId: string | null;
+  enterpriseTeams: string[] | null;
+  enterpriseIsGuest: boolean | null;
+  email: string;
+  deleted: boolean;
+  isBot: boolean;
+  isAppUser: boolean;
+  isRestricted: boolean;
+  isUltraRestricted: boolean;
+  isStranger: boolean | null;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The Slack organization a workspace belongs to, as
+ * the install record holds it: an id for a workspace in one, the empty string
+ * for a workspace the handshake said stands alone, and null when nothing
+ * recorded one — a token imported from Helm, or an install older than the
+ * column. A pairing compares it and refuses when it is unknown or differs from
+ * the organization Slack reports for the person.
+ */
+export interface SlackWorkspaceIdentity {
+  teamId: SlackWorkspace;
+  enterpriseId: string | null;
+}
+
 export interface SlackMessageReaction {
   name: string;
   count: number;
@@ -260,6 +372,11 @@ export interface SlackGateway {
   start(handlers: SlackGatewayHandlers): Promise<boolean>;
   stop(): Promise<void>;
   postMessage(args: SlackPostMessage): Promise<{ ts: string } | null>;
+  /** UNIT_BOUNDARY_DESCRIPTION: replace the text, blocks and metadata of a
+   *  message this bot posted, and its files when fileIds is set. Slack keeps
+   *  the message's send time, its thread, and its sender name and icon; a
+   *  refusal is thrown with Slack's own error code. */
+  updateMessage(args: SlackUpdateMessage): Promise<void>;
   deleteMessage(
     channel: string,
     ts: string,
@@ -293,6 +410,7 @@ export interface SlackGateway {
     channel: string;
     limit: number;
     oldest?: string;
+    latest?: string;
     teamId: SlackWorkspace;
   }): Promise<SlackChannelRead>;
   getMessage(args: {
@@ -301,7 +419,6 @@ export interface SlackGateway {
     threadTs?: string;
     teamId: SlackWorkspace;
   }): Promise<(SlackMessage & { ts: string }) | null>;
-  uploadFile(args: SlackUpload): Promise<void>;
   reserveFile(args: {
     filename: string;
     length: number;
@@ -319,11 +436,19 @@ export interface SlackGateway {
     title?: string;
     username?: string;
     iconUrl?: string;
-    channelId: string;
+    channelId?: string;
     threadTs?: string;
     blocks?: SlackBlock[];
     teamId: SlackWorkspace;
   }): Promise<void>;
+  /** UNIT_BOUNDARY_DESCRIPTION: the send time of the message that shares a
+   *  file in a channel, or null while Slack has not recorded the share yet:
+   *  sharing a file answers before the message is known. */
+  fileShareTs(
+    fileId: string,
+    channelId: string,
+    teamId: SlackWorkspace,
+  ): Promise<string | null>;
   downloadFile(
     urlPrivate: string,
     maxBytes: number,
@@ -339,6 +464,10 @@ export interface SlackGateway {
     userId: string,
     teamId: SlackWorkspace,
   ): Promise<SlackUserInfo | null>;
+  lookupUserByEmail(
+    email: string,
+    teamId: SlackWorkspace,
+  ): Promise<SlackEmailUser | null>;
   getMessageReactions(
     channel: string,
     ts: string,

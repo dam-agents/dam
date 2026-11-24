@@ -41,6 +41,7 @@ function makeService(
   const probed: string[] = [];
   const regions: (string | undefined)[] = [];
   const svc = createConnectionsService({
+    damConnectionOffered: async () => true,
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: "owner",
@@ -50,6 +51,7 @@ function makeService(
       get: async (id) => rows.get(id) ?? null,
       listByOwner: async () => [...rows.values()],
       listByOwnerOldestFirst: async () => [...rows.values()],
+      adoptDamKey: async () => {},
       mergeInputs: async (id, patch) => {
         const row = rows.get(id);
         if (row) rows.set(id, { ...row, inputs: { ...row.inputs, ...patch } });

@@ -22,7 +22,7 @@ export function groupSessionsByAgent<T extends ActivitySession>(
 /**
  * UNIT_BOUNDARY_DESCRIPTION: an Agent's Sessions show in the sidebar while the
  * user has opened the Agent there, by a click on its row; until the user
- * clicks it, the Agent whose chat or configuration page is shown is open.
+ * clicks it, the Agent whose chat is shown is open.
  */
 export function sidebarAgentOpen(
   overrides: Readonly<Record<string, boolean>>,
@@ -34,8 +34,7 @@ export function sidebarAgentOpen(
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a hibernated Agent folds under See all unless the
- * user has clicked its row in the sidebar, or its chat or configuration page
- * is shown: closing its list keeps the row where the user clicked, so neither
+ * user has clicked its row in the sidebar, or its chat is shown: closing its list keeps the row where the user clicked, so neither
  * the row nor the See all control moves under the pointer.
  */
 export function sidebarAgentFolded(

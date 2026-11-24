@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-11-04
+Last verified: 2026-11-20
 
 ## Overview
 
@@ -11,7 +11,7 @@ Its machine runs on its owner's [VM runner](vm-runner.md) while the Agent is awa
 The lifecycle is driven by three actors:
 
 - **Users** drive both management and sessions, but along different paths.
-  The **UI** is the only management surface a user has — creating, configuring, disabling, and deleting Agents all flow through tRPC on the api-server's public port, which is the sole writer of the Agent spec.
+  The **UI** is the only management surface a user has — creating, configuring and deleting Agents all flow through tRPC on the api-server's public port, which is the sole writer of the Agent spec.
   Sessions can be driven from the UI **or** from a connected channel (Slack, Telegram).
   Channels never hit management endpoints; they dial the api-server's ACP relay only, with identity scoped to the individual messenger user driving the session.
   Channel internals live on [channels](channels.md).
@@ -73,11 +73,13 @@ Creation is per-purpose: the plain create picks an image, and a [starter kit](st
 The **Agent Kind** marker survives only on agents stamped before kits: a knowledge base is now a kit that declares one capability, and a marker the platform no longer knows reads as no kind at all.
 A kit apply is the plain create with the kit's grants, followed by the kit's schedules and channel binding, compensated by delete on failure.
 A new agent takes its template's mounts, storage size and the trusted egress preset — or, for a kit that declares any of them, the kit's — and shares its owner's [memory pool](vm-memory.md) instead of holding a size of its own.
-A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-machine)): it boots the default Template on the harness of the owner's [default for new agents](profiles.md#the-default-for-new-agents), else the install's default harness, and grants one provider Connection of the caller's that the harness runs on: the default's provider when the caller holds an active one the harness runs on, else the first in the harness's provider order (its home provider first, then the shared alias order), the oldest of that alias.
+A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-machine)): it boots the default Template on the harness of the owner's [default for new agents](profiles.md#the-default-for-new-agents) (their pick, else the base default), else the install's default harness, and grants one provider Connection of the caller's that the harness runs on: the default's provider when the caller holds an active one the harness runs on, else the first in the harness's provider order (its home provider first, then the shared alias order), the oldest of that alias.
 A create that grants a provider it was not named answers which one and what chose it — the default, a starter kit's or Template's providers list, or the harness's provider order — and the CLI prints it; one that grants none, or an Environment, answers nothing.
-One, not every fitting one, so the [default](harness-config.md#session-settings) its runtime saves at its first `hello` sits on that provider and is the model its image presets, and no call goes to a provider the owner never chose for this agent; picking a profile that runs on another provider grants that provider on its Providers section.
+One, not every fitting one, so the [default](harness-config.md#session-settings) sits on that provider: the owner's [default for new agents](profiles.md#the-default-for-new-agents), saved at create, else the one its runtime saves at its first `hello`, the model its image presets, and no call goes to a provider the owner never chose for this agent; picking a profile that runs on another provider grants that provider on its Providers section.
 A custom-image Template names the harness it wraps, if any, and may list its providers.
-A create that names a provider gets that one alone.
+A create that names a provider gets that one alone, and starts on what that provider runs: a default Template create that names no harness boots on the harness of the owner's default for new agents when the provider runs it, else the install's default harness when it runs that, else the first harness the provider runs; the default for new agents becomes its chat default only when it names that same provider, and otherwise its chat default is saved at create as the provider's preferred model for the harness, once the provider has listed its models.
+A create may also name the harness, the model (`<provider>/<model id>`) and the per-session settings its chat default starts on; the pair is checked before anything is written, against the Connections the create grants and what they list for that harness, and saved before the first `hello`, so the shared CurveBender a `hello` grants an agent with nothing to run on is not granted beside it.
+A Template create answers what its agent starts on — the harness, the chat default's model (none while the first start picks it), and each provider granted with what chose it and the harnesses it runs — and the CLI warns when no provider the caller named runs that harness.
 A create from a [starter kit](starter-kits.md) that lists its providers gets one of them first, when the caller holds one, and the harness's order otherwise.
 Only a template create gets default providers; a bare image and a [sub-agent](invocations.md) hold only what they name.
 A first agent is often created before its owner has any provider, so connecting a provider gives it to each of the owner's agents that holds none, when it is the owner's first provider that agent's harness runs on.
@@ -97,7 +99,7 @@ It never enters the agent, and a bad one surfaces as a pull failure rather than 
 See [security-and-credentials](security-and-credentials.md#image-pull-credentials).
 
 Every harness ships in one image; a workload's image adds its own files ([agent-images](agent-images.md)).
-The platform contract is two fixed-path executables: a chat entrypoint (spawned as the ACP subprocess for chat-mode sessions) and a terminal entrypoint (spawned attached to a PTY for terminal-mode sessions, told which session to resume).
+The platform contract is two fixed-path executables: a chat entrypoint (spawned as the ACP subprocess for chat-mode sessions) and a terminal entrypoint (spawned attached to a PTY for terminal-mode sessions, told which session to resume; a shell session runs the agent user's login shell instead).
 agent-runtime otherwise treats the harness as opaque.
 It also reserves the loopback **Artifact API Port** for the Agent's own [Artifact API](artifact-library.md#interactive-pages): the platform never starts anything there, and a server left running on it does not keep the Agent awake.
 The machine's disk is made with the machine, at its owner's pool size, so no first start waits on storage ([vm storage](vm-storage.md#the-disk)).
@@ -129,9 +131,13 @@ A runtime advertising kinds its predecessor did not is re-delivered the Contribu
 Every caller that sends work to an Agent — the api-server's ACP relay, channel adapters, skills management — routes through a single reachability primitive in the api-server.
 The primitive's contract: **the controller-published `Ready` condition is the authoritative answer to "can I call this Agent?"** The primitive pokes activity by bumping the Agent's activity — the `agent-platform.ai/last-activity` annotation before the switch, the `last_activity_at` signals row with the token that changes with it after it — and the controller is woken by the store's change feed, or by the informer on the custom resources, so the reconciler starts any Agent with recent activity.
 It single-flights concurrent waits per Agent, and bumps the same signal on every successful call, so any caller implicitly keeps the Agent warm.
-Opening a sleeping Agent's chat or its sidebar session list in the web UI wakes it once per open (a list's open lasts until its sidebar row closes), a stopped Agent included but not a disabled one or one held over its budget.
-An Agent still falling asleep is woken once it is asleep, and a wake already running counts as the open's wake, so a chat and a list opened together wake it once.
-An Agent that falls asleep while the view stays open, or whose wake fails, shows a Start button, or a retry in its session list ([home-feed](home-feed.md)), until the next open.
+The web UI shows hibernation as no state of its own: a hibernated Agent reads as *Idle*, like a running one with nothing to do, and nobody wakes it by hand.
+Its chat, and each configuration panel that needs the running Agent (model settings, skills, a schedule's past runs), wakes it whenever the page is shown and finds it asleep, a stopped Agent included but not one held over its budget, and shows the ordinary start wait meanwhile.
+One sleep gets one wake: a wake already running counts as it, so a chat and a panel open together wake the Agent once, and a wake that fails leaves the Agent asleep until it is seen awake again, so a failing wake is no loop; the chat then says the Agent isn't running and offers a Start button.
+An Agent that falls asleep under an open chat, as when the tab's connection dropped, is woken again once the page is visible; a hidden page follows the Agent but wakes nothing, its sidebar included.
+An Agent whose last start never came up shows as an error with that start's reason and a Start button; its open retries the start once.
+Its sidebar session list wakes it once per open (the open lasts until the sidebar row closes), and offers a retry when the Agent stays asleep ([home-feed](home-feed.md)).
+An Agent still falling asleep is woken once it is asleep.
 The deliberate opt-outs never wake anything: a **passive** relay connection (`passive=1`) fails closed unless `Ready`, takes no pin and never bumps activity; the per-agent tRPC relay takes no pin, waits out a wake already asked for without stamping activity, and keeps the stamp fresh while a view is open.
 The agent relays — ACP, per-agent tRPC, terminal, browser stream and SSH — do not wait for `Ready` alone when they hold a socket for a wake from hibernation.
 `Ready` arrives only after the controller's next reconcile, so a relay whose hold began on a hibernated Agent also asks the agent's `/healthz` through its Service at a short interval, and opens its upstream on the first answer once the cached Agent shows `GatewayPodReady`.
@@ -192,9 +198,10 @@ A wake scales the gateway up before the machine, because the gateway pod is the 
 An Agent whose last start the runner refused for lack of room or for the owner's full storage, one waiting for the node to grant its runner that room, or one with no status yet, keeps the gateway after the runner's answer, so a parked Agent's retries do not start and stop a gateway pod.
 When the status already holds the agent side ready and only the gateway was missing, the reconcile that sees the gateway pod ready publishes `Ready` right after it applies the gateway, before the runner call and the remaining applies.
 Only the idle checker or [reclaim](vm-memory.md) hibernates it, not a lapsed timeout.
-A start that never came up is slept the same way once its hold runs out, and the Agent keeps the `StartFailed` condition that ended it ([agent images](agent-images.md)), so a slept Agent whose machine never answered says why rather than reading as plainly asleep.
+A start that never came up is slept the same way once its hold runs out, and the Agent keeps the `StartFailed` condition that ended it ([agent images](agent-images.md)), so a slept Agent whose machine never answered shows that failure rather than reading as idle.
 An unreachable runner does not hold the gateway up, but the Agent is published hibernated only once its runner has confirmed the machine stopped.
 With the [owner gateway](credential-gateway.md#owner-gateway) on, an Agent has no gateway pod of its own: whether it should be up is recorded on its gateway Service instead of a replica count, its listener stays configured while it sleeps, and hibernation stops only the machine, so a wake is ready when the guest answers.
+That record follows the same rule as the replica count: the Agent's reconcile records only a wake, the idle checker, a reclaim, a park or a stop record it down, and the move onto the owner gateway records the Agent up when it should run, and otherwise carries over whether its own gateway was up.
 Until then its readiness is down and it reads as starting, the Agent's next reconcile stops the machine once the runner answers, and the idle checker tries the hibernation again on each sweep.
 A runner that took the stop answers before its guest has powered off, so while the machine is stopping its readiness is down too, but the Agent reads as pausing rather than starting, and its reconcile publishes hibernation once the runner reports the machine stopped.
 Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is split across two independent checks.
@@ -204,14 +211,20 @@ It runs even when the default is never-hibernate, for the Agents that opt in, an
 It skips any Agent already at rest — observed down *and* hibernation published.
 It also skips any machine a [runner roll](vm-runner-upgrades.md#rolls) is waiting on: the roll's `runner-awaiting` list names the machines that were ready before it, and a hibernated machine would never come back ready.
 That check and the stop are taken together under the owner's lock, the one a roll start takes, so a roll that begins while the machine is being probed still sees it left up.
+A sweepable Agent parked for room is never hibernated either: it is an [Invocation](invocations.md) target that has not started, so both the idle checker and its reconcile treat it as one that should run until a stop or its Invocation's deadline, and the Agent Sweep cannot delete it before then.
+The wait is read from Ready and from the machine's own condition, since a boot the runner admitted and the node has not yet granted memory for keeps running and reads Ready as plain `PodsNotReady`; a target booted with its run not yet started is held by the [Invocation Pin](invocations.md#the-invocation-pin) instead.
 For the rest it hibernates only when *both* checks below agree it is quiet:
 
 1. **Activity annotations** — the same `shouldRun` gate the reconciler uses to bring it up, so bringing it up and taking it down can never disagree.
    The Agent stays awake while `active-session` is set, or while `last-activity` falls within the idle timeout.
-   The gate fails open — a missing or unparseable stamp keeps it running — so hibernation only ever follows a *positive* idle signal, never absent data.
+   The gate fails open — a missing or unparseable stamp keeps it running — so it never hibernates an Agent on absent data.
 2. **agent-runtime's live `idle` flag** — before taking it down, the checker probes the machine.
    The runtime is authoritative about its own idleness and reports one boolean; the controller reads nothing more into it.
-   An unreachable machine counts as *not busy*, which permits hibernation.
+   A probe that does not answer is neither answer, and it never permits hibernation on its own: a working guest that misses three seconds is exactly the turn the sweep must not end.
+   A silence is read against the readiness the runner's own prober publishes: a machine that reads ready is answering the runner, so what failed is the sweep's own path to it, and the Agent keeps its machine, while a machine that does not read ready is down, still coming up or failed to start, and hibernates on its silence as it always did.
+   KNOWN CEILING: a machine that reads ready and that the controller's probe never reaches is not hibernated by this path, so it holds its CPU and memory until it stops reading ready, an operator stops it, or the path recovers.
+   A guest that stops answering is not that case, since its runner restarts it within about a minute.
+   The sweeps that spare such a machine are logged once the silence has lasted, and the way out of the ceiling is a durable running-turn signal in the store, which the sweep could read instead of asking the guest.
 
 **What counts as activity.** Those two checks rest on four signals, each catching something the others miss.
 The names below are the annotation forms the controller reads on a custom resource; after the switch the same signals are columns on the Agent's signals row (`session_pinned`, `last_activity_at` with its token, `invocation_pinned`), and the store's change feed is what tells the controller they moved.
@@ -229,7 +242,7 @@ The names below are the annotation forms the controller reads on a custom resour
 - **api-server (`last-activity` annotation).** The one traffic-driven signal, and the clock the idle timeout measures against.
   Bumped, debounced, by any relay or proxied call as bytes flow, by an explicit wake, and by the scheduler on a fire.
   One path also *lowers* it: a fire whose Precheck declines puts the pre-fire value back ([schedules](schedules.md#precheck)), so a frequent check cannot hold an Agent awake on the strength of occurrences that did no work.
-- **api-server (`invocations-active` annotation).** The [Invocation Pin](invocations.md#the-invocation-pin): the Agent drives a running Invocation.
+- **api-server (`invocations-active` annotation).** The [Invocation Pin](invocations.md#the-invocation-pin): the Agent drives a running Invocation, or its own run as a target waits to start.
 
 None of this depends on *who* opened the session: the UI, a connected channel, and the CLI all dial the same relays, so a session's signals follow its **kind** — chat, terminal, SSH, browser — not its caller.
 A CLI terminal is covered by both checks like a UI terminal; a CLI SSH session is seen only by the annotations, never the probe — like any other SSH.
@@ -238,12 +251,12 @@ A CLI terminal is covered by both checks like a UI terminal; a CLI SSH session i
 What none of them hold for is unkept work: a job detached with a plain `nohup`, anything a non-reporting harness leaves running.
 It survives the user leaving, but for it `active-session` is clear, `last-activity` ages out, the runtime reports `idle`, both checks agree, and the controller hibernates the machine **mid-job, killing the work**.
 
-**The per-agent hibernation timeout.** For work nobody keeps, the platform lets an operator *budget* instead.
-Each Agent carries an optional timeout override: unset inherits the install's default, a positive value sets a per-agent idle window in minutes, and **`0` disables hibernation** so the Agent never sleeps.
-A Template can seed this override — a workload whose real work runs off-session ships *never-hibernate* — and a client that asks for one at create still wins.
+**One idle timeout for every Agent.** A regular Agent sleeps on the install's idle timeout and has no window of its own: work that must outlive a session is [kept](agent-processes.md#keeping-work), and holds the Agent awake only while it runs.
+The create and update a client sends, a Template and a starter kit all ignore an idle override.
+An hourly api-server job clears the override of any regular Agent that still carries one, through the agents repository, so it works on either store and also clears an override an older client, an absorb or a rollback brought back.
+Two kinds of Agent the platform makes still carry an override, set by their own create and keep calls: an [Environment](environments.md) (its idle timeout, `never` included) and an [Invocation](invocations.md) target, whose sleeping between runs its driver decides.
+An override's unset inherits the install's default, a positive value is an idle window in minutes, and `0` disables hibernation.
 The controller resolves the effective value (override else default) and feeds it to the same `shouldRun` gate used for waking and hibernating.
-The UI offers no setting: an Agent reads the install's default, and an override still counts where one exists — a Template or starter kit seed — read with `0` included.
-An Agent that never sleeps carries an *Always on* tag.
 The override is a Go duration, and the api-server runs a port of Go's own parser rather than a lookalike: the whole grammar — a sign, a leading dot, an empty fraction, either microsecond spelling — the same float64 fraction step that makes `0.9999999999999999ns` one nanosecond, and the same int64 nanosecond overflow that rejects `2562048h`.
 A nonpositive duration is never-hibernate for every reader, and a positive window under a minute shows as one minute where the platform counts minutes.
 One golden document of real `time.ParseDuration` answers holds the controller and the api-server to the same acceptance and the same minutes.
@@ -258,7 +271,7 @@ Workspace state survives — the git checkout, `node_modules`, `.venv`, mise cac
 Only the temporary folders are emptied on every boot, and a root an image of another root generation boots over is discarded, so what must outlast both belongs under `$HOME` ([vm storage](vm-storage.md#the-disk)).
 
 **Sleep.** A scale-down on request, built to free room in its owner's [memory pool](vm-memory.md) without waiting for the idle checker — including reclaiming an Agent pinned awake by an open session.
-The UI calls the state *Sleeping* but offers no Sleep action: an Agent the user wants down without waiting for the idle timeout is [disabled](#disable) instead, and the api-server keeps the sleep call for other clients.
+The UI shows no sleep state and offers no Sleep action: the api-server keeps the sleep call for other clients, and the UI simply uses an Agent, which wakes it.
 The api-server stamps `agent-platform.ai/stop-requested`, clears the session and Invocation pins, and stales `last-activity`, so the Agent stays down once the stamp is gone; `shouldRun` treats the stamp as an overriding *negative* signal, and the reconciler stops the machine and its gateway immediately, bypassing the busy probe — sleep may interrupt work by design.
 While the stamp stands, background activity (UI polling, relay reconnects, proxied calls) never clears it — `ensureReady` on such an Agent fails with a typed *stopped* error instead of bumping — so an open tab cannot resurrect the Agent before it lands.
 An explicit wake and a schedule fire clear it at any time, back through the budget gate.
@@ -266,19 +279,10 @@ The api-server clears the stamp itself once the Agent settles Hibernated (a sett
 The clear is a **compare-and-clear** of the exact stamp the sleep wrote: a second sleep issued during the settle window carries a newer stamp and is not erased by the first one's watcher.
 Staling the clock in the *initial* patch (never at settle time) is what keeps the watcher from ever clobbering a concurrent wake.
 A sleeping Agent is afterwards a plain hibernated Agent: its next deliberate use wakes it.
+At boot the api-server clears the `agent-platform.ai/disabled` mark, and the standing stop request that went with it, wherever a store still carries one — a mark written by a feature the UI no longer offers — so a former *disabled* Agent is an ordinary idle Agent that wakes on its next use.
+Before it clears an Agent, it pauses that Agent's enabled recurring schedules, so an Agent that was held while it was disabled does not start running them on its own.
+The owner resumes them by hand, and a one-time task, which cannot be paused, is left to its delivery window.
 A **never-hibernate** Agent (effective timeout `0`) runs regardless of activity; a direct sleep call still stamps it without the settle clear, the only stable sleep it can have.
-
-### Disable
-
-A **disabled** Agent is a sleeping Agent that nothing wakes until its owner enables it: no chat, terminal, SSH, Slack or Telegram message, schedule fire or Invocation outcome starts it.
-The owner disables and enables it from the Agent's *General* page, or with `dam agent disable` and `dam agent enable` ([CLI](cli.md#agent-lifecycle)).
-Disabling stamps `agent-platform.ai/disabled` together with the stop request, clears the session and Invocation pins, and stales `last-activity`, so the controller scales the Agent down exactly as for a sleep; the controller never reads the disabled mark itself.
-The settle-watcher never runs, so the stop request stands for as long as the Agent is disabled.
-Every path that would clear the stop request — an explicit wake, a schedule poke, a workspace retry — first reads the disabled mark and writes nothing when it is set; the write names the version it read, so a disable landing in between makes it conflict and read again rather than undo the disable.
-An explicit wake answers with a typed *disabled* error, and `ensureReady` fails with the *stopped* error, which carries whether the Agent is disabled so a channel can tell its sender to ask the owner to enable it.
-A recurring schedule fire is held, reading `held: agent disabled`, and a one-time task due meanwhile is recorded missed ([schedules](schedules.md)).
-Enabling clears both marks and leaves `last-activity` stale, so the Agent stays asleep until its next use wakes it.
-A sleep asked of a disabled Agent writes nothing, so its settle-watcher never runs and cannot clear the standing stop request.
 
 **Early reclaim for a blocked start.** The one scale-down neither the user nor the idle timeout asks for: when the [budget gate](budgets.md#reclaiming-room-for-a-blocked-start) refuses a start, it may hibernate that same owner's *unattended idle* Agents ahead of their timeout to admit it, longest-idle first and only when the freed memory provably covers the shortfall.
 The floor it reads is half a minute rather than the three the background passes keep — none at all for an Agent whose machine began holding memory inside that half minute, since a machine woken to answer one request and left idle is the room it holds — and an Agent whose machine is booting or is itself waiting for room is never its victim.

@@ -1,9 +1,13 @@
 import { emit, EventType } from "../../../events.js";
-import type { IdentityLink } from "../infrastructure/identity-links-repository.js";
+import type {
+  IdentityLink,
+  IdentityLinkSource,
+} from "../infrastructure/identity-links-repository.js";
 
 export interface ExternalLink {
   externalUserId: string;
   teamId: string | null;
+  source: IdentityLinkSource;
 }
 
 export interface IdentityLinkService {
@@ -19,6 +23,15 @@ export interface IdentityLinkService {
     keycloakSub: string,
     teamId?: string,
   ): Promise<void>;
+  /** UNIT_BOUNDARY_DESCRIPTION: reports a link this platform made, for the
+   *  attribution that reads it. Only the caller whose insert created the row
+   *  may announce it — announcing a row somebody else proved would attribute
+   *  their account to the wrong person. */
+  announceLink(
+    provider: string,
+    externalUserId: string,
+    keycloakSub: string,
+  ): void;
   unlink(provider: string, externalUserId: string): Promise<void>;
 }
 
@@ -59,6 +72,15 @@ export function createIdentityLinkService(deps: {
 
     async link(provider, externalUserId, keycloakSub, teamId) {
       await deps.upsert(provider, externalUserId, keycloakSub, teamId);
+      emit({
+        type: EventType.IdentityLinked,
+        provider,
+        externalUserId,
+        keycloakSub,
+      });
+    },
+
+    announceLink(provider, externalUserId, keycloakSub) {
       emit({
         type: EventType.IdentityLinked,
         provider,

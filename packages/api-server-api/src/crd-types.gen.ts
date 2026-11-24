@@ -129,6 +129,14 @@ export interface AgentSpecCR {
    */
   l7Hosts?: string[];
   /**
+   * LinkFrom names the one Agent that may open the agent-to-agent link into
+   * this one's machine: an Environment's owning Agent, or a sub-agent's
+   * driver. Set at create, never changed; the guest reads it as
+   * PLATFORM_LINK_FROM. An Environment created before the field accepts from
+   * its EnvironmentOf.
+   */
+  linkFrom?: string;
+  /**
    * Mounts declares the agent's volumes; a persisted mount becomes a PVC.
    *
    * Items: Mount declares a volume mounted into the agent container.
@@ -217,6 +225,14 @@ export interface AgentSpecCR {
    * does not drive; it is service-only input, like the pre-minted id.
    */
   telemetryAttributionId?: string;
+  /**
+   * WebSearchControl makes the agent's gateway read the whole body of every
+   * request on a model-provider chain and send it to the ext_authz check, so
+   * a Messages API request that declares a native web search tool is held
+   * for the owner's approval. A body larger than the gateway reads is
+   * refused rather than passed. Off, the gateway reads no body.
+   */
+  webSearchControl?: boolean;
   /**
    * WhispersOff stops people in the conversations the agent is connected to from whispering to it privately; unset means whispers are on.
    */

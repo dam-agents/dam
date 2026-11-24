@@ -116,7 +116,7 @@ describe("github-enterprise-app template build", () => {
 
   it("carries the injection hosts to the controller annotation", async () => {
     const built = await build();
-    const raw = connectionSecretAnnotations(built.contributions)[
+    const raw = connectionSecretAnnotations(built.contributions, [])[
       "agent-platform.ai/injection-hosts"
     ];
     const entries = JSON.parse(raw) as Record<string, unknown>[];

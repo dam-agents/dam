@@ -70,7 +70,7 @@ export function SidebarActivity({ stickyHeaderClassName, onNavigate }: Props) {
             ? "Activity can't be loaded right now."
             : isFiltered(filters)
               ? "No sessions match the filter."
-              : "No sessions yet."}
+              : "No conversations yet"}
         </p>
       )}
       <ul className="flex flex-col gap-1">

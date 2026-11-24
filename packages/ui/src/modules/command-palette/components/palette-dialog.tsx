@@ -53,10 +53,7 @@ export function PaletteDialog({
   const ranked = rankCommands(buildCommands(input, actions), query, {
     now,
     agentId: route.agentId,
-    action:
-      route.view === "sandbox-home" && route.section
-        ? `configure:${route.section}`
-        : null,
+    action: route.section ? `configure:${route.section}` : null,
     frecency: (id) => frecency.usesOf(id, now),
   });
   const highlighted = Math.max(

@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-10-27
+Last verified: 2026-11-12
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for their agents, which have no size of their own.
@@ -46,6 +46,7 @@ Free-page reporting returns the added RAM's freed pages as it does the boot RAM'
 Under nested virtualization each guest page the guest touches first then costs a fault through both hypervisors, about 20 µs for each 4 KiB.
 On a Linux runner libkrun therefore places the boot RAM, the RAM a grow adds, and a copy of the guest kernel at host addresses that agree, so a host whose transparent huge pages are `always` backs them with huge pages.
 The platform does not advise that RAM with `MADV_HUGEPAGE`, as upstream libkrun does not.
+So an Environment's install sets its node's transparent huge pages to `always` ([environments](environments.md)): under `madvise` a nested machine's boot there took 11 to 28 s, and 3.5 to 6.3 s with `always`.
 On the nested dev hosts (huge pages `always`, defrag `madvise`) the advice made no difference under real conditions; it helped only when page cache had nearly exhausted host memory, a state the nodes did not reach.
 On bare metal an advised fault compacts host memory synchronously and was slower, which is why upstream leaves it out.
 The added RAM is anonymous memory rather than libkrun's shared-memory file, which a host whose shared-memory huge pages are off (as on RHEL by default) backs with 4 KiB pages whatever its placement; only a branchable machine, which no runner starts, keeps the file.
@@ -136,6 +137,11 @@ Such a start is held under the unreadable-grant rule above rather than reclaimed
 The grace is recorded on every reconcile, from the sizing read taken after the ensure, and a reconcile that finds the ask no longer stepped clears it.
 Recording it only where a reclaim reads it would leave a grace the node's grant ended behind, and a later start that needs the same request of the same pod would inherit it and free an idle machine at once.
 A demand that no longer steps down ends the wait at once.
+The grace of an ask is not the only bound: a start also gets room once it has waited a grace in all, counted from the first pass that found it waiting.
+Each changed ask starts its own grace, so a start whose demand moves during its wake — an idle machine's use drifting a step, another start admitted — would otherwise outlive every grace without one of them running out, and a wake would time out on a start nothing was freeing room for.
+A pass that finds the start no longer waiting ends its clock, so the next start of the same agent waits its own grace.
+The room a waiting start frees is measured against the larger of two counts of what the machines hold: the controller's, and the committed figure the runner's usage read reports.
+The runner refuses the start against its own count, which counts a booting or warming machine at its warm-up floor, and the controller's reading of a machine is up to a memory pass old; a reclaim from the lower count would read no need and free nothing, while the runner keeps refusing.
 Room to free is counted from the machines the runner holds or is about to hold, never from the owner's other starts waiting for the node: a waiting start holds nothing, so counting it would ask a reclaim for room no idle agent can give and neither start would ever be admitted, and a waiting agent is never itself the agent a reclaim hibernates.
 **A restart is not an admission.** A machine the runner already counts as running is restarted against the pool limit alone, never the grant: its boot replaces memory it already holds, and the request the ceiling comes from is sized from the use it holds while idle, below the warm-up floor it boots at, so capping that restart would refuse a revision roll, an image or env change, a CA rotation and a guest gone quiet for good — and no retry would ever grow the request the machine's own use cannot raise.
 The trade-off is that a restart wave — a roll, or a CA rotation across an install — can pass the node's grant until the request rises and the node enacts it, which is the behaviour every start had before this ceiling; the runner's own warm-up counting still holds the wave to the pool limit.
@@ -170,7 +176,7 @@ For ten minutes after the owner's runner pod started — the time Kubernetes kee
 The 90% pass holds the same window, so it hibernates nobody for the floors of a wave either; the runner's pressure signal does not hold it, since the kernel's working set is what kills a machine and a machine near the limit is not a wave.
 The window is a bound on how long the platform waits rather than a promise of room: past it a refusal is the refusal it was before, the owner's idle agents are the room the start has left, and the message says what frees it.
 It knows only that the owner's runner restarted, never which machines are warming, so it misses a guest the runner's own health prober restarted on its own, and a wave that outlasts the ten minutes; the runner-reported warm-up it would take to see either is not part of this rule.
-No other owner's agent is touched, and an agent hibernated this way says it was put to sleep automatically to free memory ([budgets](budgets.md)).
+No other owner's agent is touched, and an agent hibernated this way is an ordinary idle one to its owner ([budgets](budgets.md)).
 Because a running machine's use reaches the controller only when its agent reconciles, the controller also asks each owner's runner about its running machines every 30 seconds, in one usage read for the owner rather than a status read per machine, and that read is what pressure is judged from and what moves the request between reconciles.
 A read that fails leaves the last figures in place, as a failed status read of one machine did, and the pass goes on: a measured machine counts at its last use, and a machine never measured at its warm-up floor, or its size when that is smaller, as it does on any pass; a pass under the runner's pressure signal needs no figures at all, since its need is the kernel's working set.
 That pass reconciles one of the owner's agents only when the request their counts call for differs from the runner pod's, so a count held within its step wakes nothing.
@@ -198,7 +204,7 @@ Free-page reporting returns only whole 2 MiB blocks, so memory a program frees b
 That is a machine's VMM: each VMM raises its own OOM score to the kernel's maximum at boot, and the runner and the loader beside it, which hold every machine of the owner, keep the score the kubelet gives the pod for its request.
 The score only adds to the memory a process holds, so the two small processes are picked first only if one of them holds more memory than the gap between its score and a VMM's: three thousandths of the runner's memory limit, about 74 MiB of 24 GiB, against a runner footprint of a few.
 The score cannot be lowered below that starting point: the kernel checks `CAP_SYS_RESOURCE` in its own initial user namespace, and the runner pod's own namespace (`hostUsers: false`) never is that one, so the capability would grant nothing however a cluster allowed it ([vm-runner](vm-runner.md)).
-So the gap is what protects the two processes, and the pod's admission keeps that much free for them ([budgets](budgets.md)) — where the runner's cgroup sets `memory.oom.group` to 0, which the kubelet configuration of dam-ops#199 holds on dev and staging; with the group set, one process's memory ends the runner and every machine it holds.
+So the gap is what protects the two processes, and the pod's admission keeps that much free for them ([budgets](budgets.md)) — where the runner's cgroup sets `memory.oom.group` to 0, which the kubelet configuration of dam-ops#199 holds on dev, staging and prod; with the group set, one process's memory ends the runner and every machine it holds.
 The machine it picked restarts with a reason of its own, `MachineOOMKilled` ([vm-runner](vm-runner.md)), and the runner counts it; the owner's other machines keep running, since the kernel killed one process and not the pod.
 The pressure signal makes that rarer; it cannot rule it out.
 A cgroup whose `memory.oom.group` is 1 kills every process in the pod for one process's memory, and no score of a VMM's own prevents that.

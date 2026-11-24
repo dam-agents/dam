@@ -33,6 +33,7 @@ export function StandaloneSkillRow({
   onTrack,
   onOpen,
   trackTarget,
+  hideActions = false,
 }: {
   skill: LocalSkill;
   publish?: SkillPublishRecord;
@@ -44,6 +45,8 @@ export function StandaloneSkillRow({
   onTrack: (target: ReadyTrackTarget) => void;
   onOpen?: () => void;
   trackTarget?: TrackTarget;
+  /** UNIT_BOUNDARY_DESCRIPTION: the + menu's compact list shows the name alone, as the design draws it, and leaves the skill's actions to the Agent's settings. */
+  hideActions?: boolean;
 }) {
   const pill = PR_STATE_PILL[publish?.prState ?? "unknown"];
   const canRepublish = !publish || publish.prState === "closed";
@@ -86,59 +89,61 @@ export function StandaloneSkillRow({
         </Tooltip>
       )}
 
-      <RowActionsMenu label="Skill actions">
-        {onOpen && (
-          <DropdownMenuItem onSelect={onOpen}>
-            <View size={14} />
-            <span className="flex-1">Preview SKILL.md</span>
+      {!hideActions && (
+        <RowActionsMenu label="Skill actions">
+          {onOpen && (
+            <DropdownMenuItem onSelect={onOpen}>
+              <View size={14} />
+              <span className="flex-1">Preview SKILL.md</span>
+            </DropdownMenuItem>
+          )}
+          {publish?.prState === "merged" && trackTarget && (
+            <DropdownMenuItem
+              disabled={trackTarget.kind === "unavailable"}
+              onSelect={() => {
+                if (trackTarget.kind === "ready") onTrack(trackTarget);
+              }}
+              title={
+                trackTarget.kind === "unavailable"
+                  ? trackTarget.reason
+                  : undefined
+              }
+            >
+              <Renew size={14} />
+              <span className="flex-1">
+                Track from{" "}
+                {trackTarget.kind === "ready"
+                  ? trackTarget.source.name
+                  : trackTarget.sourceName}
+              </span>
+            </DropdownMenuItem>
+          )}
+          {canRepublish && onPublish && (
+            <DropdownMenuItem
+              disabled={!canPublish}
+              onSelect={onPublish}
+              title={
+                canPublish
+                  ? undefined
+                  : "Add a GitHub source first to publish there"
+              }
+            >
+              <Export size={14} />
+              <span className="flex-1">
+                {publish ? "Publish again…" : "Publish…"}
+              </span>
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem onSelect={onDownload}>
+            <Download size={14} />
+            <span className="flex-1">Download skill</span>
           </DropdownMenuItem>
-        )}
-        {publish?.prState === "merged" && trackTarget && (
-          <DropdownMenuItem
-            disabled={trackTarget.kind === "unavailable"}
-            onSelect={() => {
-              if (trackTarget.kind === "ready") onTrack(trackTarget);
-            }}
-            title={
-              trackTarget.kind === "unavailable"
-                ? trackTarget.reason
-                : undefined
-            }
-          >
-            <Renew size={14} />
-            <span className="flex-1">
-              Track from{" "}
-              {trackTarget.kind === "ready"
-                ? trackTarget.source.name
-                : trackTarget.sourceName}
-            </span>
+          <DropdownMenuItem tone="danger" onSelect={onDelete}>
+            <TrashCan size={14} />
+            <span className="flex-1">Delete skill</span>
           </DropdownMenuItem>
-        )}
-        {canRepublish && onPublish && (
-          <DropdownMenuItem
-            disabled={!canPublish}
-            onSelect={onPublish}
-            title={
-              canPublish
-                ? undefined
-                : "Add a GitHub source first to publish there"
-            }
-          >
-            <Export size={14} />
-            <span className="flex-1">
-              {publish ? "Publish again…" : "Publish…"}
-            </span>
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuItem onSelect={onDownload}>
-          <Download size={14} />
-          <span className="flex-1">Download skill</span>
-        </DropdownMenuItem>
-        <DropdownMenuItem tone="danger" onSelect={onDelete}>
-          <TrashCan size={14} />
-          <span className="flex-1">Delete skill</span>
-        </DropdownMenuItem>
-      </RowActionsMenu>
+        </RowActionsMenu>
+      )}
     </div>
   );
 }

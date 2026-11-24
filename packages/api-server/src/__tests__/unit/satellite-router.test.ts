@@ -87,10 +87,40 @@ describe("what a fenced procedure hands the worker", () => {
         claim: record("claim"),
         heartbeat: record("heartbeat"),
         report: record("report"),
+        fileResult: record("fileResult"),
         drain: record("drain"),
       },
     };
   }
+
+  /**
+   * TEST_SCENARIO: A file operation's answer carries no sequence and no Job, so
+   * the only things that make it this owner's are the worker's own identity and
+   * the operation id. Both travel into the channel that settles it.
+   */
+  it("hands a file answer to the channel under the serving owner", async () => {
+    const { calls, worker } = recordingWorker();
+    const call = caller(worker);
+
+    await call.fileResult({
+      satellite: "lab",
+      id: "11111111-1111-4111-8111-111111111111",
+      incarnation: "22222222-2222-4222-8222-222222222222",
+      ok: false,
+      errno: "EIO",
+    });
+
+    expect(calls.fileResult?.[0]).toEqual([
+      "alice",
+      {
+        satellite: "lab",
+        id: "11111111-1111-4111-8111-111111111111",
+        incarnation: "22222222-2222-4222-8222-222222222222",
+        ok: false,
+        errno: "EIO",
+      },
+    ]);
+  });
 
   /**
    * TEST_SCENARIO: Every fenced procedure carries its registration into the

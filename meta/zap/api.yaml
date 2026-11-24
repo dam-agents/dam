@@ -49,9 +49,6 @@ jobs:
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/templates.get?input=%7B%22id%22%3A%20%22zap%22%7D"
         method: GET
         name: templates.get
-      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/repos.list"
-        method: GET
-        name: repos.list
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.list"
         method: GET
         name: agents.list

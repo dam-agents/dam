@@ -2,8 +2,7 @@ name: Labeler
 
 # Labels a pull request by the files it changes, as .github/labeler.yml maps
 # them. The label is only ever added: one a person put on stays. A fork's run
-# gets a read-only token, and Mergify's queue PRs are drafts the Quality
-# Inspector never checks, so both are skipped.
+# gets a read-only token, so it is skipped.
 
 on:
   pull_request:
@@ -18,7 +17,7 @@ concurrency:
 jobs:
   label:
     name: label by changed files
-    if: ${{ github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

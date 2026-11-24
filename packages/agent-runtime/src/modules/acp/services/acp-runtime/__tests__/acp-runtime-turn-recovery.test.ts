@@ -8,16 +8,21 @@ import {
   type DocumentStoreBackend,
 } from "../../../../../core/document-store.js";
 import { createActiveTurnStore } from "../../../infrastructure/active-turn-store.js";
-import type { SessionMetadataStore } from "../../../infrastructure/session-metadata-store.js";
+import {
+  createSessionMetadataStore,
+  type SessionMetadataStore,
+} from "../../../infrastructure/session-metadata-store.js";
 import {
   MAX_RESUME_ATTEMPTS,
   recoverInterruptedTurns,
 } from "../../interrupted-turn-recovery.js";
 import { createTriggerSessionDriver } from "../../trigger-session-driver.js";
 import {
+  createInMemoryUndeliveredStore,
   createSessionMetadata,
   createWorld,
   frames,
+  memoryDocumentBackend,
   promptTextsOf,
   type Client,
   type World,
@@ -46,13 +51,19 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 async function boot(resumes: boolean): Promise<World> {
   const activeTurns = createActiveTurnStore(disk);
-  const world = createWorld({ activeTurns, sessionMetadata });
+  const undeliveredPrompts = createInMemoryUndeliveredStore();
+  const world = createWorld({
+    activeTurns,
+    sessionMetadata,
+    undeliveredPrompts,
+  });
   const recovery = recoverInterruptedTurns({
     store: activeTurns,
     sessionMetadata,
+    undeliveredPrompts,
     triggerDriver: createTriggerSessionDriver({
       acpRuntime: world.runtime,
-      modelRequired: () => false,
+      modelReady: async () => true,
       modelMissing: () => false,
     }),
     log: () => {},
@@ -125,17 +136,20 @@ describe("acp-runtime: interrupted-turn recovery with nobody watching", () => {
    */
   it("resumes a session the harness loads after recovery has hung up", async () => {
     const activeTurns = createActiveTurnStore(disk);
+    const undeliveredPrompts = createInMemoryUndeliveredStore();
     const world = createWorld({
       activeTurns,
       sessionMetadata,
+      undeliveredPrompts,
       historyProvider: { fetch: () => Promise.resolve([]) },
     });
     const recovery = recoverInterruptedTurns({
       store: activeTurns,
       sessionMetadata,
+      undeliveredPrompts,
       triggerDriver: createTriggerSessionDriver({
         acpRuntime: world.runtime,
-        modelRequired: () => false,
+        modelReady: async () => true,
         modelMissing: () => false,
       }),
       log: () => {},
@@ -147,5 +161,111 @@ describe("acp-runtime: interrupted-turn recovery with nobody watching", () => {
 
     expect(promptTextsOf(world.harness())).toHaveLength(1);
     expect(activeTurns.leftovers()).toEqual([]);
+  });
+});
+
+describe("acp-runtime: interrupted-turn recovery of a scheduled first turn", () => {
+  const RUN = "sess-sched";
+  const TASK = "implement the next issue";
+
+  beforeEach(() => {
+    sessionMetadata = createSessionMetadataStore(memoryDocumentBackend());
+  });
+
+  function cutFirstTurn(): void {
+    sessionMetadata.set(RUN, {
+      mode: "chat",
+      type: "schedule_cron",
+      scheduleId: "sched-1",
+    });
+    sessionMetadata.markUnstored(RUN);
+    createActiveTurnStore(disk).record(RUN, {
+      id: "prompt-1",
+      recordedAt: new Date().toISOString(),
+      blocks: [{ type: "text", text: TASK }],
+      droppedAttachments: [],
+    });
+  }
+
+  function bootScheduled(): {
+    world: World;
+    recovery: Promise<void>;
+    bound: string[];
+  } {
+    const activeTurns = createActiveTurnStore(disk);
+    activeTurns.remove(SESSION);
+    const undeliveredPrompts = createInMemoryUndeliveredStore();
+    const world = createWorld({
+      activeTurns,
+      sessionMetadata,
+      undeliveredPrompts,
+    });
+    const bound: string[] = [];
+    const recovery = recoverInterruptedTurns({
+      store: activeTurns,
+      sessionMetadata,
+      undeliveredPrompts,
+      triggerDriver: createTriggerSessionDriver({
+        acpRuntime: world.runtime,
+        modelReady: async () => true,
+        modelMissing: () => false,
+      }),
+      bindScheduleSession: (_scheduleId, sessionId) => bound.push(sessionId),
+      log: () => {},
+    });
+    return { world, recovery, bound };
+  }
+
+  /**
+   * TEST_SCENARIO: a scheduled run is hours into its first turn when the
+   * machine restarts. The harness stored its conversation early in that turn,
+   * so it loads, and the run is resumed in its own Session with the
+   * interruption notice instead of starting its task over in a new one.
+   */
+  it("resumes a first turn the harness stored in its own session", async () => {
+    cutFirstTurn();
+    const { world, recovery, bound } = bootScheduled();
+    await vi.waitFor(() => world.harness().replyTo("initialize"));
+    await vi.waitFor(() => world.harness().replyTo("session/load"));
+    await recovery;
+
+    expect(world.harness().received("session/new")).toEqual([]);
+    const prompts = world.harness().received("session/prompt");
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]?.params).toMatchObject({ sessionId: RUN });
+    expect(promptTextsOf(world.harness())[0]).toContain("<turn-interrupted>");
+    expect(sessionMetadata.get(RUN)?.unstored).toBeUndefined();
+    expect(sessionMetadata.isTombstoned(RUN)).toBe(false);
+    expect(bound).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: the machine went down at the very start of a scheduled
+   * run's first turn, before the harness stored the Session, so the harness
+   * refuses to load it. Only then does the task run again, in a fresh Session
+   * of the same schedule, and the dead Session is retired.
+   */
+  it("runs a first turn the harness never stored again in a fresh session", async () => {
+    cutFirstTurn();
+    const { world, recovery, bound } = bootScheduled();
+    await vi.waitFor(() => world.harness().replyTo("initialize"));
+    await vi.waitFor(() =>
+      world.harness().refuseTo("session/load", {
+        code: -32002,
+        message: "Resource not found",
+      }),
+    );
+    await vi.waitFor(() =>
+      world.harness().replyTo("session/new", { sessionId: "sess-rerun" }),
+    );
+    await recovery;
+
+    expect(promptTextsOf(world.harness())).toEqual([TASK]);
+    expect(sessionMetadata.isTombstoned(RUN)).toBe(true);
+    expect(sessionMetadata.get("sess-rerun")?.meta).toMatchObject({
+      type: "schedule_cron",
+      scheduleId: "sched-1",
+    });
+    expect(bound).toEqual(["sess-rerun"]);
   });
 });

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An Agent sleeps on the install's idle timeout, and the UI offers no per-agent setting for it: the agent's General section shows no "Sleep after being idle for" field, whatever override the Agent carries. A kit or an API client can still seed an override; the UI only reads it, as the Always on tag.
+// TEST_OVERVIEW: An Agent stops on its own after the install's idle timeout, and the UI offers no per-agent setting for it: the agent's General section shows no "Sleep after being idle for" field, and no surface shows an "Always on" tag, because no agent is kept running.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AGENT_PERMISSIONS } from "api-server-api";
 import { createElement } from "react";
@@ -9,8 +9,6 @@ import type * as AgentQueries from "../../modules/agents/api/queries.js";
 
 vi.stubGlobal("window", new EventTarget());
 
-const state = vi.hoisted(() => ({ hibernationTimeoutMin: 5 }));
-
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: Record<string, unknown>) => unknown) =>
     select({
@@ -19,7 +17,7 @@ vi.mock("../../store.js", () => ({
       setView: vi.fn(),
       showConfirm: vi.fn(),
       openAgentSession: vi.fn(),
-      navigateToSandboxHome: vi.fn(),
+      openAgentSettings: vi.fn(),
       selectAgent: vi.fn(),
     }),
 }));
@@ -32,9 +30,7 @@ vi.mock("../../modules/agents/api/queries.js", async (importOriginal) => ({
         {
           id: "agent-dev",
           name: "dam",
-          disabled: false,
           env: [],
-          hibernationTimeoutMin: state.hibernationTimeoutMin,
           access: {
             role: "owner",
             editors: [],
@@ -94,22 +90,48 @@ vi.mock("../../modules/sandboxes/components/sandbox-home-header.js", () => ({
   SandboxIdentity: () => null,
 }));
 
-const { SandboxHomeView } =
-  await import("../../modules/sandboxes/views/sandbox-home-view.js");
+const { AgentConfiguration } =
+  await import("../../modules/sandboxes/components/agent-configuration.js");
+const { TooltipProvider } = await import("../../components/ui/tooltip.js");
 
-// TEST_SCENARIO: the General section renders its actions but no idle-sleep field, for an Agent on the install's default, one that never sleeps, and one with a window the old menu had no option for.
+const generalSection = (minutes: number) =>
+  createElement(
+    TooltipProvider,
+    null,
+    createElement(AgentConfiguration, {
+      agent: {
+        id: "agent-dev",
+        name: "dam",
+        env: [],
+        hibernationTimeoutMin: minutes,
+        access: {
+          role: "owner",
+          editors: [],
+          permissions: [...AGENT_PERMISSIONS],
+        },
+      } as never,
+      display: { state: "running", powerAction: "restart" } as never,
+      section: "setup",
+      onNavigate: () => {},
+      onOpenSession: () => {},
+      oauthReturnView: "/sandboxes/agent-dev/connections",
+    }),
+  );
+
+// TEST_SCENARIO: the General section renders its lifecycle actions but no idle-sleep field, no disable action and no "Always on" tag, for an Agent on the install's default, one that never slept, and one with a window the old menu had no option for.
 it("offers no idle-sleep setting on the agent's General section", () => {
   for (const minutes of [5, 0, 15, 42]) {
-    state.hibernationTimeoutMin = minutes;
     const html = renderToStaticMarkup(
       createElement(
         QueryClientProvider,
         { client: new QueryClient() },
-        createElement(SandboxHomeView),
+        generalSection(minutes),
       ),
     );
-    expect(html).toContain("Disable agent");
+    expect(html).toContain("Restart agent");
+    expect(html).not.toContain("Disable agent");
     expect(html).not.toMatch(/sleep after|idle for/i);
     expect(html).not.toContain("sleep-after-idle");
+    expect(html).not.toContain("Always on");
   }
 });

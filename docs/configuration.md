@@ -101,6 +101,8 @@ Set `apiServer.objectStorage.publicEndpoint` to a browser-reachable address (for
 Agents and user budgets live in the install's Postgres database, in the `control` schema, not in the Kubernetes API.
 The chart values under `agentStore` move an install through the three releases that got it there: `crd` (the custom resources, an install that has not cut over yet), `postgres` (the switch), and `contract` (past the rollback window, no custom resources).
 `apiServer.db` points both components at one platform database; the controller has its own login, `platform_controller`, whose password lives beside the api-server's.
+The switch's api-server recreates, so every old replica is gone before the absorb reads the custom resources; a later release on `postgres` rolls, because the chart reads the store's marker while it renders and a replica that reads the custom resources refuses to serve once that marker says Postgres.
+That read is one `get` of the marker ConfigMap in the agent namespace, so the identity running the upgrade must be allowed it; an offline render (`helm template`, a GitOps plan with no cluster) reads no marker and recreates the api-server, the safe side.
 
 Do not edit these values by hand outside a cutover: the switch is an acknowledged short outage, and the contract release refuses to start until the rollback window has closed and the install's archive is attested.
 The procedure is in [the cutover page](notes/agent-store-cutover.md); `docs/architecture/persistence.md` describes what the components do.
@@ -154,7 +156,7 @@ A Slack channel binds to at most one instance globally; the binding routes every
 5. Connect the app's own workspace the way every workspace is connected (below).
    No bot token is pasted anywhere: each workspace's token comes from the install handshake and is stored in a Kubernetes Secret.
 
-6. Link your Slack account with `/dam login` in Slack, invite the bot to a channel you are in, then connect an agent to it from the agent's Channels settings (or `dam channel slack connect <agent> --channel-id <C0…> [--ambient]`).
+6. Link your Slack account with `/dam login` in Slack, invite the bot to a channel you are in, then connect an agent to it from the agent's Channels settings (or `dam channel slack connect <agent> --channel-id <C0…> [--ambient] [--history]`).
    The platform connects an agent only to a channel you and the bot are both in; `/dam bind` in the channel itself works without linking first.
 
 **Agent name and avatar on replies:** with the `chat:write.customize` scope, agent replies post under the agent's name instead of the app's.
@@ -198,6 +200,10 @@ On Enterprise Grid, set `apiServer.slackEnterpriseId` to the organization id —
 Leave it empty on a standalone app, which is the only option there: Slack reports no organization for one.
 Connecting workspaces from two organizations at once is not supported either way — a Slack conversation id and a Slack user id each identify one thing only inside one organization.
 
+Where another install of the platform shares a workspace with this one, list that install's Slack app id (Basic Information → App ID) in `apiServer.slackCompanionAppIds`.
+Its agents' posts are then read as agents' posts and not as an integration's ([slack-companion-apps](architecture/slack-companion-apps.md)).
+Each install lists the other for both to read each other's agents, and an unlisted app's post is never read as an agent's.
+
 Connecting a channel does not change: you still paste a conversation id.
 One thing does become stricter once a second workspace is connected: the conversation has to be one a connected workspace can actually see, because that is how its workspace is worked out.
 Public channels resolve whether or not the bot has been invited; a **private** channel needs the bot invited first, which posting required anyway.
@@ -227,9 +233,42 @@ Slack will not let you turn this off again once it is on, so try it on a dev app
    As soon as the Slack worker starts, the api-server exchanges each of them for a rotating one — every connected workspace, an imported Helm token included.
    Slack retires the old token as it answers, so from then on only the rotating pair in the workspace's Secret works.
 
+This setting covers bot tokens only.
+The app-level token keeps the Helm value as it is until you turn on its own switch, below.
+
 Rotating tokens are renewed whether or not the flag is set, so setting it back to `false` has no effect on tokens already exchanged.
 Do not paste a rotating token (`xoxe.xoxb-…`) from Slack's settings page into `slackBotToken`: it arrives without its refresh token, so the platform cannot renew it and it expires in twelve hours.
 Connect the workspace through the install flow instead.
+
+#### App-level token rotation
+
+The app-level token that opens the Socket Mode connection can rotate too, with its own switch, `apiServer.slackAppTokenRotation`, off by default.
+It is separate from `slackTokenRotation` so that an install already rotating bot tokens sees no change until you turn it on.
+
+Slack does not exchange an app-level token made before rotation was on, so the platform starts from the refresh token of a new one.
+
+1. Token rotation must already be on in the Slack app (step 2 above), with `slackClientId` and `slackClientSecret` set.
+2. Generate a new app-level token in the Slack app (Basic Information → App-Level Tokens) with the `connections:write` scope.
+   Slack shows it once, as an access token (`xoxe.xapp-…`) and a refresh token (`xoxe-1-…`).
+   Keep only the refresh token.
+3. Turn it on in a dev install first, with the refresh token as a secret value:
+   `--set=apiServer.slackAppTokenRotation=true --set=apiServer.slackAppRefreshToken=xoxe-1-...`.
+   Keep the long-lived `xapp-…` token in `apiServer.slackAppToken`: Socket Mode uses it until the import succeeds, so the switch-over has no gap.
+   On the first Socket Mode connect, the refresh token is spent for a rotating pair, kept in the `platform-secret-slack-app-token` Secret and renewed every hour.
+4. Check that the Secret exists and that the api-server logs `slack.app_token.imported`.
+   `slack.app_token.import.failed` means Slack refused the refresh token; the api-server stays on `slackAppToken` and tries again every ten minutes.
+5. Watch the api-server log for `slack.app_token.refresh.failed` across more than one renewal cycle — a few hours — before you turn it on in staging and production.
+
+A refresh token works only once.
+After the import the Helm copy is spent; leave it set, because the Secret is matched to it and a different value starts a new import.
+If you refreshed the token by hand, set the refresh token from Slack's newest answer, not an older one.
+With the switch on and `slackAppRefreshToken` empty, the api-server logs `slack.app_token.refresh_token_missing` and stays on `slackAppToken`.
+
+Do not paste a rotating app-level token (`xoxe.xapp-…`) into `slackAppToken`: it comes without its refresh token and expires in twelve hours.
+Turning the switch off again puts Socket Mode back on `slackAppToken`.
+
+If the api-server could not renew the app-level token before it expired, and Slack refuses its refresh token, Slack stays down and the api-server logs `slack.app_token.refresh.failed`.
+To recover, generate a new app-level token in the Slack app and set its refresh token as `apiServer.slackAppRefreshToken`: a value other than the one imported before is imported again.
 
 The binding is the authorization: anyone in the channel drives the instance under the instance's own credentials, no login required; Slack channel membership is the only per-person gate, and the owner's Terms-of-Use acceptance covers every turn.
 
@@ -272,7 +311,7 @@ Every agent runs as a microVM, so the sandbox must be able to open `/dev/kvm`: `
 Such an agent can open `/dev/kvm` only when its Agent asks for nesting with `spec.backend.vm.nestedVirtualization: true`, or the install asks for every agent with `controller.agent.harnessTemplateDefaults.nestedVirtualization=true`, on an install with `virtualization.runner.nestedVirtualization=true`: then that machine alone gets the node's virtualization extensions, where the node's KVM allows nesting, and its `NestedVirtualization` condition says whether it got them.
 Changing the ask restarts that agent's machine and no other; changing the template default restarts every agent's machine that does not ask itself, and while it is on no Agent can opt out.
 Nesting is the kernel default (`kvm_intel` and `kvm_amd` `nested=1`), and turning it off on a node takes a module reload, so the chart value is the switch.
-Both values are on by default, so every vm agent and every Environment opens `/dev/kvm` wherever the node's KVM allows nesting: an agent can run a platform install of its own, in its sandbox or in an Environment.
+Both values are on by default, so every agent and every Environment opens `/dev/kvm` wherever the node's KVM allows nesting: an agent can run a platform install of its own, in its sandbox or in an Environment.
 A nesting guest reaches the host kernel's nested-virtualization code, which has had guest-to-host escapes: an install that does not accept that sets `virtualization.runner.nestedVirtualization=false`, which no Agent can override, or `controller.agent.harnessTemplateDefaults.nestedVirtualization=false` to leave nesting to the Agents that ask for it.
 The api-server offers no way to ask, so with the template default off only someone who can edit Agent resources can turn it on for one agent.
 
@@ -283,8 +322,18 @@ In the cluster, each runs inside a **VM runner** — a pod per owner that holds 
 A local install on an Apple silicon Mac has no such pod, unless it keeps the runner pods on nested virtualization: one runner outside the cluster serves every owner from the Mac's own hypervisor ([vm-host-runner](architecture/vm-host-runner.md)).
 An agent persists its home on its machine's disk, and the rest of the machine as a root overlay kept across stops while the image's root generation stays the same ([vm storage](architecture/vm-storage.md)).
 The install requires `virtualization.runner.resources.limits.memory`, the limit the runner admits machines against, `virtualization.runner.releaseHostPath`, and `virtualization.imageCache.hostPath` unless the Mac host runner is in use, or it refuses to render.
-An install may still carry `virtualization.enabled`, `controller.warmPool`, `controller.storageMigration`, `controller.requestsFromLimits` or a pod field under `controller.agent.base`: Helm drops a value nothing reads, and those configured the agent pod and its volumes, which are gone.
-The three JSON blocks the controller decodes are the exception — a key left in `AGENT_BASE`, `AGENT_HARNESS_TEMPLATE_DEFAULTS` or `AGENT_VM` stops its startup, because it refuses a field its config no longer has.
+An install may still carry `virtualization.enabled`, `controller.warmPool`, `controller.storageMigration` or `controller.requestsFromLimits`: Helm drops a value nothing reads, and those configured the agent pod and its volumes, which are gone.
+The blocks the controller decodes as JSON are the exception: it refuses a field its structs do not declare, so the chart refuses to render a key under `controller.agent.base`, `controller.agent.harnessTemplateDefaults` or `controller.gatewayEgress`, or anywhere in the `AGENT_VM` it assembles out of `imagePullSecrets`, `virtualization.runner` and `virtualization.gateway` — naming the key, and naming the container backend for a pod field such as `controller.agent.base.runtimeClassName`.
+It checks the `AGENT_VM` dict itself rather than a list of the values meant to reach it, so a runner field the chart starts copying is checked the day it moves.
+That reaches into the Kubernetes types those blocks hold, so `resources.claims` and `affinity.nodeAffinity` are checked field by field as well, and a free-form map the decoder takes as it comes — `limits`, `podLabels`, `nodeSelector`, `devices` — is checked for the kind of its values rather than their keys.
+Every value is held to the kind its field declares, so `mounts` given as a map, `vmIdleTimeout` as a list, a fraction or a number wider than the field's own int, or an `env` value written unquoted and read as a number fails the render, which names the kind, or the width, the field wants.
+The keys and the kinds are chart data ([`helm/controller-config-keys.json`](../helm/controller-config-keys.json)), generated from those structs by a test in `packages/controller/pkg/config` that fails when the two disagree.
+An install upgrades only after every Agent has left the container backend, which this release no longer has and cannot move: the chart reads the install's Agents from the cluster during the render and refuses while one names a backend other than `vm`, printing up to ten of them.
+That read runs under every `agentStore.authority` but `contract`, whose custom resources are frozen copies nothing boots; it is one `list` in the agent namespace, so an upgrade through Helm fails closed unless the identity running it may read Agents there — the HelmRelease's service account, not the application controller's.
+An install applied without Helm (`helm template | kubectl apply`) bypasses that read: its api-server migrates, and the controller then refuses each such Agent in its own reconcile, publishing a not-ready condition that names the backend and what to do, and making no machine, gateway or storage for it while every other Agent keeps running.
+`helm template` and a GitOps controller's plan render offline, where Helm's `lookup` finds nothing, so they pass and the refusal lands on the upgrade itself.
+An Agent that names no backend counts as one of them, since that is how a release before this one wrote a container Agent; the runtime migration that moves one, home included, exists only there.
+`kubectl get agents -n <agent namespace> -o custom-columns=NAME:.metadata.name,BACKEND:.spec.backend.type` lists what is left, and an operator moves each one on the release installed there by annotating it `agent-platform.ai/runtime-migration=requested`.
 It also needs cert-manager, which issues each runner's serving certificate from a CA of the runners' own that the chart renders beside them (`virtualization.runnerCA`).
 The devices reach the pod only as device-plugin resources, so an install with no node a plugin exposes `/dev/kvm` on cannot run agents, and the chart ships no plugin: a plugin is per node, so a cluster runs one for every install on it.
 By default the pod asks for KubeVirt's `devices.kubevirt.io/kvm`; `virtualization.runner.devices` names another plugin's resource instead — e.g. `squat.ai/kvm` from squat's generic-device-plugin, which local dev applies from `helm/extra/kvm-device-plugin.yaml`.

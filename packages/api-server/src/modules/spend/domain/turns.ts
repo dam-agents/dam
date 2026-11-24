@@ -27,6 +27,9 @@ export interface SettledCall extends Pick<
   readonly startedAt: Date;
   readonly unit: SpendUnit;
   readonly estimated: boolean;
+  readonly priceSource: string;
+  readonly priceModel: string;
+  readonly estimateReasons: readonly string[];
 }
 
 export interface TurnWindowRow {

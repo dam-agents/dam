@@ -67,6 +67,9 @@ vi.mock("../../modules/agents/hooks/use-operable-state.js", () => ({
   }),
 }));
 
+vi.mock("../../modules/agents/hooks/use-auto-wake-on-open.js", () => ({
+  useAutoWakeOnOpen: () => {},
+}));
 vi.mock("../../modules/agents/hooks/use-wake-agent.js", () => ({
   useWakeAgent: () => ({ wake: vi.fn(), isPending: false }),
 }));

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #MISE description="Build the api-server image to dist/oci/api-server.tar"
-#MISE sources=["src/**", "scripts/fetch-browser-stream-web.sh", "{{config_root}}/../agents/base/selkies/requirements.txt", "proto/**", "tsup.config.ts", "tsconfig.json", "package.json", ".mise/tasks/oci", "{{config_root}}/../agent-runtime-api/src/**", "{{config_root}}/../agent-runtime-api/package.json", "{{config_root}}/../api-server-api/src/**", "{{config_root}}/../api-server-api/package.json", "{{config_root}}/../db/src/**", "{{config_root}}/../db/package.json", "{{config_root}}/../db/drizzle/**", "{{config_root}}/../agents/*/rootfs/app/runtime-manifest.yaml", "{{config_root}}/../agents/*/image.toml", "{{config_root}}/../../skills/dam/SKILL.md", "{{config_root}}/../e2e/agents/mock-api/src/**", "{{config_root}}/../../pnpm-lock.yaml", "{{config_root}}/../../.mise/tasks/image/pack", "{{config_root}}/../../.mise/config.toml", "{{config_root}}/../../mise.lock"]
+#MISE sources=["src/**", "scripts/fetch-browser-stream-web.sh", "{{config_root}}/../agents/base/selkies/requirements.txt", "proto/**", "tsup.config.ts", "tsconfig.json", "package.json", ".mise/tasks/oci", "{{config_root}}/../ui/src/**", "{{config_root}}/../ui/public/**", "{{config_root}}/../ui/index.html", "{{config_root}}/../ui/vite.config.ts", "{{config_root}}/../ui/.mise/tasks/build", "{{config_root}}/../ui/tsconfig.json", "{{config_root}}/../ui/package.json", "{{config_root}}/../agent-runtime-api/src/**", "{{config_root}}/../agent-runtime-api/package.json", "{{config_root}}/../api-server-api/src/**", "{{config_root}}/../api-server-api/package.json", "{{config_root}}/../db/src/**", "{{config_root}}/../db/package.json", "{{config_root}}/../db/drizzle/**", "{{config_root}}/../agents/*/rootfs/app/runtime-manifest.yaml", "{{config_root}}/../agents/*/image.toml", "{{config_root}}/../../skills/dam/**", "{{config_root}}/../e2e/agents/mock-api/src/**", "{{config_root}}/../../pnpm-lock.yaml", "{{config_root}}/../../.mise/tasks/image/pack", "{{config_root}}/../../.mise/config.toml", "{{config_root}}/../../mise.lock"]
 #MISE outputs=["dist/oci/api-server.tar"]
 set -euo pipefail
 base="$(mise config get -f "$MISE_CONFIG_ROOT/../../.mise/config.toml" vars.base_image_api_server)"
 pnpm exec tsup
+mise run //packages/ui:build
 root="$(mktemp -d)" npm="$(mktemp -d)"
 trap 'rm -rf "$root" "$npm"' EXIT
 # The image's native modules, for Linux of the host's arch, whatever the host.
@@ -24,9 +25,13 @@ mv "$npm/package.json" "$root/app/package.json"
 scripts/fetch-browser-stream-web.sh "$root/app/selkies-web"
 mkdir -p "$root/app/packages/db"
 cp -R ../db/drizzle "$root/app/packages/db/"
-# The dam skill of this commit, which the server offers to an agent given its URL.
-mkdir -p "$root/app/skills/dam"
-cp ../../skills/dam/SKILL.md "$root/app/skills/dam/"
+# The dam skill of this commit, SKILL.md and the pages beside it, which the
+# server offers to an agent given its URL.
+mkdir -p "$root/app/skills"
+cp -R ../../skills/dam "$root/app/skills/"
+# The browser app of this commit, served from the same origin as the API.
+mkdir -p "$root/app/ui"
+cp -R ../ui/dist/js/. "$root/app/ui/"
 # Each harness's runtime manifest, named as the harness the image runs, so the
 # api-server can answer a harness's settings and native tiers without an agent.
 mkdir -p "$root/app/runtime-manifests"

@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-11-04
+Last verified: 2026-11-24
 
 ## Session inside the machine
 
@@ -12,7 +12,19 @@ Before each turn of a session on the default, the runtime applies the newest def
 A default on another harness is not applied, since a session keeps its harness; the session runs on what it last took and follows again when the default is back on its harness.
 A pick by hand in the session, or a configure call, makes it its own choice.
 A session from before this marker follows its default once, when the runtime first holds the defaults, only if its harness, model and settings all equal that default; every other one keeps its own choice.
-The default harness's lease starts once the server listens, so a waking chat finds it loaded; any other starts on the first frame naming a session on its harness.
+A run never stops for lack of a model: the runtime resolves it through one ordered rule.
+The session's own model serves while its provider is still granted and the catalog does not contradict it.
+Else its kind's default serves, when that default runs on the session's harness.
+Else a model from the catalog serves, preferring the providers the default and the session name over the rest of the granted ones, then the platform's preferred work model for the harness.
+A model resolved this way is written into the session metadata as a default is, so a session takes it from then on, and a load or resume after a restart routes back to the same lease.
+A prompt that nothing can serve is held rather than refused at once, since a model may still arrive: the agent's first state (its env and a converted chat default) and the model catalog both grow after a boot, and a provider the api-server grants late, such as the deployment's shared one, lists its models only after the frame did.
+Only a prompt waits for a model: a load or a resume brings a transcript back to view and a setting change adjusts the next turn, so neither needs one and neither is refused for it.
+The wait belongs to the frames that started it, bounded by the harness's own warm-start limit, 30 s; a change to the env, the defaults or the catalog re-routes them against the same deadline, so a catalog that keeps changing cannot keep a prompt waiting forever.
+Only a prompt that still has no way to run once that wait passes is refused, and the refusal names what is missing: a model provider for the agent, not a model to pick.
+A model resolved while the session's turn runs waits for that turn to end, so a change never moves or re-keys a session mid-turn.
+A `session/new` released on its kind's default opens on that default's model, settings and follow marker, as the api-server fills them into a run that names no model; a harness that does not reach its models through the Model Router needs no model, so it bypasses the gate, and a sub-agent session has no kind default to take.
+The default harness's lease starts once the server listens, so a waking chat finds it loaded; where the machine kept the [model catalog](harness-config.md#the-model-catalog) it last routed on, the lease starts on that instead of waiting for the provider listing.
+Any other lease starts on the first frame naming a session on its harness.
 A lease that held no session for a while shuts down, the default's included, and one whose harness crashes is respawned by the next frame.
 A lease outlives connections.
 ACP channels attach concurrently and engage sessions by the `sessionId` each frame carries.
@@ -25,8 +37,10 @@ A listed session's title is its explicit title (a rename, a schedule's session t
 The list is read from the platform's own session records, not from the harness, so a Session with no kept title (one a runtime before the Model Router made) gets the harness's title once: at each boot the runtime asks each harness's listing for its untitled Sessions and keeps the first line of the title.
 A channel turn's first prompt opens with the platform's instructions to the agent, so a Slack or Telegram Session's automatic title is instead the person's first message, which the channel names on `session/new` in `_meta.platform.title` (Slack sends its first line without leading mentions, Telegram the whole text); the runtime cuts it to one line of the same length as a title from a prompt.
 
-A lease spawns with the agent-wide env, its harness's layer ([connections](connections.md#contribution-fan-out)) and the router's env; a routed provider's env stays with the Model Router, which reads it per call, a native Connection's (Bedrock) still reaches the process, and a provider env change recycles the leases.
-A prompt to a session whose model names a removed provider fails with a structured *provider removed* error naming it; another provider's model, or the grant restored, resumes it.
+A lease spawns with the agent-wide env, its harness's layer ([connections](connections.md#contribution-fan-out)) and the router's env; a routed provider's env stays with the Model Router, which reads it per call, but for the variables the harness's manifest names from its home Connection (Bob's Advanced settings), laid under the agent's own env ([harness configuration](harness-config.md#the-model-router)); a native Connection's (Bedrock) still reaches the process, and a provider env change recycles the leases.
+A change to the [model catalog](harness-config.md#the-model-catalog) recycles a lease only where the models its harness may run on, or their windows, changed; a Connection that merely reports itself unavailable is the picker's to show and leaves the process alone.
+The harness that replaces a recycled one after an env change waits for the listing that change started, so one boot settles into one harness.
+A prompt to a session whose model names a removed provider runs on a catalog model of another granted provider, on the session's own harness; the structured *provider removed* error naming the provider is left for an agent no provider serves.
 
 Each session is an append-only in-memory log (≤2 MB soft cap; inline image and audio bytes give way to a placeholder before any entry is evicted).
 Every channel keeps a per-session cursor; new events append to the log and fan out to engaged channels that have not yet seen them.
@@ -36,6 +50,7 @@ A harness can send the same output twice: Claude Code answers a local command su
 So in a prompt turn whose prompt is one text block starting with `/`, an agent message whose whole text, trailing white space aside, is that of the message just before it, with no thought or tool call between them, never enters the log, and the output shows once, live and on every load.
 
 The runtime also tells engaged viewers when a scheduled fire begins its turn, and a load hands back the fire start times the session still holds — the newest, under a bound [persistence](persistence.md) owns.
+A turn boot recovery resumes after it cut one short carries no unattended flag, so a chat Session starts no run of its own for it and the chat draws no boundary over the resume; a Session a schedule owns keeps the run that fire began, which its row, its run totals and its billing read.
 A thread draws each of those beside the prompt that opens its run, so a run boundary survives a reopen.
 A start whose prompt is not in view — older than the loaded tail — sits above the first message after it, and only the newest such start draws there, since one message opens one run; a start with no timed message to sit beside at all draws nothing.
 
@@ -45,6 +60,7 @@ A permission answer that carries who answered in `result._meta.platform.answered
 Engaged viewers hear each Sender and verdict as it is recorded, and the Sender of each turn as it starts; a load hands back the Senders, the verdicts, and the running turn's Sender and the time it started, and the session list carries the Session Starter.
 A client matches a Sender to its message by prompt id, and by time when the log was rebuilt from the harness's history and the ids changed, as it places run starts.
 A rewind keeps the Senders, the verdicts and the Session Starter; a fork keeps the Senders and the verdicts, and its Session Starter is whoever sent its first prompt.
+A prompt the runtime sends into a Session on its own, such as the one that sends a broken [chat form](chat-forms.md#the-conversation-is-the-transport) back to the agent, carries no Sender; it is a new turn of that Session, delivered the way a one-time task's result is.
 
 A `session/load` that opts in replays **only the newest tail** of the log, bounding the open cost at any length; without the opt-in the whole log replays, per ACP.
 The response reports any cut, with a cursor when the older range is still in the log; a load presenting that cursor is paged the older range, down to the eviction floor (cut without cursor).
@@ -60,6 +76,10 @@ Otherwise, or on provider failure, the runtime's own `session/load` fills the lo
 Waiters are then served from the log; the UI also reads its newest tail as data and renders it while the load engages the session.
 On a waking Agent the UI asks for that tail at the click, as it asks for the session list: the agent's tRPC relay holds the ask until the Agent answers, and an ask it refuses is asked again once the Agent is operable.
 When the socket that carries the load goes away, as when an api-server replica shuts down, the UI asks the load again on a new socket instead of reporting that the Session would not load.
+A load that fails while the session list shows the Session running, as when the chat opens a kit update Session during its first turn, is asked again for about ten seconds before the chat shows that the Session would not load.
+A live message of the shown Session — its text, thinking or a tool call, not a run start or another platform update — takes that error away.
+The UI then reads the Session's history again, without a spinner, on a fresh channel: the runtime keeps a replay cursor per channel, and the channel that carried the live message would replay only what it has not sent.
+When that read fails too, the chat engages the Session without it and keeps the live messages it shows.
 An image may also declare a **session-cut provider**, a module in a worker thread of its own: it cuts a closed Session's stored conversation in place, keeping everything before a given user message under the same id.
 It drives the harness's own store directly, never the harness's protocol, since the adapter would replay a cut passed to it whenever it rebuilds the session.
 
@@ -113,6 +133,7 @@ Both ride a sender-minted prompt id as platform metadata, stripped before the ag
 Both are **sender-only and ephemeral**; a Session's reset is ephemeral too, sent to every viewer engaged when it happened; the queue is the conversation's: every viewer sees each change and can edit or remove a prompt until it starts, and a load returns it.
 A prompt's echo enters the log only when it starts.
 The queue marks a prompt that waits only for its session — nothing running ahead, the harness still loading the session after a wake, a restart or a rewind — as **starting**, and the chat shows it as sent rather than queued.
+A person's Stop takes the prompts still waiting in the queue back before it cancels the turn, so none of them starts as the next one: their text goes into the composer after anything typed there, an image among them goes back as an attachment, a file it carried is named as not restored since its upload is gone, and a prompt the runtime starts in the meantime counts as delivered and is left alone.
 Field-level contract: [`packages/api-server-api/`](../../packages/api-server-api/).
 
 A harness that can **steer** takes a prompt into the turn it is running rather than after it.
@@ -155,6 +176,8 @@ It is answered `injected` the moment it joins, and `promptRequired` on every oth
 A request sent again with the same `promptId` gets the first answer, so the message reaches the agent once.
 A steer-only entry still waiting is withdrawn when its connection closes; one already sent to the harness is always answered.
 The router answers `promptRequired` itself when no harness process holds work for the Session, so a steer never starts a harness, and its `initialize` answer says `servesSteering`, which a sender checks before it steers.
+A harness that cannot steer is answered with a method-not-found error, which a channel worker takes as final for the rest of that turn, and asks again on its next turn; a harness whose manifest says it steers but that has not answered `initialize` yet, such as one still starting after the agent woke, is not refused: the steer waits for a steer point, and goes once the answer says the harness steers.
+The runtime logs every steer it does not take, with its answer and how long it waited, and the channel worker logs `<surface>.turn.steer_declined` with the outcome.
 
 ### Messages between sessions
 
@@ -180,12 +203,14 @@ A client fails a prompt on evidence instead:
   Unacknowledged this long means it never arrived, and the failure carries the socket's stated cause when it gave one.
   Until the acceptance arrives the person's own message says it is **sending**, or that the agent is **waking** when the send woke it, after a second so a fast send shows nothing; the reply, the working indicator and the session's row in the sidebar wait for the acceptance, so none says the agent is working on a message it does not have.
   A send whose chat moves to another session before it went out goes over a connection of its own, engaged to its session, so the move cannot strand it.
+  The chat's own connection is engaged to the session on screen alone: a resume that answers after the person moved on never engages it, and one left engaged to another session engages the shown one again at the next send, so a send or its retry never fails for the move.
 - **Waiting is unbounded.** A queued prompt is never failed for waiting, however long the turn ahead of it runs.
   The user is told it is waiting, which is true.
 
 A connection that drops while its prompt is still queued raises nothing on the client, because the queue survives the departure: queued prompts belong to the conversation, not to the channel that sent them, except steer-only entries, which belong to their sender.
 The queue keeps running with nobody engaged, so a person who opens another session while a message waits finds its answer when they come back.
-A queue leaves the scheduler by three routes — the session forgotten, the scheduler cleared when the harness goes down, or a session the harness cannot load back refusing its queue — and all but the refusal record the queue's prompts as **undelivered** in a durable document on the machine, whole, inline images capped; the refusal errors each sender instead.
+A queue leaves the scheduler by three routes — the session forgotten, the scheduler cleared when the harness goes down, or a session whose settings the harness refuses — and each writes the queue's prompts down as **undelivered** in a durable document on the machine, whole, inline images capped.
+The refusal also errors each sender, so the person reads the harness's own reason, and the record is what hands the text back once a session the harness never stored is retired.
 Each session load hands the records back, marked on the conversation to send again or delete, and says whether a turn is still running; a record sent again or deleted is **retired** so its earlier echo drops from the replay rather than doubling.
 Recovery is always a send the user initiates: an automatic resend cannot know whether a prompt was dropped before or after the agent saw it, so it risks running it twice.
 A prompt already *handed to the harness* is the other side of that split: losing the channel costs the sender only its live view — the turn runs to completion and its output lands in the log for any later viewer.
@@ -206,8 +231,9 @@ The resumed turn is unattended: nobody reads it live, so it waits for the harnes
 A turn the platform stopped — a Sleep, an eviction, a restart, all of which reach the runtime as SIGTERM — is marked stopped as the runtime shuts down, so the notice and the chat name the stop instead of blaming memory.
 The messages of an interrupt-and-continue steer are recorded as undelivered prompts from the cancel until the harness takes them, so a crash in that gap leaves them for the person to send again.
 The marker is written only after the harness *took* the prompt, so resuming continues a turn the agent already saw — not the [no-auto-resend](#prompt-delivery) of a prompt it never got.
-A harness stores a new session only while its first turn runs, so the runtime flags a session from `session/new` as unstored until the harness answers a prompt of it, and the marker of an unstored session's turn keeps that turn's prompt.
-A scheduled session the harness never stored cannot be resumed at all — the harness holds no such conversation — so recovery runs the marker's prompt again in a fresh session of the same schedule, unattended, which is how a fire that landed on a hibernated Agent still does its work when the machine goes down on its first turn.
+A harness stores a new session only while its first turn runs, so the runtime flags a session from `session/new` as unstored until the harness answers a prompt of it, loads or resumes it, or the image's history provider serves its history, and the marker of an unstored session's turn keeps that turn's prompt.
+The flag cannot tell how far that first turn got, and a harness stores the session early in it, so recovery resumes a cut first turn like any other, in its own session with the notice: a scheduled run hours into its first turn keeps everything it knew.
+Only a scheduled session whose load the harness then answers with not found — it never stored it, as when the machine went down at the very start of the turn — has its marker's prompt run again in a fresh session of the same schedule, unattended, which is how a fire that landed on a hibernated Agent still does its work; a resume that fails for another reason gives up as any other does, since the harness may still hold the conversation, and keeps the marker's prompt as undelivered.
 When the harness exits during such a turn, the runtime moves the kept prompt to the undelivered document; at a shutdown of the agent-runtime process the marker keeps it, for boot recovery or a failed load to settle.
 When the harness cannot load an unstored session, the runtime moves the kept prompt to the undelivered document, retires a session left with no undelivered prompt, and puts `data.platform.unstored` with the undelivered prompts on the load error.
 The UI then moves those prompts to a new chat, where they show as not delivered, and deletes the session: a harness cannot create a session under a given id, so sending again starts a new session.
@@ -243,6 +269,10 @@ Claude Code can lose its idle report, so a busy session that stays silent for te
 Terminal-mode sessions follow a different model from the chat path above.
 agent-runtime accepts at most one connection per terminal session, runs the terminal entrypoint in a PTY with the env of the harness and provider its WebSocket names, and pipes raw bytes both ways.
 A session on a removed provider or an unknown harness closes with the reason.
+A **shell** terminal session runs the agent user's login shell in the PTY instead of the terminal entrypoint, in the same work directory and with the env a terminal on the agent's default harness with no model gets, so a harness or script started from it reaches the Model Router and the credential gateway as from that terminal.
+It asks for no harness, provider or model, so neither can refuse it, and the web terminal's menu offers it on every agent, even while the harnesses load or when no provider fits one.
+The runtime marks the session as a shell and titles it Shell, since no harness lists it to name it; a shell session whose PTY is gone starts a shell again, and a harness session never becomes one.
+It rides the same terminal socket, so it takes the terminal's admission — the owner only, as for SSH ([agent-editors](agent-editors.md#sessions)) — and its reconnect, scrollback and reap below.
 A terminal sitting at the harness's prompt sends nothing, so the api-server's relay pings its viewer every 30 seconds, as it pings SSH and browser viewers: the traffic keeps networks that close quiet connections (mobile carriers, proxies) from cutting it, and a viewer that leaves a ping unanswered is cut, which detaches the PTY as a closed tab does.
 Scrollback is tracked so that reattaching while the PTY lives replays it.
 A detached PTY is reaped on idleness, not on viewer loss: after a short detach grace it is killed only once the harness has also gone quiet.
@@ -256,7 +286,7 @@ There is no append-only log, no fan-out, and no `session/resume` — terminal se
 A terminal viewer whose connection drops connects again to the same session by itself; `dam chat` and the web terminal follow one set of rules from the contract package.
 It reconnects only after a connection that carried a frame, so a first connect that fails is reported at once.
 A drop is transient when the socket is lost, the relay goes away or restarts, the upgrade meets a server error, or the relay loses the agent's end of the connection.
-The PTY exiting, a newer viewer taking the session over, a refused lease, a refused sign-in, and an Agent that will not wake (asleep, disabled, gone, or past its wake timeout) end the attach, because a new attempt would get the same answer.
+The PTY exiting, a newer viewer taking the session over, a refused lease, a refused sign-in, and an Agent that will not wake (asleep, gone, or past its wake timeout) end the attach, because a new attempt would get the same answer.
 The relay closes for those last ones with an "agent not ready" reason, which is how a viewer tells them apart from a lost agent connection.
 Attempts back off at 1, 2, 5, 10 and then every 30 seconds, as `dam run` does, and stop two minutes after the drop of the last connection that carried a frame.
 A reconnect never asks for a reset and never wakes the Agent: it only waits out a wake asked for elsewhere, so a retry can neither kill the session it is trying to reach nor wake an Agent its owner put to sleep meanwhile.

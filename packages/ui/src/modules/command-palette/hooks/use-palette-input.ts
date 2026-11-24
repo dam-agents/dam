@@ -3,6 +3,7 @@ import { useMemo } from "react";
 
 import { getBrand } from "../../../brand.js";
 import { useStore } from "../../../store.js";
+import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
 import { useAgents } from "../../agents/api/queries.js";
 import { deniableApprovalIds } from "../../approvals/lib/deny-all.js";
 import { useArtifacts } from "../../artifacts/api/queries.js";
@@ -38,15 +39,9 @@ const NO_APPROVALS: readonly ApprovalView[] = [];
  */
 export function usePaletteInput(): PaletteInput {
   const view = useStore((s) => s.view);
-  const agentId = useStore((s) =>
-    s.view === "chat"
-      ? s.selectedAgent
-      : s.view === "sandbox-home"
-        ? s.agentId
-        : null,
-  );
+  const agentId = useStore((s) => (s.view === "chat" ? s.selectedAgent : null));
   const chatAgentId = view === "chat" ? agentId : null;
-  const section = useStore((s) => s.sandboxSection);
+  const section = useStore((s) => s.agentSettings?.section ?? null);
   const sessionId = useStore((s) => (s.view === "chat" ? s.sessionId : null));
   const settingsTab = useStore((s) => s.settingsTab);
   const theme = useStore((s) => s.theme);
@@ -62,6 +57,7 @@ export function usePaletteInput(): PaletteInput {
   const kits = useStarterKits().data;
   const { tabs } = useSettingsTabs();
   const environments = useEnvironmentsEnabled();
+  const chatForms = useChatFormsEnabled();
   const openSession = useAgentSession(chatAgentId, sessionId).data ?? null;
   const changeSets = useChangeSets(chatAgentId, sessionId);
   const { items: feed } = useFeed();
@@ -112,7 +108,7 @@ export function usePaletteInput(): PaletteInput {
     route: {
       view,
       agentId,
-      section: view === "sandbox-home" ? section : null,
+      section,
       sessionId,
       settingsTab: view === "settings" ? settingsTab : null,
     },
@@ -125,14 +121,16 @@ export function usePaletteInput(): PaletteInput {
     kits: kits ?? [],
     settingsTabs: tabs,
     sections: SECTIONS.filter(
-      (e) => environments || e.section !== "environments",
+      (e) =>
+        (chatForms || e.section !== "chat-forms") &&
+        (environments || e.section !== "environments"),
     ),
     channels: agentsData?.availableChannels ?? {},
     browserOpen: chatAgent?.requireConnectionAddress
       ? dock?.kind === "browser" && dock.agentId === chatAgent.id
       : null,
     changesOpen:
-      chatAgent && hasGitRepositories(changeSets) !== false
+      chatAgent && hasGitRepositories(changeSets) === true
         ? dock?.kind === "changes" && dock.agentId === chatAgent.id
         : null,
     theme,

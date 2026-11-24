@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { parseRoute, routeToPath } from "../../modules/platform/lib/routes.js";
+import {
+  agentSettingsPath,
+  parseRoute,
+  routeToNavigationState,
+  routeToPath,
+} from "../../modules/platform/lib/routes.js";
 
 const canonicalPaths = [
   "/",
   "/chat/agent-1",
   "/chat/agent-1/sess-1",
+  "/artifacts",
+  "/artifacts/2f8c1a9e-4b3d-4c5e-8f70-9a1b2c3d4e5f",
   "/settings",
   "/settings/connections",
   "/settings/schedules",
@@ -13,11 +20,10 @@ const canonicalPaths = [
   "/telegram/bind",
   "/slack/bind",
   "/connections/secret",
-  "/sandboxes/sb-1",
-  "/sandboxes/sb-1/connections",
   "/starter-kits/platform/code-reviewer",
   "/starter-kits/link/acme/shared-kit",
   "/analytics",
+  "/artifacts/art-1/view",
   "/nonexistent",
 ];
 
@@ -45,6 +51,31 @@ describe("route round-trip", () => {
     expect(parseRoute("/starter-kits")).toEqual({ view: "starter-kits" });
     expect(routeToPath({ view: "artifacts" })).toBe("/artifacts");
     expect(routeToPath({ view: "starter-kits" })).toBe("/starter-kits");
+  });
+
+  // TEST_SCENARIO: an artifact's own page is a link to the library with that artifact open, so a private artifact's link in the owner's Slack DM lands on the artifact rather than on a list they then have to search; an id that needs escaping round-trips.
+  it("opens the Artifacts page with one artifact", () => {
+    expect(parseRoute("/artifacts")).toEqual({ view: "artifacts" });
+    expect(parseRoute("/artifacts/2f8c1a9e/")).toEqual({
+      view: "artifacts",
+      artifactId: "2f8c1a9e",
+    });
+    expect(parseRoute("/artifacts/a%2Fb")).toEqual({
+      view: "artifacts",
+      artifactId: "a/b",
+    });
+    expect(routeToPath({ view: "artifacts", artifactId: "2f8c1a9e" })).toBe(
+      "/artifacts/2f8c1a9e",
+    );
+    expect(routeToPath({ view: "artifacts", artifactId: "a/b" })).toBe(
+      "/artifacts/a%2Fb",
+    );
+    expect(
+      routeToNavigationState(parseRoute("/artifacts/2f8c1a9e")),
+    ).toMatchObject({ view: "artifacts", artifactId: "2f8c1a9e" });
+    expect(routeToNavigationState(parseRoute("/artifacts"))).toMatchObject({
+      artifactId: null,
+    });
   });
 
   // TEST_SCENARIO: a kit from a link is addressed by its repository, so a teammate can share the platform page itself: /starter-kits/link/<owner>/<repo> opens the kit modal for that repository, keeping the slash between owner and repository.
@@ -100,6 +131,57 @@ describe("route round-trip", () => {
     "/sandboxes/sb-1/bogus",
   ])("does not know %s", (path) => {
     expect(parseRoute(path)).toEqual({ view: "not-found", path });
+  });
+});
+
+describe("old agent page links", () => {
+  // TEST_SCENARIO: the server still writes /sandboxes/<id>/<section> into Slack and Telegram messages and spend alerts; there is no such page, so the link opens the agent's chat with its settings on that section, and a bare one on General.
+  it.each([
+    ["/sandboxes/sb-1", "setup"],
+    ["/sandboxes/sb-1/providers", "providers"],
+    ["/sandboxes/sb-1/usage", "usage"],
+    ["/sandboxes/sb-1/skills", "skills"],
+    ["/sandboxes/sb-1/connections", "connections"],
+    ["/sandboxes/sb%2F1/setup", "setup"],
+  ])("opens %s as the chat with settings on %s", (path, section) => {
+    const route = parseRoute(path);
+    expect(route).toMatchObject({ view: "chat", settings: section });
+    expect((route as { agent: string }).agent).toBe(
+      path.includes("%2F") ? "sb/1" : "sb-1",
+    );
+  });
+
+  // TEST_SCENARIO: the address a sign-in returns to is that same link, so it opens the settings again, and the chat's own address never carries the section.
+  it("builds the link a sign-in returns to", () => {
+    expect(agentSettingsPath("sb-1", "connections")).toBe(
+      "/sandboxes/sb-1/connections",
+    );
+    expect(agentSettingsPath("sb-1")).toBe("/sandboxes/sb-1");
+    expect(parseRoute(agentSettingsPath("a/b", "providers"))).toMatchObject({
+      view: "chat",
+      agent: "a/b",
+      settings: "providers",
+    });
+    expect(
+      routeToPath({ view: "chat", agent: "sb-1", settings: "providers" }),
+    ).toBe("/chat/sb-1");
+  });
+});
+
+describe("artifact page route", () => {
+  // TEST_SCENARIO: Open in new tab opens the artifact alone, at `/artifacts/<id>/view`; `/artifacts/<id>` stays the library with that artifact docked, which a private artifact's link in the owner's Slack DM opens.
+  it("carries the artifact a new tab opens", () => {
+    expect(parseRoute("/artifacts/art%2F1/view")).toEqual({
+      view: "artifact",
+      artifactId: "art/1",
+    });
+    expect(routeToPath({ view: "artifact", artifactId: "art/1" })).toBe(
+      "/artifacts/art%2F1/view",
+    );
+    expect(parseRoute("/artifacts/art-1")).toEqual({
+      view: "artifacts",
+      artifactId: "art-1",
+    });
   });
 });
 

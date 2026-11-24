@@ -23,6 +23,20 @@ export function isProtectedAgentEnvName(name: string): boolean {
   return PROTECTED_AGENT_ENV_NAMES.includes(name);
 }
 
+export const TELEMETRY_IDENTITY_ENV = "OTEL_RESOURCE_ATTRIBUTES";
+const TELEMETRY_NAME_ATTR = "platform.agent.name=";
+
+// UNIT_BOUNDARY_DESCRIPTION: the platform's own telemetry row, told apart from a variable the user added under the same name by the agent-name attribute the platform writes into it.
+export function isTelemetryIdentityEnv(env: {
+  name: string;
+  value: string;
+}): boolean {
+  return (
+    env.name === TELEMETRY_IDENTITY_ENV &&
+    env.value.includes(TELEMETRY_NAME_ATTR)
+  );
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the termination codes clients word for themselves. A view's code stays a string, since the controller can add one, but a client compares against these names, so a typo or a removed code fails to compile.
 export const TerminationCode = {
   OutOfMemory: "OutOfMemory",
@@ -93,12 +107,18 @@ export interface SlackLoopGuardDrops {
   recent: SlackLoopGuardDrop[];
 }
 
+export interface SlackBindingModes {
+  ambient?: boolean | undefined;
+  history?: boolean | undefined;
+}
+
 export interface SlackChannel extends Channel {
   type: ChannelType.Slack;
   slackChannelId: string;
   teamId?: string;
   label?: SlackConversationLabel;
   ambient?: boolean;
+  history?: boolean;
   default?: boolean;
   customEmoji?: string[] | null;
   loopGuard?: SlackLoopGuardDrops;
@@ -161,7 +181,6 @@ export interface Agent {
   effectiveHibernationTimeoutMin: number;
   error?: string;
   stopRequested: boolean;
-  disabled: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
   startWaitMessage?: string;
@@ -189,13 +208,25 @@ export interface Agent {
   onboardingSteps?: OnboardingStep[];
   features: RuntimeFeatures;
   defaultProvider?: AgentDefaultProvider;
+  startsOn?: AgentStart;
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: the provider a create that named none was granted, and why. `source` names what chose it: the owner's default for new agents when the agent starts on that profile (`profile` then holds it), else the starter kit's providers list, else the providers its Template lists for a harness the catalog does not know, else the first the harness runs on in its provider order; `profile` is null for all but the first. Only the create's own answer carries it. */
+/** UNIT_BOUNDARY_DESCRIPTION: the provider a create that named none was granted, and why. `source` names what chose it: the owner's default profile when the agent starts on it, or the base default when the owner chose none (`profile` then holds what it starts on, with no name for the base default), else the starter kit's providers list, else the providers its Template lists for a harness the catalog does not know, else the first the harness runs on in its provider order; `profile` is null for all but the first two. Only the create's own answer carries it. */
 export interface AgentDefaultProvider {
   connectionId: string;
-  source: "profile" | "kit" | "template" | "harness";
-  profile: { name: string; model: string; harness: string } | null;
+  source: "profile" | "default" | "kit" | "template" | "harness";
+  profile: { name: string | null; model: string; harness: string } | null;
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: what a new Agent starts on, as its create decided it: the harness its sessions start on, the model of its chat default (null while its first start picks it), and every model-provider Connection it was granted with what chose each — `named` for one the create named, else the `source` of its default provider — and the harnesses each runs. Only the create's own answer carries it, and only for a Template create. */
+export interface AgentStart {
+  harness: string | null;
+  model: string | null;
+  providers: {
+    connectionId: string;
+    source: "named" | AgentDefaultProvider["source"];
+    harnesses: string[];
+  }[];
 }
 
 export type AgentKind = z.infer<typeof agentKindSchema>;
@@ -209,7 +240,32 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   telemetryAttributionId?: string;
   noDefaultProvider?: boolean;
   environmentOf?: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: an idle window of the Agent's own, in minutes, 0 never sleeping. Only an Environment and a sub-agent carry one; a regular Agent sleeps on the install's idle timeout, so the create's schema does not carry it. */
+  hibernationTimeoutMin?: number;
+  linkFrom?: string;
+  inheritance?: ChildInheritance;
+  /* UNIT_BOUNDARY_DESCRIPTION: the home instructions this Agent starts with, in place of the template every other Agent gets — the assistant's standing behaviour, which tells it what the platform greeted its owner with. Only the provisioning that names it writes it, and only once. */
+  instructions?: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: the Agent is one the platform makes for the person, so the Connections its create names are granted whatever the flags that offer them to people say. Not expressible over the API: the create's schema does not carry it. */
+  platformGrants?: true;
 };
+
+/** UNIT_BOUNDARY_DESCRIPTION: what a child Agent takes from the Agent that launched it, recorded once at create: its connections mirrored from the parent, copied as a subset, or none, and its egress decided by the parent's root, live. */
+export interface ChildInheritance {
+  parentAgentId: string;
+  connectionsFrom: "parent" | "subset" | "none";
+  egressFrom: "parent" | "open" | "scoped";
+  // UNIT_BOUNDARY_DESCRIPTION: what a child with egress of its own starts with: for `open`, the rules its launching agent set; for `scoped`, the hosts whose rules it copies from its parent, or all of them.
+  egressSeed?: { rules: ChildEgressRuleSeed[] } | { hosts: string[] | "all" };
+}
+
+export interface ChildEgressRuleSeed {
+  host: string;
+  port?: number;
+  method?: string;
+  pathPattern?: string;
+  verdict: "allow" | "deny";
+}
 export type AgentUpdateInput = z.infer<typeof agentPatchSchema>;
 
 export interface BackgroundWorkItemView {
@@ -238,13 +294,7 @@ export type UpgradeAgentError =
 export type UpgradeAgentResult =
   { ok: true; value: Agent } | { ok: false; error: UpgradeAgentError };
 
-export type WakeAgentError =
-  { type: "AgentNotFound" } | { type: "AgentDisabled" };
-
-export type SetAgentDisabledError = { type: "AgentNotFound" };
-
-export type SetAgentDisabledResult =
-  { ok: true; value: Agent } | { ok: false; error: SetAgentDisabledError };
+export type WakeAgentError = { type: "AgentNotFound" };
 
 export type WakeAgentResult =
   { ok: true; value: Agent } | { ok: false; error: WakeAgentError };
@@ -363,10 +413,6 @@ export interface AgentsService {
     kind: WorkspaceMutationKind,
   ) => Promise<Agent | null>;
   sleep: (id: string) => Promise<Agent | null>;
-  setDisabled: (
-    id: string,
-    disabled: boolean,
-  ) => Promise<SetAgentDisabledResult>;
   upgrade: (
     id: string,
     expectedToImage?: string,
@@ -375,7 +421,7 @@ export interface AgentsService {
   connectSlack: (
     id: string,
     slackChannelId: string,
-    ambient?: boolean,
+    modes?: SlackBindingModes,
     customEmoji?: string[] | null,
     options?: { quiet?: boolean },
   ) => Promise<ConnectSlackResult>;

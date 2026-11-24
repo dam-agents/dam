@@ -10,6 +10,11 @@ export interface CrashMark {
   asleep?: true;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a crash notice that is about one agent, which the toast host needs to decide whether it may carry the assistant's link; the combined out-of-memory notice names several and stays anonymous.
+export interface CrashToast extends Toast {
+  agentId?: string;
+}
+
 type WatchedAgent = Pick<
   AgentView,
   | "id"
@@ -59,7 +64,7 @@ export function terminationNotice(
   const { text } = splitConsole(reason);
   const sentence = text.charAt(0).toUpperCase() + text.slice(1);
   if (code === TerminationCode.RunnerOutOfMemory)
-    return "Your VM agents ran out of memory together, so this agent restarted. Disable agents you aren't using to free memory.";
+    return "Your VM agents ran out of memory together, so this agent restarted. Delete an agent you no longer use to free memory.";
   if (code === TerminationCode.MachineStorageFull)
     return `${subject} can't start: your VM agents' storage is full. ${sentence}`;
   if (code === TerminationCode.HomeVolumeFull)
@@ -76,17 +81,17 @@ function joinNames(names: readonly string[]): string {
 export function nextCrashNotices(
   previous: ReadonlyMap<string, CrashMark>,
   agents: readonly WatchedAgent[],
-): { marks: Map<string, CrashMark>; toasts: Toast[] } {
+): { marks: Map<string, CrashMark>; toasts: CrashToast[] } {
   const marks = new Map<string, CrashMark>();
-  const toasts: Toast[] = [];
-  const outOfMemory: string[] = [];
+  const toasts: CrashToast[] = [];
+  const outOfMemory: { id: string; name: string }[] = [];
   for (const agent of agents) {
     const before = previous.get(agent.id);
     const reason = agent.podTerminationReason;
     let announced = before?.announced;
     if (reason && reason !== announced?.reason) {
       if (agent.podTerminationCode === TerminationCode.RunnerOutOfMemory)
-        outOfMemory.push(agent.name);
+        outOfMemory.push({ id: agent.id, name: agent.name });
       else
         toasts.push({
           kind: "error",
@@ -95,6 +100,7 @@ export function nextCrashNotices(
             agent.podTerminationCode,
             reason,
           ),
+          agentId: agent.id,
         });
       announced = { reason, atRestarts: agent.podRestarts };
     }
@@ -108,7 +114,11 @@ export function nextCrashNotices(
     const sameCrashRestarting =
       announced !== undefined && agent.podRestarts <= announced.atRestarts + 1;
     if (restarted && !sameCrashRestarting) {
-      toasts.push({ kind: "warning", message: restartNotice(agent) });
+      toasts.push({
+        kind: "warning",
+        message: restartNotice(agent),
+        agentId: agent.id,
+      });
     }
     if (!reason && (agent.state === "running" || agent.state === "hibernated"))
       announced = undefined;
@@ -121,7 +131,8 @@ export function nextCrashNotices(
   if (outOfMemory.length > 0)
     toasts.push({
       kind: "error",
-      message: `Your VM agents ran out of memory together, so ${joinNames(outOfMemory)} restarted. Disable agents you aren't using to free memory.`,
+      message: `Your VM agents ran out of memory together, so ${joinNames(outOfMemory.map((a) => a.name))} restarted. Delete an agent you no longer use to free memory.`,
+      ...(outOfMemory.length === 1 ? { agentId: outOfMemory[0]!.id } : {}),
     });
   return { marks, toasts };
 }

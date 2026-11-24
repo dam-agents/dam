@@ -88,7 +88,6 @@ function fakeAgent(id: string, extra: Partial<Agent> = {}): Agent {
     state: "starting",
     effectiveHibernationTimeoutMin: 30,
     stopRequested: false,
-    disabled: false,
     overBudget: false,
     podRestarts: 0,
     contributionFailures: [],
@@ -177,8 +176,12 @@ function makeHarness(
       async list() {
         return agent ? [agent] : [];
       },
-      async connectSlack(agentId, channel, ambient) {
-        calls.slack.push({ agentId, channel, ambient });
+      async connectSlack(agentId, channel, modes) {
+        calls.slack.push({
+          agentId,
+          channel,
+          ambient: modes?.ambient === true,
+        });
         return { ok: true, value: fakeAgent(agentId) } as never;
       },
       async announceSlackConnect() {},
@@ -302,6 +305,7 @@ const LOADED: LoadedKit = {
   version: "abc123",
   source: "/catalog",
   skillsInKit: [],
+  publisher: { kind: "team" },
 };
 
 const GITHUB = { id: "github", title: "GitHub" };
@@ -1196,6 +1200,17 @@ describe("starter kits: connection addressing", () => {
   });
 });
 
+describe("starter kits: idle timeout", () => {
+  // TEST_SCENARIO: a regular Agent sleeps on the install's idle timeout, so a kit that still names `hibernationTimeoutMin` (a published kit, "never sleeps") imports and creates its agent without an override.
+  it("creates the agent without the kit's idle override", async () => {
+    const set = makeHarness({
+      ...LOADED,
+      kit: kit({ hibernationTimeoutMin: 0 } as Partial<ResolvedStarterKit>),
+    });
+    await set.service.apply(APPLY);
+    expect(set.calls.created[0]).not.toHaveProperty("hibernationTimeoutMin");
+  });
+});
 describe("starter kits: egress preset", () => {
   // TEST_SCENARIO: the kit's egress preset seeds the agent's network rules at create, and a kit that names none leaves the create's own default in place rather than overriding it.
   it("passes the kit's egress preset to the create only when it declares one", async () => {
@@ -1344,6 +1359,30 @@ describe("starter kits: startup items", () => {
   });
 });
 
+describe("starter kits: who publishes a kit", () => {
+  const USER_KIT: LoadedKit = {
+    ...LOADED,
+    catalog: "curated",
+    publisher: {
+      kind: "user",
+      name: "Adi Digidh",
+      url: "https://github.com/adigidh",
+    },
+  };
+
+  // TEST_SCENARIO: the catalog and the kit modal tell the team's kit from a user's by the publisher on the kit view, so the list and the single read both carry what the catalog entry resolved to.
+  it("says who publishes a catalog kit when it is listed and when it is read", async () => {
+    const team = makeHarness(LOADED).service;
+    expect((await team.list()).map((k) => k.publisher)).toEqual([
+      { kind: "team" },
+    ]);
+    const user = makeHarness(USER_KIT).service;
+    expect((await user.get("curated", "code-reviewer"))?.publisher).toEqual(
+      USER_KIT.publisher,
+    );
+  });
+});
+
 describe("starter kits: a kit from a link", () => {
   const URL = "https://github.com/acme/shared-kit";
   const COMMIT = "c".repeat(40);
@@ -1386,6 +1425,7 @@ describe("starter kits: a kit from a link", () => {
       version: COMMIT,
       link: { url: URL },
     });
+    expect(view.publisher).toBeUndefined();
     expect(view.schedules.map((s) => s.name)).toEqual(["review", "benchmark"]);
     expect(calls.created).toEqual([]);
   });

@@ -39,16 +39,16 @@ describe("documentation pages", () => {
   it("keep their current addresses under the default root", () => {
     const root = CHART_DEFAULT_LINKS.docs!;
     expect(docsPageUrl(root, "home")).toBe(
-      "https://pages.github.ibm.com/dam-agents/docs/",
+      "https://dam-agents.github.io/docs/",
     );
     expect(docsPageUrl(root, "cliReference")).toBe(
-      "https://pages.github.ibm.com/dam-agents/docs/reference/cli/",
+      "https://dam-agents.github.io/docs/reference/cli/",
     );
     expect(docsPageUrl(root, "liteLlmKey")).toBe(
-      "https://pages.github.ibm.com/dam-agents/docs/reference/litellm-key/",
+      "https://dam-agents.github.io/docs/reference/litellm-key/",
     );
     expect(docsPageUrl(root, "mcpServers")).toBe(
-      "https://pages.github.ibm.com/dam-agents/docs/core-concepts/connections/#mcp-servers",
+      "https://dam-agents.github.io/docs/core-concepts/connections/#mcp-servers",
     );
   });
 

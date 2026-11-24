@@ -5,7 +5,7 @@ import { Notice } from "@/components/ui/notice";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The notice at the top of a part of a Shared
- * Agent's page that only its owner changes: what only the owner does, why,
+ * Agent's settings that only its owner changes: what only the owner does, why,
  * and who to ask. An Agent Editor reads it before they meet a control that is
  * not there, so they never wonder why.
  */
