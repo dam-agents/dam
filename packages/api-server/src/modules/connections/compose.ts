@@ -60,6 +60,10 @@ import {
   type FanOutPort,
 } from "./services/contribution-fanout.js";
 import { createOAuthFlowService } from "./services/oauth-flow.js";
+import {
+  createToolCallLabels as createToolCallLabelsService,
+  type ToolCallLabels,
+} from "./services/tool-call-labels.js";
 import { createSecretRequestsService } from "./services/secret-requests.js";
 import {
   createAgentSecretRequests,
@@ -315,6 +319,16 @@ export function createToolAccessConnections(
       };
     },
   };
+}
+
+export function createToolCallLabels(deps: {
+  db: Db;
+  secretStore: SecretStore;
+}): ToolCallLabels {
+  return createToolCallLabelsService({
+    repo: createConnectionsRepository(deps.db),
+    secretStore: deps.secretStore,
+  });
 }
 
 export function createConnectionNames(db: Db): {

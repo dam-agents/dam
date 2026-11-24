@@ -288,7 +288,7 @@ export function buildConnectCommand(deps: {
         "  dam connection connect github --full-access --no-browser\n" +
         "  dam connection connect slack   # read only: the agent reads Slack as you\n" +
         "  dam connection connect slack --mode allow-all   # it can also post as you\n" +
-        "  dam connection connect slack --mode needs-approval   # each tool call waits for approval\n" +
+        "  dam connection connect slack --mode needs-approval   # writes wait for approval\n" +
         "  dam connection connect github-enterprise --host research.ghe.example.com\n" +
         "  dam connection connect --from github --account acme --repositories docs --name github-docs\n" +
         "  dam connection connect github-pat   # the token is entered on a DAM web page\n" +

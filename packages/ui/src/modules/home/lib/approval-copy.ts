@@ -1,5 +1,6 @@
 import {
   type ApprovalView,
+  type McpToolCallPayload,
   type SpendLimitPayload,
   type SpendLimitScope,
   WEB_SEARCH_FOLLOW_UP_QUERIES,
@@ -7,6 +8,10 @@ import {
 } from "api-server-api";
 import { match } from "ts-pattern";
 
+import {
+  type TemplateToolCall,
+  templateToolCallOf,
+} from "../../approvals/lib/tool-call-renderers.js";
 import {
   AGENT_LIMIT_NAME,
   allAgentsConnectionLimitName,
@@ -66,19 +71,54 @@ export function approvalHeadline(approval: ApprovalView): string {
         : "Proposes a network rule",
     )
     .with({ kind: "web_search" }, () => "Wants to search the web")
-    .with(
-      { kind: "mcp_tool_call" },
-      (payload) => `Wants to use ${payload.tool} on ${payload.connectionName}`,
-    )
+    .with({ kind: "mcp_tool_call" }, (payload) => {
+      const call = templateToolCallOf(payload);
+      return call
+        ? `Wants to ${call.action}`
+        : `Wants to use ${payload.tool} on ${payload.connectionName}`;
+    })
     .exhaustive();
 }
 
 export function approvalPromptTitle(approval: ApprovalView): string {
-  return match(approval.payload.kind)
-    .with("web_search", () => "Allow this web search?")
-    .with("mcp_tool_call", () => "Allow this tool call?")
-    .with("egress_proposal", () => "Allow this network rule?")
+  return match(approval.payload)
+    .with({ kind: "web_search" }, () => "Allow this web search?")
+    .with({ kind: "mcp_tool_call" }, (payload) => {
+      const call = templateToolCallOf(payload);
+      return call ? `${capitalized(call.action)}?` : "Allow this tool call?";
+    })
+    .with({ kind: "egress_proposal" }, () => "Allow this network rule?")
     .otherwise(() => "Allow network access?");
+}
+
+function toolCallLine(
+  approval: ApprovalView,
+  payload: McpToolCallPayload,
+  call: string,
+): string {
+  if (payload.viaEnvironment)
+    return `${call}, from its Environment ${payload.viaEnvironment}`;
+  return payload.forAgentId
+    ? `${call}, from its sub-agent ${approval.agentId}`
+    : call;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a tool call that its Template renders, with the quiet line that still names the Connection and the exact tool, so the friendly headline never hides what runs. Null for every other approval, which keeps the generic detail line.
+export function approvalTemplateToolCall(
+  approval: ApprovalView,
+): { call: TemplateToolCall; source: string } | null {
+  const payload = approval.payload;
+  if (payload.kind !== "mcp_tool_call") return null;
+  const call = templateToolCallOf(payload);
+  if (!call) return null;
+  return {
+    call,
+    source: toolCallLine(
+      approval,
+      payload,
+      `${payload.connectionName} · ${payload.tool}`,
+    ),
+  };
 }
 
 function spendLimitName(
@@ -126,14 +166,12 @@ export function approvalDetail(
   if (payload.kind === "spend_limit")
     return spendLimitDetail(payload, connectionName);
   if (payload.kind === "acp_native") return payload.toolName;
-  if (payload.kind === "mcp_tool_call") {
-    const call = `${payload.tool} on ${payload.connectionName}`;
-    if (payload.viaEnvironment)
-      return `${call}, from its Environment ${payload.viaEnvironment}`;
-    return payload.forAgentId
-      ? `${call}, from its sub-agent ${approval.agentId}`
-      : call;
-  }
+  if (payload.kind === "mcp_tool_call")
+    return toolCallLine(
+      approval,
+      payload,
+      `${payload.tool} on ${payload.connectionName}`,
+    );
   if (payload.kind === "web_search") {
     const query = payload.query ?? "The model chooses the query";
     if (payload.viaEnvironment)

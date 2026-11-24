@@ -80,8 +80,8 @@ export function SlackAccountExplainer({
         {toolApproval ? (
           <>
             It is read only unless you change its tool access: with allow all it
-            also posts anywhere you can, and with needs approval each tool call
-            waits for your answer. Those posts come from you, not the{" "}
+            also posts anywhere you can, and with needs approval each post or
+            change waits for your answer. Those posts come from you, not the{" "}
             {getBrand().name} bot.
           </>
         ) : (

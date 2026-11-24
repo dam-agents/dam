@@ -5,6 +5,7 @@ import {
   makeFakeApprovalsBus as makeFakeBus,
   makeFakeApprovalsRepo as makeFakeRepo,
   noToolAccessLimit,
+  noToolCallLabels,
 } from "../helpers/approvals-fakes.js";
 import {
   events$,
@@ -51,6 +52,7 @@ describe("ext-authz gate", () => {
     const bus = makeFakeBus();
     const gate = createExtAuthzGate({
       toolAccess: noToolAccessLimit,
+      toolCallLabels: noToolCallLabels,
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
@@ -84,6 +86,7 @@ describe("ext-authz gate", () => {
     const bus = makeFakeBus();
     const gate = createExtAuthzGate({
       toolAccess: noToolAccessLimit,
+      toolCallLabels: noToolCallLabels,
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
@@ -159,6 +162,7 @@ describe("ext-authz gate", () => {
       repo.rows.filter((r) => r.agentId === childId && r.status === "pending");
     const gate = createExtAuthzGate({
       toolAccess: noToolAccessLimit,
+      toolCallLabels: noToolCallLabels,
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
@@ -214,6 +218,7 @@ describe("ext-authz gate", () => {
     const attendanceAsked: string[] = [];
     const gate = createExtAuthzGate({
       toolAccess: noToolAccessLimit,
+      toolCallLabels: noToolCallLabels,
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
@@ -262,6 +267,7 @@ describe("ext-authz gate", () => {
     const asked: string[] = [];
     const gate = createExtAuthzGate({
       toolAccess: noToolAccessLimit,
+      toolCallLabels: noToolCallLabels,
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
@@ -324,6 +330,7 @@ describe("ext-authz gate", () => {
     const bus = makeFakeBus();
     const gate = createExtAuthzGate({
       toolAccess: noToolAccessLimit,
+      toolCallLabels: noToolCallLabels,
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
@@ -355,6 +362,7 @@ describe("ext-authz gate", () => {
     const bus = makeFakeBus();
     const gate = createExtAuthzGate({
       toolAccess: noToolAccessLimit,
+      toolCallLabels: noToolCallLabels,
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
@@ -394,6 +402,7 @@ describe("ext-authz gate", () => {
     const bus = makeFakeBus();
     const gate = createExtAuthzGate({
       toolAccess: noToolAccessLimit,
+      toolCallLabels: noToolCallLabels,
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
@@ -434,6 +443,7 @@ describe("ext-authz gate", () => {
       if (decidedMeanwhile) repo.repo.expirePending = async () => false;
       const gate = createExtAuthzGate({
         toolAccess: noToolAccessLimit,
+        toolCallLabels: noToolCallLabels,
         waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: makeFakeBus().bus,
@@ -468,6 +478,7 @@ describe("ext-authz gate", () => {
     const bus = makeFakeBus();
     const gate = createExtAuthzGate({
       toolAccess: noToolAccessLimit,
+      toolCallLabels: noToolCallLabels,
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
@@ -534,6 +545,7 @@ describe("ext-authz gate", () => {
     });
     const gate = createExtAuthzGate({
       toolAccess: noToolAccessLimit,
+      toolCallLabels: noToolCallLabels,
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
@@ -577,6 +589,7 @@ describe("ext-authz gate", () => {
     const ruleMatch = vi.fn(async () => null);
     const gate = createExtAuthzGate({
       toolAccess: noToolAccessLimit,
+      toolCallLabels: noToolCallLabels,
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
@@ -612,6 +625,7 @@ describe("ext-authz gate", () => {
     const bus = makeFakeBus();
     const gate = createExtAuthzGate({
       toolAccess: noToolAccessLimit,
+      toolCallLabels: noToolCallLabels,
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
@@ -647,6 +661,7 @@ describe("ext-authz gate", () => {
     }));
     const gate = createExtAuthzGate({
       toolAccess: noToolAccessLimit,
+      toolCallLabels: noToolCallLabels,
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
@@ -700,6 +715,7 @@ describe("ext-authz gate", () => {
     }));
     const gate = createExtAuthzGate({
       toolAccess: noToolAccessLimit,
+      toolCallLabels: noToolCallLabels,
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: makeFakeBus().bus,
@@ -743,6 +759,7 @@ describe("ext-authz gate", () => {
     }));
     const gate = createExtAuthzGate({
       toolAccess: noToolAccessLimit,
+      toolCallLabels: noToolCallLabels,
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
@@ -782,6 +799,7 @@ describe("ext-authz gate", () => {
     const bus = makeFakeBus();
     const gate = createExtAuthzGate({
       toolAccess: noToolAccessLimit,
+      toolCallLabels: noToolCallLabels,
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
@@ -839,6 +857,7 @@ describe("ext-authz gate", () => {
     ) =>
       createExtAuthzGate({
         toolAccess: noToolAccessLimit,
+        toolCallLabels: noToolCallLabels,
         waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: makeFakeBus().bus,
@@ -940,6 +959,7 @@ describe("ext-authz gate", () => {
       const bus = makeFakeBus();
       const gate = createExtAuthzGate({
         toolAccess: noToolAccessLimit,
+        toolCallLabels: noToolCallLabels,
         waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: bus.bus,
@@ -973,6 +993,7 @@ describe("ext-authz gate", () => {
       const bus = makeFakeBus();
       const gate = createExtAuthzGate({
         toolAccess: noToolAccessLimit,
+        toolCallLabels: noToolCallLabels,
         waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: bus.bus,
@@ -1003,6 +1024,7 @@ describe("ext-authz gate", () => {
       const bus = makeFakeBus();
       const gate = createExtAuthzGate({
         toolAccess: noToolAccessLimit,
+        toolCallLabels: noToolCallLabels,
         waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: bus.bus,
@@ -1036,6 +1058,7 @@ describe("ext-authz gate", () => {
       const bus = makeFakeBus();
       const gate = createExtAuthzGate({
         toolAccess: noToolAccessLimit,
+        toolCallLabels: noToolCallLabels,
         waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: bus.bus,
@@ -1077,6 +1100,7 @@ describe("ext-authz gate", () => {
       const hasOpenChannelTurn = vi.fn(async () => true);
       const gate = createExtAuthzGate({
         toolAccess: noToolAccessLimit,
+        toolCallLabels: noToolCallLabels,
         waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: bus.bus,

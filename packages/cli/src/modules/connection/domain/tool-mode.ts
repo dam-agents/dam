@@ -31,7 +31,7 @@ function reachOf(mode: ToolMode): string {
     case "read-only":
       return "an agent you grant it to calls only the tools that read, and every other tool is refused";
     case "needs-approval":
-      return "every tool call an agent makes waits until someone approves it, read tools too";
+      return "an agent you grant it to calls the tools that read at once, and every other tool call waits until someone approves it";
   }
 }
 

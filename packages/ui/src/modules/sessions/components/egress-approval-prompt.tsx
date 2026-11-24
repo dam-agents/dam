@@ -16,10 +16,12 @@ import {
   groupBy,
 } from "../../approvals/lib/group-approvals.js";
 import { egressApprovalsWaiting } from "../../approvals/lib/waiting-egress.js";
+import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import {
   approvalDetail,
   approvalPromptTitle,
   approvalReason,
+  approvalTemplateToolCall,
   childRulesGroupCopy,
 } from "../../home/lib/approval-copy.js";
 import { ChatColumn } from "./chat-column.js";
@@ -47,6 +49,7 @@ function EgressApprovalCard({
     );
   const grouped = childRulesGroupCopy(group);
   const reason = grouped?.reason ?? approvalReason(approval);
+  const templateCall = approvalTemplateToolCall(approval);
   return (
     <div
       data-testid="chat-egress-approval"
@@ -54,12 +57,27 @@ function EgressApprovalCard({
     >
       <div className="flex items-start gap-2 text-sm font-semibold text-foreground">
         <span className="h-2 w-2 rounded-full bg-warning shrink-0 mt-1.5" />
+        {templateCall && (
+          <ConnectionIcon
+            iconSlug={templateCall.call.iconSlug}
+            alt=""
+            className="mt-0.5 shrink-0"
+          />
+        )}
         <span className="min-w-0">{approvalPromptTitle(approval)}</span>
       </div>
       {grouped ? (
         <div className="pl-4">
           <ChildRuleRows approvals={group} />
         </div>
+      ) : templateCall ? (
+        <p
+          data-testid="tool-call-source"
+          className="-mt-2 pl-4 text-xs break-all text-muted-foreground"
+        >
+          {templateCall.source}
+          {group.length > 1 && ` · ${String(group.length)} requests`}
+        </p>
       ) : (
         <div className="pl-4 font-mono text-sm text-muted-foreground break-all">
           {approvalDetail(approval)}

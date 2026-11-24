@@ -23,8 +23,8 @@ function ToolModeText({ modes }: { modes: readonly SharedToolMode[] }) {
       {approval.length > 0 && (
         <>
           {" "}
-          Through <BoldList items={approval} limit={4} /> every tool call waits
-          until someone approves it.
+          Through <BoldList items={approval} limit={4} /> they can read what you
+          can read, and every other tool call waits until someone approves it.
         </>
       )}
       {full.length > 0 && (

@@ -116,7 +116,7 @@ export const authConfig = z.discriminatedUnion("kind", [
 export type AuthConfig = z.infer<typeof authConfig>;
 export type { SecretRef };
 
-// UNIT_BOUNDARY_DESCRIPTION: what an Agent may do with the tools of an MCP Connection. `allow-all` lets every tool call through, `read-only` only the read tools, and `needs-approval` holds every tool call until someone answers it.
+// UNIT_BOUNDARY_DESCRIPTION: what an Agent may do with the tools of an MCP Connection. `allow-all` lets every tool call through, `read-only` only the read tools, and `needs-approval` lets the read tools through and holds every other tool call until someone answers it.
 export const toolMode = z.enum(["allow-all", "read-only", "needs-approval"]);
 export type ToolMode = z.infer<typeof toolMode>;
 

@@ -988,6 +988,7 @@ export {
 } from "./modules/approvals/format.js";
 export {
   MCP_TOOL_CALL_ARGUMENTS_MAX_BYTES,
+  MCP_TOOL_CALL_TARGET_LABEL_MAX,
   RPC_ID_MAX,
   TOOL_CALL_ID_MAX,
 } from "./modules/approvals/format.js";

@@ -17,7 +17,7 @@ After this feature:
 
 - Every MCP Connection has one **mode**: allow all, read only or needs approval.
 - **Read only** lets through the server's read tools (the tools with `readOnlyHint`, or the Template's own read list for Slack) and refuses every other tool.
-- **Needs approval** holds every `tools/call`, read tools included, until someone answers approve once or deny once.
+- **Needs approval** lets the read tools through at once, as read only does, and holds every other `tools/call`, a tool the stored list does not name included, until someone answers approve once or deny once.
   Nothing is remembered for the next call.
 - The waiting call shows wherever network approvals show, with its tool and arguments.
   A Slack call that posts shows as the message it will post.
@@ -58,14 +58,14 @@ Read these first: [connections](../../architecture/connections.md#connection) (t
 
 ## Sub-issues
 
-| #   | Title                            | Scope                                                                                                      | Depends on |
-| --- | -------------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | Tool mode on the Connection      | `tool_access` column, migration from Slack `fullAccess`, contract, gate reads the mode, feature flag      | —          |
+| #   | Title                              | Scope                                                                                                                       | Depends on |
+| --- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| 01  | Tool mode on the Connection        | `tool_access` column, migration from Slack `fullAccess`, contract, gate reads the mode, feature flag                        | —          |
 | 02  | Read the tool list from the server | api-server `tools/list` at create and refresh, `checkBody` on every MCP Connection with a Secret, read only for generic MCP | 01         |
-| 03  | Hold a tool call for approval    | `mcp_tool_call` approval type, gate hold and join, unattended refusal, synth frame, CLI approvals          | 01         |
-| 04  | Approve after the client gave up | An approve once used up by the next identical call, harness MCP timeouts                                   | 03         |
-| 05  | Mode picker and CLI              | UI picker replacing the Slack access choice, tool list with refresh, CLI `--mode`, `setFullAccess` removed | 02, 03     |
-| 06  | Tool-call approval views         | The `mcp_tool_call` card in every approval surface, generic JSON view, Slack renderers                     | 03         |
+| 03  | Hold a tool call for approval      | `mcp_tool_call` approval type, gate hold and join, unattended refusal, synth frame, CLI approvals                           | 01         |
+| 04  | Approve after the client gave up   | An approve once used up by the next identical call, harness MCP timeouts                                                    | 03         |
+| 05  | Mode picker and CLI                | UI picker replacing the Slack access choice, tool list with refresh, CLI `--mode`, `setFullAccess` removed                  | 02, 03     |
+| 06  | Tool-call approval views           | The `mcp_tool_call` card in every approval surface, generic JSON view, Slack renderers                                      | 03         |
 
 ```mermaid
 graph LR
@@ -125,7 +125,7 @@ interface McpToolCallPayload {
   The Slack Template has `category: "app"`, so do not test for `category: "mcp"`.
 - **Tool mode** (UI: "allow all", "read only", "needs approval"): the one choice per Connection.
   Code: `ToolMode`, `toolAccess.mode`.
-- **Read tools**: tools that pass in read only: a Template's declared list (Slack, `SLACK_READ_TOOLS`), else the stored tools with `readOnly: true`.
+- **Read tools**: tools that pass in read only, and pass at once in needs approval: a Template's declared list (Slack, `SLACK_READ_TOOLS`), else the stored tools with `readOnly: true`.
   A tool the stored list does not name is not a read tool.
 - **Tool-call approval**: approval type `mcp_tool_call`.
   Verdicts `allow_once` and `deny_once` only; `allow` and `deny` answer `not_actionable`.
@@ -146,7 +146,8 @@ On the dev cluster (`cluster-ops` skill), with `mcp-tool-approval` on for the te
    In a chat, ask each agent to call a write tool: the agent reports a refusal that names the Connection and the mode.
    A read tool still answers.
 3. Set needs approval.
-   Ask the agent to call a read tool: a card shows in the chat and on Home with the tool and its arguments.
+   Ask the agent to call a read tool: it answers at once, with no card.
+   Ask the agent to call a write tool: a card shows in the chat and on Home with the tool and its arguments.
    Approve once: the call runs.
    Ask again: a new card shows.
    Deny once: the agent reports a refusal and its session goes on.

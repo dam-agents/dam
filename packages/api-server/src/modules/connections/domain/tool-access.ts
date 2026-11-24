@@ -126,7 +126,7 @@ export function storedToolsOf(
   }));
 }
 
-/* UNIT_BOUNDARY_DESCRIPTION: the tools a Connection in read only may call: the Template's own read list where it declares one, else the stored tools the server marks as reading. A tool neither names is not a read tool. */
+/* UNIT_BOUNDARY_DESCRIPTION: the tools a Connection in read only may call, and a Connection in needs approval calls without asking: the Template's own read list where it declares one, else the stored tools the server marks as reading. A tool neither names is not a read tool. */
 export function readToolsOf(
   connection: Connection,
   template: ToolAccessTemplate | null | undefined,

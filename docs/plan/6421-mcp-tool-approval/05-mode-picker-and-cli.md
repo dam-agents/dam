@@ -18,7 +18,7 @@ Apply `/react-ui-engineering` for `packages/ui` and `/typescript-engineering` fo
 
 1. **UI, at connect.**
    `packages/ui/src/modules/connections/forms/access-choice-field.tsx` (`AccessChoiceField`, two cards) becomes a mode field with three cards when the flag is on (`useFeatures().data?.["mcp-tool-approval"]`) and the two current cards when it is off.
-   Copy lives in `lib/access-choice.ts` (rename to `lib/tool-mode.ts`); needs approval says every tool call waits for an answer in approvals, and allow all keeps the danger tone and warning the "full" card has.
+   Copy lives in `lib/access-choice.ts` (rename to `lib/tool-mode.ts`); needs approval says the tools that read go through and every other tool call waits for an answer in approvals, and allow all keeps the danger tone and warning the "full" card has.
    `forms/template-create-form-body.tsx` renders it for a Template with `toolAccess`, and `components/catalog-mcp-create-pane.tsx` (`McpCreatePane`) renders it for a generic MCP server when the flag is on.
    `lib/build-create-payload.ts` sends the mode (contract: add `toolMode?: ToolMode` to the create inputs; drop `fullAccess` from `oauthCreateInput` in step 4).
 2. **UI, on an existing Connection.**

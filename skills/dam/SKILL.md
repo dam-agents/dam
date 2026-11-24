@@ -447,7 +447,7 @@ Without a scope, `dam connection connect github` keeps the sign-in alone and sho
 Pass it only when the user asks for that, and tell them what it reaches.
 `dam connection list` marks such a connection `FULL ACCESS`, and in `--json` its `scope` is `{ "restricted": false, "fullAccess": true }`.
 
-An MCP connection has a tool mode, which the platform enforces for every harness: `allow-all` lets every tool call through, `read-only` lets through only the tools that read and refuses the rest, and `needs-approval` holds every tool call until someone approves it.
+An MCP connection has a tool mode, which the platform enforces for every harness: `allow-all` lets every tool call through, `read-only` lets through only the tools that read and refuses the rest, and `needs-approval` lets the tools that read through at once and holds every other tool call until someone approves it.
 A Slack Account connection (`dam connection connect slack`) is `read-only` unless the user chooses otherwise; other MCP connections start as `allow-all`.
 `dam connection connect <template-or-url> --mode <mode>` sets the mode at connect, `dam connection scope <connection> --mode <mode>` changes it, and `dam connection scope <connection>` shows it.
 `dam connection tools <connection>` lists the server's tools, grouped into read and write tools, and `--refresh` reads the list again.

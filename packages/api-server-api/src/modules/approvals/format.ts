@@ -73,6 +73,7 @@ export function acpNativeRowId(
 
 export const TOOL_NAME_MAX = 4096;
 export const MCP_TOOL_CALL_ARGUMENTS_MAX_BYTES = 64 * 1024;
+export const MCP_TOOL_CALL_TARGET_LABEL_MAX = 200;
 export const TOOL_CALL_ID_MAX = 512;
 export const PERMISSION_OPTIONS_MAX = 16;
 export const RPC_ID_MAX = 4096;

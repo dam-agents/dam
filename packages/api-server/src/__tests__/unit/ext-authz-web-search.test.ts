@@ -8,6 +8,7 @@ import {
   makeFakeApprovalsBus,
   makeFakeApprovalsRepo,
   noToolAccessLimit,
+  noToolCallLabels,
 } from "../helpers/approvals-fakes.js";
 
 const allowEverything = {
@@ -67,6 +68,7 @@ function world(options: WorldOptions = {}) {
   const ruleReads: string[] = [];
   const gate = createExtAuthzGate({
     toolAccess: noToolAccessLimit,
+    toolCallLabels: noToolCallLabels,
     repo: repo.repo,
     bus: bus.bus,
     attendance,

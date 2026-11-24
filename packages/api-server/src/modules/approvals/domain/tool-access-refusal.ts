@@ -23,10 +23,12 @@ function shown(name: string): string {
   return name.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, MAX_SHOWN_NAME);
 }
 
+const NOT_READ_CALLS = "for every tool call except the tools that read";
+
 function modeOf(limit: ToolAccessLimit): string {
   return limit.mode === "read-only"
     ? "is read only"
-    : "needs approval for every tool call";
+    : `needs approval ${NOT_READ_CALLS}`;
 }
 
 function wayOut(): string {
@@ -86,12 +88,12 @@ export function refusedToolCalls(
   return jsonRpcErrors(message, input.ids, input.batch);
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the answer to a batch that holds a tool call of a Connection that needs approval for every tool call. The gateway holds one call at a time, as one approval, so it sends no part of the batch and asks the agent to send each call in a request of its own. It answers every request of the batch, in the same shape as a read-only refusal.
+// UNIT_BOUNDARY_DESCRIPTION: the answer to a batch that holds a call of a tool that does not read, on a Connection that needs approval. The gateway holds one call at a time, as one approval, so it sends no part of the batch and asks the agent to send each call in a request of its own. It answers every request of the batch, in the same shape as a read-only refusal.
 export function batchedToolCalls(
   limit: ToolAccessLimit,
   input: { ids: readonly JsonRpcId[] },
 ): ToolAccessRefusal {
-  const message = `Refused by the platform's egress gateway, not by ${limit.host}: the Connection "${limit.connectionName}" needs approval for every tool call, and the gateway asks for approval of one call at a time, so no request of this batch was sent. Send each tools/call in a request of its own.`;
+  const message = `Refused by the platform's egress gateway, not by ${limit.host}: the Connection "${limit.connectionName}" needs approval ${NOT_READ_CALLS}, and the gateway asks for approval of one call at a time, so no request of this batch was sent. Send each tools/call in a request of its own.`;
   return jsonRpcErrors(message, input.ids, true);
 }
 
@@ -100,7 +102,7 @@ export function unnamedToolCall(
   limit: ToolAccessLimit,
   input: { ids: readonly JsonRpcId[] },
 ): ToolAccessRefusal {
-  const message = `Refused by the platform's egress gateway, not by ${limit.host}: the Connection "${limit.connectionName}" needs approval for every tool call, and this call names no tool, so it was not sent.`;
+  const message = `Refused by the platform's egress gateway, not by ${limit.host}: the Connection "${limit.connectionName}" needs approval ${NOT_READ_CALLS}, and this call names no tool, so it was not sent.`;
   return jsonRpcErrors(message, input.ids, false);
 }
 
@@ -123,10 +125,10 @@ export function heldToolCallRefusal(
   const tool = `"${shown(call.tool)}"`;
   const gateway = `Refused by the platform's egress gateway, not by ${limit.host}:`;
   const message = {
-    unattended: `${gateway} the Connection "${limit.connectionName}" needs approval for every tool call, and nobody is in the app to approve the call of ${tool} now, so it was not made. The owner was asked to approve it in the app.`,
+    unattended: `${gateway} the Connection "${limit.connectionName}" needs approval to call ${tool}, and nobody is in the app to approve the call now, so it was not made. The owner was asked to approve it in the app.`,
     denied: `${gateway} the owner denied this call of ${tool} on the Connection "${limit.connectionName}", so it was not made.`,
-    expired: `${gateway} the Connection "${limit.connectionName}" needs approval for every tool call, and nobody answered within ${holdWindow(holdSeconds)}, so the call of ${tool} was not made.`,
-    child: `${gateway} the Connection "${limit.connectionName}" needs approval for every tool call, and an agent with network access of its own cannot ask the owner for one, so the call of ${tool} was not made.`,
+    expired: `${gateway} the Connection "${limit.connectionName}" needs approval to call ${tool}, and nobody answered within ${holdWindow(holdSeconds)}, so the call was not made.`,
+    child: `${gateway} the Connection "${limit.connectionName}" needs approval to call ${tool}, and an agent with network access of its own cannot ask the owner for one, so the call was not made.`,
     "used-up": `${gateway} the owner approved one call of ${tool} on the Connection "${limit.connectionName}", and the same call, sent again, was made with that approval, so this one was not made.`,
   }[end];
   return jsonRpcErrors(message, call.id === undefined ? [] : [call.id], false);

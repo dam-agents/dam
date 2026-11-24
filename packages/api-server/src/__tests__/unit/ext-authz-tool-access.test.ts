@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the tool mode of a Connection at the ext_authz gate. An Agent that holds an MCP Connection in read only may call only its read tools on the Connection's MCP host: a `tools/call` of any other tool is answered with a JSON-RPC error the agent can read, and is never sent on, even when an egress rule allows the host. In needs approval a `tools/call` waits as a tool-call approval that names the tool and its arguments: approve once sends it, and deny once, the end of the hold window or a channel turn nobody attends answers it with a JSON-RPC error. The same call sent again within the approval's hold window joins it, and a batch with such a call is refused, since one approval answers one call. A held call whose client goes away stops waiting and leaves the approval pending. Each approve once makes exactly one call: the held call it releases, or else the next identical call sent before the hold window ends. A Connection in allow all is not limited. The choice is read once on every request, and a request that names no Connection, or one the Agent does not hold, gets the strictest choice. A body the gateway did not send, or that is not one strict JSON document, is refused rather than passed, and so is a TLS request with a body that comes without its server name while the Agent holds a read-only Connection.
+// TEST_OVERVIEW: the tool mode of a Connection at the ext_authz gate. An Agent that holds an MCP Connection in read only may call only its read tools on the Connection's MCP host: a `tools/call` of any other tool is answered with a JSON-RPC error the agent can read, and is never sent on, even when an egress rule allows the host. In needs approval a `tools/call` of a read tool passes at once, as in read only, and a `tools/call` of any other tool, one the read list does not name too, waits as a tool-call approval that names the tool and its arguments: approve once sends it, and deny once, the end of the hold window or a channel turn nobody attends answers it with a JSON-RPC error. The same call sent again within the approval's hold window joins it, and a batch with such a call is refused, since one approval answers one call; a batch of read calls only passes. A new approval also names the call's target, which the Connection's Template looks up; a lookup that fails or takes more than two seconds files the approval without a name. A held call whose client goes away stops waiting and leaves the approval pending. Each approve once makes exactly one call: the held call it releases, or else the next identical call sent before the hold window ends. A Connection in allow all is not limited. The choice is read once on every request, and a request that names no Connection, or one the Agent does not hold, gets the strictest choice. A body the gateway did not send, or that is not one strict JSON document, is refused rather than passed, and so is a TLS request with a body that comes without its server name while the Agent holds a read-only Connection.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Connection, ToolMode } from "api-server-api";
 import { createExtAuthzGate } from "../../modules/approvals/services/ext-authz-gate.js";
@@ -8,9 +8,11 @@ import {
   heldToolAccess,
   toolAccessFor,
 } from "../../modules/connections/domain/tool-access.js";
+import type { ToolCallLabels } from "../../modules/approvals/services/tool-call-hold.js";
 import {
   makeFakeApprovalsBus,
   makeFakeApprovalsRepo,
+  noToolCallLabels,
 } from "../helpers/approvals-fakes.js";
 
 const HOST = "mcp.example.com";
@@ -87,7 +89,10 @@ function toolCall(
 const templateOf = (templateId: string) =>
   templateId === "notes" ? template : undefined;
 
-function world(granted: Connection[], opts: { channelTurn?: boolean } = {}) {
+function world(
+  granted: Connection[],
+  opts: { channelTurn?: boolean; labels?: ToolCallLabels } = {},
+) {
   const reads: string[] = [];
   const repo = makeFakeApprovalsRepo();
   const bus = makeFakeApprovalsBus();
@@ -124,6 +129,7 @@ function world(granted: Connection[], opts: { channelTurn?: boolean } = {}) {
         },
       },
     }),
+    toolCallLabels: opts.labels ?? noToolCallLabels,
   });
   const send = (
     body: ModelCallBody | undefined,
@@ -439,17 +445,17 @@ describe("a read-only Connection at the gate", () => {
     ).toBe(403);
   });
 
-  // TEST_SCENARIO: an unnamed request on a host where the Agent holds one Connection in needs approval and one in read only gets read only, which refuses at once and never asks a person for an approval they did not expect: its read tools pass, and only a request that names the other Connection is held.
+  // TEST_SCENARIO: an unnamed request on a host where the Agent holds one Connection in needs approval and one in read only gets read only, which refuses at once and never asks a person for an approval they did not expect: its write call is refused, and only a write call that names the other Connection is held.
   it("picks read only over needs approval for an unnamed request", async () => {
     const { send, repo } = world([
       connection("conn-ask", { mode: "needs-approval" }),
       connection("conn-read", { mode: "read-only" }),
     ]);
-    expect(
-      await send(bodyOf(toolCall("notes_read")), { connectionId: null }),
-    ).toBe("allow");
+    refusalOf(
+      await send(bodyOf(toolCall("notes_write")), { connectionId: null }),
+    );
     expect(repo.inserts).toBe(0);
-    void send(bodyOf(toolCall("notes_read")), { connectionId: "conn-ask" });
+    void send(bodyOf(toolCall("notes_write")), { connectionId: "conn-ask" });
     await flushMicrotasks();
     expect(repo.inserts).toBe(1);
   });
@@ -488,11 +494,17 @@ describe("a Connection that needs approval at the gate", () => {
     world([connection("conn-a", { mode: "needs-approval" })]);
   const named = { connectionId: "conn-a" };
 
-  // TEST_SCENARIO: the agent calls a tool, a read tool too, on a Connection that needs approval. One tool-call approval is filed with the Connection, the tool and the arguments, the in-session prompt goes to attached clients, and approve once sends the call on, even past the egress rules.
-  it("holds a tool call and sends it on when approved", async () => {
+  const payloadOf = (w: ReturnType<typeof world>) => {
+    const payload = w.repo.rows[0]!.payload;
+    if (payload.kind !== "mcp_tool_call") throw new Error("not a tool call");
+    return payload;
+  };
+
+  // TEST_SCENARIO: the agent calls a write tool on a Connection that needs approval. One tool-call approval is filed with the Connection, the tool and the arguments, the in-session prompt goes to attached clients, and approve once sends the call on, even past the egress rules.
+  it("holds a write call and sends it on when approved", async () => {
     const w = asking();
     const inflight = w.send(
-      bodyOf(toolCall("notes_read", 3, { query: "q" })),
+      bodyOf(toolCall("notes_write", 3, { query: "q" })),
       named,
     );
     await flushMicrotasks();
@@ -505,16 +517,38 @@ describe("a Connection that needs approval at the gate", () => {
       connectionId: "conn-a",
       connectionName: "conn-a-name",
       templateId: "notes",
-      tool: "notes_read",
+      tool: "notes_write",
       arguments: { query: "q" },
       argumentsBytes: JSON.stringify({ query: "q" }).length,
     });
     expect(w.bus.publishes[0]!.channel).toBe("inject:agent-1");
-    expect(w.bus.publishes[0]!.payload).toContain("notes_read on conn-a-name");
+    expect(w.bus.publishes[0]!.payload).toContain("notes_write on conn-a-name");
 
     w.repo.resolve(row.id, "allow_once");
     w.bus.fire(`approval:${row.id}`, "");
     expect(await inflight).toBe("allow");
+  });
+
+  // TEST_SCENARIO: reading needs no answer from anyone. On a Connection that needs approval, a call of a tool on the Template's read list passes at once with no approval, and a call of a write tool on the same Connection is held.
+  it("passes a read call at once and holds a write call", async () => {
+    const w = asking();
+    expect(await w.send(bodyOf(toolCall("notes_read", 1)), named)).toBe(
+      "allow",
+    );
+    expect(w.repo.inserts).toBe(0);
+    void w.send(bodyOf(toolCall("notes_write", 2)), named);
+    await flushMicrotasks();
+    expect(w.repo.inserts).toBe(1);
+    expect(payloadOf(w).tool).toBe("notes_write");
+  });
+
+  // TEST_SCENARIO: the server adds a tool after the read list was written. Nobody decided that it only reads, so a Connection that needs approval holds its call like a write call.
+  it("holds a tool the read list does not name", async () => {
+    const w = asking();
+    void w.send(bodyOf(toolCall("notes_purge")), named);
+    await flushMicrotasks();
+    expect(w.repo.inserts).toBe(1);
+    expect(payloadOf(w).tool).toBe("notes_purge");
   });
 
   // TEST_SCENARIO: a tool call is POSTed to a path with a `..` segment, which the server may read as another path than the one the approval would show. The gate denies it before it files an approval, as it denies such a path for every other request, so an approve once can never send it.
@@ -688,6 +722,81 @@ describe("a Connection that needs approval at the gate", () => {
     expect(other.repo.inserts).toBe(2);
   });
 
+  // TEST_SCENARIO: the Template can name the call's target, such as the Slack conversation a post goes to. The new approval stores that name, so the person who answers sees it and not a raw id. The same call sent again joins the approval as it is and asks for no second name.
+  it("names the target on a new approval and asks once", async () => {
+    const asked: unknown[] = [];
+    const w = world([connection("conn-a", { mode: "needs-approval" })], {
+      labels: {
+        targetLabel: async (call) => {
+          asked.push(call);
+          return "#general";
+        },
+      },
+    });
+    void w.send(bodyOf(toolCall("notes_write", 1, { a: 1 })), named);
+    await flushMicrotasks();
+    void w.send(bodyOf(toolCall("notes_write", 2, { a: 1 })), named);
+    await flushMicrotasks();
+
+    expect(w.repo.inserts).toBe(1);
+    expect(payloadOf(w).targetLabel).toBe("#general");
+    expect(asked).toEqual([
+      {
+        connectionId: "conn-a",
+        templateId: "notes",
+        tool: "notes_write",
+        arguments: { a: 1 },
+      },
+    ]);
+  });
+
+  // TEST_SCENARIO: the name comes from the Template's server, so the approval keeps at most 200 characters of it.
+  it("cuts a long target name", async () => {
+    const w = world([connection("conn-a", { mode: "needs-approval" })], {
+      labels: { targetLabel: async () => "n".repeat(500) },
+    });
+    void w.send(bodyOf(toolCall("notes_write")), named);
+    await flushMicrotasks();
+    expect(payloadOf(w).targetLabel).toBe("n".repeat(200));
+  });
+
+  // TEST_SCENARIO: the lookup of the name fails. The name only helps the person who answers, so the approval is filed without one and the call is held as usual.
+  it("files the approval without a name when the lookup fails", async () => {
+    const w = world([connection("conn-a", { mode: "needs-approval" })], {
+      labels: {
+        targetLabel: async () => {
+          throw new Error("slack is down");
+        },
+      },
+    });
+    void w.send(bodyOf(toolCall("notes_write")), named);
+    await flushMicrotasks();
+    expect(w.repo.inserts).toBe(1);
+    expect(payloadOf(w)).not.toHaveProperty("targetLabel");
+    expect(w.bus.publishes).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: the lookup of the name hangs. The hold waits for it at most two seconds, then stops the lookup and files the approval without a name, so a slow server never keeps the owner from being asked.
+  it("files the approval without a name when the lookup is slow", async () => {
+    let lookup: AbortSignal | undefined;
+    const w = world([connection("conn-a", { mode: "needs-approval" })], {
+      labels: {
+        targetLabel: (_call, signal) => {
+          lookup = signal;
+          return new Promise(() => {});
+        },
+      },
+    });
+    void w.send(bodyOf(toolCall("notes_write")), named);
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(w.repo.inserts).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(w.repo.inserts).toBe(1);
+    expect(payloadOf(w)).not.toHaveProperty("targetLabel");
+    expect(lookup?.aborted).toBe(true);
+  });
+
   // TEST_SCENARIO: the arguments are larger than the approval keeps. The payload keeps only the first part of their JSON, as text, and says how large the whole arguments are.
   it("cuts arguments over 64 KiB", async () => {
     const w = asking();
@@ -719,7 +828,7 @@ describe("a Connection that needs approval at the gate", () => {
     expect(w.bus.publishes).toHaveLength(0);
   });
 
-  // TEST_SCENARIO: one POST carries several messages and one calls a tool. One approval answers one call, so nothing is held or sent: every request of the batch gets an error that asks for the calls one by one.
+  // TEST_SCENARIO: one POST carries several messages and one calls a write tool. One approval answers one call, so nothing is held or sent: every request of the batch gets an error that asks for the calls one by one.
   it("refuses a batch with a tool call, one error per request id", async () => {
     const w = asking();
     const response = refusalOf(
@@ -735,6 +844,22 @@ describe("a Connection that needs approval at the gate", () => {
     const answers = JSON.parse(response.body);
     expect(answers.map((a: { id: number }) => a.id)).toEqual([1, 2]);
     expect(answers[0].error.message).toContain("one call at a time");
+    expect(w.repo.inserts).toBe(0);
+  });
+
+  // TEST_SCENARIO: one POST carries several messages, and every tool it calls is a read tool. Nothing needs an answer, so the whole batch passes with no approval.
+  it("passes a batch whose tool calls all read", async () => {
+    const w = asking();
+    expect(
+      await w.send(
+        bodyOf([
+          { jsonrpc: "2.0", id: 1, method: "tools/list" },
+          toolCall("notes_search", 2),
+          toolCall("notes_read", 3),
+        ]),
+        named,
+      ),
+    ).toBe("allow");
     expect(w.repo.inserts).toBe(0);
   });
 

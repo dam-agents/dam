@@ -1,9 +1,11 @@
-// TEST_OVERVIEW: the tool mode and the tool list of an MCP Connection. A Slack Account is read only unless the create names another mode, and its owner switches it with one verb. The Templates that make an MCP Connection list the modes they offer, so a client shows the picker only there. Every MCP Connection with a Secret offers all three modes, and its Secret tells the gateway to send request bodies on its MCP host to the check; one with no auth offers allow all alone. The api-server reads the server's tool list with the Connection's own credential, at create, when a new credential replaces the old one, and on refresh, and stores which tools read: the server's `readOnlyHint`, or the Template's own read list where it declares one. A list that fails never fails the create. The listing shows the mode on MCP Connections only, and needs approval is open only to an owner with the feature on.
-import { describe, expect, it } from "vitest";
+// TEST_OVERVIEW: the tool mode and the tool list of an MCP Connection. A Slack Account is read only unless the create names another mode, and its owner switches it with one verb. The Templates that make an MCP Connection list the modes they offer, so a client shows the picker only there. Every MCP Connection with a Secret offers all three modes, and its Secret tells the gateway to send request bodies on its MCP host to the check; one with no auth offers allow all alone. The api-server reads the server's tool list with the Connection's own credential, at create, when a new credential replaces the old one, and on refresh, and stores which tools read: the server's `readOnlyHint`, or the Template's own read list where it declares one. A list that fails never fails the create. When a call of a Slack Account that writes a message is held, the api-server names where the message goes with the Connection's own token: the channel, or the person of a direct message; any other call, or a Slack answer that is not ok, gets no name. The listing shows the mode on MCP Connections only, and needs approval is open only to an owner with the feature on.
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Connection, ToolMode } from "api-server-api";
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
 import { toolAccessFor } from "../../modules/connections/domain/tool-access.js";
+import { createToolCallLabels } from "../../modules/connections/services/tool-call-labels.js";
+import type { SecretStore } from "../../modules/secret-store/index.js";
 import {
   fakeMcpToolLister,
   serviceHarness,
@@ -387,5 +389,153 @@ describe("the tool mode of other Connections", () => {
       h.svc.setToolMode({ id: header, mode: "allow-all" }),
     ).rejects.toThrow(/does not offer/);
     expect(lister.calls).toEqual([]);
+  });
+});
+
+describe("the target name of a held Slack call", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const slackConnection = {
+    id: "conn-slack",
+    ownerId: "user-1",
+    templateId: "slack",
+    name: "my-slack",
+    inputs: {},
+    auth: {
+      kind: "oauth",
+      clientId: "slack-client",
+      scopes: [],
+      accessTokenRef: { storeId: "test", path: "slack", field: "access_token" },
+    },
+    contributions: [],
+  } as unknown as Connection;
+
+  function labels() {
+    const reads: string[] = [];
+    return {
+      reads,
+      labels: createToolCallLabels({
+        repo: {
+          getById: async (id) => {
+            reads.push(id);
+            return id === slackConnection.id ? slackConnection : null;
+          },
+        },
+        secretStore: {
+          getField: async () => "xoxp-token",
+        } as unknown as SecretStore,
+      }),
+    };
+  }
+
+  function slackApi(answers: Record<string, unknown>) {
+    const asked: { url: string; auth: string | null }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL, init?: RequestInit) => {
+        const href = String(url);
+        asked.push({
+          url: href,
+          auth: new Headers(init?.headers).get("authorization"),
+        });
+        const answer = answers[href.replace("https://slack.com/api/", "")];
+        if (answer === undefined) throw new Error(`unexpected fetch ${href}`);
+        return new Response(JSON.stringify(answer), {
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+    return asked;
+  }
+
+  const send = (channelId: string, tool = "slack_send_message") => ({
+    connectionId: slackConnection.id,
+    templateId: "slack",
+    tool,
+    arguments: { channel_id: channelId, message: "hi" },
+  });
+
+  const signal = new AbortController().signal;
+
+  // TEST_SCENARIO: the agent posts to a channel. The approval shows the channel by its name, which Slack gives for the conversation id when asked with the person's own token.
+  it("names a channel", async () => {
+    const asked = slackApi({
+      "conversations.info?channel=C0CL63K6FKL": {
+        ok: true,
+        channel: { name: "general" },
+      },
+    });
+    expect(await labels().labels.targetLabel(send("C0CL63K6FKL"), signal)).toBe(
+      "#general",
+    );
+    expect(asked).toEqual([
+      {
+        url: "https://slack.com/api/conversations.info?channel=C0CL63K6FKL",
+        auth: "Bearer xoxp-token",
+      },
+    ]);
+  });
+
+  // TEST_SCENARIO: the agent writes to a direct message, by its conversation id or by the person's id. Both show the person's display name, or their real name when they set no display name.
+  it("names the person of a direct message", async () => {
+    slackApi({
+      "conversations.info?channel=D0DM": {
+        ok: true,
+        channel: { is_im: true, user: "U0JANE" },
+      },
+      "users.info?user=U0JANE": {
+        ok: true,
+        user: { profile: { display_name: "", real_name: "Jane Doe" } },
+      },
+      "users.info?user=W0JOE": {
+        ok: true,
+        user: { profile: { display_name: "joe", real_name: "Joe Bloggs" } },
+      },
+    });
+    const { labels: l } = labels();
+    expect(await l.targetLabel(send("D0DM"), signal)).toBe("Jane Doe");
+    expect(
+      await l.targetLabel(send("W0JOE", "slack_schedule_message"), signal),
+    ).toBe("joe");
+  });
+
+  // TEST_SCENARIO: a group direct message has no name a person would know, and Slack can refuse the lookup. Neither gets a name, so the approval shows the id.
+  it("gives no name to a group message or a refused lookup", async () => {
+    slackApi({
+      "conversations.info?channel=G0MPIM": {
+        ok: true,
+        channel: { is_mpim: true, name: "mpdm-jane--joe-1" },
+      },
+      "conversations.info?channel=C0SECRET": {
+        ok: false,
+        error: "channel_not_found",
+      },
+    });
+    const { labels: l } = labels();
+    expect(await l.targetLabel(send("G0MPIM"), signal)).toBeNull();
+    expect(await l.targetLabel(send("C0SECRET"), signal)).toBeNull();
+  });
+
+  // TEST_SCENARIO: a call that sends no message, a call with an id in no Slack shape, and a call of another Template have no target to name. Nothing is asked of Slack, and the Connection's Secret is not read.
+  it("asks nothing for a call it does not name", async () => {
+    const asked = slackApi({});
+    const { labels: l, reads } = labels();
+    expect(
+      await l.targetLabel(
+        { ...send("C0CL63K6FKL"), tool: "slack_read_channel" },
+        signal,
+      ),
+    ).toBeNull();
+    expect(await l.targetLabel(send("general&x=1"), signal)).toBeNull();
+    expect(
+      await l.targetLabel(
+        { ...send("C0CL63K6FKL"), templateId: "notes" },
+        signal,
+      ),
+    ).toBeNull();
+    expect(asked).toEqual([]);
+    expect(reads).toEqual([]);
   });
 });

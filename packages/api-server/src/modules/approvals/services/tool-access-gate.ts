@@ -58,7 +58,7 @@ export interface ToolAccessGateInput {
   body: ModelCallBody | undefined;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one `tools/call` of a Connection in needs approval, which the gate holds as a tool-call approval. `host` is the host the refusals name, `id` the call's JSON-RPC id, and `arguments` the call's arguments as sent.
+// UNIT_BOUNDARY_DESCRIPTION: one `tools/call` of a tool outside the read tools of a Connection in needs approval, which the gate holds as a tool-call approval. `host` is the host the refusals name, `id` the call's JSON-RPC id, and `arguments` the call's arguments as sent.
 export interface HeldToolCall {
   readonly connection: ToolAccessConnection;
   readonly host: string;
@@ -89,7 +89,7 @@ const NO_CHAIN_METHODS: ReadonlySet<string> = new Set(["CONNECT", "*"]);
 
 const MAX_LOGGED_NAME = 100;
 
-// UNIT_BOUNDARY_DESCRIPTION: the tool access step of the ext_authz gate, which holds an MCP Connection to its tool mode. For a request that a Connection in read only or needs approval limits, it reads the whole body the gateway sent. In read only it refuses the body when a `tools/call` in it names a tool outside the Connection's read tools, also in a batch. In needs approval it answers a body of one `tools/call` that names a tool with a hold, which the gate files as a tool-call approval; a batch that holds a `tools/call`, or a call that names no tool, is refused, since one approval answers one call. A refusal is an error the agent can read, and it answers every request of a batch, since no part of a refused body is sent. The limit is looked up for the TLS server name as well as for the Host header, so a forged Host does not skip it. A gateway that has not yet restarted onto the body check sends no server name, so the Host header alone could hide the Connection's MCP host: while the Agent holds a limiting Connection, a TLS request that can carry a body and comes without a server name is refused with the restart's retry. A POST with no body in the check is refused too, even when its headers declare none, because an HTTP/2 request can carry a body without a length header; so is a body read in part or one that is not strict JSON, since a call could hide in it. Every other request passes on to the gate's other checks.
+// UNIT_BOUNDARY_DESCRIPTION: the tool access step of the ext_authz gate, which holds an MCP Connection to its tool mode. For a request that a Connection in read only or needs approval limits, it reads the whole body the gateway sent. In read only it refuses the body when a `tools/call` in it names a tool outside the Connection's read tools, also in a batch. In needs approval a `tools/call` of a read tool passes at once, as in read only, also in a batch; a body of one `tools/call` that names any other tool is answered with a hold, which the gate files as a tool-call approval; a batch that holds such a call, or a call that names no tool, is refused, since one approval answers one call. A refusal is an error the agent can read, and it answers every request of a batch, since no part of a refused body is sent. The limit is looked up for the TLS server name as well as for the Host header, so a forged Host does not skip it. A gateway that has not yet restarted onto the body check sends no server name, so the Host header alone could hide the Connection's MCP host: while the Agent holds a limiting Connection, a TLS request that can carry a body and comes without a server name is refused with the restart's retry. A POST with no body in the check is refused too, even when its headers declare none, because an HTTP/2 request can carry a body without a length header; so is a body read in part or one that is not strict JSON, since a call could hide in it. Every other request passes on to the gate's other checks.
 export function createToolAccessGate(deps: {
   connections: ToolAccessConnections;
 }): ToolAccessGate {
@@ -220,6 +220,11 @@ export function createToolAccessGate(deps: {
         ),
       };
 
+      const notRead = calls.filter(
+        (call) => call.name === null || !limit.readTools.includes(call.name),
+      );
+      if (notRead.length === 0) return PASS;
+
       if (limit.mode === "needs-approval") {
         if (request.batch)
           return refuse(
@@ -229,7 +234,7 @@ export function createToolAccessGate(deps: {
             batchedToolCalls(shown, { ids }),
             logged,
           );
-        const [call] = calls;
+        const [call] = notRead;
         if (call.name === null)
           return refuse(
             input,
@@ -250,11 +255,7 @@ export function createToolAccessGate(deps: {
         };
       }
 
-      const refused = calls.filter(
-        (call) => call.name === null || !limit.readTools.includes(call.name),
-      );
-      if (refused.length === 0) return PASS;
-      const tools = refused.map((call) => call.name);
+      const tools = notRead.map((call) => call.name);
       return refuse(
         input,
         limit,

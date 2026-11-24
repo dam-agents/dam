@@ -407,6 +407,7 @@ import {
   createPricedConnections,
   createProviderEgressScopes,
   createToolAccessConnections,
+  createToolCallLabels,
   listConnectionGrantAgentIds,
   listConnectionTemplateIds,
   listManagedConnectionOwners,
@@ -2322,6 +2323,7 @@ export async function bootstrap() {
       db,
       connectionsBoot.templates,
     ),
+    toolCallLabels: createToolCallLabels({ db, secretStore }),
     attendance: turnAttendance,
     spend: spend.check,
     webSearch: {

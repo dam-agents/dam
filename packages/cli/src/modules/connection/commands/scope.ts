@@ -97,7 +97,7 @@ export function buildScopeCommand(deps: {
     .option(
       "--mode <mode>",
       "set the tool mode of an MCP connection: allow-all (every tool call passes), " +
-        "read-only (only the tools that read pass) or needs-approval (every tool call waits until someone approves it)",
+        "read-only (only the tools that read pass) or needs-approval (the tools that read pass, every other tool call waits until someone approves it)",
     )
     .addOption(new Option("--clear").hideHelp())
     .option(
@@ -122,7 +122,7 @@ export function buildScopeCommand(deps: {
         "  dam connection scope slack                       # show its tool mode\n" +
         "  dam connection scope slack --mode allow-all      # let the agent post as you\n" +
         "  dam connection scope slack --mode read-only      # back to reading only\n" +
-        "  dam connection scope my-mcp --mode needs-approval # every tool call waits for approval\n" +
+        "  dam connection scope my-mcp --mode needs-approval # writes wait for approval\n" +
         "\nA flag you leave out keeps that part of the current scope; on a connection\n" +
         "with full access, it leaves every one of that part.\n" +
         "A connection made from a GitHub sign-in reaches one account once it is limited;\n" +

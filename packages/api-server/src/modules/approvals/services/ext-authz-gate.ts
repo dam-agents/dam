@@ -15,7 +15,7 @@ import type { SpendLimitQuestions } from "./spend-limit-questions.js";
 import { type SettledVerdict, waitForVerdict } from "./held-verdict.js";
 import type { ModelCallBody, WebSearchGate } from "./web-search-gate.js";
 import type { ToolAccessGate } from "./tool-access-gate.js";
-import { createToolCallHold } from "./tool-call-hold.js";
+import { createToolCallHold, type ToolCallLabels } from "./tool-call-hold.js";
 
 export type ExtAuthzVerdict = "allow" | "deny";
 
@@ -124,6 +124,7 @@ interface CreateExtAuthzGateDeps {
   questions: SpendLimitQuestions;
   webSearch?: WebSearchGate;
   toolAccess: ToolAccessGate;
+  toolCallLabels: ToolCallLabels;
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
   waitingRuleSpeaksFor: WaitingRuleSpeaksFor;

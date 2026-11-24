@@ -171,9 +171,10 @@ export function buildListCommand(deps: {
         "with its own SCOPE. FULL ACCESS marks one that reaches everything its sign-in\n" +
         "or installation reaches; limit it with `dam connection scope`.\n" +
         "\nAn MCP connection's SCOPE is its tool mode: `allow all`, `read only` (only\n" +
-        "the tools that read pass) or `needs approval` (every tool call waits until\n" +
-        "someone approves it). A Slack Account is `read only` unless you choose\n" +
-        "another mode. Change it with `dam connection scope <connection> --mode <mode>`;\n" +
+        "the tools that read pass) or `needs approval` (the tools that read pass,\n" +
+        "every other tool call waits until someone approves it). A Slack Account is\n" +
+        "`read only` unless you choose another mode. Change it with\n" +
+        "`dam connection scope <connection> --mode <mode>`;\n" +
         "`dam connection tools <connection>` lists its tools.\n" +
         "\nEXPIRES is when the credential expires, as its last check found it.\n" +
         "\nPROVIDER names a model provider's alias, the harnesses that run on it, and\n" +

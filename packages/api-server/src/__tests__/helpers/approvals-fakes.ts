@@ -1,4 +1,5 @@
 import type { ToolAccessGate } from "../../modules/approvals/services/tool-access-gate.js";
+import type { ToolCallLabels } from "../../modules/approvals/services/tool-call-hold.js";
 import type { ApprovalsRepository } from "../../modules/approvals/infrastructure/approvals-repository.js";
 import type { RedisBus, BusListener } from "../../core/redis-bus.js";
 import type { PendingApprovalRow } from "../../modules/approvals/domain/types.js";
@@ -179,4 +180,8 @@ export function makeFakeApprovalsBus(): FakeBus {
 
 export const noToolAccessLimit: ToolAccessGate = {
   check: async () => ({ kind: "pass" }),
+};
+
+export const noToolCallLabels: ToolCallLabels = {
+  targetLabel: async () => null,
 };

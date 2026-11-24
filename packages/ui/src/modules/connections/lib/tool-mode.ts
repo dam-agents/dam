@@ -47,7 +47,7 @@ export function toolModeCopy(mode: ToolMode, offered: boolean): ToolModeCopy {
       return {
         label: NEEDS_APPROVAL_LABEL,
         description:
-          "Every tool call waits until someone approves it in approvals, the tools that read too.",
+          "Agents call the tools that read at once. Every other tool waits until someone approves it in approvals.",
       };
   }
 }
@@ -130,7 +130,7 @@ export function toolModeReach(
         ? `${READ_ONLY_LABEL}: only the tools that read, every other tool refused`
         : `${READ_ONLY_LABEL}: searches and reads as you, posts nothing`;
     case "needs-approval":
-      return `${NEEDS_APPROVAL_LABEL}: every tool call waits for an answer`;
+      return `${NEEDS_APPROVAL_LABEL}: the tools that read go through, every other tool waits for an answer`;
   }
 }
 

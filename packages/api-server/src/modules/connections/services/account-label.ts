@@ -72,7 +72,7 @@ export async function recordAccountLabel(
   }
 }
 
-async function storedAccessToken(
+export async function storedAccessToken(
   conn: Connection,
   secretStore: SecretStore,
 ): Promise<string | null> {

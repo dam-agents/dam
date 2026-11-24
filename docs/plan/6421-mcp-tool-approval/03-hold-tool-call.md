@@ -6,7 +6,7 @@
 ## Context
 
 This slice makes "needs approval" real.
-The tool access step holds a `tools/call` of a Connection in `needs-approval` as a new approval type, `mcp_tool_call`, the way the gate holds a network request: it files one pending approval, joins identical calls to it, publishes a synth frame, waits up to the hold window and lets the request through on approve once.
+The tool access step lets a `tools/call` of a read tool pass at once, as in `read-only`, and holds a `tools/call` of any other tool of a Connection in `needs-approval` as a new approval type, `mcp_tool_call`, the way the gate holds a network request: it files one pending approval, joins identical calls to it, publishes a synth frame, waits up to the hold window and lets the request through on approve once.
 A channel turn with nobody attached is refused at once and the approval is filed, as for network approvals.
 Retry after the client gave up is slice 04; here a verdict after the request is gone does nothing.
 
@@ -34,15 +34,15 @@ The `web_search` approval type (commit `c807d9d91f`, #6467) is the closest model
    Check `modules/agent-store/infrastructure/control-grants.ts` for a type list that needs the new type, as `web_search` was added there.
 6. **Gate** (the tool access step from slice 01, and `ext-authz-gate.ts`).
    The step answers `{ pass }`, `{ refuse, response }` or `{ hold, connection, toolCall }`.
-   A body with one `tools/call` on a `needs-approval` Connection holds.
-   A batch that contains a `tools/call` on such a Connection is refused with a JSON-RPC error per request id that asks the agent to send the calls one by one (a helper beside `refusedToolCalls`).
+   A body with one `tools/call` of a read tool on a `needs-approval` Connection passes; one with a `tools/call` of any other tool holds.
+   A batch whose `tools/call`s all name read tools passes; a batch that contains any other `tools/call` on such a Connection is refused with a JSON-RPC error per request id that asks the agent to send the calls one by one (a helper beside `refusedToolCalls`).
    The hold runs in `ext-authz-gate.ts` after the tool access step, before platform authorities and rules, by the pattern of the ext_authz hold already there (around `findActivePendingExtAuthz` … `waitForVerdict`):
    - join an open row by `findActivePendingMcpToolCall`, else `insertPending` with type `mcp_tool_call`, the payload (arguments cut at 64 KiB of JSON, `argumentsBytes` the full size), `expiresAt` now plus `holdSeconds`, and emit `ApprovalRequested`;
    - unattended (`attendance.hasOpenChannelTurn && !hasInteractiveSession`, attendee as the ext_authz hold reads it): refuse at once with a JSON-RPC error on HTTP 200 that says the call needs the owner's approval in the app, was not made, and the owner was asked;
    - attended: publish a synth frame and `waitForVerdict`; allow → `"allow"`; deny → JSON-RPC error "the owner denied this call"; hold expired → JSON-RPC error "nobody answered within N minutes; the call was not made".
-   Every refusal here is a JSON-RPC error on HTTP 200 with `PLATFORM_REFUSAL_HEADER`, so the agent's session goes on.
-   Security log events: `egress.hold` and `egress.decision` with `basis: "tool-approval"`, the Connection id and the tool name (cut to 100 characters), never the arguments.
-   Remove the slice-01 refusal for `needs-approval`.
+     Every refusal here is a JSON-RPC error on HTTP 200 with `PLATFORM_REFUSAL_HEADER`, so the agent's session goes on.
+     Security log events: `egress.hold` and `egress.decision` with `basis: "tool-approval"`, the Connection id and the tool name (cut to 100 characters), never the arguments.
+     Remove the slice-01 refusal for `needs-approval`.
 7. **Synth frame** (`approvals/infrastructure/acp-frames.ts`).
    `buildMcpToolCallSynthFrame`, modelled on `buildWebSearchSynthFrame` (once options only): title `<tool> on <connectionName>`, `rawInput` `{ approvalId, connectionId, tool }`.
 8. **CLI** (`packages/cli/src/modules/approval/commands/{approve,deny,outcome}.ts`).
@@ -58,7 +58,7 @@ The `web_search` approval type (commit `c807d9d91f`, #6467) is the closest model
 
 ## Acceptance criteria
 
-- [ ] On a `needs-approval` Connection, a `tools/call` files one `mcp_tool_call` approval with tool and arguments and waits; approve once lets it through, deny once returns a JSON-RPC error.
+- [ ] On a `needs-approval` Connection, a `tools/call` of a read tool passes at once, and a `tools/call` of any other tool files one `mcp_tool_call` approval with tool and arguments and waits; approve once lets it through, deny once returns a JSON-RPC error.
 - [ ] The same call sent again while the first waits joins the same approval; a call with other arguments files its own.
 - [ ] Arguments over 64 KiB are cut in the payload and `argumentsBytes` holds the full size.
 - [ ] Once the approval is resolved or expired, its payload has no `arguments`.

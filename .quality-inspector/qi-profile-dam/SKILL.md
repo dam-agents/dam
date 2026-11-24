@@ -64,10 +64,11 @@ Builds published before these accounts were added have only `qa-owner`; there an
 - **DAM connection** — the connection that lets an agent act as its owner on the install; an account's own, made from an agent's Connections page once the experimental feature `damConnection` is on for it.
   Turning that switch off leaves every connection and grant working and only stops new ones being offered.
 - **Home** — what changed since the user last looked; agents, usage, spend.
-- **Tool-call approval** — an agent's call of an MCP connection's tool, held while that connection is in *needs approval* (experimental feature `mcp-tool-approval`).
+- **Tool-call approval** — an agent's call of an MCP connection's tool that does not read, held while that connection is in *needs approval* (experimental feature `mcp-tool-approval`).
+  A call of a read tool (the *Read tools* group in the *Tool access* dialog) passes at once, with no card.
   It waits in the approvals bell as a card headed *Wants to use <tool> on <connection>*, in a toast, and, with `chat-network-approvals` on, as a card titled *Allow this tool call?* in every open conversation of the agent.
   The card shows the call's arguments as JSON, says *The arguments were cut: …* when they are larger than 64 KiB, and offers only *Allow once* and *Deny*; the next call asks again.
-  On a Slack Account connection, a call that posts shows *Posts as you to <channel id>* and the message text in place of the JSON.
+  On a Slack Account connection, a call that posts, replies in a thread, schedules a message or saves a draft shows the Slack logo and a plain headline (*Wants to send a Slack message*, *Wants to reply in a Slack thread*, *Wants to schedule a Slack message*, *Wants to save a Slack draft*; in the chat the same as a question, such as *Send a Slack message?*), a small line *<connection> · <tool>*, a line such as *To <channel id> · as you*, and the message text in place of the JSON.
   The same call sent again while one waits shows as one card with a request count.
 - **Assistant** — an ordinary agent the platform makes for a person when the install offers it: it is created under the install's assistant name (Dammy by default) and tracked from then on by a small record per account, so it appears in the agent list and the sidebar like any other agent and can be renamed, shared, bound to a channel and deleted as any other agent can.
   The record, not the name, is what makes it the assistant: renaming it keeps it one, and an agent the account makes under the same name is never it — that agent only stops a new one being created, and never opens on the greeting.

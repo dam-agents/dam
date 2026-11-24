@@ -138,7 +138,7 @@ describe("a connection left in needs approval after the feature is turned off", 
       (mode) => toolModeCopy(mode, ownToolModeNames(c.toolAccess, false)).label,
     );
 
-  // TEST_SCENARIO: the gate still holds every tool call, so the row keeps the amber mark and its line, and the dialog shows needs approval as the current card beside the modes the owner can switch to: Slack's old names, the generic connection's own names.
+  // TEST_SCENARIO: the gate still holds every call of a tool that does not read, so the row keeps the amber mark and its line, and the dialog shows needs approval as the current card beside the modes the owner can switch to: Slack's old names, the generic connection's own names.
   it("keeps showing needs approval so the owner can switch it away", () => {
     for (const c of [
       slack({ mode: "needs-approval" }),
@@ -148,7 +148,7 @@ describe("a connection left in needs approval after the feature is turned off", 
       expect(html).toContain("Needs approval");
       expect(html).toContain("bg-warning");
       expect(reach(c)).toBe(
-        "Needs approval: every tool call waits for an answer",
+        "Needs approval: the tools that read go through, every other tool waits for an answer",
       );
     }
     expect(cards(slack({ mode: "needs-approval" }))).toEqual([
@@ -197,13 +197,13 @@ describe("an MCP connection's row with the feature on", () => {
     );
   });
 
-  // TEST_SCENARIO: needs approval holds every tool call, so the owner sees the amber mark and the line says each call waits.
+  // TEST_SCENARIO: needs approval holds every call of a tool that does not read, so the owner sees the amber mark and the line says reads go through and every other call waits.
   it("marks needs approval in amber", () => {
     const html = badges(customMcp({ mode: "needs-approval" }));
     expect(html).toContain("Needs approval");
     expect(html).toContain("bg-warning");
     expect(reach(customMcp({ mode: "needs-approval" }))).toBe(
-      "Needs approval: every tool call waits for an answer",
+      "Needs approval: the tools that read go through, every other tool waits for an answer",
     );
   });
 
@@ -258,7 +258,7 @@ describe("sharing an agent that holds MCP connections with a chat", () => {
     expect(shown).not.toContain("post");
   });
 
-  // TEST_SCENARIO: with allow all the people in the chat can make the agent post as the owner, and with needs approval each call waits for someone, so the warning says each.
+  // TEST_SCENARIO: with allow all the people in the chat can make the agent post as the owner, and with needs approval they can read while every other call waits for someone, so the warning says each.
   it("says what allow all and needs approval let them do", () => {
     const shown = text([
       { name: "my-slack", mode: "allow-all" },
@@ -268,7 +268,7 @@ describe("sharing an agent that holds MCP connections with a chat", () => {
       "Through my-slack they can also post and change things as you.",
     );
     expect(shown).toContain(
-      "Through my-notes every tool call waits until someone approves it.",
+      "Through my-notes they can read what you can read, and every other tool call waits until someone approves it.",
     );
   });
 });

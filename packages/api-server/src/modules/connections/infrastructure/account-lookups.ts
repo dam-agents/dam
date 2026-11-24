@@ -30,14 +30,15 @@ const slackUserInfoSchema = z.object({
 
 const googleUserInfoSchema = z.object({ email: z.string().min(1) });
 
-async function getJson(
+export async function getJson(
   url: string,
   accessToken: string,
   method: "GET" | "POST" = "GET",
+  signal: AbortSignal = AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
 ): Promise<unknown> {
   const res = await fetch(url, {
     method,
-    signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
+    signal,
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!res.ok) {

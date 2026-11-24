@@ -2,7 +2,7 @@ import type { ApprovalStatus, McpToolCallPayload } from "api-server-api";
 import { match } from "ts-pattern";
 
 import { toolCallArgumentsOf } from "../lib/tool-call-arguments.js";
-import { toolCallPresentationOf } from "../lib/tool-call-renderers.js";
+import { templateToolCallOf } from "../lib/tool-call-renderers.js";
 import { SlackMessagePreview } from "./slack-message-preview.js";
 
 function ArgumentsBlock({ text }: { text: string }) {
@@ -39,10 +39,10 @@ export function ToolCallView({
             <Note>{note}</Note>
           </>
         ))
-        .with({ kind: "whole" }, ({ value, json }) => {
-          const presentation = toolCallPresentationOf(payload, value);
-          return presentation.kind === "slack-message" ? (
-            <SlackMessagePreview call={presentation} />
+        .with({ kind: "whole" }, ({ json }) => {
+          const message = templateToolCallOf(payload)?.message;
+          return message ? (
+            <SlackMessagePreview call={message} />
           ) : (
             <ArgumentsBlock text={json} />
           );

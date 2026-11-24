@@ -20,7 +20,7 @@ Apply `/typescript-engineering`.
    Generate the migration with the db package's mise task (`mise tasks --all | grep db`), then append to the same migration file the data step:
    - for `template_id = 'slack'`: `tool_access = {mode: "allow-all"}` where `auth ? 'fullAccess'`, else `{mode: "read-only"}`, `tools`, `listedAt`, `listError` null;
    - then remove `fullAccess` from `auth` for `template_id = 'slack'` only (`auth - 'fullAccess'`).
-   GitHub rows keep `auth.fullAccess`.
+     GitHub rows keep `auth.fullAccess`.
 2. **Upgrade rehearsal** (`packages/db/scripts/upgrade-rehearsal-snapshot.sql`, `upgrade-rehearsal-assert.sql`).
    The `connections.full_access` count loses the Slack rows (the expected delta from 0118 + 0160 drops by the Slack rows the fixture holds).
    Replace `kept.connections.slack_full_access` with an assertion that every Slack row has `tool_access->>'mode'` of `allow-all` exactly where the snapshot had `fullAccess`, and `read-only` elsewhere.

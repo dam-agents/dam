@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-11-21
+Last verified: 2026-11-23
 
 ## Overview
 
@@ -305,7 +305,7 @@ At a limit it refuses at once, with a response shaped for the call's API path in
 
 **Web search.** With web search control on, the gate then holds a model call that declares a web search tool, under its own rule ([web-search-control](web-search-control.md)).
 
-**Tool calls.** In needs approval, the [tool access step](connections.md#connection) holds a tool call of an MCP Connection as a tool-call approval, before any egress rule is read; it takes approve once and deny once only.
+**Tool calls.** In needs approval, the [tool access step](connections.md#connection) holds an MCP call of any tool but a read tool as a tool-call approval, before any egress rule; it takes approve once and deny once only.
 
 The HTTP filter on TLS-terminated chains sees method/path; the network filter on the catch-all chain sees SNI only.
 

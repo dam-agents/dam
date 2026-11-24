@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-11-21
+Last verified: 2026-11-23
 
 ## Overview
 
@@ -130,7 +130,7 @@ Every MCP Connection has one **tool mode**: allow all, read only or needs approv
 The mode lives on the Connection, so every Agent that holds it gets the same one, and a Connection that stores none takes its Template's default, else allow all.
 Every MCP Connection with a Secret offers all three modes, because the gateway injects its credential, so it reads the requests to the Connection's MCP host and sends their body to the gate.
 A custom MCP server with no auth has no Secret, so its requests pass the gateway unread and it offers allow all alone ([mcp-connections](mcp-connections.md#tool-list)).
-The **read tools** are the tools that pass in read only.
+The **read tools** are the tools that pass in read only, and that pass at once in needs approval.
 The api-server reads the server's **tool list** itself, as an MCP client with the Connection's own credential, because the gate never sees the server's answer and the Agent cannot be trusted to report it.
 It reads the list when the credential first works, at create or at the OAuth callback, again when a new credential replaces the old one, and when the owner refreshes it, and stores each tool's name and whether it reads: the server's `readOnlyHint`.
 A list that fails keeps the tools read before and stores why, for the owner to see, and never fails the create or the update.
@@ -142,9 +142,10 @@ With the feature off, only a Template whose default is read only shows a choice:
 A Connection still in needs approval when the feature is turned off keeps its mark and its dialog, so the owner can switch it to another mode it offers, but not back.
 The CLI sets the mode with `--mode` and lists the tools with `dam connection tools` ([cli](cli.md)).
 In read only the gateway lets only the read tools pass, and a tool the list does not name is not a read tool: a tool the server adds later is refused until a new read of the list names it as reading.
-In needs approval the gateway holds every tool call, read tools included, as a tool-call approval (below) that shows the tool and its arguments where network approvals show; approve once sends it, and deny once or no answer within the hold window refuses it.
+In needs approval the gateway lets the read tools pass at once, as in read only, and holds a call of any other tool, a tool the list does not name included, as a tool-call approval (below) that shows the tool and its arguments where network approvals show; approve once sends it, and deny once or no answer within the hold window refuses it.
 Only an owner with the `mcp-tool-approval` [experimental feature](features.md) on can choose it.
 A Template may also render its own tool calls on that approval: the Slack Account shows a call that posts, saves a draft or schedules a message as its target and text, and every other tool, or a call whose arguments are not in the shape the renderer expects, shows as the tool name and its arguments as JSON.
+When the gateway files such a Slack approval, the platform looks up the name of the channel or person with the Connection's own credential, waits for it at most two seconds, and keeps it on the approval; the approval shows the Slack id when that lookup fails.
 The Agent still sees every tool the server lists, and a refused call is answered with an error it can read.
 The limit is the **tool access step** of the ext_authz gate ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)), after the spend and web search steps and before any rule is read, so no egress rule lets a refused call through.
 On the Connection's MCP host, named by the request's TLS server name or its Host header, the gate reads the request's whole body, which that host's chain sends with every check ([credential-gateway](credential-gateway.md#envoy-credential-injection)), and refuses a tool call the mode does not let through, also inside a batch, with JSON keys read in any letter case.
@@ -158,7 +159,7 @@ That window opens only when a Connection whose Secret was written before every M
 A change holds from the Agent's next request, and whoever acts with the owner's rights can make it, an Agent that holds the owner's [DAM Connection](connection-presets.md#platform-preset-this-install-itself) included.
 The Slack Account Connections made before tool access existed kept full access, so none was narrowed silently; when the mode moved out of the OAuth auth, one with full access became allow all and one without it read only.
 
-A **tool-call approval** answers one call, so a request that carries one tool call is held, and a batch that contains one is refused with a request to send the calls one by one.
+A **tool-call approval** answers one call of a tool that is not a read tool, so a request that carries one such call is held, and a batch that contains one is refused with a request to send the calls one by one; a batch whose tool calls all read passes.
 Calls with the same Connection, tool and arguments share one approval, whatever their request id or key order: a retry joins the waiting approval, and a call with other arguments files its own.
 It takes approve once and deny once only, so nothing is remembered and no rule is written.
 Deny once, and the end of the hold window, answer the call with an error the Agent can read, and its session goes on.

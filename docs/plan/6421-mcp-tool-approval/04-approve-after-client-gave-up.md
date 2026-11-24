@@ -35,7 +35,7 @@ Apply `/typescript-engineering`.
    - Claude Code: check whether its MCP entry accepts a per-server timeout; if not, set `MCP_TOOL_TIMEOUT` (milliseconds) in the harness env the runtime already writes.
    - Copilot, Bob, Pi, Hermes: look up each harness's MCP config for a per-server or global tool timeout.
      Set it where one exists; where none exists, write nothing and list the harness in the commit body.
-   The hold window reaches the runtime from the api-server's `approvalHoldSeconds`; find how the runtime receives other api-server settings (the `applyState` payload) and add it there, rather than hard-coding 1800.
+     The hold window reaches the runtime from the api-server's `approvalHoldSeconds`; find how the runtime receives other api-server settings (the `applyState` payload) and add it there, rather than hard-coding 1800.
 6. **Docs.**
    [security-and-credentials.md › HITL ext_authz](../../architecture/security-and-credentials.md#hitl-ext_authz): an approve once outlives the client's timeout until the window ends, a call uses it up once, and an abandoned hold leaves the approval open.
    [harness-config.md](../../architecture/harness-config.md): the MCP tool timeout per harness.

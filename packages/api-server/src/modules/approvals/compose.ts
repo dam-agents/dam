@@ -49,6 +49,7 @@ import {
   createToolAccessGate,
   type ToolAccessConnections,
 } from "./services/tool-access-gate.js";
+import type { ToolCallLabels } from "./services/tool-call-hold.js";
 import {
   createSpendLimitQuestions,
   type SpendLimitQuestions,
@@ -111,6 +112,7 @@ interface ComposeApprovalsSystemDeps {
   ruleMatcher: EgressRuleMatcher;
   providerScopes: ProviderScopes;
   toolAccessConnections: ToolAccessConnections;
+  toolCallLabels: ToolCallLabels;
   attendance: EgressAttendance;
   spend: SpendCheck;
   webSearch: {
@@ -152,6 +154,7 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     toolAccess: createToolAccessGate({
       connections: deps.toolAccessConnections,
     }),
+    toolCallLabels: deps.toolCallLabels,
     holdSeconds: deps.holdSeconds,
     platformAllowedAuthorities: deps.platformAllowedAuthorities,
     waitingRuleSpeaksFor: deps.waitingRuleSpeaksFor,
