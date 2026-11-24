@@ -1,6 +1,6 @@
 # Owner model catalog
 
-Last verified: 2026-11-16
+Last verified: 2026-11-24
 
 ## Overview
 
@@ -15,6 +15,8 @@ The api-server already calls provider endpoints with that credential for the key
 The catalog uses the same listing specs, discovery parser and metadata layers as the [per-agent model catalog](harness-config.md#the-model-catalog), and sends each credential the way its provider expects, Bob's `Apikey` scheme included.
 The IBM LiteLLM and CurveBender proxies are listed from LiteLLM's model info (`/v1/model/info`), which gives each model's context window, reasoning and vision, so a model newer than the vendored price table still runs with its real limits.
 When model info fails, by a refusal, a timeout or an empty list, the proxy is listed from `/v1/models`, with the table's metadata; the CurveBender deployment always lists that way, because its shared key reaches only an exact list of paths.
+The table has one row per model family: each field comes from the first of LiteLLM's provider routes for that model that states it, so a row can mix the values of several hosts.
+A cache price comes only from a route with the row's input and output prices.
 Harness fit comes from the shipped harness catalog, and a model known to hold under 32k is left out of the harnesses it would otherwise fit.
 A Bedrock Connection lists Claude Code's native tier names, and, for Pi, the inference profiles of the Connection's region, read from the Connection's control-plane URL with its key.
 A model is named the plain `<alias>/<id>` a session stores; the runtime renders a harness's own spelling when it starts.

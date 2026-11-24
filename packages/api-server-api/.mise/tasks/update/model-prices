@@ -8,10 +8,12 @@ base prices. LiteLLM keeps one row per provider route, and a route can lack a
 field that another route of the same model has, for example a route added
 only to make a model id selectable. So a family row takes each field from the
 first route that has it, the route with the plainest key first, and names
-that first route as its key. The task names every family that loses a field
-that the current file has. Spend prices Anthropic API keys and the Claude
-subscription value from the "anthropic" part: the Anthropic API's chat rows
-with every price field, unchanged, so a reviewer can compare them with
+that first route as its key. A cache price comes only from a route with the
+row's input and output prices, so a row never pairs one host's input price
+with another host's cache price. The task names every family that loses a
+field that the current file has. Spend prices Anthropic API keys and the
+Claude subscription value from the "anthropic" part: the Anthropic API's chat
+rows with every price field, unchanged, so a reviewer can compare them with
 LiteLLM's file. Before it writes anything, the task stops when a row that
 the current file prices is missing upstream, lacks one of the five token
 prices, or loses any price that the current file has, such as a prompt-size
@@ -46,6 +48,7 @@ const CATALOG_FIELDS = [
   "supports_vision",
   "supports_reasoning",
 ];
+const CACHE_PRICES = new Set(["cache_read_input_token_cost", "cache_creation_input_token_cost"]);
 const REQUIRED = [
   "input_cost_per_token",
   "output_cost_per_token",
@@ -82,6 +85,9 @@ async function pinnedCommit() {
 const familyName = (key) => key.split("/").at(-1).toLowerCase().replace(/\./g, "-");
 const plainness = (key) =>
   (key.includes("/") ? 2 : 0) + (/^[a-z-]+\.[a-z]/i.test(key) ? 1 : 0);
+const samePrices = (route, row) =>
+  route.input_cost_per_token === row.input_cost_per_token &&
+  route.output_cost_per_token === row.output_cost_per_token;
 
 function catalogPart(list) {
   const routes = {};
@@ -99,7 +105,10 @@ function catalogPart(list) {
     Object.entries(routes).map(([family, familyKeys]) => {
       const kept = { key: familyKeys[0] };
       for (const field of CATALOG_FIELDS) {
-        const value = familyKeys.map((key) => list[key][field]).find((found) => found != null);
+        const value = familyKeys
+          .filter((key) => !CACHE_PRICES.has(field) || samePrices(list[key], kept))
+          .map((key) => list[key][field])
+          .find((found) => found != null);
         if (value !== undefined) kept[field] = value;
       }
       return [family, kept];
@@ -202,7 +211,7 @@ const source = {
   commit,
   committedAt: meta.commit.committer.date,
   pruned:
-    "models: mode in chat|responses|completion; one entry per family name (last path segment, lowercased, dots as dashes); fields the model catalog reads, each from the first route of the family that has it, plainest key first. anthropic: litellm_provider anthropic and mode chat; every price field, unchanged",
+    "models: mode in chat|responses|completion; one entry per family name (last path segment, lowercased, dots as dashes); fields the model catalog reads, each from the first route of the family that has it, plainest key first, a cache price only from a route with the same input and output prices. anthropic: litellm_provider anthropic and mode chat; every price field, unchanged",
 };
 writeFileSync(
   OUT,
