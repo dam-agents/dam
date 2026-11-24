@@ -93,14 +93,12 @@ describe("acp-runtime: a channel's steer that does not join its turn", () => {
     const { world, logs, channel } = await channelTurnRunning({
       _meta: { steering: { supported: true } },
     });
-    world
-      .harness()
-      .emit(
-        update({
-          sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: "Running" },
-        }),
-      );
+    world.harness().emit(
+      update({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Running" },
+      }),
+    );
     channel.send(steer(2, "steer-a"));
     await settle();
     expect(world.harness().received(STEER_METHOD)).toEqual([]);
@@ -127,25 +125,21 @@ describe("acp-runtime: a channel's steer that does not join its turn", () => {
     const { world, logs, channel } = await channelTurnRunning({
       _meta: { steering: { supported: true } },
     });
-    world
-      .harness()
-      .emit(
-        update({
-          sessionUpdate: "tool_call",
-          toolCallId: "t1",
-          status: "pending",
-        }),
-      );
+    world.harness().emit(
+      update({
+        sessionUpdate: "tool_call",
+        toolCallId: "t1",
+        status: "pending",
+      }),
+    );
     channel.send(steer(2, "steer-b"));
-    world
-      .harness()
-      .emit(
-        update({
-          sessionUpdate: "tool_call_update",
-          toolCallId: "t1",
-          status: "completed",
-        }),
-      );
+    world.harness().emit(
+      update({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t1",
+        status: "completed",
+      }),
+    );
     await settle();
     world.harness().replyTo(STEER_METHOD, { outcome: "injected" });
     await settle();
@@ -163,15 +157,13 @@ describe("acp-runtime: a channel's steer that does not join its turn", () => {
    */
   it("holds a steer for a harness that has not answered initialize yet", async () => {
     const { world, logs, channel } = await channelTurnRunning(null, "native");
-    world
-      .harness()
-      .emit(
-        update({
-          sessionUpdate: "tool_call",
-          toolCallId: "t1",
-          status: "pending",
-        }),
-      );
+    world.harness().emit(
+      update({
+        sessionUpdate: "tool_call",
+        toolCallId: "t1",
+        status: "pending",
+      }),
+    );
     channel.send(steer(2, "steer-e"));
     await settle();
     expect(channel.reply(2)).toBeUndefined();
@@ -179,15 +171,13 @@ describe("acp-runtime: a channel's steer that does not join its turn", () => {
     world.harness().replyTo("initialize", {
       _meta: { steering: { supported: true } },
     });
-    world
-      .harness()
-      .emit(
-        update({
-          sessionUpdate: "tool_call_update",
-          toolCallId: "t1",
-          status: "completed",
-        }),
-      );
+    world.harness().emit(
+      update({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t1",
+        status: "completed",
+      }),
+    );
     await settle();
     expect(world.harness().received(STEER_METHOD)).toHaveLength(1);
     world.harness().replyTo(STEER_METHOD, { outcome: "injected" });
