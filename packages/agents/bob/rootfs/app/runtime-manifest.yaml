@@ -74,6 +74,9 @@ drivers:
     # platform's streamable MCP endpoint.
     extraFields:
       transportType: http
+    # A Connection's entry waits for a request as long as the gateway holds a
+    # tool call for the owner's approval; Bob's own default is 10 minutes.
+    toolTimeout: { key: timeout, unit: milliseconds }
 
   skill-ref:
     impl: skill-install

@@ -46,9 +46,10 @@ import {
   type WaitingRuleSpeaksFor,
 } from "./services/ext-authz-gate.js";
 import {
-  createReadOnlyGate,
-  type ReadOnlyConnections,
-} from "./services/read-only-gate.js";
+  createToolAccessGate,
+  type ToolAccessConnections,
+} from "./services/tool-access-gate.js";
+import type { ToolCallLabels } from "./services/tool-call-hold.js";
 import {
   createSpendLimitQuestions,
   type SpendLimitQuestions,
@@ -110,7 +111,8 @@ interface ComposeApprovalsSystemDeps {
   identityResolver: AgentIdentityResolver;
   ruleMatcher: EgressRuleMatcher;
   providerScopes: ProviderScopes;
-  readOnlyConnections: ReadOnlyConnections;
+  toolAccessConnections: ToolAccessConnections;
+  toolCallLabels: ToolCallLabels;
   attendance: EgressAttendance;
   spend: SpendCheck;
   webSearch: {
@@ -149,7 +151,10 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
       holdSeconds: deps.holdSeconds,
       ...deps.webSearch,
     }),
-    readOnly: createReadOnlyGate({ connections: deps.readOnlyConnections }),
+    toolAccess: createToolAccessGate({
+      connections: deps.toolAccessConnections,
+    }),
+    toolCallLabels: deps.toolCallLabels,
     holdSeconds: deps.holdSeconds,
     platformAllowedAuthorities: deps.platformAllowedAuthorities,
     waitingRuleSpeaksFor: deps.waitingRuleSpeaksFor,

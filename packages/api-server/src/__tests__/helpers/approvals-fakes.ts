@@ -1,4 +1,5 @@
-import type { ReadOnlyGate } from "../../modules/approvals/services/read-only-gate.js";
+import type { ToolAccessGate } from "../../modules/approvals/services/tool-access-gate.js";
+import type { ToolCallLabels } from "../../modules/approvals/services/tool-call-hold.js";
 import type { ApprovalsRepository } from "../../modules/approvals/infrastructure/approvals-repository.js";
 import type { RedisBus, BusListener } from "../../core/redis-bus.js";
 import type { PendingApprovalRow } from "../../modules/approvals/domain/types.js";
@@ -9,7 +10,10 @@ export interface FakeRepo {
   inserts: number;
   expirePendingCalls: string[];
   setInitial(row: PendingApprovalRow): void;
-  resolve(id: string, verdict: "allow" | "deny"): void;
+  resolve(
+    id: string,
+    verdict: "allow" | "deny" | "allow_once" | "deny_once",
+  ): void;
 }
 
 export function makeFakeApprovalsRepo(): FakeRepo {
@@ -47,6 +51,35 @@ export function makeFakeApprovalsRepo(): FakeRepo {
           r.payload.kind === "web_search" &&
           r.payload.key === key,
       ) ?? null,
+    findActivePendingMcpToolCall: async ({ agentId, key }) =>
+      rows.find(
+        (r) =>
+          r.agentId === agentId &&
+          r.status === "pending" &&
+          r.payload.kind === "mcp_tool_call" &&
+          r.payload.key === key &&
+          r.expiresAt > new Date(),
+      ) ?? null,
+    consumeAllowOnce: async (target) => {
+      const row = rows
+        .filter(
+          (r) =>
+            r.type === "mcp_tool_call" &&
+            r.status === "resolved" &&
+            r.verdict === "allow_once" &&
+            r.deliveredAt === null &&
+            ("id" in target
+              ? r.id === target.id
+              : r.agentId === target.agentId &&
+                r.payload.kind === "mcp_tool_call" &&
+                r.payload.key === target.key &&
+                r.expiresAt > new Date()),
+        )
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0];
+      if (!row) return null;
+      row.deliveredAt = new Date();
+      return row.id;
+    },
     findActivePendingExtAuthz: async ({
       agentId,
       host,
@@ -103,7 +136,7 @@ export function makeFakeApprovalsRepo(): FakeRepo {
       const row = rows.find((r) => r.id === id);
       if (!row) return;
       row.status = "resolved";
-      row.verdict = verdict === "allow" ? "allow" : "deny";
+      row.verdict = verdict;
       row.resolvedAt = new Date();
     },
   } as FakeRepo;
@@ -145,6 +178,10 @@ export function makeFakeApprovalsBus(): FakeBus {
   };
 }
 
-export const noReadOnlyLimit: ReadOnlyGate = {
-  check: async () => ({ pass: true }),
+export const noToolAccessLimit: ToolAccessGate = {
+  check: async () => ({ kind: "pass" }),
+};
+
+export const noToolCallLabels: ToolCallLabels = {
+  targetLabel: async () => null,
 };

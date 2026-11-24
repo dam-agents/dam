@@ -5,6 +5,7 @@ import { connectionKindSubtitle } from "../lib/catalog-providers.js";
 import type {
   RowGrantControls,
   RowMaintenanceActions,
+  RowToolAccess,
 } from "./catalog-connection-row.js";
 import { CatalogConnectionRow } from "./catalog-connection-row.js";
 
@@ -19,6 +20,7 @@ interface Props {
   onRemove?: () => void;
   usedBy?: readonly ConnectionHolder[];
   bare?: boolean;
+  toolAccess?: RowToolAccess;
 }
 
 export function ConnectionRowCard({
@@ -32,6 +34,7 @@ export function ConnectionRowCard({
   onRemove,
   usedBy,
   bare = false,
+  toolAccess,
 }: Props) {
   return (
     <div className={bare ? undefined : "rounded-lg border border-border"}>
@@ -46,6 +49,7 @@ export function ConnectionRowCard({
         maintenance={maintenance}
         onRemove={onRemove}
         usedBy={usedBy}
+        toolAccess={toolAccess}
       />
     </div>
   );

@@ -41,6 +41,18 @@ export function describeApprovalPayload(payload: ApprovalPayload): {
       subtitle: payload.query ?? "The model chooses the query",
     };
   }
+  if (payload.kind === "mcp_tool_call") {
+    return {
+      title: `${payload.tool} on ${payload.connectionName}`,
+      subtitle: payload.viaEnvironment
+        ? `from Environment ${payload.viaEnvironment}`
+        : payload.forAgentId
+          ? `from a sub-agent of ${payload.forAgentId}`
+          : payload.viaAgentId
+            ? `via ${payload.viaAgentId}`
+            : "",
+    };
+  }
   if (payload.kind === "spend_limit") {
     const effective = payload.amountMicros * (payload.extensions + 1);
     return {
@@ -60,6 +72,8 @@ export function acpNativeRowId(
 }
 
 export const TOOL_NAME_MAX = 4096;
+export const MCP_TOOL_CALL_ARGUMENTS_MAX_BYTES = 64 * 1024;
+export const MCP_TOOL_CALL_TARGET_LABEL_MAX = 200;
 export const TOOL_CALL_ID_MAX = 512;
 export const PERMISSION_OPTIONS_MAX = 16;
 export const RPC_ID_MAX = 4096;

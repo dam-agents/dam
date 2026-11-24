@@ -13,6 +13,10 @@ import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
 import type { ConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
+import {
+  fakeMcpToolLister,
+  noConnectionsParent,
+} from "../helpers/connections-service.js";
 
 function unused<T extends object>(fields: Partial<T> = {}): T {
   return new Proxy(fields, {
@@ -85,7 +89,10 @@ function makeService(
   } | null>,
 ) {
   return createConnectionsService({
+    parentOf: noConnectionsParent,
     damConnectionOffered: async () => true,
+    toolApprovalOffered: async () => true,
+    mcpToolLister: fakeMcpToolLister(),
     ...(newAgentProvider && { newAgentProvider }),
     harnesses: { default: defaultHarness, harnesses: CATALOG },
     isOwnedAgent: async () => true,

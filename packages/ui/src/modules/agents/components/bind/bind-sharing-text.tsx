@@ -1,17 +1,18 @@
 import { BoldList } from "../../../../components/inline-list.js";
 import { SharedChannelsPhrase } from "../../../connections/components/shared-channels-phrase.js";
 import type { SharedChannel } from "../../../sandboxes/lib/shared-channels.js";
-import type { SharedAccessChoice } from "../../hooks/use-agent-shared-access.js";
+import type { SharedToolAccess } from "../../hooks/use-agent-shared-access.js";
 
-function AccessChoiceText({
-  choices,
+function ToolAccessText({
+  connections,
 }: {
-  choices: readonly SharedAccessChoice[];
+  connections: readonly SharedToolAccess[];
 }) {
-  const named = (access: SharedAccessChoice["access"]) =>
-    choices.filter((c) => c.access === access).map((c) => c.name);
-  const readOnly = named("read-only");
-  const full = named("full");
+  const named = (reach: SharedToolAccess["reach"]) =>
+    connections.filter((c) => c.reach === reach).map((c) => c.name);
+  const readOnly = named("reads");
+  const approval = named("asks");
+  const full = named("writes");
   return (
     <>
       {readOnly.length > 0 && (
@@ -21,6 +22,13 @@ function AccessChoiceText({
           {readOnly.length === 1 ? "is" : "are"} read only: through{" "}
           {readOnly.length === 1 ? "it" : "them"} they can read what you can
           read, and change nothing.
+        </>
+      )}
+      {approval.length > 0 && (
+        <>
+          {" "}
+          Through <BoldList items={approval} limit={4} /> they can read what you
+          can read, and every other tool call waits until someone approves it.
         </>
       )}
       {full.length > 0 && (
@@ -37,13 +45,13 @@ function AccessChoiceText({
 export function BindSharingText({
   agentName,
   connectionNames,
-  accessChoices = [],
+  toolAccess,
   audience,
   whisper,
 }: {
   agentName: string;
   connectionNames: readonly string[] | null;
-  accessChoices?: readonly SharedAccessChoice[];
+  toolAccess: readonly SharedToolAccess[] | null;
   audience: SharedChannel;
   whisper: boolean;
 }) {
@@ -74,7 +82,14 @@ export function BindSharingText({
         : <BoldList items={connectionNames} limit={4} />. Anyone in {phrase} can
         ask it to use {connectionNames.length === 1 ? "it" : "them"}, with your
         access.
-        <AccessChoiceText choices={accessChoices} />
+        {toolAccess === null ? (
+          <>
+            {" "}
+            Through some of them they may also post and change things as you.
+          </>
+        ) : (
+          <ToolAccessText connections={toolAccess} />
+        )}
       </>
     );
   return whisper ? (

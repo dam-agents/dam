@@ -14,7 +14,8 @@ import type { SpendCheck } from "../../spend/index.js";
 import type { SpendLimitQuestions } from "./spend-limit-questions.js";
 import { type SettledVerdict, waitForVerdict } from "./held-verdict.js";
 import type { ModelCallBody, WebSearchGate } from "./web-search-gate.js";
-import type { ReadOnlyGate } from "./read-only-gate.js";
+import type { ToolAccessGate } from "./tool-access-gate.js";
+import { createToolCallHold, type ToolCallLabels } from "./tool-call-hold.js";
 
 export type ExtAuthzVerdict = "allow" | "deny";
 
@@ -28,7 +29,7 @@ export type ExtAuthzDecision =
   | ExtAuthzVerdict
   | {
       readonly verdict: "refuse";
-      readonly basis: "spend" | "rule" | "web-search" | "read-only";
+      readonly basis: "spend" | "rule" | "web-search" | "tool-access";
       readonly response: DeniedResponse;
     };
 
@@ -52,6 +53,8 @@ interface ExtAuthzGateInput {
   connectionId?: string | null;
   /* UNIT_BOUNDARY_DESCRIPTION: the server name of the request's TLS session, which a chain that checks bodies sends. It names the chain that carries the request, whatever Host header the agent wrote. */
   tlsHost?: string | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: aborts when the gateway cancels the check, which it does when the client that sent the request goes away. A held tool call then stops waiting, so it never uses up an approval on a request nobody reads. */
+  signal?: AbortSignal;
 }
 
 export interface ExtAuthzGate {
@@ -120,13 +123,15 @@ interface CreateExtAuthzGateDeps {
   spend: Pick<SpendCheck, "checkCall">;
   questions: SpendLimitQuestions;
   webSearch?: WebSearchGate;
-  readOnly: ReadOnlyGate;
+  toolAccess: ToolAccessGate;
+  toolCallLabels: ToolCallLabels;
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
   waitingRuleSpeaksFor: WaitingRuleSpeaksFor;
 }
 
 export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
+  const toolCallHold = createToolCallHold(deps);
   return {
     async gateRequest({
       agentId,
@@ -140,6 +145,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       body,
       connectionId,
       tlsHost,
+      signal,
     }) {
       const host = canonicalEgressHost(requestHost);
       const identity = await deps.identityResolver.resolve(agentId);
@@ -159,6 +165,20 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       }
 
       const via = identity.agentId !== agentId ? agentId : undefined;
+      const dotSegmentDeny = (): ExtAuthzDecision => {
+        securityLog("warn", "egress.decision", {
+          category: "egress",
+          actor: identity.ownerSub,
+          actorKind: "agent",
+          surface: "ext-authz",
+          agentId: identity.agentId,
+          target: host,
+          decision: "deny",
+          reason: "dot-segment",
+          detail: { method, path, via },
+        });
+        return "deny";
+      };
 
       if (spendCall) {
         const spend = await deps.spend.checkCall({
@@ -219,7 +239,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           };
       }
 
-      const read = await deps.readOnly.check({
+      const tools = await deps.toolAccess.check({
         agentId,
         identity,
         via,
@@ -231,12 +251,33 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
         connectionId: connectionId ?? null,
         body,
       });
-      if (!read.pass)
+      if (tools.kind === "refuse")
         return {
           verdict: "refuse",
-          basis: "read-only",
-          response: read.response,
+          basis: "tool-access",
+          response: tools.response,
         };
+      if (tools.kind === "hold") {
+        if (hasDotSegment(path)) return dotSegmentDeny();
+        const held = await toolCallHold.hold({
+          identity,
+          via,
+          method,
+          path,
+          toolCall: tools.toolCall,
+          signal,
+        });
+        return match(held)
+          .returnType<ExtAuthzDecision>()
+          .with({ kind: "allow" }, () => "allow")
+          .with({ kind: "abandoned" }, () => "deny")
+          .with({ kind: "refuse" }, ({ response }) => ({
+            verdict: "refuse",
+            basis: "tool-access",
+            response,
+          }))
+          .exhaustive();
+      }
 
       if (deps.platformAllowedAuthorities.includes(`${host}:${port}`)) {
         securityLog("info", "egress.decision", {
@@ -252,20 +293,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
         return "allow";
       }
 
-      if (hasDotSegment(path)) {
-        securityLog("warn", "egress.decision", {
-          category: "egress",
-          actor: identity.ownerSub,
-          actorKind: "agent",
-          surface: "ext-authz",
-          agentId: identity.agentId,
-          target: host,
-          decision: "deny",
-          reason: "dot-segment",
-          detail: { method, path, via },
-        });
-        return "deny";
-      }
+      if (hasDotSegment(path)) return dotSegmentDeny();
 
       const matched = await deps.ruleMatcher.match(
         identity.agentId,
@@ -529,6 +557,11 @@ function waitingRefusal(
       "hold-expired",
       () =>
         "the network rule that would allow it still waits for the owner's approval, and the owner did not answer in time",
+    )
+    .with(
+      "hold-abandoned",
+      () =>
+        "the network rule that would allow it still waits for the owner's approval, and the request stopped waiting",
     )
     .exhaustive();
   return {

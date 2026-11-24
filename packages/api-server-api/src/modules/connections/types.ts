@@ -116,6 +116,40 @@ export const authConfig = z.discriminatedUnion("kind", [
 export type AuthConfig = z.infer<typeof authConfig>;
 export type { SecretRef };
 
+// UNIT_BOUNDARY_DESCRIPTION: what an Agent may do with the tools of an MCP Connection. `allow-all` lets every tool call through, `read-only` only the read tools, and `needs-approval` lets the read tools through and holds every other tool call until someone answers it.
+export const toolMode = z.enum(["allow-all", "read-only", "needs-approval"]);
+export type ToolMode = z.infer<typeof toolMode>;
+
+// UNIT_BOUNDARY_DESCRIPTION: one tool an MCP server lists. `readOnly` is the server's `readOnlyHint`, or the Template's own read list where it declares one.
+export const connectionTool = z.object({
+  name: z.string(),
+  readOnly: z.boolean(),
+});
+export type ConnectionTool = z.infer<typeof connectionTool>;
+
+// UNIT_BOUNDARY_DESCRIPTION: what an Agent may do with one tool of an MCP Connection: `allow` sends the call, `ask` holds it until someone answers it, and `block` refuses it.
+export const toolRule = z.enum(["allow", "ask", "block"]);
+export type ToolRule = z.infer<typeof toolRule>;
+
+// UNIT_BOUNDARY_DESCRIPTION: the tool access of one Agent on one MCP Connection, kept on the grant. `read` is the rule of the read tools and `write` the rule of every other tool, a tool the stored list does not name included. `overrides` names the tools whose rule differs from their group's.
+export const grantToolAccess = z.object({
+  read: toolRule,
+  write: toolRule,
+  overrides: z.record(z.string(), toolRule),
+});
+export type GrantToolAccess = z.infer<typeof grantToolAccess>;
+
+// UNIT_BOUNDARY_DESCRIPTION: the tool mode an MCP Connection stores, with the tools the api-server last read from its server. `tools` is null until the first read succeeded, and `listError` says why the last read failed.
+export const connectionToolAccessRecord = z.object({
+  mode: toolMode,
+  tools: z.array(connectionTool).nullable(),
+  listedAt: z.string().nullable(),
+  listError: z.string().nullable(),
+});
+export type ConnectionToolAccessRecord = z.infer<
+  typeof connectionToolAccessRecord
+>;
+
 export const connection = z.object({
   id: z.string().min(1),
   ownerId: z.string().min(1),
@@ -126,6 +160,7 @@ export const connection = z.object({
   contributions: z.array(contribution),
   parentId: z.string().min(1).optional(),
   isParent: z.literal(true).optional(),
+  toolAccess: connectionToolAccessRecord.optional(),
 });
 export type Connection = z.infer<typeof connection>;
 
@@ -177,11 +212,22 @@ export interface ProviderKeyRecheck {
   check: ProviderKeyCheck | null;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: marks a Connection, or its Template, whose owner chooses between read only and full access. Without full access the gateway lets only the Template's read tools pass. `fullAccessLabel` is the Template's own name for full access, such as "Can post as me".
-export const connectionAccessChoice = z.object({
-  fullAccessLabel: z.string(),
+// UNIT_BOUNDARY_DESCRIPTION: the tool mode of an MCP Connection as its owner sees it, with the modes it offers: only `allow-all` where the gateway cannot read the Connection's requests. `defaultMode` is its Template's default, `read-only` for a Slack Account, so a client can mark a Connection that allows more than its Template does.
+export const connectionToolAccess = connectionToolAccessRecord.extend({
+  modes: z.array(toolMode).readonly(),
+  defaultMode: toolMode,
+  tools: z.array(connectionTool).readonly().nullable(),
 });
-export type ConnectionAccessChoice = z.infer<typeof connectionAccessChoice>;
+export type ConnectionToolAccess = z.infer<typeof connectionToolAccess>;
+
+// UNIT_BOUNDARY_DESCRIPTION: the tool modes a Template that makes an MCP Connection offers at connect, and the one a new Connection gets when the create names none. A Template whose MCP server has no auth offers `allow-all` alone.
+export const connectionTemplateToolAccess = z.object({
+  defaultMode: toolMode,
+  modes: z.array(toolMode).readonly(),
+});
+export type ConnectionTemplateToolAccess = z.infer<
+  typeof connectionTemplateToolAccess
+>;
 
 export const connectionProviderView = z.object({
   alias: z.string(),
@@ -220,7 +266,7 @@ export const connectionView = z.object({
   parentId: z.string().optional(),
   isParent: z.literal(true).optional(),
   fullAccess: z.literal(true).optional(),
-  accessChoice: connectionAccessChoice.optional(),
+  toolAccess: connectionToolAccess.optional(),
   provider: connectionProviderView
     .extend({ preferred: z.boolean() })
     .optional(),
@@ -264,7 +310,7 @@ export const connectionTemplateView = z.object({
   authKind: authKind,
   inputs: z.array(templateInput),
   extras: z.record(z.string(), z.unknown()).optional(),
-  accessChoice: connectionAccessChoice.optional(),
+  toolAccess: connectionTemplateToolAccess.optional(),
   provider: connectionProviderView.optional(),
 });
 export type ConnectionTemplateView = z.infer<typeof connectionTemplateView>;
@@ -276,6 +322,7 @@ export const agentConnections = z.object({
       connectionId: z.string(),
       grantedAt: z.string(),
       preferred: z.boolean(),
+      toolAccess: grantToolAccess.optional(),
       connection: connectionView.optional(),
     }),
   ),
@@ -422,8 +469,18 @@ export interface ConnectionsService {
     fullAccess?: boolean;
   }): Promise<void>;
 
-  /** UNIT_BOUNDARY_DESCRIPTION: sets a Connection that offers the choice to read only or to full access. The gateway reads the choice on every tool call, so it holds from the next call with no restart. */
-  setFullAccess(input: { id: string; fullAccess: boolean }): Promise<void>;
+  /** UNIT_BOUNDARY_DESCRIPTION: sets the tool mode of an MCP Connection, one of the modes it offers. The gateway reads the mode on every tool call, so it holds from the next call with no restart. */
+  setToolMode(input: { id: string; mode: ToolMode }): Promise<void>;
+
+  /** UNIT_BOUNDARY_DESCRIPTION: sets what one Agent may do with the tools of an MCP Connection granted to it. Only the Connection's owner sets it, and only on a Connection whose requests the gateway reads. The gateway reads it on every tool call, so it holds from the Agent's next call with no restart, and no other Agent's access changes. */
+  setGrantToolAccess(input: {
+    agentId: string;
+    connectionId: string;
+    access: GrantToolAccess;
+  }): Promise<void>;
+
+  /** UNIT_BOUNDARY_DESCRIPTION: reads the tool list of an MCP Connection's server again, with the Connection's own credential, and returns its tool access. A list that came back replaces the stored tools and `listedAt`; a failure keeps the old tools and says why in `listError`. Only an MCP Connection with a credential has a list to read. */
+  refreshTools(input: { id: string }): Promise<ConnectionToolAccess>;
 
   /** UNIT_BOUNDARY_DESCRIPTION: points a GitHub Enterprise sign-in, and every connection made from it, at another host the install offers. Names, grants and scopes stay; the tokens of the old host are dropped, so the sign-in reads expired until its owner authorizes it on the new host. */
   moveToHost(input: { id: string; host: string }): Promise<void>;

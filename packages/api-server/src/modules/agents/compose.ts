@@ -452,6 +452,14 @@ export function childrenMirroringConnections(
   return (parentAgentId) => repo.childrenMirroringConnections(parentAgentId);
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the Agent a child took its connections from, for `parent` and `subset` alike, or null for an Agent that took none from a parent, for the connections module to copy that parent's tool access onto the child's new grants.
+export function connectionsParentOf(
+  db: Db,
+): (agentId: string) => Promise<string | null> {
+  const repo = createInheritanceRepository(db);
+  return (agentId) => repo.connectionsParentOf(agentId);
+}
+
 export function inheritanceCleanup(db: Db): {
   listAgentIds: () => Promise<string[]>;
   cleanup: (agentId: string) => Promise<void>;

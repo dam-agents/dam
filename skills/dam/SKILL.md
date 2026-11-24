@@ -447,9 +447,29 @@ Without a scope, `dam connection connect github` keeps the sign-in alone and sho
 Pass it only when the user asks for that, and tell them what it reaches.
 `dam connection list` marks such a connection `FULL ACCESS`, and in `--json` its `scope` is `{ "restricted": false, "fullAccess": true }`.
 
-A Slack Account connection (`dam connection connect slack`) is read only unless it has full access: the agent searches and reads Slack as the user, and the platform refuses every tool that posts or changes something, whatever the harness.
-`dam connection scope <connection> --full-access` lets the agent post and change things as the user, and `--read-only` takes that away; `dam connection scope <connection>` shows which it is.
-Pass `--full-access` only when the user asks for it, and tell them that anyone who can talk to the agent can then post as them.
+Each agent that holds an MCP connection has its own tool access to it, which the platform enforces for every harness, and a change for one agent never reaches another.
+Each tool has a rule: `allow` lets the call through, `ask` holds it until someone approves it, and `block` refuses it.
+`--read` sets the rule of the tools that read, `--write` the rule of every other tool, also one the server's list does not name, `--tool <name>=<rule>` gives one tool its own rule, and `--reset-tool <name>` drops that rule again; a flag you leave out keeps that part.
+
+```sh
+dam connection scope slack-account --agent standup
+dam connection scope slack-account --agent standup --write ask --tool slack_add_reaction=allow
+dam connection tools slack-account --agent standup
+```
+
+`dam connection list <agent>` shows each grant's access in SCOPE (`grantToolAccess` in `--json`), `dam connection tools <connection> --agent <agent>` prints each tool with its rule for that agent, and `dam connection grant` prints what the agent starts with.
+With tool access per agent on, a new grant starts with the stricter of the connection's tool mode and the safe start.
+The safe start allows reads, and blocks writes on a Slack Account or asks before them on any other MCP connection.
+An MCP server connected with no auth has no tool access to set: the gateway does not read its requests, so every call passes.
+Tool access per agent is an experimental feature: while it is off for the user, `--agent` can neither show nor set it, and `scope --mode` sets the tool mode of every agent that holds the connection.
+
+The connection also has a tool mode: `allow-all` lets every tool call through, `read-only` lets through only the tools that read and refuses the rest, and `needs-approval` lets the tools that read through at once and holds every other tool call until someone approves it.
+A mode you set applies to the agents that hold the connection now, and drops their own access.
+An agent granted the connection later gets the mode while tool access per agent is off, and the stricter start above while it is on.
+`dam connection connect <template-or-url> --mode <mode>` sets the mode at connect, `dam connection scope <connection> --mode <mode>` changes it, and `dam connection scope <connection>` shows it.
+`dam connection tools <connection>` lists the server's tools, grouped into read and write tools, and `--refresh` reads the list again.
+Pass `--mode allow-all`, `--write allow`, or `--tool <name>=allow` for a tool that writes, only when the user asks for it, and tell them that anyone who can talk to the agent can then post and change things as them.
+`needs-approval` is an experimental feature; the server refuses it while the feature is off for the user.
 
 `dam connection scope <connection>` with no flags changes nothing: it shows the current scope and, under `available`, the accounts, repositories and permissions you can choose from.
 A flag you leave out keeps that part of the scope.

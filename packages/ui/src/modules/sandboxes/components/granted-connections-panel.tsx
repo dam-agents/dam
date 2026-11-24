@@ -1,5 +1,6 @@
 import { Add } from "@carbon/icons-react";
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
+import { useState } from "react";
 
 import { AddRow, ListSection } from "@/components/ui/list-section";
 
@@ -10,7 +11,12 @@ import {
   type GrantDetails,
 } from "../../connections/components/default-accounts-callout.js";
 import { GrantRivalryCallout } from "../../connections/components/grant-rivalry-callout.js";
+import {
+  type GrantAgent,
+  GrantToolAccessDialog,
+} from "../../connections/components/grant-tool-access-dialog.js";
 import { useConnectionMaintenance } from "../../connections/hooks/use-connection-maintenance.js";
+import { useGrantRowToolAccess } from "../../connections/hooks/use-grant-row-tool-access.js";
 import type { CatalogProviderGroup } from "../../connections/lib/catalog-providers.js";
 
 interface Props {
@@ -29,6 +35,7 @@ interface Props {
   readOnly?: boolean;
   flush?: boolean;
   flat?: boolean;
+  toolAccessFor?: GrantAgent;
 }
 
 export function GrantedConnectionsPanel({
@@ -47,8 +54,18 @@ export function GrantedConnectionsPanel({
   readOnly = false,
   flush = false,
   flat = false,
+  toolAccessFor,
 }: Props) {
   const maintenance = useConnectionMaintenance();
+  const [editingAccess, setEditingAccess] = useState<ConnectionView | null>(
+    null,
+  );
+  const toolAccess = useGrantRowToolAccess(
+    grants,
+    toolAccessFor && setEditingAccess,
+  );
+  const editedAccess =
+    editingAccess && grants?.get(editingAccess.id)?.toolAccess;
 
   return (
     <>
@@ -107,10 +124,19 @@ export function GrantedConnectionsPanel({
             }
             onManage={readOnly ? undefined : onOpenCatalog}
             maintenance={readOnly ? undefined : maintenance.rowActions}
+            toolAccess={toolAccess}
           />
         ))}
       </ListSection>
       <ConnectionMaintenanceDialog maintenance={maintenance} />
+      {toolAccessFor && editingAccess && editedAccess && (
+        <GrantToolAccessDialog
+          agent={toolAccessFor}
+          connection={editingAccess}
+          access={editedAccess}
+          onClose={() => setEditingAccess(null)}
+        />
+      )}
     </>
   );
 }

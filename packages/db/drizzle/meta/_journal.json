@@ -1146,15 +1146,29 @@
     {
       "idx": 163,
       "version": "7",
-      "when": 1795511427306,
-      "tag": "0163_ui_events",
+      "when": 1795513271998,
+      "tag": "0163_connection_tool_access",
       "breakpoints": true
     },
     {
       "idx": 164,
       "version": "7",
-      "when": 1795511432135,
-      "tag": "0164_ui_events_views",
+      "when": 1795513280381,
+      "tag": "0164_grant_tool_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1795519020328,
+      "tag": "0165_ui_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1795519021949,
+      "tag": "0166_ui_events_views",
       "breakpoints": true
     }
   ]

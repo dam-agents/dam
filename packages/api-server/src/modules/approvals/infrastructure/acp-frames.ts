@@ -88,6 +88,38 @@ export function buildWebSearchSynthFrame(input: {
   });
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the in-session prompt of a held MCP tool call, for attached ACP clients such as the CLI: the same permission request a held network request raises, titled with the tool and the Connection, with once options only, since a tool-call approval is never remembered.
+export function buildMcpToolCallSynthFrame(input: {
+  approvalId: string;
+  connectionId: string;
+  connectionName: string;
+  tool: string;
+}): string {
+  return JSON.stringify({
+    jsonrpc: "2.0",
+    id: input.approvalId,
+    method: "session/request_permission",
+    params: {
+      sessionId: syntheticSessionId(input.approvalId),
+      options: [
+        { optionId: "allow_once", name: "Allow once", kind: "allow_once" },
+        { optionId: "reject_once", name: "Deny once", kind: "reject_once" },
+      ],
+      toolCall: {
+        toolCallId: syntheticSessionId(input.approvalId),
+        kind: "other",
+        status: "pending",
+        title: `${input.tool} on ${input.connectionName}`,
+        rawInput: {
+          approvalId: input.approvalId,
+          connectionId: input.connectionId,
+          tool: input.tool,
+        },
+      },
+    },
+  });
+}
+
 const INJECT_CHANNEL_PREFIX = "inject:";
 export const injectChannelOf = (agentId: string): string =>
   `${INJECT_CHANNEL_PREFIX}${agentId}`;

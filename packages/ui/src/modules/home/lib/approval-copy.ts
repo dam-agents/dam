@@ -1,5 +1,6 @@
 import {
   type ApprovalView,
+  type McpToolCallPayload,
   type SpendLimitPayload,
   type SpendLimitScope,
   WEB_SEARCH_FOLLOW_UP_QUERIES,
@@ -7,6 +8,7 @@ import {
 } from "api-server-api";
 import { match } from "ts-pattern";
 
+import { templateToolCallOf } from "../../approvals/lib/tool-call-renderers.js";
 import {
   AGENT_LIMIT_NAME,
   allAgentsConnectionLimitName,
@@ -66,14 +68,54 @@ export function approvalHeadline(approval: ApprovalView): string {
         : "Proposes a network rule",
     )
     .with({ kind: "web_search" }, () => "Wants to search the web")
+    .with({ kind: "mcp_tool_call" }, (payload) => {
+      const call = templateToolCallOf(payload);
+      return call
+        ? `Wants to ${call.action}`
+        : `Wants to use ${payload.tool} on ${payload.connectionName}`;
+    })
     .exhaustive();
 }
 
 export function approvalPromptTitle(approval: ApprovalView): string {
-  return match(approval.payload.kind)
-    .with("web_search", () => "Allow this web search?")
-    .with("egress_proposal", () => "Allow this network rule?")
+  return match(approval.payload)
+    .with({ kind: "web_search" }, () => "Allow this web search?")
+    .with({ kind: "mcp_tool_call" }, (payload) => {
+      const call = templateToolCallOf(payload);
+      return call ? `${capitalized(call.action)}?` : "Allow this tool call?";
+    })
+    .with({ kind: "egress_proposal" }, () => "Allow this network rule?")
     .otherwise(() => "Allow network access?");
+}
+
+function toolCallLine(
+  approval: ApprovalView,
+  payload: McpToolCallPayload,
+  call: string,
+): string {
+  if (payload.viaEnvironment)
+    return `${call}, from its Environment ${payload.viaEnvironment}`;
+  return payload.forAgentId
+    ? `${call}, from its sub-agent ${approval.agentId}`
+    : call;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the quiet line under a tool-call approval's Details that names the Connection and the exact tool, and the sub-agent or Environment the call came from, so the friendly title never hides what runs. Null for every other approval.
+export function approvalToolCallSource(approval: ApprovalView): string | null {
+  const payload = approval.payload;
+  if (payload.kind !== "mcp_tool_call") return null;
+  return toolCallLine(
+    approval,
+    payload,
+    `${payload.connectionName} · ${payload.tool}`,
+  );
+}
+
+const REFUSED_LABEL = /^(Denied|Always denied|Stopped|Declined|Not )/;
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the line an approval card shows after the answer says the request was refused, such as "Denied" or "Not posted. Standup writer was told.", so the card shows it in the refusal colour.
+export function isRefusedLabel(label: string): boolean {
+  return REFUSED_LABEL.test(label);
 }
 
 function spendLimitName(
@@ -121,6 +163,12 @@ export function approvalDetail(
   if (payload.kind === "spend_limit")
     return spendLimitDetail(payload, connectionName);
   if (payload.kind === "acp_native") return payload.toolName;
+  if (payload.kind === "mcp_tool_call")
+    return toolCallLine(
+      approval,
+      payload,
+      `${payload.tool} on ${payload.connectionName}`,
+    );
   if (payload.kind === "web_search") {
     const query = payload.query ?? "The model chooses the query";
     if (payload.viaEnvironment)
@@ -150,6 +198,9 @@ export function approvalDetail(
     : request;
 }
 
+export const MCP_TOOL_CALL_ONCE_NOTE =
+  "Your answer counts for this call only. The agent's next call asks again.";
+
 export const WEB_SEARCH_FOLLOW_UP_NOTE = `If you allow it, the search can also run up to ${String(WEB_SEARCH_FOLLOW_UP_QUERIES)} more queries that the model writes after it reads the first results.`;
 
 // UNIT_BOUNDARY_DESCRIPTION: what a card says when it stands for several rules one agent asked for on the same sub-agent or Environment, as one launch often does: one sentence for all of them, above the rules listed one per line, so the owner can answer the launch once or rule by rule. Null for a single request, which keeps its own line and sentence.
@@ -172,6 +223,7 @@ export function approvalReason(approval: ApprovalView): string | null {
   return match(approval.payload)
     .with({ kind: "egress_proposal" }, (payload) => payload.reason)
     .with({ kind: "web_search" }, () => WEB_SEARCH_FOLLOW_UP_NOTE)
+    .with({ kind: "mcp_tool_call" }, () => MCP_TOOL_CALL_ONCE_NOTE)
     .otherwise(() => null);
 }
 
@@ -191,6 +243,11 @@ export function approvalHideHint(approval: ApprovalView): string {
       "web_search",
       () =>
         "Hides this from Home. The search stays held until you answer it in the agent's chat or the hold ends.",
+    )
+    .with(
+      "mcp_tool_call",
+      () =>
+        "Hides this from Home. The tool call stays held until you answer it in the agent's chat or the hold ends.",
     )
     .otherwise(
       () =>

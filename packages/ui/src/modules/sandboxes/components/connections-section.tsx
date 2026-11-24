@@ -51,7 +51,8 @@ export function ConnectionsSection({
     toggleGrant,
     revokeGrants,
   } = useAgentConnectionGrants(agentId);
-  const access = useAgent(agentId)?.access;
+  const agent = useAgent(agentId);
+  const access = agent?.access;
   const setPreferred = useSetPreferredConnection();
   const [catalogOpen, setCatalogOpen] = useState(false);
   const openAgentSettings = useStore((st) => st.openAgentSettings);
@@ -115,6 +116,11 @@ export function ConnectionsSection({
         addRowHidden={panelHeading !== undefined}
         flush={panelHeading !== undefined}
         flat={panelHeading !== undefined}
+        toolAccessFor={
+          agent && access?.role === "owner"
+            ? { id: agentId, name: agent.name }
+            : undefined
+        }
         extraGroups={
           managesConnections &&
           satellites.granted.length > 0 && (

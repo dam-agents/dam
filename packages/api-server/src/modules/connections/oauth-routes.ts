@@ -19,6 +19,7 @@ import {
   clientIdMetadataDocument,
 } from "./domain/client-id-metadata.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
+import type { McpToolLister } from "./domain/tool-access.js";
 
 export interface OAuthCallbackDeps {
   db: Db;
@@ -27,6 +28,7 @@ export interface OAuthCallbackDeps {
   githubAppEngine: GitHubAppEngine;
   templates: ConnectionTemplateRegistry;
   runtimeMutator: RuntimeMutator;
+  mcpToolLister: McpToolLister;
   uiBaseUrl: string;
   brandName: string;
 }
@@ -99,6 +101,7 @@ export function createOAuthRoutes(deps: OAuthCallbackDeps) {
       ownerId: peeked.ctx.ownerId,
       callbackUrl: "",
       connectionLock: createXactLock(deps.db),
+      mcpToolLister: deps.mcpToolLister,
     });
 
     try {

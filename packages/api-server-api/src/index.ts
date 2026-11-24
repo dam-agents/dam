@@ -784,8 +784,14 @@ export type {
   Connection,
   ConnectionStatus,
   ConnectionView,
-  ConnectionAccessChoice,
   ConnectionProviderView,
+  ConnectionTool,
+  ConnectionToolAccess,
+  ConnectionToolAccessRecord,
+  ConnectionTemplateToolAccess,
+  ToolMode,
+  ToolRule,
+  GrantToolAccess,
   ConnectionTemplateView,
   ProviderBalance,
   ProviderKeyCheck,
@@ -810,6 +816,10 @@ export {
 } from "./modules/connections/credential-expiry.js";
 export {
   authConfig as connectionAuthConfigSchema,
+  connectionToolAccessRecord as connectionToolAccessRecordSchema,
+  toolMode as toolModeSchema,
+  toolRule as toolRuleSchema,
+  grantToolAccess as grantToolAccessSchema,
   providerKeyCheck as providerKeyCheckSchema,
   credentialCheck as credentialCheckSchema,
 } from "./modules/connections/types.js";
@@ -962,6 +972,7 @@ export type {
   SpendLimitPayload,
   EgressProposalPayload,
   WebSearchPayload,
+  McpToolCallPayload,
   AcpPermissionOption,
   AcpPermissionOptionKind,
   ApprovalView,
@@ -982,7 +993,12 @@ export {
   recordedOptionsOf,
   recordedToolOf,
 } from "./modules/approvals/format.js";
-export { RPC_ID_MAX, TOOL_CALL_ID_MAX } from "./modules/approvals/format.js";
+export {
+  MCP_TOOL_CALL_ARGUMENTS_MAX_BYTES,
+  MCP_TOOL_CALL_TARGET_LABEL_MAX,
+  RPC_ID_MAX,
+  TOOL_CALL_ID_MAX,
+} from "./modules/approvals/format.js";
 export {
   toolApprovalEndedInputSchema,
   toolApprovalWaitingInputSchema,

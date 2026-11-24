@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-11-20
+Last verified: 2026-11-24
 
 ## Overview
 
@@ -126,20 +126,76 @@ One per-Connection Secret holds the client secret, the current access token, and
 
 A **GitHub App** installation and a **GitHub sign-in** made through a GitHub App are *parents*: they hold the credential and no Agent holds them; an Agent holds a Connection made from one, with its own scope, or full access named on purpose, and its own token ([github-connections](github-connections.md)).
 
-A Template may declare **read tools** for its MCP server, as the Slack Account does.
-Its Connection is then **read only** unless its owner gives it full access, at connect or later; the choice lives on the Connection, so every Agent that holds it gets the same one.
-Without full access the gateway lets only those tools pass, and a tool the server adds later is in no list, so it is refused until the list names it.
+**Tool access** is what one Agent may do with the tools of one MCP Connection, and it lives on the grant, so a change for one Agent never reaches another.
+Each tool has one **tool rule**: allow sends the call, ask holds it as a tool-call approval (below), and block refuses it at once.
+A tool access holds one rule for the **read tools**, one for every other tool, and the tools whose own rule differs from their group's.
+A tool takes its own rule, else its group's, and a tool the stored list does not name is not a read tool: a tool the server adds later follows the rule for every other tool until a new read of the list names it as reading.
+A grant that stores no tool access follows its Connection's **tool mode**, which stands for one: read only allows the read tools and blocks the rest, needs approval allows the read tools and asks for the rest, and allow all allows every tool.
+A Connection that stores no mode takes its Template's default, else allow all; the Slack Account's default is read only.
+Every MCP Connection with a Secret has tool access, because the gateway injects its credential, so it reads the requests to the Connection's MCP host and sends their body to the gate.
+A custom MCP server with no auth has no Secret, so its requests pass the gateway unread and it allows every tool, with no access to set ([mcp-connections](mcp-connections.md#tool-list)).
+The api-server reads the server's **tool list** itself, as an MCP client with the Connection's own credential, because the gate never sees the server's answer and the Agent cannot be trusted to report it.
+It reads the list when the credential first works, at create or at the OAuth callback, again when a new credential replaces the old one, and when the owner refreshes it, and stores each tool's name and whether it reads: the server's `readOnlyHint`.
+A list that fails keeps the tools read before and stores why, for the owner to see, and never fails the create or the update.
+A Template may declare its own read list, as the Slack Account does, and that list wins over the server's hints, in the stored list and at the gate.
+
+With the `mcp-tool-approval` [experimental feature](features.md) on for the owner, a new grant starts safe: each group takes the stricter rule of the safe start and of the Connection's mode, so a grant never starts looser than the mode the owner chose.
+The safe start is read only where the Template's default is read only, as on the Slack Account, else the read tools allowed and every other tool asking.
+Every path that grants does so, and a grant that is new when the grants are written always gets it, also one that another request revoked just before; a grant that already exists keeps its own when the Agent's grants are written again.
+A sub-agent that takes its connections from its Driver, all of them or a list, starts each new grant of such a Connection with what the Driver's grant stores, or with nothing where it stores nothing, so both follow the mode; a Connection the Driver does not hold gets the safe start ([invocations](invocations.md)).
+A later change of the Driver's access reaches the same grant of every child that keeps in step with it, and of their children; a child given a list keeps what it copied.
+Otherwise a new grant never copies another Agent's access.
+With the feature off a new grant stores nothing and follows the mode, unless it copies its Driver's.
+Only the Connection's owner sets a grant's tool access, an Editor of the Agent never on the owner's Connections, and only with the feature on, for an Agent that holds the Connection, on a Connection the gateway reads.
+An own rule equal to its group's is dropped, the number of own rules and the length of a tool name are capped, and every change the owner makes is written to the security log.
+The owner sets it in the tool access dialog for one Agent, opened from the Agent's Connections or from the Agents listed inside the Connection's row on the Connections page, riskiest first; the dialog sets each group, opens a group to give a tool its own rule, and shows and refreshes the stored tool list.
+Each place sums the access up in a few words, such as read only or asks before writing, and marks an Agent that writes without asking: its rule for every other tool is allow, so a tool the server adds later runs at once, or a tool that is not a read tool has its own allow; the CLI uses the same rule, and the Connections page row counts those Agents.
+An own rule on a tool the stored list does not name counts everywhere: in the summary, in the marks, and in the dialog, where it shows under the other tools as not in the tool list.
+The connect forms ask nothing about access while the feature is on.
+With the feature off the owner sees and sets only the Connection's mode, and only where the Template's default is read only: the Slack Account keeps its two-way choice between read only and "Can post as me", which is allow all, and other MCP Connections show no mode.
+Setting the mode clears the tool access of every grant of the Connection, sub-agents' included, so every Agent that holds it follows the mode again: it is the one change that reaches every Agent.
+An Agent granted later starts from the mode, or, with the feature on, from the stricter of the mode and the safe start.
+Every client reads a grant's access only while the owner has the feature, so with it off the screens and the CLI show what they showed before it.
+Turning the feature off therefore keeps every grant's stored access, and the gate still holds the Agent to it, but nothing shows it; setting the Connection's mode clears it.
+The flag decides which screens read and write the access, never what the gate reads.
+A Connection still in needs approval when the feature is turned off keeps its mark and its dialog, so the owner can switch it to another mode it offers, but not back.
+The CLI sets one Agent's access with `scope --agent`, the mode with `--mode`, and lists the tools with each one's rule with `dam connection tools` ([cli](cli.md)).
+
+The gateway refuses a blocked tool, and holds a tool that asks as a tool-call approval (below) that shows the call where network approvals show; approve once sends it, and deny once or no answer within the hold window refuses it.
+Only an owner with the feature on sets a rule or a mode that asks.
+A Template may render its own tool calls on that approval: the Slack Account shows a call that posts, replies in a thread, schedules a message or saves a draft as the message itself, with who wants to post where and as whom, the text under the owner's name with Slack's formatting, and buttons that name the action, such as Post and Don't post.
+The text is built from Slack's marks and never set as HTML, so a message that carries HTML shows it as text.
+A link whose label is not its own address shows the real address after it, whole when it is short, else its host, so a label cannot hide where the link goes.
+A mention or a channel reference shows the Slack id it notifies, never the label written beside it.
+Marks nest at most six deep; deeper text shows as typed.
+Every other tool, or a call whose arguments are not in the shape the renderer expects, shows the tool name and its arguments, with Allow once and Deny.
+The approval counts down to its refusal, and says what happened once it is answered.
+When the gateway files such a Slack approval, the platform looks up the name of the channel or person with the Connection's own credential, waits for it at most two seconds, and keeps it on the approval; the approval shows the Slack id when that lookup fails.
 The Agent still sees every tool the server lists, and a refused call is answered with an error it can read.
-The limit is a step of the ext_authz gate ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)), after the spend and web search steps and before any rule is read, so no egress rule lets a refused call through.
-On the Template's host, named by the request's TLS server name or its Host header, the gate reads the request's whole body, which that host's chain sends with every check ([credential-gateway](credential-gateway.md#envoy-credential-injection)), and refuses a tool call outside the list, also inside a batch, with JSON keys read in any letter case.
-It reads the Connection's choice from the database on every request.
-A request that names a Connection the Agent holds gets that Connection's choice; any other request to that host gets the strictest choice among the Agent's Connections there, because the gateway adds a credential to a request that names none where nothing contests the host.
-The refusal is a JSON-RPC error on a successful reply that says the gateway refused the call, which Connection is read only and who can change it, so the Agent can explain it and its session goes on.
+The limit is the **tool access step** of the ext_authz gate ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)), after the spend and web search steps and before any rule is read, so no egress rule lets a refused call through.
+On the Connection's MCP host, named by the request's TLS server name or its Host header, the gate reads the request's whole body, which that host's chain sends with every check ([credential-gateway](credential-gateway.md#envoy-credential-injection)), and refuses a call of a blocked tool, also inside a batch, with JSON keys read in any letter case.
+It reads the Agent's grants with their tool access from the database once on every request, with no cache, so a change holds from the Agent's next request; writing a grant's tool access does not advance the Agent's generation, so nothing is rendered again for it ([persistence](persistence.md)).
+A stored tool access that cannot be read blocks every tool.
+A request that names a Connection the Agent holds gets that grant's rules; any other request to that host gets, for each tool, the strictest rule among the Agent's grants there, because the gateway adds a credential to a request that names none where nothing contests the host.
+Block is the strictest, then ask: block refuses at once and never asks a person for an approval they did not expect.
+The refusal is a JSON-RPC error on a successful reply that says the gateway refused the call, names the tool and the Connection, says the tool is blocked for this Agent and who can change that, so the Agent can explain it and its session goes on.
 A POST whose body did not come with the check, was read in part, or is not one strict JSON document with unique keys is refused rather than passed, and so is a method an MCP client does not need.
-While the Agent holds a read-only Connection, a TLS request that can carry a body and comes without a server name is refused with a retry: its gateway has not restarted onto the check yet, and there the Host header alone could hide the Template's host.
-That window opens only when a Connection made before the choice existed is first made read only, because its Secret then starts to ask for the body.
-A change holds from the Agent's next request, and whoever acts with the owner's rights can make it, an Agent that holds the owner's [DAM Connection](connection-presets.md#platform-preset-this-install-itself) included.
-The Slack Account Connections made before the choice existed keep full access, so none was narrowed silently.
+While any grant of the Agent that the gateway reads has a rule other than allow, a TLS request that can carry a body and comes without a server name is refused with a retry: its gateway has not restarted onto the check yet, and there the Host header alone could hide the MCP host.
+That window opens only when a Connection whose Secret was written before every MCP Connection with a Secret asked for the body first limits tool calls, because its Secret is written again then and starts to ask for it.
+Whoever acts with the owner's rights can make a change, an Agent that holds the owner's [DAM Connection](connection-presets.md#platform-preset-this-install-itself) included.
+The Slack Account Connections made before tool access existed kept full access, so none was narrowed silently; when the mode moved out of the OAuth auth, one with full access became allow all and one without it read only.
+
+A **tool-call approval** answers one call of a tool that asks, so a request that carries one such call is held, and a batch that contains one is refused with a request to send the calls one by one; a batch whose tool calls are all allowed passes.
+Calls with the same Connection, tool and arguments share one approval, whatever their request id or key order: a retry joins the waiting approval, and a call with other arguments files its own.
+It takes approve once and deny once only, so nothing is remembered and no rule is written.
+Deny once, and the end of the hold window, answer the call with an error the Agent can read, and its session goes on.
+The arguments are kept only while the approval waits, and are dropped when it resolves or expires.
+An unattended channel turn refuses the call at once and files the approval, as for a network request ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)); a sub-agent with network access of its own cannot ask, so its call is refused without one.
+MCP clients give up on a tool call after a timeout of their own, so where a harness lets the platform set it, each Connection's MCP entry carries the hold window as that timeout.
+A client that gives up first leaves the approval pending: the owner still sees it, and the same call sent again within the window joins it and waits only until the window ends.
+An approve once given while no call waits is used up by the next identical call within the window, which is made at once; the call after it files a new approval.
+Each approve once makes exactly one call, even when identical calls race for it, and a held call that lost the race gets an error that says so.
+After the window, a retry files a new approval and the old one can no longer be approved.
 
 A Connection that acts as a person rather than as the Agent records **whose account** it acts as, so the product can name that person wherever the Connection is listed.
 The platform asks the provider with the Connection's own credential (Slack, GitHub and the Google services today) when the credential first works: at the OAuth callback, at create for a token, and again on every re-consent or rotation, since a new credential may belong to someone else.
@@ -257,11 +313,12 @@ They flow independently.
 
 ## Persistence touchpoints
 
-| Substrate                 | What lives there                                                                 | Notes                                                                                                                                                                       |
-| ------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Postgres `connections`    | Connection records                                                               | The unified model's own table.                                                                                                                                              |
-| Postgres `egress_rules`   | `egress-allow`, `egress-inject` and `egress-sign` Contributions joined per grant | Existing table; same as today. All three kinds produce the same allow row; `egress-inject`'s credential and `egress-sign`'s signing step ride a separate gateway-side rail. |
-| K8s Secret per Connection | Auth credentials (refresh tokens, api-keys, HMAC key pairs)                      | Owner-label-scoped; mounted into the paired gateway pod, never into the machine. A parent's holds its credential; a Connection made from it holds only its own token.       |
+| Substrate                    | What lives there                                                                 | Notes                                                                                                                                                                       |
+| ---------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Postgres `connections`       | Connection records                                                               | The unified model's own table.                                                                                                                                              |
+| Postgres `connection_grants` | Grants, each with its tool access                                                | The tool access step reads it on every request.                                                                                                                             |
+| Postgres `egress_rules`      | `egress-allow`, `egress-inject` and `egress-sign` Contributions joined per grant | Existing table; same as today. All three kinds produce the same allow row; `egress-inject`'s credential and `egress-sign`'s signing step ride a separate gateway-side rail. |
+| K8s Secret per Connection    | Auth credentials (refresh tokens, api-keys, HMAC key pairs)                      | Owner-label-scoped; mounted into the paired gateway pod, never into the machine. A parent's holds its credential; a Connection made from it holds only its own token.       |
 
 ## Invariants
 

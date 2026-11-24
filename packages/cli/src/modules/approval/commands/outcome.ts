@@ -1,4 +1,5 @@
 import type { ApprovalActionOutcome } from "api-server-api";
+import type { Result } from "../../../result.js";
 import { formatEgressRuleInline } from "api-server-api";
 import {
   EXIT_APPROVAL_NOT_ACTIONABLE,
@@ -10,6 +11,17 @@ type WrittenRule = NonNullable<ApprovalActionOutcome["rule"]>;
 function describeRule(rule: WrittenRule): string {
   const hostWide = rule.method === "*" && rule.pathPattern === "*";
   return `${hostWide ? "host-wide " : ""}egress rule (${formatEgressRuleInline(rule)})`;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a durable verdict that falls back to a verdict for this call only when the server finds the durable one not actionable. A held MCP tool call (mcp_tool_call) takes only once verdicts, and the CLI cannot tell an approval's type before it answers, so a bare `approve` or `deny` of one answers it once. For every other type a pending approval takes the durable verdict, so the fallback finds nothing left to answer.
+export async function durableOrOnce<E>(
+  durable: () => Promise<Result<ApprovalActionOutcome, E>>,
+  once: () => Promise<Result<ApprovalActionOutcome, E>>,
+): Promise<Result<ApprovalActionOutcome, E>> {
+  const result = await durable();
+  return result.ok && result.value.outcome === "not_actionable"
+    ? once()
+    : result;
 }
 
 export interface OutcomeWording {
@@ -49,7 +61,7 @@ export function printOutcomeAndExit(
         process.stdout.write(
           `${wording.pastTense} — the proposed egress rule was not written.\n`,
         );
-      } else if (opts.once) {
+      } else if (opts.once || outcome.type === "mcp_tool_call") {
         process.stdout.write(`${wording.onceLine}\n`);
       } else {
         process.stdout.write(

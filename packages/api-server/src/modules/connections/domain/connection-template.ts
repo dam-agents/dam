@@ -5,9 +5,11 @@ import {
   type ConnectionCategory,
   type ConnectionTemplateInput,
   type ConnectionTemplateView,
+  type ToolMode,
 } from "api-server-api";
 import type { CredentialCheckKind } from "./credential-check.js";
 import { applyCallbackAlias } from "./oauth-callback-url.js";
+import { templateToolAccessOf } from "./tool-access.js";
 
 export type ConnectionTemplate =
   | OAuthConnectionTemplate
@@ -22,11 +24,9 @@ export interface ConnectionFamily {
   title: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a Template's declaration that its Connection is read only unless the owner gives it full access. `host` is the MCP server the gateway inspects, `readTools` are the only tools a read-only Connection may call there, and `fullAccessLabel` is the Template's own name for full access. A tool the server adds later is not in the list, so a read-only Connection cannot call it.
+// UNIT_BOUNDARY_DESCRIPTION: a Template's own read list for its MCP server, which wins over the hints the server sets. `readTools` are the only tools a read-only Connection may call there. A tool the server adds later is not in the list, so a read-only Connection cannot call it.
 export interface TemplateToolAccess {
-  host: string;
   readTools: readonly string[];
-  fullAccessLabel: string;
 }
 
 interface TemplateCommon {
@@ -39,6 +39,8 @@ interface TemplateCommon {
   iconSlug?: string;
   contributions: Contribution[];
   toolAccess?: TemplateToolAccess;
+  /* UNIT_BOUNDARY_DESCRIPTION: the tool mode of a new MCP Connection of this Template, and of one that stores none; `allow-all` when absent. */
+  defaultToolMode?: ToolMode;
   extras?: Record<string, unknown>;
   hostChoices?: readonly string[];
   retiredHosts?: readonly string[];
@@ -194,6 +196,7 @@ export function templateToView(
   familyPreset?: FamilyCredsPreset,
 ): ConnectionTemplateView {
   const showsCallbackUrl = t.authKind === "oauth" && !t.dynamicRegistration;
+  const toolAccess = templateToolAccessOf(t);
   const alias = t.authKind === "oauth" ? t.localhostCallbackAlias : undefined;
   const extras = {
     ...t.extras,
@@ -215,9 +218,7 @@ export function templateToView(
     authKind: t.authKind,
     inputs: inputsFor(t, familyPreset),
     ...(Object.keys(extras).length > 0 ? { extras } : {}),
-    ...(t.toolAccess
-      ? { accessChoice: { fullAccessLabel: t.toolAccess.fullAccessLabel } }
-      : {}),
+    ...(toolAccess ? { toolAccess } : {}),
   };
 }
 

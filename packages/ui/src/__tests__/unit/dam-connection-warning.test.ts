@@ -27,6 +27,9 @@ vi.mock("../../modules/agents/api/queries.js", () => ({
 vi.mock("../../modules/satellites/api/queries.js", () => ({
   useSatellites: () => ({ data: [] }),
 }));
+vi.mock("../../modules/features/api/queries.js", () => ({
+  useFeatures: () => ({ data: {} }),
+}));
 
 const { useHoldsDamConnection } =
   await import("../../modules/agents/hooks/use-holds-dam-connection.js");

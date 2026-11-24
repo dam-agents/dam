@@ -144,6 +144,7 @@ describe("shipped agent manifests resolve", () => {
       keyPath: "mcp_servers",
       urlKey: "url",
       headersKey: "http_headers",
+      toolTimeout: { key: "tool_timeout_sec", unit: "seconds" },
     });
     expect(r["harness-config"]).toMatchObject({
       impl: "harness-config",

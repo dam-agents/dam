@@ -140,6 +140,9 @@ vi.mock("../../modules/sandboxes/hooks/use-agent-connection-grants.js", () => ({
     revokeGrants: vi.fn(),
   }),
 }));
+vi.mock("../../modules/connections/hooks/use-grant-row-tool-access.js", () => ({
+  useGrantRowToolAccess: () => undefined,
+}));
 vi.mock("../../modules/connections/hooks/use-catalog-groups.js", () => ({
   useCatalogGroups: (listed: { id: string; templateId: string }[]) => ({
     populated: [

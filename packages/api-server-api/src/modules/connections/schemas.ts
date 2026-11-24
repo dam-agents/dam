@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { RESERVED_MCP_SERVER_NAMES, resourceNameSchema } from "../shared.js";
+import { grantToolAccess, toolMode } from "./types.js";
 
 const GATEWAY_HOST =
   /^(?:\*\.)?[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)*$/;
@@ -138,6 +139,7 @@ export const CONNECTION_ENV_NAME_HINT =
 const commonFields = {
   templateId: z.string().min(1),
   name: connectionNameSchema,
+  toolMode: toolMode.optional(),
 };
 
 const oauthCreateInput = z.object({
@@ -148,7 +150,6 @@ const oauthCreateInput = z.object({
   clientId: z.string().min(1).optional(),
   clientSecret: z.string().min(1).optional(),
   appSlug: z.string().min(1).optional(),
-  fullAccess: z.boolean().optional(),
 });
 
 const headerCreateInput = z.object({
@@ -248,9 +249,15 @@ export const connectionUpdateGitHubUserTokenScopeInputSchema = z.object({
   fullAccess: z.boolean().optional(),
 });
 
-export const connectionSetFullAccessInputSchema = z.object({
+export const connectionSetToolModeInputSchema = z.object({
   id: z.string().min(1),
-  fullAccess: z.boolean(),
+  mode: toolMode,
+});
+
+export const connectionSetGrantToolAccessInputSchema = z.object({
+  agentId: z.string().min(1),
+  connectionId: z.string().min(1),
+  access: grantToolAccess,
 });
 
 export const connectionMoveToHostInputSchema = z.object({

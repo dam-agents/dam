@@ -38,6 +38,9 @@ drivers:
   mcp-entry:
     path: "$HOME/.copilot/mcp-config.json"
     keyPath: mcpServers
+    # A Connection's entry waits for a tool call as long as the gateway holds
+    # it for the owner's approval (`copilot mcp add --timeout MS`).
+    toolTimeout: { key: timeout, unit: milliseconds }
 
   # Copilot's ~/.copilot/settings.json holds the defaults the Config panel
   # writes. A session's mode and effort change inside the live session; an ACP

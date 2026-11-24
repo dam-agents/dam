@@ -1,12 +1,17 @@
 import { TrashCan, WarningAlt } from "@carbon/icons-react";
 import type { ConnectionStatus, ConnectionView } from "api-server-api";
+import { useState } from "react";
 
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import { useAgentAccessLines } from "../hooks/use-agent-access-lines.js";
 import type { ConnectionHolder } from "../hooks/use-connection-holders.js";
 import { childCardLabel, REFUSED_ACCESS } from "../lib/github-card.js";
+import type { AccessSummary } from "../lib/grant-tool-access.js";
+import { WritesWithoutAskingMarks } from "./access-summary-label.js";
+import { AgentAccessList, AgentAccessToggle } from "./agent-access-list.js";
 import { ConnectionIcon } from "./connection-icon.js";
 import {
   ConnectionRowActions,
@@ -22,6 +27,11 @@ export interface RowGrantControls {
   onToggle: (on: boolean) => void;
   actionHidden?: boolean;
   blockedReason?: string;
+}
+
+export interface RowToolAccess {
+  summary: AccessSummary;
+  onEdit?: () => void;
 }
 
 export interface RowMaintenanceActions {
@@ -58,6 +68,7 @@ interface Props {
   deleting?: boolean;
   maintenance?: RowMaintenanceActions;
   onRemove?: () => void;
+  toolAccess?: RowToolAccess;
 }
 
 export function CatalogConnectionRow({
@@ -72,7 +83,10 @@ export function CatalogConnectionRow({
   deleting = false,
   maintenance,
   onRemove,
+  toolAccess,
 }: Props) {
+  const [agentsOpen, setAgentsOpen] = useState(false);
+  const agentAccess = useAgentAccessLines(connection, usedBy);
   const label = childCardLabel(connection);
   const paused = inCard?.paused;
   const refused =
@@ -123,6 +137,11 @@ export function CatalogConnectionRow({
             ) : (
               <StatusBadges connection={connection} />
             )}
+            <WritesWithoutAskingMarks
+              connectionId={connection.id}
+              grant={toolAccess?.summary}
+              agentsWriting={agentAccess?.writing ?? 0}
+            />
           </div>
           {!paused && (
             <ConnectionRowActions
@@ -130,12 +149,22 @@ export function CatalogConnectionRow({
               grant={grant}
               maintenance={maintenance}
               chooseAccessAgain={refused}
+              toolAccess={toolAccess}
               usedBy={
-                usedBy && (
-                  <ConnectionUsedBy
+                agentAccess ? (
+                  <AgentAccessToggle
                     connectionId={connection.id}
-                    agents={usedBy}
+                    count={agentAccess.lines.length}
+                    open={agentsOpen}
+                    onToggle={() => setAgentsOpen((was) => !was)}
                   />
+                ) : (
+                  usedBy && (
+                    <ConnectionUsedBy
+                      connectionId={connection.id}
+                      agents={usedBy}
+                    />
+                  )
                 )
               }
             />
@@ -151,7 +180,10 @@ export function CatalogConnectionRow({
           </p>
         ) : (
           <>
-            <ConnectionRowDetail connection={connection} />
+            <ConnectionRowDetail
+              connection={connection}
+              grantAccess={toolAccess?.summary.text}
+            />
             {note && (
               <p
                 className="mt-0.5 break-words text-xs text-muted-foreground"
@@ -163,6 +195,9 @@ export function CatalogConnectionRow({
           </>
         )}
         {!paused && <RetiredHostNote connection={connection} />}
+        {agentAccess && agentsOpen && (
+          <AgentAccessList connection={connection} lines={agentAccess.lines} />
+        )}
       </div>
       <div className="flex h-8 shrink-0 items-center gap-1">
         <ConnectionRowMenu

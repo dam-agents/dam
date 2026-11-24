@@ -978,6 +978,8 @@ export const connections = pgTable(
     inputs: jsonb("inputs").notNull(),
     auth: jsonb("auth").notNull(),
     contributions: jsonb("contributions").notNull(),
+    /* UNIT_BOUNDARY_DESCRIPTION: what the owner lets an Agent do with the tools of an MCP Connection: its tool mode, and the tools the api-server read from the server. Null on a Connection that is not an MCP Connection, and on one made before the column, which takes its Template's default mode. */
+    toolAccess: jsonb("tool_access"),
     parentId: text("parent_id").references((): AnyPgColumn => connections.id, {
       onDelete: "cascade",
     }),
@@ -1030,6 +1032,7 @@ export const connectionGrants = pgTable(
       .defaultNow()
       .notNull(),
     preferred: boolean("preferred").notNull().default(false),
+    toolAccess: jsonb("tool_access"),
   },
   (table) => [
     primaryKey({ columns: [table.connectionId, table.agentId] }),

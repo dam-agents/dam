@@ -2,15 +2,26 @@ import type { ConnectionView } from "api-server-api";
 
 import { cn } from "@/lib/utils";
 
-import { connectionDetail } from "../lib/connection-detail.js";
+import { useToolApprovalOffered } from "../hooks/use-tool-approval-offered.js";
+import {
+  type ConnectionDetail,
+  connectionDetail,
+} from "../lib/connection-detail.js";
 import { isDamConnection } from "../lib/dam-connection.js";
 
 export function ConnectionRowDetail({
   connection,
+  grantAccess,
 }: {
   connection: ConnectionView;
+  grantAccess?: string;
 }) {
-  const { account, reach } = connectionDetail(connection);
+  const toolApproval = useToolApprovalOffered();
+  const detail = connectionDetail(connection, toolApproval);
+  const account = detail.account;
+  const reach: ConnectionDetail["reach"] = grantAccess
+    ? { text: grantAccess }
+    : detail.reach;
   if (!account && !reach) return null;
   const dam = isDamConnection(connection);
   return (

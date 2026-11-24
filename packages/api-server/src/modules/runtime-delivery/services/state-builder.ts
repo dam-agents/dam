@@ -66,6 +66,8 @@ export function createStateBuilder(deps: {
   egressDenies: (agentId: string) => EgressDenies;
   /* UNIT_BOUNDARY_DESCRIPTION: the `dam` skill the api-server image carries, so the skill the DAM Connection writes is the one this install ships now rather than the one it was made with. */
   damSkill: readonly DamSkillFile[];
+  /* UNIT_BOUNDARY_DESCRIPTION: the approval hold window, which every MCP entry of a Connection carries as its tool timeout, so a harness waits for a held tool call as long as the gateway holds it. */
+  mcpToolTimeoutSeconds: number;
 }): StateBuilder {
   return {
     async build(agentId, capabilities): Promise<StatePayload> {
@@ -90,7 +92,12 @@ export function createStateBuilder(deps: {
       const rawContribs = [
         ...userEnv,
         ...builtin,
-        ...withoutReservedMcpEntries(agentId, granted.contributions),
+        ...withoutReservedMcpEntries(agentId, granted.contributions).map(
+          (c): Contribution =>
+            c.kind === "mcp-entry"
+              ? { ...c, toolTimeoutSeconds: deps.mcpToolTimeoutSeconds }
+              : c,
+        ),
         ...skills,
       ];
       const pending = await deps.outboxRepo.pendingEvents(agentId);

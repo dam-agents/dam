@@ -14,6 +14,7 @@ import { buildRevokeCommand } from "./commands/revoke.js";
 import { buildScopeCommand } from "./commands/scope.js";
 import { buildTemplatesCommand } from "./commands/templates.js";
 import { buildTestCommand } from "./commands/test.js";
+import { buildToolsCommand } from "./commands/tools.js";
 import { buildUpdateCommand } from "./commands/update.js";
 import {
   createConnectionService,
@@ -82,13 +83,8 @@ export function composeConnectionModule(
       createConnectionService: createService,
     }),
   );
-  parent.addCommand(
-    buildScopeCommand({
-      compatService: opts.compatService,
-      configService: opts.configService,
-      createConnectionService: createService,
-    }),
-  );
+  parent.addCommand(buildScopeCommand(agentScoped));
+  parent.addCommand(buildToolsCommand(agentScoped));
   parent.addCommand(
     buildReauthCommand({
       compatService: opts.compatService,

@@ -215,6 +215,47 @@ describe("mcp-entry plugin", () => {
   });
 
   /**
+   * TEST_SCENARIO: a Connection's entry carries the gateway's approval hold
+   * window, so the harness waits for a held tool call instead of giving up
+   * first. Each harness names the timeout its own way: Codex as
+   * `tool_timeout_sec` in seconds, Claude Code as `timeout` in milliseconds.
+   * An entry without the window, such as the platform's own, gets no timeout.
+   */
+  it("writes the tool timeout under the harness's own key and unit", async () => {
+    const target = join(home, ".codex/config.toml");
+    const linear: Contribution = {
+      kind: "mcp-entry",
+      name: "linear",
+      url: "https://mcp.linear.app/mcp",
+      toolTimeoutSeconds: 1800,
+    };
+    await bind({
+      path: "$HOME/.codex/config.toml",
+      format: "toml",
+      keyPath: "mcp_servers",
+      urlKey: "url",
+      headersKey: "http_headers",
+      toolTimeout: { key: "tool_timeout_sec", unit: "seconds" },
+    })([entry("platform-outbound", "http://hs/mcp"), linear], ctx);
+    expect(parseToml(readFileSync(target, "utf8")).mcp_servers).toEqual({
+      "platform-outbound": { url: "http://hs/mcp" },
+      linear: { url: "https://mcp.linear.app/mcp", tool_timeout_sec: 1800 },
+    });
+
+    await bind({
+      path: "$HOME/.mcp.json",
+      toolTimeout: { key: "timeout", unit: "milliseconds" },
+    })([linear], ctx);
+    expect(readConfig(".mcp.json").mcpServers).toEqual({
+      linear: {
+        type: "http",
+        url: "https://mcp.linear.app/mcp",
+        timeout: 1_800_000,
+      },
+    });
+  });
+
+  /**
    * TEST_SCENARIO: the target can be the harness's own config file, which the
    * user edits by hand. When it does not parse, the driver must fail and leave
    * the file as it is. Moving it aside and writing only the MCP entries would

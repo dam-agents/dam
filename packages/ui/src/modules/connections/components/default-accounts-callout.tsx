@@ -2,6 +2,7 @@ import type {
   ConnectionView,
   DefaultAccountGroup,
   DefaultAccountKindId,
+  GrantToolAccess,
 } from "api-server-api";
 import { contestedDefaultAccounts } from "api-server-api";
 import { type ReactNode, useMemo } from "react";
@@ -13,6 +14,7 @@ import { cn } from "@/lib/utils";
 export interface GrantDetails {
   grantedAt: string;
   preferred: boolean;
+  toolAccess?: GrantToolAccess;
 }
 
 interface Wording {

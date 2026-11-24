@@ -75,6 +75,7 @@ import {
 } from "./modules/agents/infrastructure/labels.js";
 import {
   childrenMirroringConnections,
+  connectionsParentOf,
   inheritanceCleanup,
   nearestOwnEgress,
   childEgressGrants,
@@ -409,7 +410,8 @@ import {
   createGrantedConnectionTemplates,
   createPricedConnections,
   createProviderEgressScopes,
-  createReadOnlyConnections,
+  createToolAccessConnections,
+  createToolCallLabels,
   listConnectionGrantAgentIds,
   listConnectionTemplateIds,
   listManagedConnectionOwners,
@@ -1038,6 +1040,7 @@ export async function bootstrap() {
     db,
     namespace: config.namespace,
     damSkill,
+    mcpToolTimeoutSeconds: config.approvalHoldSeconds,
     bullConnection,
     agentRunningPort: {
       isRunning: (agentId) => agentsRepo.isReady(agentId),
@@ -1312,6 +1315,14 @@ export async function bootstrap() {
     const stored = await featuresRepo.listEnabled(ownerId);
     return stored.damConnection === true;
   };
+  /* UNIT_BOUNDARY_DESCRIPTION: whether an owner may set a Connection to need approval for its tool calls, read the same way for this composition root. */
+  const toolApprovalOfferedFor = async (ownerId: string): Promise<boolean> => {
+    const mode = config.featureModes["mcp-tool-approval"];
+    if (mode === "on") return true;
+    if (mode !== "experimental") return false;
+    const stored = await featuresRepo.listEnabled(ownerId);
+    return stored["mcp-tool-approval"] === true;
+  };
   const damKeyFor = (ownerId: string) =>
     damKeyPortFor(
       apiKeysModule.createService({ ownerSub: ownerId, surface: "platform" }),
@@ -1326,6 +1337,7 @@ export async function bootstrap() {
       ownerId,
       db,
       mirroredChildren: childrenMirroringConnections(db),
+      parentOf: connectionsParentOf(db),
       templates: connectionsBoot.templates,
       oauthEngine: connectionsBoot.oauthEngine,
       githubAppEngine: connectionsBoot.githubAppEngine,
@@ -1342,6 +1354,8 @@ export async function bootstrap() {
       providerModelCatalog: connectionsBoot.providerModelCatalog,
       damKey: damKeyFor(ownerId),
       damConnectionOffered: () => damConnectionOfferedFor(ownerId),
+      toolApprovalOffered: () => toolApprovalOfferedFor(ownerId),
+      mcpToolLister: connectionsBoot.mcpToolLister,
     });
   await periodicJobs
     .register("oauth-refresh", 60_000, () =>
@@ -2344,10 +2358,11 @@ export async function bootstrap() {
     ruleMatcher: createEgressRuleMatchAdapter(db),
     waitingRuleSpeaksFor: ruleSpeaksFor,
     providerScopes: createProviderEgressScopes(db),
-    readOnlyConnections: createReadOnlyConnections(
+    toolAccessConnections: createToolAccessConnections(
       db,
       connectionsBoot.templates,
     ),
+    toolCallLabels: createToolCallLabels({ db, secretStore }),
     attendance: turnAttendance,
     spend: spend.check,
     webSearch: {
