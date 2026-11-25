@@ -8,7 +8,6 @@ import {
   cpuPoolMilli,
   topCpuAgents,
 } from "../lib/pools.js";
-import { RESOURCE_ICON } from "../lib/resource-icons.js";
 import { PoolBar } from "./pool-bar.js";
 
 const WORD: Record<CpuCongestion, string> = {
@@ -49,7 +48,6 @@ export function CpuRow({ cpu, usage, agents }: Props) {
   return (
     <PoolBar
       title="CPU"
-      icon={RESOURCE_ICON.cpu}
       value={value}
       bar={
         atCeiling.length > 0 && bar.level === "ok"

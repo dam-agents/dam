@@ -41,13 +41,13 @@ No architecture page names these icons or the place of the buttons (`budgets.md`
 
 ## Acceptance criteria
 
-- [ ] The populated Home renders `EntryPointButtons` inside `PageHeader`'s `actions`, and nowhere else on the page.
-- [ ] The loading and empty states of Home are unchanged.
-- [ ] `PoolBar` has no `icon` prop, and the Resources card's three rows render no SVG before their titles.
-- [ ] An agent card's second line shows `<amount> memory` and `<amount> storage` with no icons, and a sleeping agent shows `<amount> storage` alone.
-- [ ] `modules/budgets/lib/resource-icons.ts` is gone, and nothing imports it.
-- [ ] The channel chips draw `SlackColorIcon` and `TelegramColorIcon` at 16px; every other Slack and Telegram mark in the app is unchanged.
-- [ ] `mise run //packages/ui:check`, `mise run //packages/ui:test` and `mise run check:comment-types` pass.
+- [x] The populated Home renders `EntryPointButtons` inside `PageHeader`'s `actions`, and nowhere else on the page.
+- [x] The loading and empty states of Home are unchanged.
+- [x] `PoolBar` has no `icon` prop, and the Resources card's three rows render no SVG before their titles.
+- [x] An agent card's second line shows `<amount> memory` and `<amount> storage` with no icons, and a sleeping agent shows `<amount> storage` alone.
+- [x] `modules/budgets/lib/resource-icons.ts` is gone, and nothing imports it.
+- [x] The channel chips draw `SlackColorIcon` and `TelegramColorIcon` at 16px; every other Slack and Telegram mark in the app is unchanged.
+- [x] `mise run //packages/ui:check`, `mise run //packages/ui:test` and `mise run check:comment-types` pass.
 
 ## Smoke test
 
