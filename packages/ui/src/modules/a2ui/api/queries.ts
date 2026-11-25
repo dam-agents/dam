@@ -12,7 +12,9 @@ export function useChatFormPreferences(
     staleTime: 5 * 60_000,
     ...(quiet
       ? { retry: false }
-      : { meta: { errorToast: "Couldn't load the chat form settings" } }),
+      : {
+          meta: { errorToast: "Couldn't load the interactive chat settings" },
+        }),
   });
 }
 
@@ -21,7 +23,7 @@ export function useSetChatFormPreferences() {
     ...trpc.chatForms.setPreferences.mutationOptions(),
     meta: {
       invalidates: [trpc.chatForms.preferences.queryKey()],
-      errorToast: "Couldn't save the chat form settings",
+      errorToast: "Couldn't save the interactive chat settings",
     },
   });
 }

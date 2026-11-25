@@ -15,7 +15,7 @@ export const PLATFORM_SKILLS: ReadonlyMap<string, PlatformSkillFeature> =
     ["platform-models", { id: "connections", label: "Model providers" }],
     ["platform-github", { id: "connections", label: "GitHub accounts" }],
     ["platform-s3", { id: "connections", label: "Object Storage" }],
-    ["platform-chat-forms", { id: "chat-forms", label: "Chat forms" }],
+    ["platform-chat-forms", { id: "chat-forms", label: "Interactive chat" }],
     ["agent-cost-review", { id: "spend", label: "Spend" }],
   ] satisfies [string, PlatformSkillFeature][]);
 
