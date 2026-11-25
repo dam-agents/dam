@@ -1,7 +1,5 @@
 import type { SpendLimitView, SpendUnit } from "api-server-api";
 
-import { cn } from "@/lib/utils";
-
 import {
   continuedToday,
   limitMeterLabel,
@@ -11,7 +9,6 @@ import {
   spentWithoutLimit,
 } from "../lib/copy.js";
 import { localResetTime } from "../lib/format.js";
-import { LIMIT_STATE_TEXT } from "../lib/state-colors.js";
 import { LimitBar } from "./limit-bar.js";
 
 interface Props {
@@ -43,11 +40,7 @@ export function DailyLimitMeter({
       <p className="text-sm text-foreground tabular-nums">
         {spentOfLimitToday(limit.spentMicros, limit.amountMicros, unit)}
       </p>
-      <LimitBar
-        pct={pct}
-        state={limit.state}
-        label={limitMeterLabel(subject, pct)}
-      />
+      <LimitBar pct={pct} label={limitMeterLabel(subject, pct)} />
       <LimitStateLine limit={limit} resetsAt={resetsAt} />
     </div>
   );
@@ -68,16 +61,5 @@ function LimitStateLine({
     .join(" ");
   if (!text) return null;
 
-  return (
-    <p
-      className={cn(
-        "text-sm",
-        limit.state === "ok"
-          ? "text-muted-foreground"
-          : LIMIT_STATE_TEXT[limit.state],
-      )}
-    >
-      {text}
-    </p>
-  );
+  return <p className="text-sm text-muted-foreground">{text}</p>;
 }

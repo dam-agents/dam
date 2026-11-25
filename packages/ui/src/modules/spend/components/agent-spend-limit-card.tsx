@@ -21,14 +21,17 @@ import {
   type AgentLimitCoverage,
   agentLimitCoverage,
 } from "../lib/coverage.js";
+import { inListOrder } from "../lib/level-labels.js";
 import { agentLevels, type LevelConnection } from "../lib/limit-levels.js";
 import { unitTotals } from "../lib/measured-spend.js";
 import { AgentLimitCoverageNote } from "./agent-limit-coverage-note.js";
-import { AlsoCountedBy } from "./also-counted-by.js";
 import { DailyLimitCard, DailyLimitCardPending } from "./daily-limit-card.js";
 import { DailyLimitMeter } from "./daily-limit-meter.js";
+import { LimitRowList } from "./limit-row.js";
 import { RootDriverSpendNote } from "./root-driver-spend-note.js";
 import { SpendLimitButton } from "./spend-limit-button.js";
+
+export const AGENT_LIMITS_ID = "agent-limits";
 
 export function AgentSpendLimitCard({ agentId }: { agentId: string }) {
   const root = useRootDriver(agentId);
@@ -112,12 +115,15 @@ function DriverSpendLimitBody({
         </p>
       )}
       <OtherSpendLine status={status} primary={primary} />
-      <AlsoCountedBy
-        levels={view.others}
-        agentId={agentId}
-        agent={agent}
-        grouped
-      />
+      {view.others.length > 0 && (
+        <div className="border-t border-border pt-3">
+          <LimitRowList
+            id={AGENT_LIMITS_ID}
+            levels={inListOrder(view.others.map(({ level }) => level))}
+            agent={agent}
+          />
+        </div>
+      )}
       {coverageKnown && (
         <AgentLimitCoverageNote
           agentId={agentId}

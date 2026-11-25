@@ -425,7 +425,7 @@ A line under the meter shows only when it matters: when the spend is close to th
 The last line gives the local time at which the day resets.
 A Connection limit uses the same parts in the Connection's unit: a title with a help tip, the button, the spend against the limit or "No limit", the meter and state line, and the reset time.
 Every place that shows a limit follows one pattern.
-It shows the limit that the place owns, which the user sets there, and under it one line, "Also counted by", for the other limits that count the same calls.
+It shows the limit that the place owns, which the user sets there, and under it the other limits that count the same calls, as a list or one "Also counted by" line.
 Each limit has its own icon on every screen: the provider's for an agent's Connection limit, the same with a people badge for a Connection limit for all agents, the agent's avatar for the agent limit, a sum sign for the own limit (the total daily limit) and a lock for the spend ceiling.
 Closed, the line shows each other limit's icon and share used; open, it lists them muted, each with its meter, its spend against the limit and where it is set.
 The limit with the least left today, when it is not the place's own, is marked "stops first", closed and open.
@@ -434,7 +434,7 @@ The screens:
 
 - **The agent's settings:** the Usage section starts with the card for the agent limit, which counts the paid calls of the agent and its sub-agents.
   The card also gives today's spend in the other units, how many calls are estimates and how many have no price yet.
-  Its "Also counted by" list holds, by provider, the agent's Connection limits and the Connection limits for all agents on its Connections, then the total daily limit and the ceiling.
+  Below it, the card always lists the other limits that count the agent: the total daily limit, the limits for all agents on its Connections, its own Connection limits, then the ceiling, each with its icon, name, meter and spend against the limit.
   An agent with only the Claude subscription or Bob gets no button: its card gives today's spend in that unit and points to its Providers section.
   The agent's summary shows today's spend in each unit and the limit.
   Below the card, the section shows the same measured view as the Settings tab, for the spend that the agent pays, so the spend of the sub-agents that it started is included.
@@ -466,7 +466,6 @@ The screens:
   The date range under the total starts at T when the period starts before T.
   While the period runs, the range ends at today and says "so far".
   A period wholly before T shows no total.
-  The card keeps one height for each period and checkbox state, so it has one reserved line under the range.
   The checkbox "Show what subscriptions cover" is on Home only while the user has subscription-covered calls in any of the card's three periods; the card reads them as one daily range, so the checkbox does not move between the periods.
   When it is on, this line gives the subscription value at API prices.
   When the checkbox is off, this line tells when the subscriptions covered more than the user paid.
@@ -480,7 +479,7 @@ The screens:
   When the user hides it, it goes from both places, in that browser only.
   The tooltip of its close button says so, and says that the earlier estimates stay on Settings › Usage while they are open.
 
-A meter is the foreground colour on a light tint of it, takes the warning colour at 80% of its limit and the danger colour when the limit is reached, and shows the share of the limit used beside it; the resource meters on Home use the same fill.
+A limit's meter is the foreground colour on a light tint of it at every level; words, not colour, say when a limit is close or reached, and the resource meters on Home use the same fill.
 A sub-agent's settings set no limit: its spend counts for its root driver, so its Usage section names the root driver instead.
 A spend-limit question shows on Home with "Continue" only; "Dismiss" hides it from Home and leaves it open, and Home's "Deny all" leaves it out.
 The surfaces name five limits: the agent spend limit, the user's spend limit for all agents, a Connection's spend limit, the user's spend limit for all agents on a Connection ("Your ‹Connection› spend limit (all agents)"), and the spend ceiling that the operator sets.

@@ -1,13 +1,10 @@
-import type { SpendLimitState } from "api-server-api";
-
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import {
-  LIMIT_STATE_FILL,
-  LIMIT_STATE_SHARE,
-  LIMIT_STATE_TRACK,
-} from "../lib/state-colors.js";
+  NEUTRAL_FILL,
+  NEUTRAL_LIGHT_FILL,
+} from "../../budgets/lib/pool-colors.js";
 
 export interface BarPart {
   micros: number;
@@ -15,7 +12,6 @@ export interface BarPart {
 }
 
 interface Props {
-  state: SpendLimitState;
   limitMicros: number;
   mine: BarPart;
   others?: BarPart;
@@ -33,7 +29,6 @@ function widthOf(micros: number, limitMicros: number): string {
 }
 
 export function SharedLimitBar({
-  state,
   limitMicros,
   mine,
   others,
@@ -48,25 +43,21 @@ export function SharedLimitBar({
       className={cn(
         "flex w-full overflow-hidden",
         muted ? "h-1.5 gap-px rounded-xs" : "h-3 gap-0.5 rounded-sm",
-        LIMIT_STATE_TRACK[state],
+        "bg-foreground/10",
       )}
     >
       {mine.micros > 0 && (
         <Part
           part={mine}
           width={widthOf(mine.micros, limitMicros)}
-          fill={
-            muted && state === "ok"
-              ? LIMIT_STATE_SHARE.ok
-              : LIMIT_STATE_FILL[state]
-          }
+          fill={muted ? NEUTRAL_LIGHT_FILL : NEUTRAL_FILL}
         />
       )}
       {others && others.micros > 0 && (
         <Part
           part={others}
           width={widthOf(others.micros, limitMicros)}
-          fill={LIMIT_STATE_SHARE[state]}
+          fill={NEUTRAL_LIGHT_FILL}
         />
       )}
       {left.micros > 0 && (

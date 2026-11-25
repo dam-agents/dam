@@ -1,5 +1,4 @@
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import {
@@ -20,7 +19,6 @@ import {
   type Level,
   levelPercent,
 } from "../lib/limit-levels.js";
-import { LIMIT_STATE_PERCENT, LIMIT_STATE_TEXT } from "../lib/state-colors.js";
 import { type LevelAgent, LevelIcon } from "./level-icon.js";
 import { SharedLimitBar } from "./shared-limit-bar.js";
 
@@ -82,14 +80,7 @@ function LevelRow({
           <span className="min-w-0 text-[13px] text-muted-foreground">
             {levelName(level)}
             {level.stopsFirst && (
-              <span
-                className={cn(
-                  "ml-1.5 rounded-full border border-current px-1.5 text-[11px] font-medium",
-                  level.state === "ok"
-                    ? "text-muted-foreground"
-                    : LIMIT_STATE_TEXT[level.state],
-                )}
-              >
+              <span className="ml-1.5 rounded-full border border-current px-1.5 text-[11px] font-medium text-muted-foreground">
                 {STOPS_FIRST}
               </span>
             )}
@@ -98,7 +89,6 @@ function LevelRow({
         </div>
         <SharedLimitBar
           muted
-          state={level.state}
           limitMicros={level.effectiveMicros}
           mine={{
             micros: mine,
@@ -121,12 +111,7 @@ function LevelRow({
           {scope && ` · ${scope}`}
         </p>
       </div>
-      <span
-        className={cn(
-          "text-right text-xs tabular-nums",
-          LIMIT_STATE_PERCENT[level.state],
-        )}
-      >
+      <span className="text-right text-xs text-muted-foreground tabular-nums">
         {`${String(levelPercent(level))}%`}
       </span>
     </div>

@@ -19,7 +19,6 @@ import {
 import { bareSpend } from "../lib/format.js";
 import { levelShort } from "../lib/level-labels.js";
 import { levelPercent, type LevelsView } from "../lib/limit-levels.js";
-import { LIMIT_STATE_PERCENT, LIMIT_STATE_TEXT } from "../lib/state-colors.js";
 import type { LevelAgent } from "./level-icon.js";
 import { LevelList } from "./level-list.js";
 import { SharedLimitBar } from "./shared-limit-bar.js";
@@ -69,7 +68,6 @@ export function LimitLine({
       {current ? (
         <>
           <SharedLimitBar
-            state={current.state}
             limitMicros={current.effectiveMicros}
             mine={{
               micros: current.spentMicros,
@@ -83,12 +81,7 @@ export function LimitLine({
             }}
             label={subject}
           />
-          <span
-            className={cn(
-              "text-right text-xs tabular-nums",
-              LIMIT_STATE_PERCENT[current.state],
-            )}
-          >
+          <span className="text-right text-xs text-muted-foreground tabular-nums">
             {`${String(levelPercent(current))}%`}
           </span>
         </>
@@ -119,12 +112,7 @@ export function LimitLine({
           {first && (
             <>
               {current && " · "}
-              <b
-                className={cn(
-                  "font-medium",
-                  first.state !== "ok" && LIMIT_STATE_TEXT[first.state],
-                )}
-              >
+              <b className="font-medium">
                 {stopsFirstShort(levelShort(first, true))}
               </b>
             </>

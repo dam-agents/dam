@@ -51,22 +51,22 @@ In `packages/api-server-api/src/modules/spend/types.ts` and `router.ts`:
 ```ts
 // spend.stopped — owner-level query, no input, readAgentProcedure
 export interface SpendStoppedLimit {
-  kind: SpendBindingKind;          // "agent" | "connection" | "owner-connection" | "owner" | "ceiling"
-  limitId: string | null;          // null for the ceiling
-  connectionId: string | null;     // set for "connection" and "owner-connection"
+  kind: SpendBindingKind; // "agent" | "connection" | "owner-connection" | "owner" | "ceiling"
+  limitId: string | null; // null for the ceiling
+  connectionId: string | null; // set for "connection" and "owner-connection"
   connectionName: string | null;
   unit: SpendUnit;
-  amountMicros: number;            // the limit's amount (the ceiling's for "ceiling")
-  leftMicros: number;              // 0 while reached
+  amountMicros: number; // the limit's amount (the ceiling's for "ceiling")
+  leftMicros: number; // 0 while reached
 }
 export interface SpendStoppedAgent {
-  agentId: string;                 // the payer (root driver) of the refused calls
-  sessionIds: string[];            // the sessions with a refused call today
-  limit: SpendStoppedLimit;        // the reached limit that refused them; narrowest first on a tie
+  agentId: string; // the payer (root driver) of the refused calls
+  sessionIds: string[]; // the sessions with a refused call today
+  limit: SpendStoppedLimit; // the reached limit that refused them; narrowest first on a tie
 }
 export interface SpendStopped {
-  resetsAt: string;                // next UTC midnight, ISO
-  agents: SpendStoppedAgent[];     // only the caller's own agents
+  resetsAt: string; // next UTC midnight, ISO
+  agents: SpendStoppedAgent[]; // only the caller's own agents
 }
 ```
 
@@ -77,14 +77,14 @@ The UI invalidates `spend.stopped` wherever it invalidates `spend.status` today 
 
 ## Sub-issues
 
-| #   | Title                                                            | Scope                                                                                               | Depends on |
-| --- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | One black meter and the limit row; agent Usage lists every limit | Meters drop the state colours; new `LimitRow`; Usage shows every other limit always, with no toggle | —          |
-| 02  | Settings → Providers rows                                        | Closed: spend as text; open: "Limit for all agents" with bar, Change, reset                         | 01         |
-| 03  | Agent → Providers rows                                           | Open: "Limit on the agent", then "{Provider}, all agents"                                           | 01         |
-| 04  | Server: which agents a limit stopped                             | `spend.stopped` per the contract above                                                              | —          |
-| 05  | Sidebar stopped dot                                              | Red dot in the unread dot's place, with its label                                                   | 04         |
-| 06  | Chat error card                                                  | New owner ending; two links to the agent's Usage at the limits list                                 | 01         |
+| #   | Title                                                               | Scope                                                                                               | Depends on |
+| --- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------- |
+| 01  | ✅ One black meter and the limit row; agent Usage lists every limit | Meters drop the state colours; new `LimitRow`; Usage shows every other limit always, with no toggle | —          |
+| 02  | Settings → Providers rows                                           | Closed: spend as text; open: "Limit for all agents" with bar, Change, reset                         | 01         |
+| 03  | Agent → Providers rows                                              | Open: "Limit on the agent", then "{Provider}, all agents"                                           | 01         |
+| 04  | Server: which agents a limit stopped                                | `spend.stopped` per the contract above                                                              | —          |
+| 05  | Sidebar stopped dot                                                 | Red dot in the unread dot's place, with its label                                                   | 04         |
+| 06  | Chat error card                                                     | New owner ending; two links to the agent's Usage at the limits list                                 | 01         |
 
 ```mermaid
 graph LR

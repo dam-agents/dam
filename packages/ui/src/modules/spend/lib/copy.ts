@@ -47,6 +47,14 @@ export function limitButtonLabel(hasLimit: boolean, subject: string): string {
     : `Set a limit on the daily spend of ${subject}`;
 }
 
+export function limitShareLabel(name: string, pct: number): string {
+  return `${name}: ${String(Math.round(pct))}% used`;
+}
+
+export function ofLimit(amount: string): string {
+  return `of ${amount}`;
+}
+
 export function limitMeterLabel(subject: string, pct: number): string {
   return `Daily spend limit for ${subject}: ${String(Math.round(pct))}% used`;
 }
@@ -602,6 +610,10 @@ export function allAgentsOn(connectionName: string): string {
 }
 
 export const THIS_AGENT = "this agent";
+
+export function thisAgentOn(connectionName: string): string {
+  return `${connectionName}, ${THIS_AGENT}`;
+}
 
 export function stopsFirstShort(name: string): string {
   return `${name} stops first`;

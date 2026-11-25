@@ -47,6 +47,12 @@ export function bareSpend(micros: number, unit: SpendUnit): string {
   return BARE_AMOUNTS[unit](micros);
 }
 
+export function meterAmount(micros: number, unit: SpendUnit): string {
+  return unit === "bobcoin"
+    ? `${bareSpend(micros, unit)} Bc`
+    : bareSpend(micros, unit);
+}
+
 export function formatSpend(micros: number, unit: SpendUnit): string {
   return `${bareSpend(micros, unit)}${UNIT_SUFFIXES[unit]}`;
 }

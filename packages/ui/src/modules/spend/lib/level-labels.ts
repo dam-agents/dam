@@ -9,6 +9,7 @@ import {
   LEVEL_SCOPES,
   LEVEL_SHORT,
   THIS_AGENT,
+  thisAgentOn,
 } from "./copy.js";
 import type { Level } from "./limit-levels.js";
 
@@ -21,6 +22,27 @@ export function levelName(level: Level): string {
     default:
       return LEVEL_NAMES[level.kind];
   }
+}
+
+const LIST_ORDER: readonly Level["kind"][] = [
+  "total",
+  "all-connection",
+  "agent-connection",
+  "ceiling",
+  "agent",
+];
+
+/** UNIT_BOUNDARY_DESCRIPTION: the order of a list of limits: the total first, then each provider's for all agents, the agent's own on a provider, and the operator's ceiling last. */
+export function inListOrder(levels: readonly Level[]): Level[] {
+  return [...levels].sort(
+    (a, b) => LIST_ORDER.indexOf(a.kind) - LIST_ORDER.indexOf(b.kind),
+  );
+}
+
+export function levelListName(level: Level): string {
+  return level.kind === "agent-connection"
+    ? thisAgentOn(level.connection?.name ?? "")
+    : levelName(level);
 }
 
 export function levelShort(level: Level, onProviderPage: boolean): string {

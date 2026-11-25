@@ -5,7 +5,6 @@ import { cn } from "@/lib/utils";
 
 import { ALSO_COUNTED_BY } from "../lib/copy.js";
 import { type GroupedLevel, levelPercent } from "../lib/limit-levels.js";
-import { LIMIT_STATE_TEXT } from "../lib/state-colors.js";
 import { type LevelAgent, LevelIcon } from "./level-icon.js";
 import { LevelList } from "./level-list.js";
 
@@ -37,10 +36,7 @@ export function AlsoCountedBy({
           levels.map(({ level }) => (
             <span
               key={level.key}
-              className={cn(
-                "inline-flex items-center gap-1.5 tabular-nums",
-                level.state !== "ok" && LIMIT_STATE_TEXT[level.state],
-              )}
+              className="inline-flex items-center gap-1.5 tabular-nums"
             >
               <LevelIcon level={level} agent={agent} small />
               {`${String(levelPercent(level))}%`}

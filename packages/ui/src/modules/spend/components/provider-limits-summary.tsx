@@ -109,7 +109,6 @@ function ProviderLimitRow({
       <div className="flex flex-col gap-0.5">
         <LimitBar
           pct={percentOfLimit(limit.spentMicros, limit.effectiveMicros)}
-          state={limit.state}
           label={`${name}: ${amounts} today`}
           size="sm"
         />
