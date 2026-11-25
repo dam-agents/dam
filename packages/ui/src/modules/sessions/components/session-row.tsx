@@ -2,6 +2,8 @@ import {
   Download,
   Edit,
   Pen,
+  Pin,
+  PinFilled,
   Terminal,
   Time,
   TrashCan,
@@ -76,6 +78,8 @@ interface Props {
   onRename: () => void;
   onDelete: () => void;
   onExportTimeline?: () => void;
+  pinned?: boolean;
+  onTogglePin?: () => void;
   className?: string;
 }
 
@@ -96,6 +100,8 @@ export function SessionRow({
   onRename,
   onDelete,
   onExportTimeline,
+  pinned = false,
+  onTogglePin,
   className,
 }: Props) {
   const mainRef = useRef<HTMLButtonElement>(null);
@@ -140,6 +146,7 @@ export function SessionRow({
         : null;
 
   const menuProps = {
+    ...(onTogglePin && { pinned, onTogglePin }),
     ...(onExportTimeline && { onExportTimeline }),
     onRename: () => {
       afterMenu.current = onRename;
@@ -320,11 +327,15 @@ export function SessionRow({
 
 function SessionMenuItems({
   menu,
+  pinned = false,
+  onTogglePin,
   onExportTimeline,
   onRename,
   onDelete,
 }: {
   menu: keyof typeof MENU_PARTS;
+  pinned?: boolean;
+  onTogglePin?: (() => void) | undefined;
   onExportTimeline?: (() => void) | undefined;
   onRename: () => void;
   onDelete: () => void;
@@ -332,6 +343,12 @@ function SessionMenuItems({
   const { Item } = MENU_PARTS[menu];
   return (
     <>
+      {onTogglePin && (
+        <Item data-testid="session-pin-button" onSelect={onTogglePin}>
+          {pinned ? <PinFilled size={14} /> : <Pin size={14} />}
+          {pinned ? "Unpin session" : "Pin session"}
+        </Item>
+      )}
       {onExportTimeline && (
         <Item
           data-testid="session-export-timeline-button"

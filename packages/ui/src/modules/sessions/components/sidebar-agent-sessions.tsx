@@ -12,7 +12,11 @@ import {
   isFiltered,
 } from "../../home/lib/activity-filter.js";
 import { matchesActivityFilters } from "../../home/lib/activity-sessions.js";
-import { prefetchSessionHistory } from "../api/queries.js";
+import {
+  prefetchSessionHistory,
+  provisionalSessionView,
+} from "../api/queries.js";
+import { useSessionPinActions, useSessionPins } from "../api/session-pins.js";
 import { useAgentSessionList } from "../hooks/use-agent-session-list.js";
 import { useOpenSession } from "../hooks/use-open-session.js";
 import {
@@ -53,9 +57,13 @@ const LIST_CLASS = "flex flex-col gap-1";
  */
 export function SidebarAgentSessions({
   agentId,
+  pinnedHeader,
+  sessionsHeader,
   onNavigate,
 }: {
   agentId: string;
+  pinnedHeader: ReactNode;
+  sessionsHeader: ReactNode;
   onNavigate?: () => void;
 }) {
   const [limit, setLimit] = useState(SIDEBAR_SESSION_STEP);
@@ -74,16 +82,22 @@ export function SidebarAgentSessions({
 
   return (
     <>
-      {filtered && (
-        <FilterNote
-          summary={activityFilterSummary(filter)}
-          onClear={() =>
-            setAgentSessionFilter(agentId, defaultActivityFilters())
-          }
-        />
-      )}
       <AgentSessionList
         agentId={agentId}
+        pinnedHeader={pinnedHeader}
+        sessionsHeader={
+          <>
+            {sessionsHeader}
+            {filtered && (
+              <FilterNote
+                summary={activityFilterSummary(filter)}
+                onClear={() =>
+                  setAgentSessionFilter(agentId, defaultActivityFilters())
+                }
+              />
+            )}
+          </>
+        }
         sessionActions={sessionActions}
         filter={filtered ? filter : undefined}
         limit={limit}
@@ -105,6 +119,8 @@ export function SidebarAgentSessions({
 
 function AgentSessionList({
   agentId,
+  pinnedHeader,
+  sessionsHeader,
   sessionActions,
   filter,
   limit,
@@ -114,6 +130,8 @@ function AgentSessionList({
   onNavigate,
 }: {
   agentId: string;
+  pinnedHeader: ReactNode;
+  sessionsHeader: ReactNode;
   sessionActions: SessionRowActions;
   filter: ActivityFilters | undefined;
   limit: number;
@@ -124,6 +142,22 @@ function AgentSessionList({
 }) {
   const list = useAgentSessionList(agentId, filter);
   const openSession = useOpenSession();
+  const { pins } = useSessionPins();
+  const pinActions = useSessionPinActions();
+  const agentPins = pins.filter((pin) => pin.agentId === agentId);
+  const pinnedIds = new Set(agentPins.map((pin) => pin.sessionId));
+  const pinnedRows = newestFirst(
+    agentPins.flatMap((pin) => {
+      const session =
+        list.sessions.find((s) => s.sessionId === pin.sessionId) ??
+        (pin.item ? provisionalSessionView(pin.item) : null);
+      return session
+        ? [{ session, state: list.rowState(session), outsideFilter: false }]
+        : [];
+    }),
+    (row) => row.session.updatedAt ?? row.session.createdAt,
+    (row) => row.session.sessionId,
+  );
   const rootRef = useRef<HTMLDivElement>(null);
   const [pagesLeft, setPagesLeft] = useState(SIDEBAR_FILL_PAGES);
 
@@ -152,7 +186,8 @@ function AgentSessionList({
           );
         return { session, state, outsideFilter: !matches };
       })
-      .filter(({ state, outsideFilter }) => state.active || !outsideFilter),
+      .filter(({ state, outsideFilter }) => state.active || !outsideFilter)
+      .filter(({ session }) => !pinnedIds.has(session.sessionId)),
     (row) => row.session.updatedAt ?? row.session.createdAt,
     (row) => row.session.sessionId,
   );
@@ -201,85 +236,115 @@ function AgentSessionList({
     if (id || !unclaimed || !pending) onFocusAfterChange(null);
   });
 
+  const sessionRow = (
+    {
+      session: s,
+      state,
+      outsideFilter,
+    }: {
+      session: SessionView;
+      state: ReturnType<typeof list.rowState>;
+      outsideFilter: boolean;
+    },
+    pinned: boolean,
+  ) => (
+    <SessionRow
+      key={s.sessionId}
+      session={s}
+      {...state}
+      outsideFilter={outsideFilter}
+      className={SIDEBAR_SESSION_ROW_CLASS}
+      onResume={() => {
+        openSession(agentId, s.sessionId, s.mode);
+        onNavigate?.();
+      }}
+      {...(list.operable &&
+        s.mode !== SessionMode.Terminal && {
+          onPrefetch: () => prefetchSessionHistory(agentId, s.sessionId),
+        })}
+      onRename={() => sessionActions.rename(s)}
+      onDelete={() => void sessionActions.delete(s)}
+      {...(sessionActions.exportTimeline && {
+        onExportTimeline: () => sessionActions.exportTimeline?.(s),
+      })}
+      pinned={pinned}
+      onTogglePin={() => {
+        const key = { agentId, sessionId: s.sessionId };
+        if (pinned) pinActions.unpin(key);
+        else pinActions.pin(key, null);
+      }}
+    />
+  );
+
   return (
-    <div
-      ref={rootRef}
-      className={LIST_CLASS}
-      data-testid="sidebar-agent-sessions"
-      data-provisional={list.provisional ? "true" : undefined}
-      aria-busy={list.provisional || (list.loading && !list.failed)}
-    >
-      {list.loading && !list.failed && <SessionListSkeleton />}
-      {list.failed && (
-        <button
-          type="button"
-          onClick={() => void list.retry()}
-          disabled={list.retrying}
-          data-testid="sidebar-agent-sessions-failed"
-          className={`flex h-[30px] items-center gap-1 rounded-lg pl-3 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
-        >
-          Couldn't load sessions. Retry
-          {list.retrying && <Spinner />}
-        </button>
+    <>
+      {pinnedRows.length > 0 && (
+        <div data-testid="sidebar-pinned" className="mb-4">
+          {pinnedHeader}
+          <div className={LIST_CLASS}>
+            {pinnedRows.map((row) => sessionRow(row, true))}
+          </div>
+        </div>
       )}
-      {!list.loading &&
-        !list.failed &&
-        rows.length === 0 &&
-        (!hasNextPage || filtered) && (
-          <ListNote>{emptyText(filtered, hasNextPage)}</ListNote>
+      {sessionsHeader}
+      <div
+        ref={rootRef}
+        className={LIST_CLASS}
+        data-testid="sidebar-agent-sessions"
+        data-provisional={list.provisional ? "true" : undefined}
+        aria-busy={list.provisional || (list.loading && !list.failed)}
+      >
+        {list.loading && !list.failed && <SessionListSkeleton />}
+        {list.failed && (
+          <button
+            type="button"
+            onClick={() => void list.retry()}
+            disabled={list.retrying}
+            data-testid="sidebar-agent-sessions-failed"
+            className={`flex h-[30px] items-center gap-1 rounded-lg pl-3 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
+          >
+            Couldn't load sessions. Retry
+            {list.retrying && <Spinner />}
+          </button>
         )}
-      {visible.map(({ session: s, state, outsideFilter }) => (
-        <SessionRow
-          key={s.sessionId}
-          session={s}
-          {...state}
-          outsideFilter={outsideFilter}
-          className={SIDEBAR_SESSION_ROW_CLASS}
-          onResume={() => {
-            openSession(agentId, s.sessionId, s.mode);
-            onNavigate?.();
-          }}
-          {...(list.operable &&
-            s.mode !== SessionMode.Terminal && {
-              onPrefetch: () => prefetchSessionHistory(agentId, s.sessionId),
-            })}
-          onRename={() => sessionActions.rename(s)}
-          onDelete={() => void sessionActions.delete(s)}
-          {...(sessionActions.exportTimeline && {
-            onExportTimeline: () => sessionActions.exportTimeline?.(s),
-          })}
-        />
-      ))}
-      {paged && hasNextPage && fetchNextPageFailed ? (
-        <button
-          type="button"
-          onClick={() => void fetchNextPage()}
-          className={`flex h-[30px] items-center rounded-lg pl-3 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
-        >
-          Couldn't load the rest. Retry
-        </button>
-      ) : (
-        next.more && (
-          <ViewMoreRow
-            busy={isFetchingNextPage}
-            label={
-              fill === "searching"
-                ? "Looking for more…"
-                : fill === "paused"
-                  ? "Keep looking"
-                  : filtered && rows.length === 0
-                    ? "Look further"
-                    : "View more"
-            }
-            onClick={() => {
-              onFocusAfterChange(new Set(visibleIds));
-              setPagesLeft(SIDEBAR_FILL_PAGES);
-              if (fill !== "paused") onLimitChange(next.limit);
-            }}
-          />
-        )
-      )}
-    </div>
+        {!list.loading &&
+          !list.failed &&
+          rows.length === 0 &&
+          (!hasNextPage || filtered) && (
+            <ListNote>{emptyText(filtered, hasNextPage)}</ListNote>
+          )}
+        {visible.map((row) => sessionRow(row, false))}
+        {paged && hasNextPage && fetchNextPageFailed ? (
+          <button
+            type="button"
+            onClick={() => void fetchNextPage()}
+            className={`flex h-[30px] items-center rounded-lg pl-3 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
+          >
+            Couldn't load the rest. Retry
+          </button>
+        ) : (
+          next.more && (
+            <ViewMoreRow
+              busy={isFetchingNextPage}
+              label={
+                fill === "searching"
+                  ? "Looking for more…"
+                  : fill === "paused"
+                    ? "Keep looking"
+                    : filtered && rows.length === 0
+                      ? "Look further"
+                      : "View more"
+              }
+              onClick={() => {
+                onFocusAfterChange(new Set(visibleIds));
+                setPagesLeft(SIDEBAR_FILL_PAGES);
+                if (fill !== "paused") onLimitChange(next.limit);
+              }}
+            />
+          )
+        )}
+      </div>
+    </>
   );
 }
 

@@ -232,6 +232,11 @@ A pin on a Shared Agent has no such row, because the record files nothing for an
 Pinning needs the user to own the Agent, or to hold its `sessions` permission as an Agent Editor.
 The watcher drops the pins of a Session it sees gone, and an Agent's delete drops its pins through the cleanup list.
 
+In the sidebar, pinned Sessions show in a **Pinned** section above the Sessions section, in both views, and never again in the Sessions list below.
+All agents shows every pin the record holds a row for; an agent view shows that Agent's pins, from its own list when the record holds none, as on a Shared Agent.
+Pinned is ordered by last activity, newest first, as Sessions is; the filter never hides a pin, there is no View more, and the section is hidden while it has no row.
+A pinned row looks and acts like any other Session row; its menu offers Unpin session where others offer Pin session, and a pin or an unpin shows at once.
+
 ## Lifetime
 
 Rows are agent-scoped and follow their Agent: an API delete removes them through the same declared cleanup list every other agent-scoped record kind uses, and the periodic orphan sweep backstops it (see [persistence](persistence.md#lifetime)).

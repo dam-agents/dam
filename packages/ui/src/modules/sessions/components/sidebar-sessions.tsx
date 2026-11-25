@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import type { SessionPin } from "api-server-api";
+import { type ReactNode, useMemo, useState } from "react";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -12,13 +13,18 @@ import { useActivityConversations } from "../../home/hooks/use-activity-conversa
 import {
   type AgentActivitySession,
   useActivitySessions,
+  useAgentActivitySessionsOf,
 } from "../../home/hooks/use-activity-sessions.js";
 import {
   defaultActivityFilters,
   isFiltered,
 } from "../../home/lib/activity-filter.js";
-import { filterActivitySessions } from "../../home/lib/activity-sessions.js";
+import {
+  activitySessionKey,
+  filterActivitySessions,
+} from "../../home/lib/activity-sessions.js";
 import { provisionalSessionView } from "../api/queries.js";
+import { useSessionPinActions, useSessionPins } from "../api/session-pins.js";
 import { useOpenSession } from "../hooks/use-open-session.js";
 import { useSessionRowActions } from "../hooks/use-session-row-actions.js";
 import {
@@ -47,28 +53,38 @@ interface Props {
  */
 export function SidebarSessions({ stickyHeaderClassName, onNavigate }: Props) {
   const sidebarAgent = useStore((s) => s.sidebarAgent);
+  const header = (label: string, control?: ReactNode) => (
+    <div
+      className={cn(
+        "mb-1.5 flex h-[38px] items-center justify-between pt-3 pr-1 pb-1 pl-3",
+        stickyHeaderClassName && [
+          "sticky top-0 z-raised",
+          stickyHeaderClassName,
+        ],
+      )}
+    >
+      <SectionLabel>{label}</SectionLabel>
+      {control}
+    </div>
+  );
   return (
     <section aria-label="Sessions" data-testid="sidebar-sessions">
-      <div
-        className={cn(
-          "mb-1.5 flex items-center justify-between pt-3 pr-1 pb-1 pl-3",
-          stickyHeaderClassName && [
-            "sticky top-0 z-raised",
-            stickyHeaderClassName,
-          ],
-        )}
-      >
-        <SectionLabel>Sessions</SectionLabel>
-        {sidebarAgent === null ? (
-          <AllAgentsFilter />
-        ) : (
-          <AgentFilter agentId={sidebarAgent} />
-        )}
-      </div>
       {sidebarAgent === null ? (
-        <AllAgentsSessions onNavigate={onNavigate} />
+        <AllAgentsSessions
+          pinnedHeader={header("Pinned")}
+          sessionsHeader={header("Sessions", <AllAgentsFilter />)}
+          onNavigate={onNavigate}
+        />
       ) : (
-        <SidebarAgentSessions agentId={sidebarAgent} onNavigate={onNavigate} />
+        <SidebarAgentSessions
+          agentId={sidebarAgent}
+          pinnedHeader={header("Pinned")}
+          sessionsHeader={header(
+            "Sessions",
+            <AgentFilter agentId={sidebarAgent} />,
+          )}
+          onNavigate={onNavigate}
+        />
       )}
     </section>
   );
@@ -100,8 +116,17 @@ function AgentFilter({ agentId }: { agentId: string }) {
   );
 }
 
-function AllAgentsSessions({ onNavigate }: { onNavigate?: () => void }) {
+function AllAgentsSessions({
+  pinnedHeader,
+  sessionsHeader,
+  onNavigate,
+}: {
+  pinnedHeader: ReactNode;
+  sessionsHeader: ReactNode;
+  onNavigate?: () => void;
+}) {
   const { items, openSessionKey, loading, unreadable } = useActivitySessions();
+  const { pins, pinnedKeys } = useSessionPins();
   const filters = useStore((s) => s.sidebarActivityFilters);
   const openSession = useOpenSession();
   const [shown, setShown] = useState(PAGE);
@@ -119,42 +144,58 @@ function AllAgentsSessions({ onNavigate }: { onNavigate?: () => void }) {
   const sessions = useMemo(() => items.map((item) => item.session), [items]);
   const conversationOf = useActivityConversations(sessions, agents);
 
-  const matching = filterActivitySessions(items, filters);
+  const pinned = usePinnedActivitySessions(pins, items);
+  const matching = filterActivitySessions(items, filters).filter(
+    (item) => !pinnedKeys.has(item.id),
+  );
   const visible = matching.slice(0, shown);
+  const row = (item: AgentActivitySession, isPinned: boolean) => (
+    <AllAgentsSessionRow
+      key={item.id}
+      item={item}
+      pinned={isPinned}
+      active={item.id === openSessionKey}
+      conversation={conversationOf(item.session)}
+      onRename={(session) =>
+        setRenaming({ agentId: item.session.agentId, session })
+      }
+      onOpen={() => {
+        openSession(
+          item.session.agentId,
+          item.session.sessionId,
+          item.session.mode,
+        );
+        onNavigate?.();
+      }}
+    />
+  );
 
   return (
     <>
-      {!loading && visible.length === 0 && (
-        <p className="px-2.5 py-1.5 text-xs text-muted-foreground">
-          {unreadable
-            ? "Sessions can't be loaded right now."
-            : isFiltered(filters)
-              ? "No sessions match the filter."
-              : hasShared
-                ? "Sessions on agents shared with you show when you open the agent."
-                : "No conversations yet"}
-        </p>
+      {pinned.length > 0 && (
+        <div data-testid="sidebar-pinned" className="mb-4">
+          {pinnedHeader}
+          <div className="flex flex-col gap-1">
+            {pinned.map((item) => row(item, true))}
+          </div>
+        </div>
       )}
+      {sessionsHeader}
+      {!loading &&
+        visible.length === 0 &&
+        (pinned.length === 0 || isFiltered(filters)) && (
+          <p className="px-2.5 py-1.5 text-xs text-muted-foreground">
+            {unreadable
+              ? "Sessions can't be loaded right now."
+              : isFiltered(filters)
+                ? "No sessions match the filter."
+                : hasShared
+                  ? "Sessions on agents shared with you show when you open the agent."
+                  : "No conversations yet"}
+          </p>
+        )}
       <div className="flex flex-col gap-1">
-        {visible.map((item) => (
-          <AllAgentsSessionRow
-            key={item.id}
-            item={item}
-            active={item.id === openSessionKey}
-            conversation={conversationOf(item.session)}
-            onRename={(session) =>
-              setRenaming({ agentId: item.session.agentId, session })
-            }
-            onOpen={() => {
-              openSession(
-                item.session.agentId,
-                item.session.sessionId,
-                item.session.mode,
-              );
-              onNavigate?.();
-            }}
-          />
-        ))}
+        {visible.map((item) => row(item, false))}
       </div>
       {matching.length > shown && (
         <button
@@ -176,21 +217,54 @@ function AllAgentsSessions({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+function usePinnedActivitySessions(
+  pins: readonly SessionPin[],
+  feed: readonly AgentActivitySession[],
+): AgentActivitySession[] {
+  const outsideFeed = useMemo(() => {
+    const listed = new Set(feed.map((item) => item.id));
+    return pins.flatMap((pin) =>
+      pin.item && !listed.has(activitySessionKey(pin.agentId, pin.sessionId))
+        ? [pin.item]
+        : [],
+    );
+  }, [pins, feed]);
+  const enriched = useAgentActivitySessionsOf(outsideFeed);
+  return useMemo(() => {
+    const byKey = new Map(
+      [...feed, ...enriched].map((item) => [item.id, item] as const),
+    );
+    return pins
+      .flatMap((pin) => {
+        const item = byKey.get(activitySessionKey(pin.agentId, pin.sessionId));
+        return item && pin.item ? [item] : [];
+      })
+      .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  }, [pins, feed, enriched]);
+}
+
 function AllAgentsSessionRow({
   item,
+  pinned,
   active,
   conversation,
   onRename,
   onOpen,
 }: {
   item: AgentActivitySession;
+  pinned: boolean;
   active: boolean;
   conversation: string | undefined;
   onRename: (session: SessionView) => void;
   onOpen: () => void;
 }) {
   const actions = useSessionRowActions(item.session.agentId, onRename);
+  const pinActions = useSessionPinActions();
   const session = provisionalSessionView(item.session);
+  const key = {
+    agentId: item.session.agentId,
+    sessionId: item.session.sessionId,
+  };
   return (
     <SessionRow
       session={session}
@@ -207,6 +281,10 @@ function AllAgentsSessionRow({
       {...(actions.exportTimeline && {
         onExportTimeline: () => actions.exportTimeline?.(session),
       })}
+      pinned={pinned}
+      onTogglePin={() =>
+        pinned ? pinActions.unpin(key) : pinActions.pin(key, item.session)
+      }
     />
   );
 }

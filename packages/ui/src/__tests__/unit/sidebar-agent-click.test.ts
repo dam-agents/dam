@@ -71,7 +71,11 @@ function openedAgent() {
     createElement(
       QueryClientProvider,
       { client: new QueryClient() },
-      createElement(SidebarAgentSessions, { agentId: "a-1" }),
+      createElement(SidebarAgentSessions, {
+        agentId: "a-1",
+        pinnedHeader: null,
+        sessionsHeader: null,
+      }),
     ),
   );
 }

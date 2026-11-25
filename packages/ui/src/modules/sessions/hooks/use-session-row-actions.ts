@@ -5,6 +5,7 @@ import type { SessionView } from "../../../types.js";
 import { useActWhenAwake } from "../../agents/hooks/use-act-when-awake.js";
 import { useInstallCapabilities } from "../../features/api/queries.js";
 import { downloadTelemetryExport } from "../../telemetry/api/download-export.js";
+import { refetchSessionPins } from "../api/session-pins.js";
 import { useConfirmDeleteSession } from "./use-confirm-delete-session.js";
 
 export interface SessionRowActions {
@@ -18,7 +19,8 @@ export interface SessionRowActions {
  * in every list. Rename and Delete wake a sleeping Agent and run once it
  * answers, so the Agent still decides; Delete asks its confirmation before
  * the wake. Export telemetry is offered only where the install has a
- * telemetry backend.
+ * telemetry backend. A deleted Session's pin is read again, so it leaves
+ * Pinned at once.
  */
 export function useSessionRowActions(
   agentId: string,
@@ -34,9 +36,10 @@ export function useSessionRowActions(
       actWhenAwake(`rename:${session.sessionId}`, () => onRename(session)),
     delete: async (session) => {
       if (await confirmDelete(session))
-        actWhenAwake(`delete:${session.sessionId}`, () =>
-          deleteSession(session.sessionId, agentId),
-        );
+        actWhenAwake(`delete:${session.sessionId}`, async () => {
+          await deleteSession(session.sessionId, agentId);
+          refetchSessionPins();
+        });
     },
     exportTimeline: telemetryEnabled
       ? (session) =>

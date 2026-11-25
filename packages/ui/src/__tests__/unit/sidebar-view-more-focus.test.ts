@@ -9,6 +9,11 @@ const fake = vi.hoisted(() => ({
   list: {} as Record<string, unknown>,
 }));
 
+vi.mock("../../modules/sessions/api/session-pins.js", () => ({
+  useSessionPins: () => ({ pins: [], pinnedKeys: new Set() }),
+  useSessionPinActions: () => ({ pin: () => {}, unpin: () => {} }),
+  refetchSessionPins: () => {},
+}));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) =>
     select({ deleteSession: () => {}, showConfirm: async () => false }),

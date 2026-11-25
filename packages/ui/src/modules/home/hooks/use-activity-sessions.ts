@@ -96,6 +96,26 @@ export function useActivitySessions() {
   };
 }
 
+export function useAgentActivitySessionsOf(
+  attention: readonly AttentionItem[],
+): AgentActivitySession[] {
+  const approvals = useApprovalsForOwner();
+  const questions = useAttention().data?.ownerQuestions ?? NO_QUESTIONS;
+  const agents = useAgentsList();
+  const openSessionKey = useOpenSessionKey();
+  return useMemo(
+    () =>
+      agentActivitySessions(
+        attention,
+        agents,
+        approvals.data ?? [],
+        questions,
+        openSessionKey,
+      ),
+    [attention, agents, approvals.data, questions, openSessionKey],
+  );
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what "All sessions" lists, a page of the owner's attention record at a time, each page starting after the last row the one before it returned so the list reaches every Session the record holds rather than its newest 200; a row is enriched the way the shared reply's rows are, and pages are de-duplicated by Session in case a refetch shifted rows across a page boundary.
  */
