@@ -105,4 +105,4 @@ On the local cluster (`mise run cluster:install`), as a user with three own Agen
 
 ## Delivery
 
-Each sub-issue is one atomic commit. The whole feature lands as a single PR closing #6744 and #6745.
+Each sub-issue is one atomic commit. The whole feature lands as a single PR that closes #6744 and refs #6745: the owner "pin for all editors" story stays open there.
