@@ -49,7 +49,11 @@
       "packages/ui/src/components/**",
       "packages/ui/src/App.css",
       "packages/ui/src/styles/**",
-      "packages/ui/public/**"
+      "packages/ui/public/**",
+      ".design-desk/handoff/**"
+    ],
+    "allow_other": [
+      ".design-desk/handoff/**"
     ],
     "deny": [
       "packages/ui/src/**/api/**",
