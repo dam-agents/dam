@@ -50,7 +50,7 @@
       "packages/ui/src/App.css",
       "packages/ui/src/styles/**",
       "packages/ui/public/**",
-      "handoff/**"
+      ".design-desk/handoff/**"
     ],
     "deny": [
       "packages/ui/src/**/api/**",

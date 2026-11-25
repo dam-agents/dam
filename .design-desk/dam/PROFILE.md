@@ -111,5 +111,5 @@ The install takes many minutes the first time; a later design change rebuilds on
 ## The design-only boundary here
 
 A design change may touch the components and views of `packages/ui/src`, its shared components, its styles and its public assets.
-It may not touch `api/`, `hooks/`, `store/`, `lib/`, `utils/` or `forms/` folders, the files at the root of `packages/ui/src`, the tests, or anything outside `packages/ui`, except the Desk's own hand-off folders under `handoff/`: a spec, a mockup and its pictures, which a comment links to.
+It may not touch `api/`, `hooks/`, `store/`, `lib/`, `utils/` or `forms/` folders, the files at the root of `packages/ui/src`, the tests, or anything outside `packages/ui`, except the Desk's own hand-off folders under `.design-desk/handoff/`: a spec, a mockup and its pictures, which a comment links to.
 The full lists are in `profile.json` → `boundary`.
