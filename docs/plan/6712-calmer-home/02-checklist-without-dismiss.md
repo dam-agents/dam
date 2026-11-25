@@ -40,13 +40,13 @@ UI paths are under `packages/ui/src/`.
 
 ## Acceptance criteria
 
-- [ ] The Get started popover renders no Dismiss control, and `ChecklistPanel` has no `onDismiss` prop.
-- [ ] `GettingStartedNavItem` no longer calls `useSetChecklistDismissed`, and still hides the item while `progress.dismissed` is true.
-- [ ] The avatar picker's "See how to unlock the rest" and the command palette still clear a dismissal and open the checklist.
-- [ ] No file under `packages/api-server`, `packages/api-server-api` or `packages/db` changes.
-- [ ] `getting-started.md` names no Dismiss control, keeps the API dismissal sentence, and has a new `Last verified:` date.
-- [ ] The QA journey has no Dismiss criterion, its criteria are numbered AC-1 to AC-7, and AC-2 says how the popover closes.
-- [ ] `mise run //packages/ui:check`, `mise run //packages/ui:test`, `mise run check:markdown` and `mise run check:comment-types` pass.
+- [x] The Get started popover renders no Dismiss control, and `ChecklistPanel` has no `onDismiss` prop.
+- [x] `GettingStartedNavItem` no longer calls `useSetChecklistDismissed`, and still hides the item while `progress.dismissed` is true.
+- [x] The avatar picker's "See how to unlock the rest" and the command palette still clear a dismissal and open the checklist.
+- [x] No file under `packages/api-server`, `packages/api-server-api` or `packages/db` changes.
+- [x] `getting-started.md` names no Dismiss control, keeps the API dismissal sentence, and has a new `Last verified:` date.
+- [x] The QA journey has no Dismiss criterion, its criteria are numbered AC-1 to AC-7, and AC-2 says how the popover closes.
+- [x] `mise run //packages/ui:check`, `mise run //packages/ui:test`, `mise run check:markdown` and `mise run check:comment-types` pass.
 
 ## Smoke test
 

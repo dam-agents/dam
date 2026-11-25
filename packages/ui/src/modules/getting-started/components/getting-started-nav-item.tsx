@@ -18,10 +18,7 @@ import {
   SIDEBAR_ITEM,
   sidebarItemTone,
 } from "../../platform/components/sidebar/sidebar-nav-item.js";
-import {
-  useMarkUnlockSeen,
-  useSetChecklistDismissed,
-} from "../api/mutations.js";
+import { useMarkUnlockSeen } from "../api/mutations.js";
 import { useGettingStarted } from "../api/queries.js";
 import { useStartTask } from "../hooks/use-start-task.js";
 import { deriveChecklist } from "../lib/derive-checklist.js";
@@ -42,10 +39,11 @@ interface Props {
  * opens the checklist in a popover beside it, which lists the tasks that
  * unlock the avatar characters and plays the celebration for each unseen
  * unlock, one at a time, in place of the list, taking the keyboard with it. A
- * click elsewhere, Escape or its close button closes it back to the item;
- * Dismiss hides it until the next unlock or until the avatar picker asks for
- * it, and it is gone once every character is unlocked, until the user resets
- * their onboarding progress. The footer exists twice when the mobile drawer is
+ * click elsewhere, Escape or its close button closes it back to the item. A
+ * checklist dismissed through the API stays hidden until the next unlock or
+ * until the avatar picker or the command palette asks for it, and it is gone
+ * once every character is unlocked, until the user resets their onboarding
+ * progress. The footer exists twice when the mobile drawer is
  * open, so only the copy the media query says is on screen anchors the
  * popover, and it drops the open flag when it leaves the screen or the drawer
  * closes, so nothing opens unasked. A checklist that leaves the page, because
@@ -63,7 +61,6 @@ export function GettingStartedNavItem({
   const open = useStore((s) => s.checklistExpanded);
   const setOpen = useStore((s) => s.setChecklistExpanded);
   const markSeen = useMarkUnlockSeen();
-  const setDismissed = useSetChecklistDismissed();
   const startTask = useStartTask();
 
   const checklist = progress ? deriveChecklist(progress) : null;
@@ -107,10 +104,6 @@ export function GettingStartedNavItem({
   }`;
 
   const close = () => setOpen(false);
-  const dismiss = () => {
-    close();
-    setDismissed.mutate({ dismissed: true });
-  };
   const start = (task: GettingStartedTask) => {
     close();
     onNavigate?.();
@@ -182,7 +175,6 @@ export function GettingStartedNavItem({
             <ChecklistPanel
               rows={checklist.rows}
               onClose={close}
-              onDismiss={dismiss}
               onStart={start}
             />
           )}

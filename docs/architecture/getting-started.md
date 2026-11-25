@@ -1,6 +1,6 @@
 # Getting started
 
-Last verified: 2026-11-14
+Last verified: 2026-11-25
 
 ## Overview
 
@@ -39,7 +39,7 @@ There is no checklist-only reset procedure: a second door that cleared the check
 The UI shows the checklist as the **Get started** item in the sidebar footer, above Documentation and Settings: a progress ring, its label, and a count of the unlocks the user has not seen.
 A collapsed sidebar shows the ring alone, and names the progress for a screen reader.
 A click on the item opens the checklist in a popover beside it: the same ring, the done count, a strip of the eight characters with an egg for each one still locked, and the eight tasks, each with an info mark that gives a one-line reason for it.
-A click elsewhere on the page, Escape, the popover's close button or its Dismiss closes it back to the item, so a user cannot be left with it over a button they want.
+A click elsewhere on the page, Escape or the popover's close button closes it back to the item, so a user cannot be left with it over a button they want.
 Nothing opens it but that click: an unlock the user has not seen puts a count on the item instead.
 Each row opens the place where the task is done; tasks on an Agent open the newest one, and the chat tasks leave a starting line in its composer, including the artifact task, which asks for a one-page artifact because an artifact is something an Agent makes; in an Agent's chat the artifact task opens the Artifacts section beside the conversation instead.
 A click on a row closes the checklist before it takes the user there.

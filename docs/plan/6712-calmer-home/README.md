@@ -54,7 +54,7 @@ The visual decisions below were proposed in the planning conversation and accept
 | #     | Title                                         | Scope                                                                                                                | Depends on |
 | ----- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------- |
 | 01 ✅ | Home: main actions in the header, fewer icons | Entry-point buttons into the Home header; resource icons removed from meters and agent cards; color logos on chips.  | —          |
-| 02    | Get started checklist without Dismiss         | Remove the Dismiss link and its wiring; update the architecture page, the unit test and the QA journey that name it. | —          |
+| 02 ✅ | Get started checklist without Dismiss         | Remove the Dismiss link and its wiring; update the architecture page, the unit test and the QA journey that name it. | —          |
 
 The two slices touch different files and do not depend on each other; implement 01 first.
 
