@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Last verified: 2026-11-20
+Last verified: 2026-11-25
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so a full-suite run takes it twice, once per lane.
@@ -93,8 +93,13 @@ The **acceptance suite** in [`packages/e2e/acceptance`](../../packages/e2e/accep
 The three jobs run a third of the Examples each (`E2E_ACCEPTANCE_SHARD`, Playwright's `--shard`), so a pull request waits for one third of them on top of one cluster's start.
 Its package depends only on the API contract package and its test tools, so a test cannot import the server's internals: `check:boundary` refuses any other dependency, and any import in its sources that leaves the package or names another package, in every import form TypeScript and Node read.
 A feature file holds **Rules**, each with concrete **Examples** in Given/When/Then form, written in the words of the [glossary](../ubiquitous-language.md) and never in the words of a screen.
-`playwright-bdd` turns the feature files into Playwright tests, and `check:steps` refuses a step that has no step definition.
-`check:features` holds the feature files to the writing rules: an Example sits under a Rule, shows one action (one When), keeps Given, When and Then in that order, ends in a Then, takes at most 8 steps and a tag of the allowed set, and names no part of the screen (a click, a button, a dialog, a menu, …), so a redesign changes a Driver and not the spec.
+A feature file is one **capability**, something a person does and would name, such as sharing an Agent or scheduling a task, and it sits in the folder of its **area**: `features/<area>/<capability>.feature`.
+The folders are therefore the list of what the product does, and what the suite covers is read from them alone.
+A capability nobody has written Examples for yet is still a file: its Rules with no Examples, tagged `@todo-<issue>` with the issue that will write them, so a gap in the suite is written down and has an owner.
+`playwright-bdd` makes no test of a Rule with no Examples.
+`mise run //packages/e2e/acceptance:coverage` prints each capability's Rules and Examples by area, the capabilities still todo, and the ones whose Rules pass three times the median, so a lopsided suite shows.
+`playwright-bdd` turns the feature files into Playwright tests, and `check:steps` refuses a step that has no step definition, and a step definition no feature file uses.
+`check:features` holds the feature files to the writing rules: a file sits in one area folder, a Rule with no Examples carries `@todo-<issue>` and one with Examples does not, an Example sits under a Rule, shows one action (one When), keeps Given, When and Then in that order, ends in a Then, takes at most 8 steps and a tag of the allowed set, and names no part of the screen (a click, a button, a dialog, a menu, …), so a redesign changes a Driver and not the spec.
 A journey takes a looser profile: When and Then may alternate after its Givens, it takes at most 25 steps, and it names its surfaces.
 Names are unique across the files, so a report line points at one scenario.
 The `developers` team owns the feature files (`.github/CODEOWNERS`), and the main branch requires a code owner's review, so a change to what an Example means merges only with a person's approval, never the review bot's alone.

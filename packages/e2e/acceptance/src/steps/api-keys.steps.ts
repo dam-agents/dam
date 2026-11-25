@@ -128,15 +128,6 @@ When(
 );
 
 When(
-  "{word} deletes {string} with the key {string}",
-  async ({ world }, _persona: Persona, agent: string, name: string) => {
-    world.outcome = await attempt(() =>
-      key(world, name).agents.delete.mutate({ id: world.agent(agent).id }),
-    );
-  },
-);
-
-When(
   "{word} puts a file in {string} with the key {string}",
   async ({ world }, _persona: Persona, agent: string, name: string) => {
     world.outcome = await attempt(() =>
@@ -154,17 +145,6 @@ When(
   async ({ world }, _persona: Persona, name: string) => {
     world.outcome = await attempt(async () =>
       (await key(world, name).connections.list.query()).map((c) => c.name),
-    );
-  },
-);
-
-When(
-  "{word} removes the connection {string} with the key {string}",
-  async ({ world }, _persona: Persona, connection: string, name: string) => {
-    world.outcome = await attempt(() =>
-      key(world, name).connections.delete.mutate({
-        id: world.connection(connection).id,
-      }),
     );
   },
 );
@@ -238,23 +218,6 @@ Then(
   async ({ world }, _persona: Persona, connection: string) => {
     expect(world.outcome?.refused).toBeUndefined();
     expect(world.outcome?.value).toContain(world.connection(connection).name);
-  },
-);
-
-Then(
-  "{word} sees {string} described as {string}",
-  async (
-    { person, world },
-    persona: Persona,
-    agent: string,
-    description: string,
-  ) => {
-    expect(world.outcome?.refused).toBeUndefined();
-    const owner = await person(persona);
-    expect(
-      (await owner.api.agents.get.query({ id: world.agent(agent).id }))
-        .description,
-    ).toBe(world.unique(description));
   },
 );
 

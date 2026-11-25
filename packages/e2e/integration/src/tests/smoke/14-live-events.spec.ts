@@ -10,7 +10,7 @@ import {
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
 import { harnessName } from "../../lib/fixtures.js";
 
-// TEST_OVERVIEW: The events.owner subscription against the real install: it opens with a sync event, and it refuses an API key bound to agents. An open view following an agent made or deleted elsewhere is an Example of the acceptance suite (features/live-updates/).
+// TEST_OVERVIEW: The events.owner subscription against the real install: it opens with a sync event, and it refuses an API key bound to agents. An open view following an agent made or deleted elsewhere is an Example of the acceptance suite (features/agents/open-views.feature).
 
 const AGENT_NAME = "e2e-live-events";
 

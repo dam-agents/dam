@@ -1,4 +1,4 @@
-Feature: An agent's environment
+Feature: An agent's environment variables
   An owner sets environment variables for an agent.
   The agent reads them at its next turn, beside the ones its connections give it.
 

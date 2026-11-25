@@ -6,7 +6,7 @@ import { createApiClient, createWsApiClient } from "../../lib/api-client.js";
 import { getAccessToken, submitKeycloakLoginForm } from "../../lib/auth.js";
 import { baseUrl, termsGateUser } from "../../config.js";
 
-// TEST_OVERVIEW: The auth project in declaration order: the Terms gate on both tRPC doors, then the deep-link roundtrip through the login and that gate, both on the gate account no setup accepts the Terms for. What a person meets at the gate, and the CLI's device grant, are Examples of the acceptance suite (features/session/). The shared account's login, Terms and assistant are the setup project's.
+// TEST_OVERVIEW: The auth project in declaration order: the Terms gate on both tRPC doors, then the deep-link roundtrip through the login and that gate, both on the gate account no setup accepts the Terms for. What a person meets at the gate, and the CLI's device grant, are Examples of the acceptance suite (features/account/). The shared account's login, Terms and assistant are the setup project's.
 
 function trpcError(err: unknown): TRPCClientError<AppRouter> {
   expect(err).toBeInstanceOf(TRPCClientError);

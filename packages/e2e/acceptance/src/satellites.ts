@@ -13,12 +13,10 @@ export async function connectMachine(
   name: string,
   host: string,
   tools: string[],
-  maxConcurrent?: number,
 ): Promise<void> {
   await person.api.satellites.connect.mutate({
     manifest: {
       name: world.unique(name),
-      ...(maxConcurrent === undefined ? {} : { maxConcurrent }),
       tools: tools.map((tool) => ({
         name: tool,
         inputSchema: { type: "object" as const },

@@ -7,6 +7,8 @@ import { IdGenerator } from "@cucumber/messages";
 
 export const allowedTags = new Set(["@ui", "@cli", "@api", "@wip", "@real-model", "@journey"]);
 export const surfaceTags = new Set(["@ui", "@cli", "@api"]);
+// A capability, or a Rule of one, that has no examples yet names the issue that will write them.
+export const todoTag = /^@todo-[1-9][0-9]*$/;
 export const screenWords =
   /\b(click(s|ed|ing)?|tap(s|ped|ping)?|press(es|ed|ing)?|buttons?|fields?|textbox(es)?|dropdowns?|checkbox(es)?|hover(s|ed|ing)?|scroll(s|ed|ing)?|modals?|dialogs?|sidebars?|menus?|icons?)\b/i;
 
@@ -56,11 +58,14 @@ export function lintFeature(source, isJourney, names = new Map(), file = "featur
   words(feature, `${feature.name} ${feature.description ?? ""}`, "the Feature");
   const tags = (node, list) => {
     for (const tag of list) {
-      if (!allowedTags.has(tag)) at(node, `tag ${tag} is not one of ${[...allowedTags].join(" ")}`);
+      if (!allowedTags.has(tag) && !todoTag.test(tag))
+        at(node, `tag ${tag} is not one of ${[...allowedTags].join(" ")} or @todo-<issue>`);
       if (tag === "@journey" && !isJourney) at(node, "@journey belongs to features/journeys/");
     }
   };
   tags(feature, featureTags);
+  const featureTodo = featureTags.some((t) => todoTag.test(t));
+  if (isJourney && featureTodo) at(feature, "a journey is written whole, never left @todo");
   if (isJourney && !featureTags.includes("@journey")) at(feature, "a journey's Feature is tagged @journey");
 
   const scenario = (node, inherited) => {
@@ -114,7 +119,11 @@ export function lintFeature(source, isJourney, names = new Map(), file = "featur
       words(rule, `${rule.name} ${rule.description ?? ""}`, "the Rule");
       tags(rule, tagNames(rule));
       const examples = rule.children.filter((c) => c.scenario);
-      if (examples.length === 0) at(rule, "a Rule has at least one example");
+      const todo = featureTodo || tagNames(rule).some((t) => todoTag.test(t));
+      if (examples.length === 0 && !todo)
+        at(rule, "a Rule has at least one example, or names the issue that will write them with @todo-<issue>");
+      if (examples.length > 0 && todo)
+        at(rule, "a Rule with examples is not @todo: drop the tag, or move it from the Feature to the Rules still without examples");
       for (const ruleChild of rule.children) {
         if (ruleChild.background)
           for (const step of ruleChild.background.steps) words(step, step.text, "a step");
@@ -124,6 +133,12 @@ export function lintFeature(source, isJourney, names = new Map(), file = "featur
     }
   }
   return problems;
+}
+
+/** A feature file is one capability, in the folder of its area: features/<area>/<capability>.feature. */
+export function placement(parts) {
+  if (parts.length !== 2) return "a feature file sits in one area folder, features/<area>/<capability>.feature";
+  return null;
 }
 
 function featureFiles(dir) {
@@ -141,6 +156,10 @@ function main() {
   const names = new Map();
   const problems = [];
   const files = featureFiles(featuresDir);
+  for (const file of files) {
+    const problem = placement(relative(featuresDir, file).split(sep));
+    if (problem) problems.push(`${relative(packageDir, file)}: ${problem}`);
+  }
   for (const file of files)
     problems.push(
       ...lintFeature(readFileSync(file, "utf8"), file.startsWith(journeysDir), names, relative(packageDir, file)),

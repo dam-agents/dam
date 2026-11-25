@@ -63,6 +63,8 @@ Then Ben sees the setup read-only, with Ada named as the one who can change it
 ## From the map to the feature file
 
 A feature's Examples merge first, in a pull request of their own: the spec pull request adds them to the capability's feature file, tagged `@wip`, and a code owner approves what they mean.
+The capability's feature file is `features/<area>/<capability>.feature`; a new capability adds a file, in the area a person would look for it.
+An issue that writes the Examples of a Rule tagged `@todo-<issue>` with its own number removes the tag in the same pull request.
 A `@wip` Example runs as an expected failure until the implementation pull request removes the tag and makes it pass.
 A bug's Example and its fix share one pull request, whose body shows the Example failing before the fix.
 

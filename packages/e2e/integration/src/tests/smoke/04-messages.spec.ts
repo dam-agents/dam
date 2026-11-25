@@ -16,7 +16,7 @@ const offsetReplyHead = "Let me check the repository. ";
 const offsetBackgroundPrompt = "Run the nightly cleanup task";
 const offsetReplyTail = "Found 3 changed files.";
 
-// TEST_OVERVIEW: a background prompt the agent receives mid-turn keeps the chat's reply paired with the person's message (#703). Sending a message and getting the answer, and the agent's settings over its chat, are Examples of the acceptance suite (features/agents/, features/chat/).
+// TEST_OVERVIEW: a background prompt the agent receives mid-turn keeps the chat's reply paired with the person's message (#703). Sending a message and getting the answer, and the agent's settings over its chat, are Examples of the acceptance suite (features/agents/agents.feature, features/agents/settings.feature).
 test("background prompt mid-turn keeps the reply paired with the user message (#703)", async ({
   page,
 }) => {

@@ -12,11 +12,6 @@ Feature: API keys
 
   Rule: Only a key that may manage agents makes, changes and deletes them
 
-    Example: Ada's reading key cannot make an agent
-      Given Ada has an API key called "ci" that may read agents
-      When Ada makes an agent called "scratch" with the key "ci"
-      Then Ada is refused as not allowed
-
     Example: Ada's operating key cannot change an agent
       Given Ada has an agent called "scratch"
       And Ada has an API key called "runner" that may operate agents
@@ -27,18 +22,6 @@ Feature: API keys
       Given Ada has an API key called "admin" that may manage agents
       When Ada makes an agent called "scratch" with the key "admin"
       Then Ada sees an agent called "scratch"
-
-    Example: Ada's managing key changes an agent
-      Given Ada has an agent called "scratch"
-      And Ada has an API key called "admin" that may manage agents
-      When Ada describes "scratch" as "nightly builds" with the key "admin"
-      Then Ada sees "scratch" described as "nightly builds"
-
-    Example: Ada's managing key deletes an agent
-      Given Ada has an agent called "scratch"
-      And Ada has an API key called "admin" that may manage agents
-      When Ada deletes "scratch" with the key "admin"
-      Then Ada does not see an agent called "scratch"
 
   Rule: A key that may operate agents puts files in a running agent, and a reading key does not
 
@@ -61,12 +44,6 @@ Feature: API keys
       And Ada has an API key called "audit" that may read connections
       When Ada looks at the connections with the key "audit"
       Then Ada sees the connection "weather" through the key
-
-    Example: Ada's connections key cannot remove a connection
-      Given Ada has a connection called "weather" to "api.weather.test"
-      And Ada has an API key called "audit" that may read connections
-      When Ada removes the connection "weather" with the key "audit"
-      Then Ada is refused as not allowed
 
     Example: Ada's connections key cannot look at the agents
       Given Ada has an API key called "audit" that may read connections

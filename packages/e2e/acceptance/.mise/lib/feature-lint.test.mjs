@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { lintFeature } from "./feature-lint.mjs";
+import { lintFeature, placement } from "./feature-lint.mjs";
 
 const example = (source) => lintFeature(source, false, new Map(), "x.feature");
 const journey = (source) => lintFeature(source, true, new Map(), "j.feature");
@@ -57,7 +57,63 @@ test("a feature that uses every Gherkin line kind within the rules passes", () =
   assert.deepEqual(example(everyKind), []);
 });
 
+test("a Rule with no examples yet passes when it, or its Feature, names the issue that will write them", () => {
+  assert.deepEqual(
+    example(`Feature: f
+  Rule: r
+    Example: e
+      Given a
+      When b
+      Then c
+
+  @todo-6810
+  Rule: s
+`),
+    [],
+  );
+  assert.deepEqual(
+    example(`@todo-6810
+Feature: f
+  A description of the capability.
+
+  Rule: r
+  Rule: s
+`),
+    [],
+  );
+});
+
+test("a feature file sits in one area folder", () => {
+  assert.equal(placement(["agents", "editors.feature"]), null);
+  assert.notEqual(placement(["editors.feature"]), null);
+  assert.notEqual(placement(["agents", "sharing", "editors.feature"]), null);
+});
+
 const broken = {
+  "a Rule with examples that is still @todo": `Feature: f
+  @todo-12
+  Rule: r
+    Example: e
+      Given a
+      When b
+      Then c
+`,
+  "a @todo Feature with a Rule that has examples": `@todo-12
+Feature: f
+  Rule: r
+    Example: e
+      Given a
+      When b
+      Then c
+`,
+  "a @todo tag that names no issue": `Feature: f
+  @todo
+  Rule: r
+`,
+  "a @todo tag that names no real issue number": `Feature: f
+  @todo-0
+  Rule: r
+`,
   "an example outside a Rule": `Feature: f
   Example: e
     Given a
@@ -226,6 +282,13 @@ test("a journey may alternate When and Then", () => {
 });
 
 const brokenJourneys = {
+  "a @todo tag": `@journey @ui @todo-12
+Feature: j
+  Scenario: s
+    Given a
+    When b
+    Then c
+`,
   "no surface tag": goodJourney.replace(" @ui", ""),
   "no @journey tag": goodJourney.replace("@journey ", ""),
   "a Given after a When": goodJourney.replace(

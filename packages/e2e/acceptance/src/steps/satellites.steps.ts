@@ -25,36 +25,25 @@ function connected(
 
 const toolsOf = (list: string) => list.split(/,\s*/);
 
-for (const [phrase, maxConcurrent] of [
-  [
-    "{word}'s machine {string} has connected the satellite {string} offering {string}",
-    undefined,
-  ],
-  [
-    "{word}'s machine {string} has connected the satellite {string} offering {string} one call at a time",
-    1,
-  ],
-] as const)
-  Given(
-    phrase,
-    async (
-      { person, world },
-      persona: Persona,
-      host: string,
-      name: string,
-      tools: string,
-    ) => {
-      await connectMachine(
-        world,
-        await person(persona),
-        name,
-        host,
-        toolsOf(tools),
-        maxConcurrent,
-      );
-      connected(world).set(name, { host, tools: toolsOf(tools) });
-    },
-  );
+Given(
+  "{word}'s machine {string} has connected the satellite {string} offering {string}",
+  async (
+    { person, world },
+    persona: Persona,
+    host: string,
+    name: string,
+    tools: string,
+  ) => {
+    await connectMachine(
+      world,
+      await person(persona),
+      name,
+      host,
+      toolsOf(tools),
+    );
+    connected(world).set(name, { host, tools: toolsOf(tools) });
+  },
+);
 
 Given(
   "{word} has connected no satellite",
