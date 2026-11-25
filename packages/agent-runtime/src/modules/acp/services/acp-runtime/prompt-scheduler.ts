@@ -331,7 +331,7 @@ export function createPromptScheduler(
   function refuseSettings(
     sessionId: string,
     message: string,
-    data: unknown,
+    data?: unknown,
   ): void {
     const settings = pendingSettings.get(sessionId);
     pendingSettings.delete(sessionId);
