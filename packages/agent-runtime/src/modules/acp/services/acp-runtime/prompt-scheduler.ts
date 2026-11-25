@@ -221,9 +221,10 @@ export interface PromptSchedulerDeps {
  * discarded anywhere without its prompts being written down first. Nothing
  * outside this module ever removes a queue itself. refuseQueue answers each
  * sender with an error too, so the reason reaches the client that is still
- * there to hear it, with the machine-readable data the caller gives, and writes the prompts down all the same: the session a
- * refused prompt started in is often removed as never stored, and the record
- * is what brings the text back.
+ * there to hear it, with the machine-readable data the caller gives, and
+ * writes the prompts down all the same: the session a refused prompt started
+ * in is often removed as never stored, and the record is what brings the text
+ * back.
  * A setting change for a session (its model or mode) waits in the same place
  * but is not a turn: it applies to the session's next turn, so it waits for
  * the turn in flight to end and for the session to be loaded back into the
