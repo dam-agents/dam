@@ -180,6 +180,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     onboardingChecklists,
     gettingStarted,
     sidebarOrder,
+    sessionPins,
     getAgentCapabilities,
     schedulesBoot,
     listRegisteredAgentIds,
@@ -924,6 +925,16 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       chatFormPreferences,
       gettingStarted: gettingStarted.forOwner(user.sub),
       sidebarOrder: sidebarOrder.forOwner(user.sub),
+      sessionPins: sessionPins.forOwner(user.sub, async (agentId) => {
+        if (await agentsRepo.isOwnedBy(agentId, user.sub)) return true;
+        const editorEmail = editorEmailOf(user);
+        if (editorEmail === null) return false;
+        const standing = await editorStanding(agentId, {
+          sub: user.sub,
+          editorEmail,
+        });
+        return standing?.permissions.includes("sessions") ?? false;
+      }),
       files,
       harnessConfig,
       links: config.links,

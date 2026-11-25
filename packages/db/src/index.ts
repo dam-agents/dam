@@ -55,6 +55,7 @@ export {
   avatarUnlocks,
   dambledoreProvisioned,
   sidebarAgentOrder,
+  sessionPins,
   artifactFolders,
   libraryArtifacts,
   libraryArtifactVersions,

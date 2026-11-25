@@ -86,6 +86,7 @@ function toRow(
 export function createSessionWatcher(deps: {
   listAgents: () => Promise<InfraAgent[]>;
   onTurnEnded: (agentId: string, sessionId: string) => void;
+  onSessionsGone?: (agentId: string, sessionIds: readonly string[]) => void;
   runtimeFeaturesFor: (
     agentIds: string[],
   ) => Promise<Map<string, RuntimeFeatures>>;
@@ -157,6 +158,7 @@ export function createSessionWatcher(deps: {
       if (gone.length > 0) {
         await deps.repo.deleteSessions(agentId, gone);
         for (const sessionId of gone) entry.known.delete(sessionId);
+        deps.onSessionsGone?.(agentId, gone);
         wrote = true;
       }
     } finally {

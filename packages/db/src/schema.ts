@@ -1321,6 +1321,22 @@ export const sidebarAgentOrder = pgTable(
   ],
 );
 
+export const sessionPins = pgTable(
+  "session_pins",
+  {
+    owner: text("owner").notNull(),
+    agentId: text("agent_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    pinnedAt: timestamp("pinned_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.owner, table.agentId, table.sessionId] }),
+    index("session_pins_agent_idx").on(table.agentId, table.sessionId),
+  ],
+);
+
 export const artifactFolders = pgTable(
   "artifact_folders",
   {

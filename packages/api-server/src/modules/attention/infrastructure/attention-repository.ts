@@ -33,6 +33,10 @@ export interface AttentionRepository {
     agentId: string,
     limit: number,
   ): Promise<AttentionRecordRow[]>;
+  listForOwnerSessions(
+    ownerSub: string,
+    keys: readonly { agentId: string; sessionId: string }[],
+  ): Promise<AttentionRecordRow[]>;
   upsertRecord(row: AttentionRecordRow): Promise<void>;
   listDismissals(userSub: string): Promise<DismissalRow[]>;
   ownedSessionKeys(ownerSub: string): Promise<Set<string>>;
@@ -47,7 +51,7 @@ export interface AttentionRepository {
     kind: AttentionItemKind,
     itemIds: readonly string[],
   ): Promise<void>;
-  deleteOlderThan(days: number): Promise<number>;
+  deleteOlderThan(days: number, kept: ReadonlySet<string>): Promise<number>;
   listAgentIds(): Promise<string[]>;
   deleteForAgent(agentId: string): Promise<void>;
 }
@@ -156,6 +160,27 @@ export function createAttentionRepository(db: Db): AttentionRepository {
       return rows.map(toRecord);
     },
 
+    async listForOwnerSessions(ownerSub, keys) {
+      if (keys.length === 0) return [];
+      const rows = await db
+        .select()
+        .from(attentionRecords)
+        .where(
+          and(
+            eq(attentionRecords.ownerSub, ownerSub),
+            or(
+              ...keys.map((key) =>
+                and(
+                  eq(attentionRecords.agentId, key.agentId),
+                  eq(attentionRecords.sessionId, key.sessionId),
+                ),
+              ),
+            ),
+          ),
+        );
+      return rows.map(toRecord);
+    },
+
     async upsertRecord(row) {
       await db
         .insert(attentionRecords)
@@ -257,7 +282,7 @@ export function createAttentionRepository(db: Db): AttentionRepository {
         );
     },
 
-    async deleteOlderThan(days) {
+    async deleteOlderThan(days, kept) {
       const cutoff = new Date(Date.now() - days * 24 * 60 * 60_000);
       const isStale = or(
         lt(attentionRecords.activityAt, cutoff),
@@ -281,9 +306,12 @@ export function createAttentionRepository(db: Db): AttentionRepository {
         })
         .from(attentionRecords)
         .where(isStale);
-      if (stale.length === 0) return 0;
+      const dropped = stale.filter(
+        (r) => !kept.has(`${r.agentId}:${r.sessionId}`),
+      );
+      if (dropped.length === 0) return 0;
 
-      const itemIds = stale.map((r) => `${r.agentId}:${r.sessionId}`);
+      const itemIds = dropped.map((r) => `${r.agentId}:${r.sessionId}`);
       await db
         .delete(attentionState)
         .where(
@@ -292,8 +320,18 @@ export function createAttentionRepository(db: Db): AttentionRepository {
             inArray(attentionState.itemId, itemIds),
           ),
         );
-      await db.delete(attentionRecords).where(isStale);
-      return stale.length;
+      await db
+        .delete(attentionRecords)
+        .where(
+          and(
+            isStale,
+            inArray(
+              sql`${attentionRecords.agentId} || ':' || ${attentionRecords.sessionId}`,
+              itemIds,
+            ),
+          ),
+        );
+      return dropped.length;
     },
 
     async listAgentIds() {

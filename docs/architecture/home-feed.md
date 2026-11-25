@@ -216,10 +216,21 @@ A viewer leaving causes a last resize, and the shell repaints in response; the i
 Both produce bytes after the last viewer is gone, and counting either one would mark the session unread every time a user closed it and again five minutes later.
 Output during teardown — a short settle window after a viewer detaches, and the whole of a terminal being reaped — is therefore counted as neither activity nor liveness.
 
+## Pinned sessions
+
+A user can pin a Session to keep it in reach, whatever else runs on its Agent.
+The api-server keeps the pins per user, so they follow the user to every browser.
+A pin is only the pair of Agent and Session: it never decides that the Session exists, and a pin whose Session is gone shows nothing.
+The pin list comes back joined with the user's own row in the record, the row the sidebar shows for any Session, so a pinned row needs no call to a sleeping Agent.
+A pin on a Shared Agent has no such row, because the record files nothing for an Agent Editor.
+Pinning needs the user to own the Agent, or to hold its `sessions` permission as an Agent Editor.
+The watcher drops the pins of a Session it sees gone, and an Agent's delete drops its pins through the cleanup list.
+
 ## Lifetime
 
 Rows are agent-scoped and follow their Agent: an API delete removes them through the same declared cleanup list every other agent-scoped record kind uses, and the periodic orphan sweep backstops it (see [persistence](persistence.md#lifetime)).
 Rows older than 90 days are trimmed by a periodic job, so the feed's cost tracks recent activity rather than an Agent's whole history.
+The job keeps the row of a pinned Session, so a pin stays readable however long its Session is quiet.
 A dismissal of an approval is the one per-user row with no record of its own to follow — an approval is not agent-scoped state the feed owns — so the same job trims it by age instead.
 The owner is stored as a real Keycloak sub, not a pseudonymized one — the feed has to name a person's own sessions back to them, which a hash cannot do.
 
