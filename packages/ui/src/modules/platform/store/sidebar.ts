@@ -34,6 +34,7 @@ export interface SidebarSlice {
   sidebarShowHibernating: boolean;
   setSidebarShowHibernating: (show: boolean) => void;
   sidebarAgent: string | null;
+  sidebarLastAgent: string | null;
   setSidebarAgent: (agentId: string | null) => void;
   sidebarBackFrom: string | null;
   setSidebarBackFrom: (agentId: string | null) => void;
@@ -94,7 +95,13 @@ export const createSidebarSlice: StateCreator<
     set({ sidebarShowHibernating: show });
   },
   sidebarAgent: null,
-  setSidebarAgent: (agentId) => set({ sidebarAgent: agentId }),
+  sidebarLastAgent: null,
+  setSidebarAgent: (agentId) =>
+    set(
+      agentId === null
+        ? { sidebarAgent: null }
+        : { sidebarAgent: agentId, sidebarLastAgent: agentId },
+    ),
   sidebarBackFrom: null,
   setSidebarBackFrom: (agentId) => set({ sidebarBackFrom: agentId }),
   sidebarWakeDecided: new Set(),

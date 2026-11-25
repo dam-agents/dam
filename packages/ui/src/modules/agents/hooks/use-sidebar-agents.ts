@@ -21,6 +21,7 @@ export function useSidebarAgents() {
   const { order } = useSidebarOrder();
   const openAgentId = useShownAgentId();
   const sidebarAgent = useStore((s) => s.sidebarAgent);
+  const lastAgent = useStore((s) => s.sidebarLastAgent);
 
   const agents = useMemo(
     () =>
@@ -35,12 +36,12 @@ export function useSidebarAgents() {
 
   const { active, folded } = useMemo(() => {
     const isFolded = (agent: AgentView) =>
-      sidebarAgentFolded(agent, openAgentId, sidebarAgent);
+      sidebarAgentFolded(agent, openAgentId, lastAgent);
     return {
       active: agents.filter((agent) => !isFolded(agent)),
       folded: agents.filter(isFolded),
     };
-  }, [agents, openAgentId, sidebarAgent]);
+  }, [agents, openAgentId, lastAgent]);
 
   const unreadAgentIds = new Set(
     activity.items
@@ -69,10 +70,11 @@ export function useSidebarSharedAgents() {
   const shared = useSharedAgents();
   const openAgentId = useShownAgentId();
   const sidebarAgent = useStore((s) => s.sidebarAgent);
+  const lastAgent = useStore((s) => s.sidebarLastAgent);
   return useMemo(() => {
     const sorted = [...shared].sort((a, b) => a.name.localeCompare(b.name));
     const isFolded = (agent: AgentView) =>
-      sidebarAgentFolded(agent, openAgentId, sidebarAgent);
+      sidebarAgentFolded(agent, openAgentId, lastAgent);
     return {
       shared: sorted,
       active: sorted.filter((agent) => !isFolded(agent)),
@@ -80,5 +82,5 @@ export function useSidebarSharedAgents() {
       openAgentId,
       sidebarAgent,
     };
-  }, [shared, openAgentId, sidebarAgent]);
+  }, [shared, openAgentId, sidebarAgent, lastAgent]);
 }

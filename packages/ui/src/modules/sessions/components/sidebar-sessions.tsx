@@ -128,6 +128,7 @@ function AllAgentsSessions({
 }) {
   const { items, openSessionKey, loading, unreadable } = useActivitySessions();
   const { pins, pinnedKeys } = useSessionPins();
+  const pinActions = useSessionPinActions();
   const listRef = useRef<HTMLDivElement>(null);
   useReturnToAllAgents(listRef);
   const filters = useStore((s) => s.sidebarActivityFilters);
@@ -157,6 +158,14 @@ function AllAgentsSessions({
       key={item.id}
       item={item}
       pinned={isPinned}
+      onTogglePin={() => {
+        const key = {
+          agentId: item.session.agentId,
+          sessionId: item.session.sessionId,
+        };
+        if (isPinned) pinActions.unpin(key);
+        else pinActions.pin(key, item.session);
+      }}
       active={item.id === openSessionKey}
       conversation={conversationOf(item.session)}
       onRename={(session) =>
@@ -240,7 +249,7 @@ function usePinnedActivitySessions(
     return pins
       .flatMap((pin) => {
         const item = byKey.get(activitySessionKey(pin.agentId, pin.sessionId));
-        return item && pin.item ? [item] : [];
+        return item ? [item] : [];
       })
       .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   }, [pins, feed, enriched]);
@@ -249,6 +258,7 @@ function usePinnedActivitySessions(
 function AllAgentsSessionRow({
   item,
   pinned,
+  onTogglePin,
   active,
   conversation,
   onRename,
@@ -256,18 +266,14 @@ function AllAgentsSessionRow({
 }: {
   item: AgentActivitySession;
   pinned: boolean;
+  onTogglePin: () => void;
   active: boolean;
   conversation: string | undefined;
   onRename: (session: SessionView) => void;
   onOpen: () => void;
 }) {
   const actions = useSessionRowActions(item.session.agentId, onRename);
-  const pinActions = useSessionPinActions();
   const session = provisionalSessionView(item.session);
-  const key = {
-    agentId: item.session.agentId,
-    sessionId: item.session.sessionId,
-  };
   return (
     <SessionRow
       session={session}
@@ -285,9 +291,7 @@ function AllAgentsSessionRow({
         onExportTimeline: () => actions.exportTimeline?.(session),
       })}
       pinned={pinned}
-      onTogglePin={() =>
-        pinned ? pinActions.unpin(key) : pinActions.pin(key, item.session)
-      }
+      onTogglePin={onTogglePin}
     />
   );
 }

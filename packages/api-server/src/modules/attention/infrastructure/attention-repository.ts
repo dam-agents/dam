@@ -7,6 +7,7 @@ import {
   eq,
   inArray,
   lt,
+  notInArray,
   or,
   sql,
   type Db,
@@ -325,10 +326,12 @@ export function createAttentionRepository(db: Db): AttentionRepository {
         .where(
           and(
             isStale,
-            inArray(
-              sql`${attentionRecords.agentId} || ':' || ${attentionRecords.sessionId}`,
-              itemIds,
-            ),
+            kept.size > 0
+              ? notInArray(
+                  sql`${attentionRecords.agentId} || ':' || ${attentionRecords.sessionId}`,
+                  [...kept],
+                )
+              : undefined,
           ),
         );
       return dropped.length;

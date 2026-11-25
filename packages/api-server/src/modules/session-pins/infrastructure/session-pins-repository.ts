@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sessionPins, type Db } from "db";
+import { and, desc, eq, inArray, sessionPins, sql, type Db } from "db";
 import type { SessionPinKey } from "api-server-api";
 
 export interface StoredSessionPin extends SessionPinKey {
@@ -8,6 +8,7 @@ export interface StoredSessionPin extends SessionPinKey {
 export interface SessionPinsRepository {
   listForOwner(owner: string): Promise<StoredSessionPin[]>;
   insert(owner: string, key: SessionPinKey): Promise<void>;
+  countForOwner(owner: string): Promise<number>;
   delete(owner: string, key: SessionPinKey): Promise<void>;
   listPinnedSessionKeys(): Promise<Set<string>>;
   listAgentIds(): Promise<string[]>;
@@ -34,6 +35,14 @@ export function createSessionPinsRepository(db: Db): SessionPinsRepository {
         .insert(sessionPins)
         .values({ owner, agentId: key.agentId, sessionId: key.sessionId })
         .onConflictDoNothing();
+    },
+
+    async countForOwner(owner) {
+      const [row] = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(sessionPins)
+        .where(eq(sessionPins.owner, owner));
+      return row?.n ?? 0;
     },
 
     async delete(owner, key) {

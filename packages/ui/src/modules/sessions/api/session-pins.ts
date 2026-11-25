@@ -5,10 +5,12 @@ import type {
   SessionPinKey,
   SessionPinList,
 } from "api-server-api";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 
+import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
+import { useAttention } from "../../home/api/queries.js";
 import { activitySessionKey } from "../../home/lib/activity-sessions.js";
 
 const NO_PINS: readonly SessionPin[] = Object.freeze([]);
@@ -24,6 +26,10 @@ export function useSessionPins(): {
     staleTime: 30_000,
     meta: { errorToast: "Couldn't load your pinned sessions" },
   });
+  const attentionUpdatedAt = useAttention().dataUpdatedAt;
+  useEffect(() => {
+    if (attentionUpdatedAt > 0) refetchSessionPins();
+  }, [attentionUpdatedAt]);
   const pins = data?.pins ?? NO_PINS;
   const pinnedKeys = useMemo(
     () =>
@@ -51,6 +57,13 @@ async function patchPins(patch: (pins: SessionPin[]) => SessionPin[]) {
 
 const samePin = (a: SessionPinKey, b: SessionPinKey) =>
   a.agentId === b.agentId && a.sessionId === b.sessionId;
+
+export function forgetSessionPin(key: SessionPinKey): void {
+  const cached = queryClient.getQueryData<SessionPinList>(pinsKey());
+  if (!cached?.pins.some((pin) => samePin(pin, key))) return;
+  void patchPins((pins) => pins.filter((p) => !samePin(p, key)));
+  api.sessionPins.unpin.mutate(key).catch(refetchSessionPins);
+}
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: pinning and unpinning a sidebar Session. Each

@@ -130,6 +130,7 @@ export function SidebarAgents({
           onClick={() => {
             setSidebarBackFrom(sidebarAgent);
             setSidebarAgent(null);
+            requestAnimationFrame(() => setSidebarBackFrom(null));
           }}
         />
       )}

@@ -171,7 +171,7 @@ describe("a hibernated Agent the user clicked", () => {
     expect(sidebarAgentFolded(sleeping, "a-1", null)).toBe(false);
   });
 
-  // TEST_SCENARIO: with awake and asleep Agents mixed, the user opens See all, narrows the sidebar to one asleep Agent, goes back to All agents with its chat still shown, then clicks Show less; that Agent stays in its place and only the other asleep Agents fold, counted right.
+  // TEST_SCENARIO: with awake and asleep Agents mixed, the user opens See all, narrows the sidebar to one asleep Agent, goes back to All agents from a page that is not its chat, then clicks Show less; that Agent stays in its place and only the other asleep Agents fold, counted right.
   it("keeps the clicked Agent in place through See all, a click, going back and Show less", () => {
     const agents = [
       { id: "awake-1", state: "running" },
@@ -185,9 +185,9 @@ describe("a hibernated Agent the user clicked", () => {
     );
     let shownChat: string | null = null;
     const shown = () => {
-      const { sidebarAgent, sidebarShowHibernating } = store.getState();
+      const { sidebarLastAgent, sidebarShowHibernating } = store.getState();
       const folded = agents.filter((agent) =>
-        sidebarAgentFolded(agent, shownChat, sidebarAgent),
+        sidebarAgentFolded(agent, shownChat, sidebarLastAgent),
       );
       const listed = sidebarShowHibernating
         ? agents
@@ -201,6 +201,7 @@ describe("a hibernated Agent the user clicked", () => {
     shownChat = "sleep-2";
     expect(shown().folded).toBe(2);
     setSidebarAgent(null);
+    shownChat = null;
     expect(shown().folded).toBe(2);
     setSidebarShowHibernating(false);
     expect(shown()).toEqual({

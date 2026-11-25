@@ -1,3 +1,8 @@
+-- The Sessions each user pinned in the sidebar. A pin is only the pair of
+-- Agent and Session and never decides that the Session exists. Its rows go
+-- with their Agent (the cleanup list) and their Session (the session watcher),
+-- and attention retention keeps the record row of a pinned Session, so a pin
+-- stays readable however long its Session is quiet.
 CREATE TABLE "session_pins" (
 	"owner" text NOT NULL,
 	"agent_id" text NOT NULL,
