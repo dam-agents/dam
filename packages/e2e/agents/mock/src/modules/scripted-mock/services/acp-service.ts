@@ -10,8 +10,10 @@ import type { MockState } from "../domain/state.js";
 import type { ProxyFetch } from "./control-service.js";
 import type {
   AcpChannel,
+  PlatformToolCaller,
   ProcessRunner,
   SlackReplyPoster,
+  ToolCall,
   WorkspaceWriter,
 } from "./ports.js";
 
@@ -30,6 +32,8 @@ export interface AcpServiceDeps {
   proxyFetch: ProxyFetch;
   processRunner: ProcessRunner;
   slackReply: SlackReplyPoster;
+  callTool: PlatformToolCaller;
+  toolCall: ToolCall | null;
 }
 
 export function startAcpService(deps: AcpServiceDeps): void {
@@ -180,6 +184,8 @@ export function startAcpService(deps: AcpServiceDeps): void {
       return;
     }
 
+    if (deps.toolCall) await callScriptedTool(sid, deps.toolCall);
+
     for (const entry of deps.state.scriptEntries) {
       if (entry.delayMs && entry.delayMs > 0) await sleep(entry.delayMs);
       remember(sid, entry.sessionUpdate);
@@ -235,6 +241,44 @@ export function startAcpService(deps: AcpServiceDeps): void {
         },
       });
     });
+  }
+
+  async function callScriptedTool(sid: string, call: ToolCall): Promise<void> {
+    const toolCallId = `tool-${randomUUID()}`;
+    const started = {
+      sessionUpdate: "tool_call",
+      toolCallId,
+      title: call.name,
+      kind: "other",
+      status: "in_progress",
+      rawInput: call.arguments,
+    };
+    remember(sid, started);
+    notify("session/update", { sessionId: sid, update: started });
+    let update: Record<string, unknown>;
+    try {
+      const { text, result } = await deps.callTool(call.name, call.arguments);
+      update = {
+        sessionUpdate: "tool_call_update",
+        toolCallId,
+        status: "completed",
+        content: [{ type: "content", content: { type: "text", text } }],
+        rawOutput: result,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      update = {
+        sessionUpdate: "tool_call_update",
+        toolCallId,
+        status: "failed",
+        content: [
+          { type: "content", content: { type: "text", text: message } },
+        ],
+      };
+      process.stderr.write(`[mock-agent] ${call.name} failed: ${message}\n`);
+    }
+    remember(sid, update);
+    notify("session/update", { sessionId: sid, update });
   }
 
   function remember(sid: string, update: Record<string, unknown>): void {

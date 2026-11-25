@@ -61,6 +61,19 @@ keycloak:
     - username: dammy-owner
       password: dammy-e2e
       firstName: Owner
+    # The acceptance suite's personas (packages/e2e/acceptance), one set per
+    # worker slot, and the suite runs one worker: every owner gets a VM runner
+    # of its own that reserves memory, and a second set of three owners beside
+    # the smoke suite's Agents left the CI node without room to boot.
+    - username: acceptance-ada-0
+      password: acceptance-e2e
+      firstName: Ada
+    - username: acceptance-ben-0
+      password: acceptance-e2e
+      firstName: Ben
+    - username: acceptance-jo-0
+      password: acceptance-e2e
+      firstName: Jo
   resources:
     limits:
       cpu: "2"

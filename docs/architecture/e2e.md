@@ -1,9 +1,14 @@
 # End-to-end suite
 
-Last verified: 2026-11-16
+Last verified: 2026-11-20
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so a full-suite run takes it twice, once per lane.
+
+The suite has two packages.
+[`packages/e2e/acceptance`](../../packages/e2e/acceptance/) holds the product's behaviour as feature files ([Acceptance suite](#acceptance-suite)).
+[`packages/e2e/integration`](../../packages/e2e/integration/) holds the specs of infrastructure and protocol mechanics that no user sees: machine boot, storage, runner release, S3 signing, harness tools, socket auth, gateway wedge, invocations and prompt delivery.
+It also still holds the smoke specs of product behaviour that the feature files have not replaced yet; each moves out when a feature file covers its behaviour.
 
 ## Lanes
 
@@ -63,7 +68,7 @@ A spec that never fails for real earns nothing on a pull request.
 
 A deferred spec still runs on a pull request whose change touches the code it alone covers.
 A pull request merges on its own run, so a spec deferred there would otherwise first run on main, after the merge.
-[`packages/e2e/playwright/pr-scope.json`](../../packages/e2e/playwright/pr-scope.json) is the one place that says it: each deferred spec with the paths it covers, as git pathspecs, the owner-gateway lane with the paths only that lane reaches, and the paths no entry counts — tests, Markdown and the skills an image ships, which no deferred spec boots.
+[`packages/e2e/integration/pr-scope.json`](../../packages/e2e/integration/pr-scope.json) is the one place that says it: each deferred spec with the paths it covers, as git pathspecs, the owner-gateway lane with the paths only that lane reaches, and the paths no entry counts — tests, Markdown and the skills an image ships, which no deferred spec boots.
 A change to `packages/agents/base/` or `packages/vm-runner/`, for example, takes `19-agent-machine`, the spec that boots a machine and reads its openrc runlevels.
 `e2e:pr-scope` diffs the pull request against its base with those pathspecs; the workflow's `docs-only` job runs it and passes the names it prints to both lanes as `E2E_PR_SPECS`, and starts the owner-gateway lane when its paths moved.
 A pull request whose change touches none of them keeps the reduced set alone.
@@ -77,9 +82,43 @@ The nightly run on main is the one run that also takes the `full/` tier, in the 
 A pull request, a push to main, a dispatch and a tag never take it, and that lane's summary names the tier beside the scope.
 The two summaries hold the same table, so a phase of one lane compares with the same phase of the other; a phase a lane never reached reads `n/a`.
 
+## Acceptance suite
+
+The **acceptance suite** in [`packages/e2e/acceptance`](../../packages/e2e/acceptance/) states what the product does as Gherkin feature files, and `mise run e2e` runs them on the same install after the smoke suite, so both CI lanes run them; `e2e:loop` runs the smoke suite alone.
+Its package depends only on the API contract package and its test tools, so a test cannot import the server's internals: `check:boundary` refuses any other dependency, and any import in its sources that leaves the package or names another package, in every import form TypeScript and Node read.
+A feature file holds **Rules**, each with concrete **Examples** in Given/When/Then form, written in the words of the [glossary](../ubiquitous-language.md) and never in the words of a screen.
+`playwright-bdd` turns the feature files into Playwright tests, and `check:steps` refuses a step that has no step definition.
+`check:features` holds the feature files to the writing rules: an Example sits under a Rule, shows one action (one When), keeps Given, When and Then in that order, ends in a Then, takes at most 8 steps and a tag of the allowed set, and names no part of the screen (a click, a button, a dialog, a menu, …), so a redesign changes a Driver and not the spec.
+A journey takes a looser profile: When and Then may alternate after its Givens, it takes at most 25 steps, and it names its surfaces.
+Names are unique across the files, so a report line points at one scenario.
+The `developers` team owns the feature files (`.github/CODEOWNERS`), and the main branch requires a code owner's review, so a change to what an Example means merges only with a person's approval, never the review bot's alone.
+
+Each step definition is one call into a **Driver**, the same steps for every surface, and a Driver is split by capability (session, agents, chat, …) so its code grows with the product's capabilities, not with the number of Examples.
+There is one Playwright project per surface.
+Every Example runs in the `api` project, through tRPC and the same ACP relay the web UI uses for a chat; an Example tagged `@ui` also runs in the `ui` project, through the browser, and one tagged `@cli` in the `cli` project, through the CLI, each as a test of its own.
+Given steps always set the state up through the API, whatever the project, so only the When and Then steps differ between surfaces.
+The names and texts a feature file writes get a suffix unique to the run, so an implementation that special-cases an Example's literal values fails, and no test mistakes what another made for its own.
+A scenario tagged `@wip` is expected to fail: it states behaviour the product does not have yet, and it turns the run red the day the behaviour arrives, so the tag is removed then.
+
+The suite's **journeys** are a few standalone stories, such as a new owner's first use from signing in to an answer from their first Agent.
+A journey is a Gherkin scenario in `features/journeys/`, tagged `@journey`, built only from the steps the Examples use, so a step a journey needs is a step an Example can use.
+It runs only on the surfaces its tags name, and a step that crosses surfaces names its surface.
+Unlike the smoke suite's chained projects, a journey depends on no other test.
+
+Each Playwright worker signs in as the accounts of its own slot, `acceptance-<persona>-<slot>`, which the e2e values provision and nothing else uses, so tests in two workers never see each other's Agents.
+A worker's first use of an account connects a model provider, because the web UI lets a person write to an Agent only once one is connected, and an Agent made afterwards gets it as its default provider.
+The suite runs one worker, with one slot: every owner gets a VM runner of its own that reserves memory, so each extra slot costs the node three runners beside the smoke suite's Agents, and a second slot left a CI node without the memory to boot a machine.
+A slot keeps booted mock Agents, marked by their description, that the Given steps rename and give an answer: an Example costs seconds instead of a machine boot, and a later worker of the slot wakes and reuses them.
+A Given step scripts an Agent through its environment, because the mock starts a new process for a new Session and each process takes its first script from there: `MOCK_DEFAULT_REPLY` is the answer, and `MOCK_TOOL_CALL` names a platform tool, with its arguments, that the Agent calls on every turn before it answers.
+The call goes to the Agent's platform MCP server the way a real harness's does, and the turn reports it as a `tool_call` and a `tool_call_update` carrying the tool's result, so an artifact the tool publishes reaches the library, attributed to the Agent and its Session, as one a real model's call publishes.
+A Given step sets the answer when the Example names one, sets or clears the tool call on every warm Agent it takes, and waits until the Agent reports both.
+A failed test carries its own log bundle in the report: the Playwright trace and a screenshot of every persona's page, the ACP frames and Agent listings the API driver saw, and the state of every Agent it named.
+The job summary times the suite as its own phase beside the smoke suite.
+
 ## Running it
 
-`mise run e2e` is the CI path: a fresh cluster, the suite, teardown.
+`mise run e2e` is the CI path: a fresh cluster, the suite and the acceptance suite, teardown.
+`mise run //packages/e2e/acceptance:run` runs the acceptance suite alone against an install, with `PLATFORM_BASE_URL` and `PLATFORM_KEYCLOAK_URL` pointing at it.
 `e2e:loop` iterates against a warm cluster, and the [cluster-ops skill](../../.agents/skills/cluster-ops/SKILL.md) covers both.
 A warm cluster shares its machine's CPUs with the browser, so `e2e:loop` sets `E2E_TIMEOUT_SCALE` to 3 and the config multiplies its default test and expect timeouts by it; a spec that sets its own timeout keeps it, and CI keeps the defaults.
 

@@ -5,7 +5,16 @@ import type { JsonRpcFrame } from "../domain/frames.js";
 import { createInitialState } from "../domain/state.js";
 import { startAcpService } from "./acp-service.js";
 
-function mockHarness() {
+function mockHarness(
+  toolCall: { name: string; arguments: Record<string, unknown> } | null = null,
+  callTool: (
+    name: string,
+    args: Record<string, unknown>,
+  ) => Promise<{ text: string; result: unknown }> = async () => ({
+    text: "",
+    result: {},
+  }),
+) {
   const sent: JsonRpcFrame[] = [];
   const responses = new Map<number, () => void>();
   let receive!: (line: string) => void;
@@ -28,6 +37,8 @@ function mockHarness() {
     proxyFetch: async () => ({ status: 200, body: "" }),
     processRunner: { run: async () => ({ code: 0, output: "" }) },
     slackReply: async () => {},
+    callTool,
+    toolCall,
   });
   const request = async (id: number, method: string, params = {}) => {
     const replied = new Promise<void>((resolve) => responses.set(id, resolve));
@@ -112,5 +123,84 @@ describe("scripted mock session history", () => {
       sessionId: second.result.sessionId,
     });
     expect(harness.sent).toEqual([{ jsonrpc: "2.0", id: 6, result: {} }]);
+  });
+});
+
+describe("scripted platform tool call", () => {
+  // TEST_SCENARIO: an agent given MOCK_TOOL_CALL calls that platform tool on every turn before its scripted answer, and reports the call as a real harness does: a tool_call update, then a completed tool_call_update carrying the tool's text, so the runtime can attribute what the tool made to the session.
+  it("calls the tool, then reports it completed before the answer", async () => {
+    const calls: { name: string; args: Record<string, unknown> }[] = [];
+    const harness = mockHarness(
+      { name: "create_artifact", arguments: { title: "Weekly report" } },
+      async (name, args) => {
+        calls.push({ name, args });
+        return { text: "created artifact a1", result: { ok: true } };
+      },
+    );
+    await harness.request(1, "session/new");
+    const sessionId = (harness.sent[0] as { result: { sessionId: string } })
+      .result.sessionId;
+    harness.state.scriptEntries = [
+      {
+        sessionUpdate: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "done" },
+        },
+      },
+    ];
+    await harness.request(2, "session/prompt", {
+      sessionId,
+      prompt: [{ type: "text", text: "publish the report" }],
+    });
+    expect(calls).toEqual([
+      { name: "create_artifact", args: { title: "Weekly report" } },
+    ]);
+    const updates = harness.sent
+      .filter((f) => "method" in f && f.method === "session/update")
+      .map(
+        (f) =>
+          (f as { params: { update: Record<string, unknown> } }).params.update,
+      );
+    expect(updates.map((u) => u.sessionUpdate)).toEqual([
+      "tool_call",
+      "tool_call_update",
+      "agent_message_chunk",
+    ]);
+    expect(updates[1]).toMatchObject({
+      status: "completed",
+      content: [{ content: { text: "created artifact a1" } }],
+    });
+  });
+
+  // TEST_SCENARIO: a tool call the server refuses is reported as a failed tool_call_update with the server's message, and the turn still ends with its scripted answer, so an example fails on what the tool did not make rather than on a hung turn.
+  it("reports a refused call as failed and still answers", async () => {
+    const harness = mockHarness(
+      { name: "create_artifact", arguments: {} },
+      async () => {
+        throw new Error("title is required");
+      },
+    );
+    await harness.request(1, "session/new");
+    const sessionId = (harness.sent[0] as { result: { sessionId: string } })
+      .result.sessionId;
+    await harness.request(2, "session/prompt", {
+      sessionId,
+      prompt: [{ type: "text", text: "publish" }],
+    });
+    const failed = harness.sent
+      .filter((f) => "method" in f && f.method === "session/update")
+      .map(
+        (f) =>
+          (f as { params: { update: Record<string, unknown> } }).params.update,
+      )
+      .find((u) => u.sessionUpdate === "tool_call_update");
+    expect(failed).toMatchObject({
+      status: "failed",
+      content: [{ content: { text: "title is required" } }],
+    });
+    expect(harness.sent.at(-1)).toMatchObject({
+      id: 2,
+      result: { stopReason: "end_turn" },
+    });
   });
 });

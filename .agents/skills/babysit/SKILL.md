@@ -61,4 +61,4 @@ Opening the PR is the `pr-open` skill's; each fix round is the `review-remediati
   A real failure, caused by the PR or by what merged before it → fix on the branch, wait for green.
 - Merged → the push to `main` runs both e2e lanes with every spec, where a PR's own run takes a reduced set ([`docs/architecture/e2e.md`](../../../docs/architecture/e2e.md)), and builds the agent images for arm64, which a PR's run never does.
   Read the first `main` run that holds the PR's commit: runs that wait behind a running one are cancelled, so one run can cover several merges.
-  A failure there in a spec or build the PR's run left out, which the PR caused, is the PR's to fix, in a follow-up PR; when the PR's paths should have taken that spec, the follow-up adds them to `packages/e2e/playwright/pr-scope.json`.
+  A failure there in a spec or build the PR's run left out, which the PR caused, is the PR's to fix, in a follow-up PR; when the PR's paths should have taken that spec, the follow-up adds them to `packages/e2e/integration/pr-scope.json`.

@@ -504,3 +504,20 @@ Terms follow the A2UI specification, where the chat is the *renderer* and the ha
 | Renderer Capabilities | The announcement that the chat renders chat forms, naming its catalogs and carrying the agent's Chat Form Settings. The web chat attaches it to every prompt and the platform to onboarding and Kit Update briefings, only while the owner has the feature on and the agent's forms are not off; an agent uses chat forms only in a conversation that carries it |
 | Chat Form Settings    | The owner's per-agent choices for chat forms: when the agent may use them, whether it asks one question at a time, how it recommends answers, and whether it may lock the chat input                                                                                                                                                                             |
 | Check                 | A validation rule on an input or button. A failed check shows its message under the input and disables a button until it passes                                                                                                                                                                                                                                  |
+
+## Acceptance Specs (bounded context)
+
+How the product's behaviour is specified and checked: the acceptance suite in `packages/e2e/acceptance` ([e2e suite](architecture/e2e.md#acceptance-suite), [acceptance criteria](guidelines/acceptance-criteria.md)).
+
+| Term             | Definition                                                                                                                                                            |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rule             | One sentence that states a behaviour of the product in general, such as "Only the agent's owner can change its setup"; a feature file holds its Examples under it     |
+| Example          | One concrete case of a Rule in Given/When/Then form, with named people, names and values and one action; it runs on every pull request and stays as a regression test |
+| Example Map      | An issue's draft of a change to the spec: its Rules, their Examples and the open Questions, written in grilling before anyone builds the change                       |
+| Question         | Something an Example Map leaves undecided; an issue with an open Question is not ready, since its Examples would encode a guess                                       |
+| Feature File     | A capability's Gherkin file of Rules and Examples under `features/`; the feature files together are the spec of what the product does                                 |
+| Journey          | A user's story across several actions, a Gherkin scenario in `features/journeys/` built from the Examples' steps and run only on the surfaces it names                |
+| Driver           | The test code that performs a step's action and observation through one public interface, split by capability; a step definition is one call into it                  |
+| Driver Surface   | The public interface a Driver acts through, the API, the web UI or the CLI, chosen per scenario by its tags; not a Chat Form's Surface                                |
+| Persona          | A named person of the Examples — Ada, Ben, Jo — signed in as an account of its own that nothing else uses                                                             |
+| Work in Progress | An Example tagged `@wip`: it states behaviour the product does not have yet and runs as an expected failure until the change that adds the behaviour removes the tag  |

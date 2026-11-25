@@ -210,7 +210,7 @@ Never rerun the same failing setup unchanged: it fails the same way and costs a 
 
 Two Environments share nothing but this agent, which builds their changed images and runs their specs: each has its own k3s, install, browser, data and port.
 Two runs on one Environment at once are not supported: they would reset each other's data.
-Run two Environments from two checkouts (an agent's slots are): the suite keeps its login and its report in the checkout's `packages/e2e/playwright`.
+Run two Environments from two checkouts (an agent's slots are): the suite keeps its login and its report in the checkout's `packages/e2e/integration`.
 
 What differs from the local lane:
 
@@ -257,7 +257,7 @@ Boot waits are four minutes for a boot and five for a smoke test, so a guest tha
 `smoke/19-agent-backend.spec.ts` (boot and chat, a file in HOME, a schedule fire, hibernate/wake, the restart verb, and the runner pod deleted, each keeping HOME) deletes the owner's whole VM runner, which also runs every other agent of the e2e user, so it runs after the rest of the suite.
 
 CI runs the smoke suite as two jobs on every run but a tag and a docs-only PR (e2e.yml's `docs-only` job, which also picks a pull request's scope): `e2e / mise e2e (vm, per-agent gateway)` (`e2e-agent-gateway`) on the chart's default gateway pod per agent, and `e2e / mise e2e (vm, owner gateway)` (`e2e-owner-gateway`, the same steps through YAML anchors, plus `E2E_GATEWAY_PER_OWNER=1`), each on its own GitHub-hosted x64 runner.
-A pull request runs the per-agent job alone, with a reduced set of the specs, the ones that fail for real there, plus each deferred spec whose paths in `packages/e2e/playwright/pr-scope.json` its change touches, and the owner gateway's job only when it touches that lane's paths there; both jobs, and every spec, run on a push to main, the nightly run and a dispatch ([e2e architecture](../../../docs/architecture/e2e.md)).
+A pull request runs the per-agent job alone, with a reduced set of the specs, the ones that fail for real there, plus each deferred spec whose paths in `packages/e2e/integration/pr-scope.json` its change touches, and the owner gateway's job only when it touches that lane's paths there; both jobs, and every spec, run on a push to main, the nightly run and a dispatch ([e2e architecture](../../../docs/architecture/e2e.md)).
 Each job's runner exposes `/dev/kvm`, which a udev rule opens to the runner user, and builds or pulls the vm-runner beside the other images.
 A failure in one job alone is its gateway topology's.
 

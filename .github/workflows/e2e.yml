@@ -88,7 +88,7 @@ jobs:
           fi
       # A pull request's reduced set still runs the deferred specs, and the
       # owner-gateway lane, that cover a path its change touches:
-      # packages/e2e/playwright/pr-scope.json maps them. A pull request has no
+      # packages/e2e/integration/pr-scope.json maps them. A pull request has no
       # other e2e run before it merges.
       # A failure here fails the run's `verify`, so a broken detection never
       # merges a change on the reduced set alone.
@@ -541,8 +541,10 @@ jobs:
         with:
           name: playwright-report
           path: &e2e-report-paths |
-            packages/e2e/playwright/playwright-report/
-            packages/e2e/playwright/test-results/
+            packages/e2e/integration/playwright-report/
+            packages/e2e/integration/test-results/
+            packages/e2e/acceptance/playwright-report/
+            packages/e2e/acceptance/test-results/
           retention-days: 7
           if-no-files-found: ignore
 
