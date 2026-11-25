@@ -52,6 +52,9 @@
       "packages/ui/public/**",
       ".design-desk/handoff/**"
     ],
+    "allow_other": [
+      ".design-desk/handoff/**"
+    ],
     "deny": [
       "packages/ui/src/**/api/**",
       "packages/ui/src/**/hooks/**",
