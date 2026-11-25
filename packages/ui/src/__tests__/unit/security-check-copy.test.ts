@@ -69,11 +69,12 @@ describe("the levels of the security check", () => {
     );
   });
 
-  // TEST_SCENARIO: the top level is the only one that runs the person's other agents, so its words say that each of them runs once and costs what it usually costs.
+  // TEST_SCENARIO: the top level is the only one that runs the person's other agents, so its words say that those agents run and cost what they usually cost. The words promise no number of runs, because the platform enforces none.
   it("says that only the top level runs other agents, at their cost", () => {
     expect(described("deep")).toBe(
-      "Dambledore also asks the agents you share with other people about their instructions. Each of them runs once, at its usual cost.",
+      "Dambledore also asks the agents you share with other people about their instructions. Those agents run too, at their usual cost.",
     );
+    expect(described("deep")).not.toMatch(/\bonce\b/);
     expect(described("off")).toBe("No weekly check.");
   });
 
