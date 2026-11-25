@@ -1,8 +1,10 @@
 // TEST_OVERVIEW: The words of the security check. Its Experimental features row
 // TEST_OVERVIEW: names the install's assistant from the brand and says where the
-// TEST_OVERVIEW: person chooses how much a check does. The levels say what each
-// TEST_OVERVIEW: one runs, and only the top one says that it runs turns on the
-// TEST_OVERVIEW: person's other agents. The alert's headline counts the problems.
+// TEST_OVERVIEW: person chooses how much a check does. The levels say in a few
+// TEST_OVERVIEW: plain words what each one runs, and only the top one says that
+// TEST_OVERVIEW: it runs the person's other agents and costs there. None of the
+// TEST_OVERVIEW: words is a term of the platform. The alert's headline counts
+// TEST_OVERVIEW: the problems.
 import { describe, expect, it } from "vitest";
 
 import { securityCheckFeatureRow } from "../../modules/features/lib/security-check-feature-row.js";
@@ -29,22 +31,21 @@ const brand = {
 };
 
 describe("the security check's row in Experimental features", () => {
-  // TEST_SCENARIO: the row is the `security-check` feature. It tells the person that a check runs no turn on their other agents unless they choose so, and that the level is in the assistant's own settings.
+  // TEST_SCENARIO: the row is the `security-check` feature. It tells the person what the assistant does once a week, and that the level is in the assistant's own settings.
   it("says who runs the check and where its level is chosen", () => {
     const row = securityCheckFeatureRow(brand);
     expect(row).toMatchObject({
       id: "security-check",
       label: "Security advisory",
     });
-    expect(row.description).toContain("Dambledore checks your setup");
-    expect(row.description).toContain("no turn on your other agents");
+    expect(row.description).toContain("Dambledore looks for security problems");
     expect(row.description).toContain("Dambledore's settings, under General");
   });
 
   // TEST_SCENARIO: a branded install shows its own assistant's name, so nothing is hardcoded.
   it("takes the assistant's name from the brand", () => {
     const row = securityCheckFeatureRow({ ...brand, assistantName: "Ada" });
-    expect(row.description).toContain("Ada checks your setup");
+    expect(row.description).toContain("Ada looks for security problems");
     expect(row.description).not.toContain("Dambledore");
   });
 });
@@ -61,23 +62,35 @@ describe("the levels of the security check", () => {
     ).toEqual(["Off", "Standard", "Deep"]);
   });
 
-  // TEST_SCENARIO: the standard level is one run of the assistant and says that it runs no turn on another agent. The effort is not a level, so the words send the person to the schedule for it.
-  it("says that the standard check runs no turn on other agents", () => {
+  // TEST_SCENARIO: the standard level says that the assistant checks alone and that the person's other agents do not run.
+  it("says that the standard check runs no other agent", () => {
     expect(described("standard")).toBe(
-      "One run of Dambledore a week. It runs no turn on your other agents.",
-    );
-    expect(securityCheckLevelIntro(brand)).toContain(
-      "the model and effort of its schedule",
+      "Dambledore checks on its own. Your other agents do not run.",
     );
   });
 
-  // TEST_SCENARIO: the top level is the only one that runs turns on the person's other agents, so its words say that each question runs a turn there and costs one.
-  it("says that only the top level runs a turn on other agents", () => {
-    expect(described("deep")).toContain("runs one turn on that agent");
-    expect(securityCheckLevelIntro(brand)).toContain(
-      "Only Deep runs a turn on your other agents",
+  // TEST_SCENARIO: the top level is the only one that runs the person's other agents, so its words say that each of them runs once and costs what it usually costs.
+  it("says that only the top level runs other agents, at their cost", () => {
+    expect(described("deep")).toBe(
+      "Dambledore also asks the agents you share with other people about their instructions. Each of them runs once, at its usual cost.",
     );
-    expect(securityCheckLevelIntro(brand)).toContain("calls no model");
+    expect(described("off")).toBe("No weekly check.");
+  });
+
+  // TEST_SCENARIO: a person who does not know the platform's terms reads the intro and every level: one or two short sentences each, with no "turn", no "model", no "effort" and no "accounts at risk".
+  it("keeps the words short and free of the platform's terms", () => {
+    const words = [
+      securityCheckLevelIntro(brand),
+      securityCheckFeatureRow(brand).description,
+      ...securityCheckLevelOptions(brand).map((option) => option.description),
+    ];
+    for (const text of words) {
+      expect(text).not.toMatch(/\bturns?\b|\bmodel\b|\beffort\b|at risk/);
+      expect(text.length).toBeLessThanOrEqual(190);
+    }
+    expect(securityCheckLevelIntro(brand)).toBe(
+      "Once a week, Dambledore looks for security problems in how your agents are set up, and alerts you when it finds one.",
+    );
   });
 });
 
