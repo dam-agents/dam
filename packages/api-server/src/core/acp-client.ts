@@ -649,7 +649,8 @@ const platformReason = (err: unknown): unknown =>
 export const refusedForNoModel = (err: unknown): boolean =>
   platformReason(err) === NO_MODEL_REASON;
 
-const HARNESS_REFUSED_MODEL_PREFIX = "The harness refused the session's model: ";
+const HARNESS_REFUSED_MODEL_PREFIX =
+  "The harness refused the session's model: ";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the harness refused the session's model — it is
