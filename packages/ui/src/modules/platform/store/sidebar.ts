@@ -33,8 +33,8 @@ export interface SidebarSlice {
   setSidebarActivityFilters: (filters: ActivityFilters) => void;
   sidebarShowHibernating: boolean;
   setSidebarShowHibernating: (show: boolean) => void;
-  sidebarAgentOpen: Readonly<Record<string, boolean>>;
-  setSidebarAgentOpen: (agentId: string, open: boolean) => void;
+  sidebarAgent: string | null;
+  setSidebarAgent: (agentId: string | null) => void;
   sidebarWakeDecided: ReadonlySet<string>;
   setSidebarWakeDecided: (agentId: string, decided: boolean) => void;
   mobileNavOpen: boolean;
@@ -91,13 +91,8 @@ export const createSidebarSlice: StateCreator<
     writePersistedFlag(SIDEBAR_HIBERNATING_STORAGE_KEY, show);
     set({ sidebarShowHibernating: show });
   },
-  sidebarAgentOpen: {},
-  setSidebarAgentOpen: (agentId, open) =>
-    set((s) =>
-      s.sidebarAgentOpen[agentId] === open
-        ? {}
-        : { sidebarAgentOpen: { ...s.sidebarAgentOpen, [agentId]: open } },
-    ),
+  sidebarAgent: null,
+  setSidebarAgent: (agentId) => set({ sidebarAgent: agentId }),
   sidebarWakeDecided: new Set(),
   setSidebarWakeDecided: (agentId, decided) =>
     set((s) => {

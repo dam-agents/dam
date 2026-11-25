@@ -103,13 +103,7 @@ function setList(over: Record<string, unknown>) {
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
-const props = {
-  agentId: "a-1",
-  open: true,
-  preview: [],
-  previewComplete: true,
-  conversationOf: () => undefined,
-};
+const props = { agentId: "a-1" };
 
 function mount() {
   container = document.createElement("div");

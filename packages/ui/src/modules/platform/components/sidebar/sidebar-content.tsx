@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { SidebarAgents } from "../../../agents/components/sidebar-agents.js";
 import { SidebarSharedAgents } from "../../../agents/components/sidebar-shared-agents.js";
 import { GettingStartedNavItem } from "../../../getting-started/components/getting-started-nav-item.js";
-import { SidebarActivity } from "../../../home/components/sidebar-activity.js";
+import { SidebarSessions } from "../../../sessions/components/sidebar-sessions.js";
 import {
   type SidebarDestination,
   useSidebarDestinations,
@@ -51,8 +51,8 @@ export function SidebarContent({
           stickyHeaderClassName={sticky}
           onNavigate={onNavigate}
         />
-        <div className="mt-6" data-testid="sidebar-activity-section">
-          <SidebarActivity
+        <div className="mt-6" data-testid="sidebar-sessions-section">
+          <SidebarSessions
             stickyHeaderClassName={sticky}
             onNavigate={onNavigate}
           />

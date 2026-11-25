@@ -79,7 +79,7 @@ function setList(over: Record<string, unknown>) {
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
-const props = { agentId: "a-1", conversationOf: () => undefined };
+const props = { agentId: "a-1" };
 
 function mount(extra: Record<string, unknown>) {
   container = document.createElement("div");
@@ -110,23 +110,11 @@ afterEach(() => {
   container.remove();
 });
 
-// TEST_SCENARIO: an Agent not open in the page previews five Sessions; View more switches to its own list, which shows the five last known Sessions first and the authoritative list later; focus lands on the sixth Session once it shows.
+// TEST_SCENARIO: a waking Agent's list is provisional and shows the five last known Sessions; View more waits for the Agent's own list, and focus lands on the sixth Session once it shows.
 it("focuses the first new Session after a provisional list gives way", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  setList({ sessions: sessions(5), provisional: true });
-  const preview = sessions(6).map((s) => ({
-    id: s.sessionId,
-    session: s,
-    working: false,
-    needsApproval: false,
-    unread: false,
-  }));
-  const render = mount({
-    ...props,
-    open: false,
-    preview,
-    previewComplete: false,
-  });
+  setList({ sessions: sessions(5), provisional: true, hasNextPage: true });
+  const render = mount(props);
   await click(button("View more"));
   render();
   expect(focusedSession()).toBeUndefined();
@@ -149,12 +137,7 @@ it("focuses the first new Session after a Retry loads the failed page", async ()
         fetchNextPage: async () => setList({ sessions: sessions(10) }),
       }),
   });
-  const render = mount({
-    ...props,
-    open: true,
-    preview: [],
-    previewComplete: true,
-  });
+  const render = mount(props);
   await click(button("View more"));
   render();
   await click(button("Retry"));

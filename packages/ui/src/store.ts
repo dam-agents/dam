@@ -23,6 +23,7 @@ import {
   createOwnerQuestionsSlice,
   type OwnerQuestionsSlice,
 } from "./modules/invocations/store.js";
+import { sidebarAgentAfterShown } from "./modules/platform/lib/sidebar-agent-view.js";
 import {
   createDialogSlice,
   type DialogSlice,
@@ -106,6 +107,12 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createAgentSettingsSlice(...a),
   ...createOwnerQuestionsSlice(...a),
 }));
+
+useStore.subscribe((state, prev) => {
+  if (state.selectedAgent === prev.selectedAgent) return;
+  const next = sidebarAgentAfterShown(state.sidebarAgent, state.selectedAgent);
+  if (next !== state.sidebarAgent) useStore.setState({ sidebarAgent: next });
+});
 
 let draftSyncStarted = false;
 

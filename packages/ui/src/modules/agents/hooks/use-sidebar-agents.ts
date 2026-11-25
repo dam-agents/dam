@@ -2,40 +2,25 @@ import { useMemo } from "react";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import {
-  type AgentActivitySession,
-  useActivitySessions,
-} from "../../home/hooks/use-activity-sessions.js";
-import { shownSessionId } from "../../sessions/lib/shown-session.js";
+import { useActivitySessions } from "../../home/hooks/use-activity-sessions.js";
 import { useAgents, useSharedAgents } from "../api/queries.js";
 import { useSidebarOrder } from "../api/sidebar-order.js";
-import {
-  groupSessionsByAgent,
-  sidebarAgentFolded,
-  sidebarAgentOpen,
-} from "../lib/sidebar-agent-order.js";
+import { sidebarAgentFolded } from "../lib/sidebar-agent-order.js";
 import { manualOrder } from "../lib/sidebar-order.js";
 import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
 
 const NO_AGENTS: AgentView[] = [];
-const NO_SESSIONS: AgentActivitySession[] = [];
+
+function useShownAgentId() {
+  return useStore((s) => (s.view === "chat" ? s.selectedAgent : null));
+}
 
 export function useSidebarAgents() {
   const list = useAgents().data?.list ?? NO_AGENTS;
   const activity = useActivitySessions();
   const { order } = useSidebarOrder();
-  const openAgentId = useStore((s) =>
-    s.view === "chat" ? s.selectedAgent : null,
-  );
-  const sessionOpen = useStore((s) => s.view === "chat" && !!shownSessionId(s));
-  const openOverrides = useStore((s) => s.sidebarAgentOpen);
-  const isOpen = (agentId: string) =>
-    sidebarAgentOpen(openOverrides, agentId, openAgentId);
-
-  const sessionsByAgent = useMemo(
-    () => groupSessionsByAgent(activity.items),
-    [activity.items],
-  );
+  const openAgentId = useShownAgentId();
+  const sidebarAgent = useStore((s) => s.sidebarAgent);
 
   const agents = useMemo(
     () =>
@@ -50,12 +35,12 @@ export function useSidebarAgents() {
 
   const { active, folded } = useMemo(() => {
     const isFolded = (agent: AgentView) =>
-      sidebarAgentFolded(openOverrides, agent, openAgentId);
+      sidebarAgentFolded(agent, openAgentId, sidebarAgent);
     return {
       active: agents.filter((agent) => !isFolded(agent)),
       folded: agents.filter(isFolded),
     };
-  }, [agents, openAgentId, openOverrides]);
+  }, [agents, openAgentId, sidebarAgent]);
 
   const unreadAgentIds = new Set(
     activity.items
@@ -63,19 +48,13 @@ export function useSidebarAgents() {
       .map((item) => item.session.agentId),
   );
 
-  const sessionsOf = (agentId: string) =>
-    sessionsByAgent.get(agentId) ?? NO_SESSIONS;
-
   return {
     agents,
     active,
     folded,
     openAgentId,
-    isOpen,
-    sessionOpen,
+    sidebarAgent,
     unreadAgentIds,
-    sessionsOf,
-    previewComplete: activity.complete,
   };
 }
 
@@ -83,28 +62,23 @@ export function useSidebarAgents() {
  * UNIT_BOUNDARY_DESCRIPTION: The Agents shared with this person, for the
  * sidebar's Shared with me section. Sorted by name: the owner's manual order
  * belongs to the owner, and an editor does not reorder them. They fold away
- * when asleep, and open to their Sessions, the same way the person's own
+ * when asleep, and open to their agent view, the same way the person's own
  * agents do.
  */
 export function useSidebarSharedAgents() {
   const shared = useSharedAgents();
-  const openOverrides = useStore((s) => s.sidebarAgentOpen);
-  const openAgentId = useStore((s) =>
-    s.view === "chat" ? s.selectedAgent : null,
-  );
-  const sessionOpen = useStore((s) => s.view === "chat" && !!shownSessionId(s));
+  const openAgentId = useShownAgentId();
+  const sidebarAgent = useStore((s) => s.sidebarAgent);
   return useMemo(() => {
     const sorted = [...shared].sort((a, b) => a.name.localeCompare(b.name));
     const isFolded = (agent: AgentView) =>
-      sidebarAgentFolded(openOverrides, agent, openAgentId);
+      sidebarAgentFolded(agent, openAgentId, sidebarAgent);
     return {
       shared: sorted,
       active: sorted.filter((agent) => !isFolded(agent)),
       folded: sorted.filter(isFolded),
       openAgentId,
-      sessionOpen,
-      isOpen: (agentId: string) =>
-        sidebarAgentOpen(openOverrides, agentId, openAgentId),
+      sidebarAgent,
     };
-  }, [shared, openOverrides, openAgentId, sessionOpen]);
+  }, [shared, openAgentId, sidebarAgent]);
 }

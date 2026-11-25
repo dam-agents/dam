@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: In the classic sidebar a click on an Agent row opens the Agent's Sessions under it, so the click always shows something true: "No sessions yet." only when the attention record loaded whole and holds no row of the Agent, else the Agent's own list, which shows its loading placeholder while a hibernated Agent wakes. A hibernated Agent the user clicked stays out of See all, so a second click or Show less never moves it or the See all control.
+// TEST_OVERVIEW: A click on an Agent row narrows the sidebar to that Agent, and the Sessions section lists the Agent's own list, so it always shows something true: its loading placeholder while a hibernated Agent wakes, a Retry when the read fails, and "No sessions yet." only when the Agent answered with none. A hibernated Agent the sidebar was narrowed to stays out of See all after the user goes back to All agents, so neither it nor the See all control moves.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -66,18 +66,12 @@ vi.mock("../../modules/approvals/api/queries.js", () => ({
   useApprovalsForOwner: () => ({ data: [] }),
 }));
 
-function openedAgent(previewComplete: boolean) {
+function openedAgent() {
   return renderToStaticMarkup(
     createElement(
       QueryClientProvider,
       { client: new QueryClient() },
-      createElement(SidebarAgentSessions, {
-        agentId: "a-1",
-        open: false,
-        preview: [],
-        previewComplete,
-        conversationOf: () => undefined,
-      }),
+      createElement(SidebarAgentSessions, { agentId: "a-1" }),
     ),
   );
 }
@@ -117,18 +111,13 @@ describe("the attention record answers for an Agent only once it loaded", () => 
   });
 });
 
-describe("a click on an Agent with no Sessions in the attention record", () => {
-  // TEST_SCENARIO: the user clicks an Agent that has no Session in the whole, loaded attention record; the row opens to "No sessions yet." instead of showing nothing.
-  it("shows No sessions yet when the record is whole", () => {
-    expect(openedAgent(true)).toContain("No sessions yet.");
-  });
-
-  // TEST_SCENARIO: the attention record is cut off, still loading or failed, so it cannot say the Agent has no Session; the row opens to the Agent's own list.
-  it("shows the Agent's own list when the record cannot answer", () => {
+describe("a click on an Agent", () => {
+  // TEST_SCENARIO: the user clicks an awake Agent with no Sessions; the Sessions section lists the Agent's own list, which says "No sessions yet."
+  it("lists the Agent's own list", () => {
     fake.runState = "running";
     fake.loading = false;
     fake.failed = false;
-    const out = openedAgent(false);
+    const out = openedAgent();
     expect(out).toContain('data-testid="sidebar-agent-sessions"');
     expect(out).toContain("No sessions yet.");
   });
@@ -138,7 +127,7 @@ describe("a click on an Agent with no Sessions in the attention record", () => {
     fake.runState = "running";
     fake.loading = false;
     fake.failed = true;
-    const out = openedAgent(false);
+    const out = openedAgent();
     expect(out).toContain('data-testid="sidebar-agent-sessions-failed"');
     expect(out).not.toContain("No sessions yet.");
     fake.failed = false;
@@ -149,7 +138,7 @@ describe("a click on an Agent with no Sessions in the attention record", () => {
     fake.runState = "running";
     fake.loading = true;
     fake.failed = true;
-    const out = openedAgent(false);
+    const out = openedAgent();
     expect(out).toContain('data-testid="sidebar-agent-sessions-failed"');
     expect(out).not.toContain("animate-pulse");
     expect(out).toContain('aria-busy="false"');
@@ -161,7 +150,7 @@ describe("a click on an Agent with no Sessions in the attention record", () => {
   it("shows a hibernated Agent's list as loading while it wakes", () => {
     fake.runState = "hibernated";
     fake.loading = true;
-    const out = openedAgent(false);
+    const out = openedAgent();
     expect(out).toContain("animate-pulse");
     expect(out).toContain('aria-busy="true"');
     expect(out).not.toContain("No sessions yet.");
@@ -171,15 +160,15 @@ describe("a click on an Agent with no Sessions in the attention record", () => {
 describe("a hibernated Agent the user clicked", () => {
   const sleeping = { id: "a-1", state: "hibernated" } as const;
 
-  // TEST_SCENARIO: the user opens a hibernated Agent from See all, then closes it again; it stays listed, so See all neither appears nor disappears under the pointer and Show less does not hide it.
-  it("stays out of See all once opened, and after it is closed again", () => {
-    expect(sidebarAgentFolded({}, sleeping, null)).toBe(true);
-    expect(sidebarAgentFolded({ "a-1": true }, sleeping, null)).toBe(false);
-    expect(sidebarAgentFolded({ "a-1": false }, sleeping, null)).toBe(false);
+  // TEST_SCENARIO: the user narrows the sidebar to a hibernated Agent from See all; it stays out of See all while the sidebar is narrowed to it or its chat is shown.
+  it("stays out of See all while it is the agent view or the shown chat", () => {
+    expect(sidebarAgentFolded(sleeping, null, null)).toBe(true);
+    expect(sidebarAgentFolded(sleeping, null, "a-1")).toBe(false);
+    expect(sidebarAgentFolded(sleeping, "a-1", null)).toBe(false);
   });
 
-  // TEST_SCENARIO: with awake and asleep Agents mixed, the user opens See all, clicks one asleep Agent open and closed, then clicks Show less; that Agent stays in its place and only the other asleep Agents fold, counted right.
-  it("keeps the clicked Agent in place through See all, a click, a close and Show less", () => {
+  // TEST_SCENARIO: with awake and asleep Agents mixed, the user opens See all, narrows the sidebar to one asleep Agent, goes back to All agents with its chat still shown, then clicks Show less; that Agent stays in its place and only the other asleep Agents fold, counted right.
+  it("keeps the clicked Agent in place through See all, a click, going back and Show less", () => {
     const agents = [
       { id: "awake-1", state: "running" },
       { id: "sleep-1", state: "hibernated" },
@@ -190,23 +179,24 @@ describe("a hibernated Agent the user clicked", () => {
     const store = create<PlatformStore>()(
       (...a) => createSidebarSlice(...a) as PlatformStore,
     );
+    let shownChat: string | null = null;
     const shown = () => {
-      const { sidebarAgentOpen: overrides, sidebarShowHibernating } =
-        store.getState();
+      const { sidebarAgent, sidebarShowHibernating } = store.getState();
       const folded = agents.filter((agent) =>
-        sidebarAgentFolded(overrides, agent, null),
+        sidebarAgentFolded(agent, shownChat, sidebarAgent),
       );
       const listed = sidebarShowHibernating
         ? agents
         : agents.filter((agent) => !folded.includes(agent));
       return { ids: listed.map((agent) => agent.id), folded: folded.length };
     };
-    const { setSidebarShowHibernating, setSidebarAgentOpen } = store.getState();
+    const { setSidebarShowHibernating, setSidebarAgent } = store.getState();
 
     setSidebarShowHibernating(true);
-    setSidebarAgentOpen("sleep-2", true);
+    setSidebarAgent("sleep-2");
+    shownChat = "sleep-2";
     expect(shown().folded).toBe(2);
-    setSidebarAgentOpen("sleep-2", false);
+    setSidebarAgent(null);
     expect(shown().folded).toBe(2);
     setSidebarShowHibernating(false);
     expect(shown()).toEqual({

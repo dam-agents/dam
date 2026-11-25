@@ -1,8 +1,4 @@
-import {
-  type AttentionItem,
-  SessionMode,
-  TELEMETRY_MAX_SINCE_HOURS,
-} from "api-server-api";
+import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
@@ -12,7 +8,6 @@ import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
 import { useActWhenAwake } from "../../agents/hooks/use-act-when-awake.js";
 import { useInstallCapabilities } from "../../features/api/queries.js";
-import type { AgentActivitySession } from "../../home/hooks/use-activity-sessions.js";
 import {
   type ActivityFilters,
   activityFilterSummary,
@@ -21,10 +16,7 @@ import {
 } from "../../home/lib/activity-filter.js";
 import { matchesActivityFilters } from "../../home/lib/activity-sessions.js";
 import { downloadTelemetryExport } from "../../telemetry/api/download-export.js";
-import {
-  prefetchSessionHistory,
-  provisionalSessionView,
-} from "../api/queries.js";
+import { prefetchSessionHistory } from "../api/queries.js";
 import { useAgentSessionList } from "../hooks/use-agent-session-list.js";
 import { useConfirmDeleteSession } from "../hooks/use-confirm-delete-session.js";
 import { useOpenSession } from "../hooks/use-open-session.js";
@@ -45,44 +37,33 @@ import { RenameSessionDialog } from "./rename-session-dialog.js";
 import { SessionListSkeleton } from "./session-list-skeleton.js";
 import { SessionRow } from "./session-row.js";
 
-const ROW_CLASS = "rounded-lg border-b-0 py-2.5 pr-2 pl-12";
-const LIST_CLASS = "mt-2 mb-3 flex flex-col gap-1";
+const ROW_CLASS = "rounded-lg border-b-0 py-2.5 pr-2 pl-3";
+const LIST_CLASS = "flex flex-col gap-1";
 
 interface SessionActions {
   rename: (session: SessionView) => void;
   delete: (session: SessionView) => Promise<void>;
 }
 
-interface Props {
-  agentId: string;
-  open: boolean;
-  preview: readonly AgentActivitySession[];
-  previewComplete: boolean;
-  conversationOf: (session: AttentionItem) => string | undefined;
-  onNavigate?: () => void;
-}
-
 /**
- * UNIT_BOUNDARY_DESCRIPTION: An Agent's Sessions under its row in the sidebar,
- * five at first and five more per View more, which then moves focus to the
- * first newly shown Session, also once a provisional list gives way to the
- * Agent's own list or a Retry loads the page that failed. An Agent that is not open in the page previews
- * its Sessions from the attention record and reads its own list only after
- * View more; after a View more its own list loads further pages until the rows
- * fill the window or the list ends, at most five pages per click before it
- * offers Keep looking; a changed filter starts again at five. A filter on the
- * Agent goes with the page request, so
- * the runtime pages matching Sessions only, except Needs attention, which only
- * the browser can tell; the list names the filter and offers to clear it.
+ * UNIT_BOUNDARY_DESCRIPTION: the Sessions of the Agent the sidebar is
+ * narrowed to, read from the Agent's own list: five at first and five more
+ * per View more, which then moves focus to the first newly shown Session,
+ * also once a provisional list gives way to the Agent's own list or a Retry
+ * loads the page that failed. After a View more the list loads further pages
+ * until the rows fill the window or the list ends, at most five pages per
+ * click before it offers Keep looking; a changed filter starts again at
+ * five. The Agent's filter goes with the page request, so the runtime pages
+ * matching Sessions only, except Needs attention, which only the browser can
+ * tell; the list names the filter and offers to clear it.
  */
 export function SidebarAgentSessions({
   agentId,
-  open,
-  preview,
-  previewComplete,
-  conversationOf,
   onNavigate,
-}: Props) {
+}: {
+  agentId: string;
+  onNavigate?: () => void;
+}) {
   const [limit, setLimit] = useState(SIDEBAR_SESSION_STEP);
   const [focusAfter, setFocusAfter] = useState<ReadonlySet<string> | null>(
     null,
@@ -93,9 +74,9 @@ export function SidebarAgentSessions({
   const actWhenAwake = useActWhenAwake(agentId);
   const filter = useAgentSessionFilter(agentId);
   const filtered = !!filter && isFiltered(filter);
-  const [limitFilter, setLimitFilter] = useState(filter);
-  if (limitFilter !== filter) {
-    setLimitFilter(filter);
+  const [limitKey, setLimitKey] = useState({ agentId, filter });
+  if (limitKey.agentId !== agentId || limitKey.filter !== filter) {
+    setLimitKey({ agentId, filter });
     setLimit(SIDEBAR_SESSION_STEP);
   }
 
@@ -119,38 +100,16 @@ export function SidebarAgentSessions({
           }
         />
       )}
-      {open ||
-      limit > SIDEBAR_SESSION_STEP ||
-      (preview.length === 0 && !previewComplete) ? (
-        <AgentSessionList
-          agentId={agentId}
-          sessionActions={sessionActions}
-          filter={filtered ? filter : undefined}
-          limit={limit}
-          onLimitChange={setLimit}
-          focusAfter={focusAfter}
-          onFocusAfterChange={setFocusAfter}
-          onNavigate={onNavigate}
-        />
-      ) : (
-        <SessionPreview
-          agentId={agentId}
-          sessions={
-            filtered
-              ? preview.filter((item) => matchesActivityFilters(item, filter))
-              : preview
-          }
-          filtered={filtered}
-          complete={previewComplete}
-          sessionActions={sessionActions}
-          conversationOf={conversationOf}
-          onMore={(shown) => {
-            setFocusAfter(shown);
-            setLimit(limit + SIDEBAR_SESSION_STEP);
-          }}
-          onNavigate={onNavigate}
-        />
-      )}
+      <AgentSessionList
+        agentId={agentId}
+        sessionActions={sessionActions}
+        filter={filtered ? filter : undefined}
+        limit={limit}
+        onLimitChange={setLimit}
+        focusAfter={focusAfter}
+        onFocusAfterChange={setFocusAfter}
+        onNavigate={onNavigate}
+      />
       {renaming && (
         <RenameSessionDialog
           agentId={agentId}
@@ -159,76 +118,6 @@ export function SidebarAgentSessions({
         />
       )}
     </>
-  );
-}
-
-function SessionPreview({
-  agentId,
-  sessions,
-  filtered,
-  complete,
-  sessionActions,
-  conversationOf,
-  onMore,
-  onNavigate,
-}: {
-  agentId: string;
-  sessions: readonly AgentActivitySession[];
-  filtered: boolean;
-  complete: boolean;
-  sessionActions: SessionActions;
-  conversationOf: Props["conversationOf"];
-  onMore: (shown: ReadonlySet<string>) => void;
-  onNavigate?: () => void;
-}) {
-  const openSession = useOpenSession();
-  if (sessions.length === 0 && (complete || !filtered))
-    return <ListNote>{emptyText(filtered, false)}</ListNote>;
-  const visible = sidebarSessionWindow(
-    sessions,
-    SIDEBAR_SESSION_STEP,
-    () => false,
-  );
-  const { more } = viewMore({
-    total: sessions.length,
-    shown: visible.length,
-    limit: SIDEBAR_SESSION_STEP,
-    hasNextPage: !complete,
-  });
-
-  return (
-    <div className={LIST_CLASS} data-testid="sidebar-agent-sessions">
-      {sessions.length === 0 && <ListNote>{emptyText(true, true)}</ListNote>}
-      {visible.map((item) => {
-        const session = provisionalSessionView(item.session);
-        return (
-          <SessionRow
-            key={item.id}
-            session={session}
-            active={false}
-            working={item.working}
-            needsApproval={item.needsApproval}
-            unread={item.unread}
-            conversation={conversationOf(item.session)}
-            className={ROW_CLASS}
-            onResume={() => {
-              openSession(agentId, item.session.sessionId, item.session.mode);
-              onNavigate?.();
-            }}
-            onRename={() => sessionActions.rename(session)}
-            onDelete={() => void sessionActions.delete(session)}
-          />
-        );
-      })}
-      {more && (
-        <ViewMoreRow
-          label={sessions.length === 0 ? "Look further" : "View more"}
-          onClick={() =>
-            onMore(new Set(visible.map((item) => item.session.sessionId)))
-          }
-        />
-      )}
-    </div>
   );
 }
 
@@ -347,7 +236,7 @@ function AgentSessionList({
           onClick={() => void list.retry()}
           disabled={list.retrying}
           data-testid="sidebar-agent-sessions-failed"
-          className={`flex h-[30px] items-center gap-1 rounded-lg pl-12 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
+          className={`flex h-[30px] items-center gap-1 rounded-lg pl-3 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
         >
           Couldn't load sessions. Retry
           {list.retrying && <Spinner />}
@@ -391,7 +280,7 @@ function AgentSessionList({
         <button
           type="button"
           onClick={() => void fetchNextPage()}
-          className={`flex h-[30px] items-center rounded-lg pl-12 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
+          className={`flex h-[30px] items-center rounded-lg pl-3 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
         >
           Couldn't load the rest. Retry
         </button>
@@ -429,7 +318,7 @@ function emptyText(filtered: boolean, more: boolean): string {
 
 function ListNote({ children }: { children: ReactNode }) {
   return (
-    <p className="py-1.5 pl-12 text-xs text-muted-foreground">{children}</p>
+    <p className="py-1.5 pl-3 text-xs text-muted-foreground">{children}</p>
   );
 }
 
@@ -443,7 +332,7 @@ function FilterNote({
   return (
     <div
       data-testid="sidebar-agent-filter-note"
-      className="flex h-6 min-w-0 items-center gap-2 pr-2 pl-12 text-2xs text-muted-foreground"
+      className="flex h-6 min-w-0 items-center gap-2 pr-2 pl-3 text-2xs text-muted-foreground"
     >
       <span className="min-w-0 truncate" title={`Filtered: ${summary}`}>
         Filtered: {summary}
@@ -475,7 +364,7 @@ function ViewMoreRow({
       onClick={onClick}
       aria-busy={busy || undefined}
       data-testid="sidebar-agent-sessions-more"
-      className={`flex h-[30px] shrink-0 items-center gap-1.5 rounded-lg pl-12 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
+      className={`flex h-[30px] shrink-0 items-center gap-1.5 rounded-lg pl-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
     >
       {label}
       {busy && <Spinner />}

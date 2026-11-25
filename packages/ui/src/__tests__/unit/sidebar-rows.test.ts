@@ -35,9 +35,9 @@ const agent = {
 } as unknown as AgentView;
 
 const agentRow = (props: {
-  open: boolean;
+  viewing: boolean;
   selected: boolean;
-  actionCount?: 3 | 4;
+  actionCount?: 2 | 3;
   filtered?: boolean;
   unread?: boolean;
 }) =>
@@ -52,8 +52,7 @@ const agentRow = (props: {
       onSelect: () => {},
       onOpenPeople: () => {},
       actions: null,
-      actionCount: 3,
-      filter: createElement("span", { "data-filter": true }),
+      actionCount: 2,
       filtered: false,
       ...props,
     }),
@@ -85,13 +84,13 @@ describe("unread markers", () => {
   });
 
   it("TEST_SCENARIO: an Agent with an unread Session shows a blue dot and says so to a screen reader", () => {
-    const html = agentRow({ open: false, selected: false });
+    const html = agentRow({ viewing: false, selected: false });
     expect(html).toContain("bg-accent");
     expect(html).toContain("(unread)");
   });
 
-  it("TEST_SCENARIO: the shown, open Agent keeps its blue dot visible, because its unread Session may sit below the five rows it shows", () => {
-    const html = agentRow({ open: true, selected: true });
+  it("TEST_SCENARIO: the Agent the sidebar is narrowed to keeps its blue dot visible, because its unread Session may sit below the five rows it lists", () => {
+    const html = agentRow({ viewing: true, selected: true });
     expect(html).toMatch(
       /<span aria-hidden="true" class="[^"]*"><span class="[^"]*bg-accent/,
     );
@@ -100,75 +99,63 @@ describe("unread markers", () => {
     );
   });
 
-  it("TEST_SCENARIO: a closed Agent whose Session shows from Activity is not highlighted and keeps its actions hidden until hover", () => {
-    expect(agentRow({ open: false, selected: false })).not.toContain(
+  it("TEST_SCENARIO: an Agent the sidebar is not narrowed to is not highlighted and keeps its actions hidden until hover", () => {
+    expect(agentRow({ viewing: false, selected: false })).not.toContain(
       "opacity-100 pr-",
     );
-    expect(agentRow({ open: false, selected: false })).not.toContain(
+    expect(agentRow({ viewing: false, selected: false })).not.toContain(
       'aria-current="page"',
     );
-    expect(agentRow({ open: true, selected: true })).toContain("pr-[86px]");
+    expect(agentRow({ viewing: true, selected: true })).toContain("pr-[60px]");
   });
 
-  it("TEST_SCENARIO: an Agent with a channel kebab reserves room for four controls", () => {
-    const html = agentRow({ open: true, selected: true, actionCount: 4 });
-    expect(html).toContain("pr-[112px]");
-    expect(html).not.toContain("pr-[86px]");
+  it("TEST_SCENARIO: an Agent with a channel kebab reserves room for three controls", () => {
+    const html = agentRow({ viewing: true, selected: true, actionCount: 3 });
+    expect(html).toContain("pr-[86px]");
+    expect(html).not.toContain("pr-[60px]");
   });
 
   const unreadDotClass = (html: string) =>
     /<span aria-hidden="true" class="([^"]*)"><span class="[^"]*bg-accent/.exec(
       html,
     )?.[1] ?? "";
-  const filterClass = (html: string) =>
-    /<div class="([^"]*)"><span data-filter="true"><\/span>/.exec(html)?.[1] ??
-    "";
-
   it("TEST_SCENARIO: an unselected Agent whose actions show because it has focus or an open menu hides its blue dot and makes room for them, so the dot never sits on Configure agent", () => {
-    const html = agentRow({ open: false, selected: false, actionCount: 4 });
+    const html = agentRow({ viewing: false, selected: false, actionCount: 3 });
     for (const reveal of [
       "group-hover/agent",
       "group-focus-within/agent",
       "group-has-[[data-state=open]]/agent",
     ]) {
       expect(unreadDotClass(html)).toContain(`${reveal}:hidden`);
-      expect(html).toContain(`${reveal}:pr-[112px]`);
+      expect(html).toContain(`${reveal}:pr-[86px]`);
     }
   });
 
-  it("TEST_SCENARIO: a filtered, unselected Agent with an unread Session keeps the blue dot at the right end, with the filter icon next to it", () => {
-    const html = agentRow({ open: false, selected: false, filtered: true });
-    expect(unreadDotClass(html)).toContain("ml-6");
-    expect(html).not.toContain("pr-[34px]");
-    expect(filterClass(html)).toMatch(/(^| )right-6( |$)/);
-    expect(filterClass(html)).toContain("group-hover/agent:right-[56px]");
+  const filteredMarkClass = (html: string) =>
+    /<span data-testid="sidebar-agent-filtered" title="Sessions filtered" class="([^"]*)"/.exec(
+      html,
+    )?.[1] ?? "";
+
+  it("TEST_SCENARIO: an Agent with a saved session filter shows a filter mark, so the user knows its agent view opens filtered", () => {
+    const html = agentRow({ viewing: false, selected: false, filtered: true });
+    expect(html).toContain('data-testid="sidebar-agent-filtered"');
+    expect(html).toContain("(sessions filtered)");
+    expect(agentRow({ viewing: false, selected: false })).not.toContain(
+      "sidebar-agent-filtered",
+    );
   });
 
-  it("TEST_SCENARIO: a filtered Agent with nothing unread keeps the filter icon at the right end", () => {
-    const html = agentRow({
-      open: false,
-      selected: false,
-      filtered: true,
-      unread: false,
-    });
-    expect(html).toContain("pr-[34px]");
-    expect(filterClass(html)).toMatch(/(^| )right-1( |$)/);
-  });
-
-  it("TEST_SCENARIO: a selected Agent places the filter icon just left of its actions", () => {
+  it("TEST_SCENARIO: the filter mark makes room for the actions on an unselected Agent and stays on the selected one", () => {
     expect(
-      filterClass(agentRow({ open: true, selected: true, filtered: true })),
-    ).toMatch(/(^| )right-\[56px\]( |$)/);
-    expect(
-      filterClass(
-        agentRow({
-          open: true,
-          selected: true,
-          actionCount: 4,
-          filtered: true,
-        }),
+      filteredMarkClass(
+        agentRow({ viewing: false, selected: false, filtered: true }),
       ),
-    ).toMatch(/(^| )right-\[82px\]( |$)/);
+    ).toContain("group-hover/agent:hidden");
+    expect(
+      filteredMarkClass(
+        agentRow({ viewing: true, selected: true, filtered: true }),
+      ),
+    ).not.toContain("group-hover/agent:hidden");
   });
 });
 

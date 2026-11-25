@@ -6,24 +6,21 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { SidebarAgentSessions } from "../../sessions/components/sidebar-agent-sessions.js";
 import { useStartSession } from "../../sessions/hooks/use-start-session.js";
+import { shownSessionId } from "../../sessions/lib/shown-session.js";
 import { useSidebarSharedAgents } from "../hooks/use-sidebar-agents.js";
 import { holds } from "../lib/agent-permissions.js";
 import { AgentAvatar } from "./avatar/agent-avatar.js";
 import { SidebarSessionActions } from "./sidebar-agent-actions.js";
 
-const NO_PREVIEW: never[] = [];
-const noConversation = () => undefined;
-
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The legacy sidebar's Shared with me section: the
- * Agents another person owns and named this person an Agent Editor of. It
- * sits below the person's own agents, so they always know whose agent they
- * are on, and is hidden while nothing is shared. A row the person may use
- * sessions on opens to the agent's Sessions, read from the agent itself, as
- * the attention record that previews the person's own agents holds none of
- * them; any other row opens the agent's settings.
+ * UNIT_BOUNDARY_DESCRIPTION: the sidebar's Shared with me section: the
+ * Agents another person owns and named this person an Agent Editor of. In
+ * All agents it sits below the person's own agents, so they always know
+ * whose agent they are on, and is hidden while nothing is shared. A row the
+ * person may use sessions on narrows the sidebar to that Agent and opens its
+ * new chat, as an own Agent does; any other row opens the agent's settings.
+ * In an agent view it shows only the selected Agent, when that one is shared.
  */
 export function SidebarSharedAgents({
   stickyHeaderClassName,
@@ -32,19 +29,61 @@ export function SidebarSharedAgents({
   stickyHeaderClassName: string;
   onNavigate?: () => void;
 }) {
-  const { shared, active, folded, openAgentId, sessionOpen, isOpen } =
+  const { shared, active, folded, openAgentId, sidebarAgent } =
     useSidebarSharedAgents();
   const openAgentSettings = useStore((s) => s.openAgentSettings);
-  const setAgentOpen = useStore((s) => s.setSidebarAgentOpen);
+  const setSidebarAgent = useStore((s) => s.setSidebarAgent);
   const showFolded = useStore((s) => s.sidebarShowHibernating);
   const setShowFolded = useStore((s) => s.setSidebarShowHibernating);
+  const sessionOpen = useStore((s) => s.view === "chat" && !!shownSessionId(s));
   const startSession = useStartSession();
-  if (shared.length === 0) return null;
-  const shown = showFolded ? shared : active;
   const navigate = (go: () => void) => () => {
     go();
     onNavigate?.();
   };
+
+  const row = (agent: AgentView) => {
+    const current = agent.id === openAgentId && !sessionOpen;
+    const configure = navigate(() => openAgentSettings(agent.id));
+    if (!holds(agent.access, "sessions"))
+      return (
+        <SharedAgentRow
+          key={agent.id}
+          agent={agent}
+          current={current}
+          onSelect={configure}
+        />
+      );
+    return (
+      <SharedAgentRow
+        key={agent.id}
+        agent={agent}
+        current={current}
+        selected={agent.id === sidebarAgent}
+        onSelect={navigate(() => {
+          setSidebarAgent(agent.id);
+          startSession(agent.id);
+        })}
+        actions={
+          <SidebarSessionActions
+            onNewSession={navigate(() => startSession(agent.id))}
+            onConfigure={configure}
+          />
+        }
+      />
+    );
+  };
+
+  if (sidebarAgent !== null) {
+    const viewed = shared.find((agent) => agent.id === sidebarAgent);
+    return viewed ? (
+      <ul className="flex flex-col gap-px" data-testid="sidebar-shared-agents">
+        {row(viewed)}
+      </ul>
+    ) : null;
+  }
+  if (shared.length === 0) return null;
+  const shown = showFolded ? shared : active;
 
   return (
     <section
@@ -60,48 +99,7 @@ export function SidebarSharedAgents({
       >
         <SectionLabel>Shared with me</SectionLabel>
       </div>
-      <ul className="flex flex-col gap-px">
-        {shown.map((agent) => {
-          const current = agent.id === openAgentId;
-          const configure = navigate(() => openAgentSettings(agent.id));
-          if (!holds(agent.access, "sessions"))
-            return (
-              <SharedAgentRow
-                key={agent.id}
-                agent={agent}
-                current={current}
-                onSelect={configure}
-              />
-            );
-          const open = isOpen(agent.id);
-          return (
-            <SharedAgentRow
-              key={agent.id}
-              agent={agent}
-              current={current && !sessionOpen}
-              open={open}
-              onSelect={() => setAgentOpen(agent.id, !open)}
-              actions={
-                <SidebarSessionActions
-                  onNewSession={navigate(() => startSession(agent.id))}
-                  onConfigure={configure}
-                />
-              }
-            >
-              {open && (
-                <SidebarAgentSessions
-                  agentId={agent.id}
-                  open={current}
-                  preview={NO_PREVIEW}
-                  previewComplete={false}
-                  conversationOf={noConversation}
-                  onNavigate={onNavigate}
-                />
-              )}
-            </SharedAgentRow>
-          );
-        })}
-      </ul>
+      <ul className="flex flex-col gap-px">{shown.map(row)}</ul>
       {folded.length > 0 && (
         <button
           type="button"
@@ -119,35 +117,32 @@ export function SidebarSharedAgents({
 function SharedAgentRow({
   agent,
   current,
-  open,
+  selected = false,
   onSelect,
   actions,
-  children,
 }: {
   agent: AgentView;
   current: boolean;
-  open?: boolean;
+  selected?: boolean;
   onSelect: () => void;
   actions?: ReactNode;
-  children?: ReactNode;
 }) {
   return (
     <li data-testid="sidebar-shared-agent" data-agent-id={agent.id}>
       <div
         className={cn(
           "group/agent relative flex items-center rounded-lg transition-colors",
-          current ? "bg-muted" : "hover:bg-muted",
+          current || selected ? "bg-muted" : "hover:bg-muted",
         )}
       >
         <div
           {...clickableProps(onSelect)}
           aria-current={current ? "page" : undefined}
-          aria-expanded={open}
           data-testid="sidebar-shared-agent-row"
           className={cn(
             "flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg pr-2 pl-3 text-left select-none",
             actions && "group-hover/agent:pr-15",
-            open
+            selected
               ? "text-foreground"
               : "text-foreground/90 hover:text-foreground",
           )}
@@ -171,7 +166,6 @@ function SharedAgentRow({
           </div>
         )}
       </div>
-      {children}
     </li>
   );
 }

@@ -1,20 +1,12 @@
-import type { AttentionItem } from "api-server-api";
 import { SessionMode, SessionType } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
-import {
-  groupSessionsByAgent,
-  sidebarAgentFolded,
-  sidebarAgentOpen,
-} from "../../modules/agents/lib/sidebar-agent-order.js";
+import { sidebarAgentFolded } from "../../modules/agents/lib/sidebar-agent-order.js";
 import {
   activityFilterSummary,
   defaultActivityFilters,
 } from "../../modules/home/lib/activity-filter.js";
-import {
-  matchesActivityFilters,
-  toActivitySessions,
-} from "../../modules/home/lib/activity-sessions.js";
+import { matchesActivityFilters } from "../../modules/home/lib/activity-sessions.js";
 import {
   fillsStep,
   newestFirst,
@@ -24,48 +16,7 @@ import {
   viewMore,
 } from "../../modules/sessions/lib/sidebar-session-window.js";
 
-// TEST_OVERVIEW: The sidebar lists each Agent's Sessions under the Agent, newest activity first, and no Session twice. An Agent shows its first five Sessions, and each click on View more shows five more, loading further pages until the rows fill the window or the list ends. Paging stops when the Agent's cursor does not move or a page brings no new Session. The session filter in the Agents header applies to the attention record and to an Agent's own session list alike.
-
-function attention(
-  agentId: string,
-  sessionId: string,
-  activityAt: string,
-): AttentionItem {
-  return {
-    agentId,
-    sessionId,
-    type: SessionType.Regular,
-    mode: SessionMode.Chat,
-    title: null,
-    scheduleId: null,
-    threadTs: null,
-    harness: null,
-    createdAt: "2026-10-01T08:00:00Z",
-    activityAt,
-    seenAt: activityAt,
-    working: false,
-  };
-}
-
-const records = [
-  attention("a", "a-old", "2026-10-15T08:00:00Z"),
-  attention("b", "b-new", "2026-10-15T12:00:00Z"),
-  attention("a", "a-new", "2026-10-15T11:00:00Z"),
-  attention("b", "b-old", "2026-10-15T09:00:00Z"),
-];
-
-describe("sessions grouped by agent", () => {
-  const byAgent = groupSessionsByAgent(toActivitySessions(records, new Set()));
-
-  it("TEST_SCENARIO: each Session lands under its own Agent once", () => {
-    const ids = (agentId: string) =>
-      byAgent.get(agentId)?.map((item) => item.session.sessionId);
-    expect(ids("a")).toEqual(["a-new", "a-old"]);
-    expect(ids("b")).toEqual(["b-new", "b-old"]);
-    const all = [...byAgent.values()].flat().map((i) => i.id);
-    expect(new Set(all).size).toBe(records.length);
-  });
-});
+// TEST_OVERVIEW: The sidebar's agent view lists the Agent's Sessions newest activity first, and no Session twice. It shows the first five Sessions, and each click on View more shows five more, loading further pages until the rows fill the window or the list ends. Paging stops when the Agent's cursor does not move or a page brings no new Session. The Agent's session filter applies to the attention record and to the Agent's own session list alike. A hibernated Agent folds under See all unless the sidebar is narrowed to it or its chat is shown.
 
 describe("the order of an agent's sessions", () => {
   const session = (id: string, at: string | null) => ({ id, at });
@@ -275,42 +226,15 @@ describe("the sidebar session filter", () => {
   });
 });
 
-describe("an agent's sessions open and close in the sidebar", () => {
-  it("TEST_SCENARIO: the shown Agent is open until the user closes it, and a click opens any other Agent in place", () => {
-    expect(sidebarAgentOpen({}, "a-1", "a-1")).toBe(true);
-    expect(sidebarAgentOpen({}, "a-2", "a-1")).toBe(false);
-    expect(sidebarAgentOpen({ "a-1": false }, "a-1", "a-1")).toBe(false);
-    expect(sidebarAgentOpen({ "a-2": true }, "a-2", "a-1")).toBe(true);
-    expect(sidebarAgentOpen({ "a-2": true }, "a-2", null)).toBe(true);
-  });
-
-  it("TEST_SCENARIO: opening a Session from Activity keeps its Agent's row as it was, closed or open", () => {
-    const fromActivity = (
-      overrides: Record<string, boolean>,
-      agentId: string,
-      shownAgentId: string | null,
-    ) => ({
-      ...overrides,
-      [agentId]: sidebarAgentOpen(overrides, agentId, shownAgentId),
-    });
-    const closed = fromActivity({}, "a-2", "a-1");
-    expect(sidebarAgentOpen(closed, "a-2", "a-2")).toBe(false);
-    const open = fromActivity({}, "a-1", "a-1");
-    expect(sidebarAgentOpen(open, "a-1", "a-1")).toBe(true);
-    const opened = fromActivity({ "a-2": true }, "a-2", null);
-    expect(sidebarAgentOpen(opened, "a-2", "a-2")).toBe(true);
-  });
-});
-
 describe("hibernated Agents fold under See all", () => {
   const sleeping = { id: "a-1", state: "hibernated" } as const;
-  it("TEST_SCENARIO: a hibernated Agent folds unless it is open or shown; closing the shown Agent's Sessions keeps its row in place", () => {
-    expect(sidebarAgentFolded({}, sleeping, null)).toBe(true);
-    expect(sidebarAgentFolded({ "a-1": true }, sleeping, null)).toBe(false);
-    expect(sidebarAgentFolded({}, sleeping, "a-1")).toBe(false);
-    expect(sidebarAgentFolded({ "a-1": false }, sleeping, "a-1")).toBe(false);
-    expect(sidebarAgentFolded({}, { id: "a-1", state: "running" }, null)).toBe(
-      false,
-    );
+  it("TEST_SCENARIO: a hibernated Agent folds unless the sidebar is narrowed to it or its chat is shown; an awake Agent never folds", () => {
+    expect(sidebarAgentFolded(sleeping, null, null)).toBe(true);
+    expect(sidebarAgentFolded(sleeping, null, "a-1")).toBe(false);
+    expect(sidebarAgentFolded(sleeping, "a-1", null)).toBe(false);
+    expect(sidebarAgentFolded(sleeping, "a-2", "a-3")).toBe(true);
+    expect(
+      sidebarAgentFolded({ id: "a-1", state: "running" }, null, null),
+    ).toBe(false);
   });
 });
