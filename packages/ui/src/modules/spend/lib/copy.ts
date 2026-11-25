@@ -224,7 +224,8 @@ export function callsAreEstimates(calls: number, awaiting: number): string {
 }
 
 export function apiSpendHelp(dayStart: string): string {
-  return `What your agents and their sub-agents paid for model calls, in US dollars. ${getBrand().name} measures the cost of each call itself. ${dayStartSentence(dayStart)} Calls that a subscription covers, such as a Claude subscription, are not in this total. OpenAI and Bedrock calls count only when your operator sets a price.`;
+  const brand = getBrand().name;
+  return `Not charged by ${brand}. Your agents' model calls on paid API keys, at provider prices. ${brand}'s estimate. ${dayStartSentence(dayStart)}`;
 }
 
 function dayStartSentence(dayStart: string): string {
