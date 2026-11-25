@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   CONFIGURE_SESSION_METHOD,
+  MODEL_REFUSED_BY_HARNESS_REASON,
   NO_MODEL_REASON,
   PIN_MODEL_METHOD,
   type SessionDefaultsEventPayload,
@@ -1949,7 +1950,9 @@ describe("acp-runtime: one harness process per harness", () => {
   /** TEST_SCENARIO: The harness keeps refusing the session's model (Claude
    * Code could not confirm it with the API) through every retry, so the
    * session's queued prompt is answered with the harness's own reason rather
-   * than run on whatever the harness would substitute; the next prompt, with
+   * than run on whatever the harness would substitute, and the answer names
+   * the refusal in its data so a client can tell the user the model needs a
+   * fix rather than a retry; the next prompt, with
    * the model unchanged, asks again and is refused again instead of running
    * on the default. */
   it("refuses the prompt when the harness will not take the session's model", () => {
@@ -1989,6 +1992,7 @@ describe("acp-runtime: one harness process per harness", () => {
       message: expect.stringContaining(
         "refused the session's model: Couldn't confirm model \"ibm/unknown-model\"",
       ),
+      data: { platform: { reason: MODEL_REFUSED_BY_HARNESS_REASON } },
     });
     expect(promptTextsOf(harness)).toEqual([]);
     expect(world.undelivered.readFor("s").map((r) => r.id)).toEqual(["p-go"]);

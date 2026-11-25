@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { z } from "zod";
-import type { PendingRestart, Sender, Session } from "agent-runtime-api";
+import {
+  MODEL_REFUSED_BY_HARNESS_REASON,
+  type PendingRestart,
+  type Sender,
+  type Session,
+} from "agent-runtime-api";
 import {
   buildPlatformSenderRecordedNotification,
   buildPlatformTurnStartedNotification,
@@ -1039,6 +1044,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     promptScheduler.refuseQueue(
       sessionId,
       `The harness refused the session's model: ${details ?? String(error.message ?? "unknown error")}`,
+      { platform: { reason: MODEL_REFUSED_BY_HARNESS_REASON } },
     );
     return false;
   }

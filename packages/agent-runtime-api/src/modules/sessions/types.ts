@@ -82,4 +82,6 @@ export type SessionDirectoryEntry = z.infer<typeof sessionDirectoryEntrySchema>;
 
 export const PIN_MODEL_METHOD = "_platform/session/pin_model";
 export const NO_MODEL_REASON = "no-model";
+/** UNIT_BOUNDARY_DESCRIPTION: the harness refused the model the session runs on — gone, invalid, or its provider's key refused — so its queued turns are answered with this reason in `data.platform.reason`. */
+export const MODEL_REFUSED_BY_HARNESS_REASON = "model-refused-by-harness";
 export const CONFIGURE_SESSION_METHOD = "_platform/session/configure";
