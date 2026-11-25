@@ -286,7 +286,13 @@ function startSession(
   platform: Record<string, string>,
 ): void {
   client.send(newSessionOn(id, platform));
-  world.harness(harnessKey).replyTo("session/new", { sessionId });
+  const harness = world.harness(harnessKey);
+  if (
+    harness.received("session/new").length === 0 &&
+    harness.received("initialize").length > 0
+  )
+    harness.replyTo("initialize", {});
+  harness.replyTo("session/new", { sessionId });
 }
 
 const modelFrames = (harness: Harness, sessionId: string): string[] =>
@@ -1449,6 +1455,7 @@ describe("acp-runtime: one harness process per harness", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
     const harness = world.harness("claude-code");
+    harness.replyTo("initialize", {});
     harness.replyTo("session/load", {});
     expect(harness.receivedMethods()).not.toContain("session/prompt");
 

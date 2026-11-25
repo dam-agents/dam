@@ -35,6 +35,7 @@ describe("acp-runtime: connecting", () => {
     const first = world.connect();
     first.send(frames.initialize(1));
     expect(world.harnessCount()).toBe(1);
+    world.harness().replyTo("initialize");
 
     const second = world.connect();
     second.send(frames.listSessions(2));
@@ -129,7 +130,8 @@ describe("acp-runtime: connecting", () => {
    * Env is read once per spawn, so a harness started in that window has no
    * credentials until something recycles it. The runtime holds the spawn back
    * and keeps what the client sends, then replays it in the order it was sent
-   * once env lands. The client never learns it waited.
+   * once env lands. The harness gets the frames after initialize only once it
+   * has answered initialize. The client never learns it waited.
    */
   it("should wait for env before starting the harness, then replay the client's messages in order", () => {
     const world = createWorld({ envReadyAtBoot: false });
@@ -144,6 +146,9 @@ describe("acp-runtime: connecting", () => {
     world.runtime.refreshEnv({ force: false });
 
     expect(world.harnessStarted()).toBe(true);
+    expect(world.harness().receivedMethods()).toEqual(["initialize"]);
+
+    world.harness().replyTo("initialize");
     expect(world.harness().receivedMethods()).toEqual([
       "initialize",
       "session/new",
