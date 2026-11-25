@@ -1,13 +1,10 @@
-import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
+import { SessionMode } from "api-server-api";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { Spinner } from "@/components/ui/spinner";
 
-import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
-import { useActWhenAwake } from "../../agents/hooks/use-act-when-awake.js";
-import { useInstallCapabilities } from "../../features/api/queries.js";
 import {
   type ActivityFilters,
   activityFilterSummary,
@@ -15,15 +12,18 @@ import {
   isFiltered,
 } from "../../home/lib/activity-filter.js";
 import { matchesActivityFilters } from "../../home/lib/activity-sessions.js";
-import { downloadTelemetryExport } from "../../telemetry/api/download-export.js";
 import { prefetchSessionHistory } from "../api/queries.js";
 import { useAgentSessionList } from "../hooks/use-agent-session-list.js";
-import { useConfirmDeleteSession } from "../hooks/use-confirm-delete-session.js";
 import { useOpenSession } from "../hooks/use-open-session.js";
+import {
+  type SessionRowActions,
+  useSessionRowActions,
+} from "../hooks/use-session-row-actions.js";
 import {
   setAgentSessionFilter,
   useAgentSessionFilter,
 } from "../lib/agent-session-filters.js";
+import { SIDEBAR_SESSION_ROW_CLASS } from "../lib/sidebar-session-row.js";
 import {
   fillsStep,
   fillState,
@@ -37,13 +37,7 @@ import { RenameSessionDialog } from "./rename-session-dialog.js";
 import { SessionListSkeleton } from "./session-list-skeleton.js";
 import { SessionRow } from "./session-row.js";
 
-const ROW_CLASS = "rounded-lg border-b-0 py-2.5 pr-2 pl-3";
 const LIST_CLASS = "flex flex-col gap-1";
-
-interface SessionActions {
-  rename: (session: SessionView) => void;
-  delete: (session: SessionView) => Promise<void>;
-}
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the Sessions of the Agent the sidebar is
@@ -69,9 +63,7 @@ export function SidebarAgentSessions({
     null,
   );
   const [renaming, setRenaming] = useState<SessionView | null>(null);
-  const deleteSession = useStore((s) => s.deleteSession);
-  const confirmDelete = useConfirmDeleteSession();
-  const actWhenAwake = useActWhenAwake(agentId);
+  const sessionActions = useSessionRowActions(agentId, setRenaming);
   const filter = useAgentSessionFilter(agentId);
   const filtered = !!filter && isFiltered(filter);
   const [limitKey, setLimitKey] = useState({ agentId, filter });
@@ -79,16 +71,6 @@ export function SidebarAgentSessions({
     setLimitKey({ agentId, filter });
     setLimit(SIDEBAR_SESSION_STEP);
   }
-
-  const sessionActions: SessionActions = {
-    rename: (s) => actWhenAwake(`rename:${s.sessionId}`, () => setRenaming(s)),
-    delete: async (s) => {
-      if (await confirmDelete(s))
-        actWhenAwake(`delete:${s.sessionId}`, () =>
-          deleteSession(s.sessionId, agentId),
-        );
-    },
-  };
 
   return (
     <>
@@ -132,7 +114,7 @@ function AgentSessionList({
   onNavigate,
 }: {
   agentId: string;
-  sessionActions: SessionActions;
+  sessionActions: SessionRowActions;
   filter: ActivityFilters | undefined;
   limit: number;
   onLimitChange: (limit: number) => void;
@@ -142,8 +124,6 @@ function AgentSessionList({
 }) {
   const list = useAgentSessionList(agentId, filter);
   const openSession = useOpenSession();
-  const telemetryEnabled =
-    useInstallCapabilities().data?.telemetryBackend ?? false;
   const rootRef = useRef<HTMLDivElement>(null);
   const [pagesLeft, setPagesLeft] = useState(SIDEBAR_FILL_PAGES);
 
@@ -254,7 +234,7 @@ function AgentSessionList({
           session={s}
           {...state}
           outsideFilter={outsideFilter}
-          className={ROW_CLASS}
+          className={SIDEBAR_SESSION_ROW_CLASS}
           onResume={() => {
             openSession(agentId, s.sessionId, s.mode);
             onNavigate?.();
@@ -265,14 +245,8 @@ function AgentSessionList({
             })}
           onRename={() => sessionActions.rename(s)}
           onDelete={() => void sessionActions.delete(s)}
-          {...(telemetryEnabled && {
-            onExportTimeline: () =>
-              void downloadTelemetryExport({
-                agentId,
-                sessionId: s.sessionId,
-                signal: "logs",
-                sinceHours: TELEMETRY_MAX_SINCE_HOURS,
-              }),
+          {...(sessionActions.exportTimeline && {
+            onExportTimeline: () => sessionActions.exportTimeline?.(s),
           })}
         />
       ))}

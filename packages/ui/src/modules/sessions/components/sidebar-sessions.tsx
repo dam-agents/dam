@@ -2,31 +2,35 @@ import { useMemo, useState } from "react";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { SectionLabel } from "@/components/ui/section-label";
-import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/utils";
 
-import { getUser } from "../../../auth.js";
 import { useStore } from "../../../store.js";
+import type { SessionView } from "../../../types.js";
 import { useAgentsList, useSharedAgents } from "../../agents/api/queries.js";
 import { ActivityFilterMenu } from "../../home/components/activity-filter-menu.js";
-import { SidebarActivityRow } from "../../home/components/sidebar-activity-row.js";
 import { useActivityConversations } from "../../home/hooks/use-activity-conversations.js";
-import { useActivitySessions } from "../../home/hooks/use-activity-sessions.js";
+import {
+  type AgentActivitySession,
+  useActivitySessions,
+} from "../../home/hooks/use-activity-sessions.js";
 import {
   defaultActivityFilters,
   isFiltered,
 } from "../../home/lib/activity-filter.js";
 import { filterActivitySessions } from "../../home/lib/activity-sessions.js";
+import { provisionalSessionView } from "../api/queries.js";
 import { useOpenSession } from "../hooks/use-open-session.js";
+import { useSessionRowActions } from "../hooks/use-session-row-actions.js";
 import {
   setAgentSessionFilter,
   useAgentSessionFilter,
 } from "../lib/agent-session-filters.js";
-import { senderNames } from "../lib/sender-names.js";
+import { SIDEBAR_SESSION_ROW_CLASS } from "../lib/sidebar-session-row.js";
+import { RenameSessionDialog } from "./rename-session-dialog.js";
+import { SessionRow } from "./session-row.js";
 import { SidebarAgentSessions } from "./sidebar-agent-sessions.js";
 
 const PAGE = 20;
-const MINUTE_MS = 60_000;
 
 interface Props {
   stickyHeaderClassName?: string;
@@ -106,8 +110,10 @@ function AllAgentsSessions({ onNavigate }: { onNavigate?: () => void }) {
     setShownFilters(filters);
     setShown(PAGE);
   }
-  const now = useNow(MINUTE_MS);
-  const viewerSub = getUser()?.profile.sub;
+  const [renaming, setRenaming] = useState<{
+    agentId: string;
+    session: SessionView;
+  } | null>(null);
   const agents = useAgentsList();
   const hasShared = useSharedAgents().length > 0;
   const sessions = useMemo(() => items.map((item) => item.session), [items]);
@@ -129,17 +135,16 @@ function AllAgentsSessions({ onNavigate }: { onNavigate?: () => void }) {
                 : "No conversations yet"}
         </p>
       )}
-      <ul className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1">
         {visible.map((item) => (
-          <SidebarActivityRow
+          <AllAgentsSessionRow
             key={item.id}
             item={item}
-            selected={item.id === openSessionKey}
-            now={now}
+            active={item.id === openSessionKey}
             conversation={conversationOf(item.session)}
-            startedBy={senderNames(viewerSub, item.agent.access).otherName(
-              item.session.startedBy,
-            )}
+            onRename={(session) =>
+              setRenaming({ agentId: item.session.agentId, session })
+            }
             onOpen={() => {
               openSession(
                 item.session.agentId,
@@ -150,7 +155,7 @@ function AllAgentsSessions({ onNavigate }: { onNavigate?: () => void }) {
             }}
           />
         ))}
-      </ul>
+      </div>
       {matching.length > shown && (
         <button
           type="button"
@@ -160,6 +165,48 @@ function AllAgentsSessions({ onNavigate }: { onNavigate?: () => void }) {
           View more
         </button>
       )}
+      {renaming && (
+        <RenameSessionDialog
+          agentId={renaming.agentId}
+          session={renaming.session}
+          onClose={() => setRenaming(null)}
+        />
+      )}
     </>
+  );
+}
+
+function AllAgentsSessionRow({
+  item,
+  active,
+  conversation,
+  onRename,
+  onOpen,
+}: {
+  item: AgentActivitySession;
+  active: boolean;
+  conversation: string | undefined;
+  onRename: (session: SessionView) => void;
+  onOpen: () => void;
+}) {
+  const actions = useSessionRowActions(item.session.agentId, onRename);
+  const session = provisionalSessionView(item.session);
+  return (
+    <SessionRow
+      session={session}
+      agent={item.agent}
+      active={active}
+      working={item.working}
+      needsApproval={item.needsApproval}
+      unread={item.unread}
+      conversation={conversation}
+      className={SIDEBAR_SESSION_ROW_CLASS}
+      onResume={onOpen}
+      onRename={() => actions.rename(session)}
+      onDelete={() => void actions.delete(session)}
+      {...(actions.exportTimeline && {
+        onExportTimeline: () => actions.exportTimeline?.(session),
+      })}
+    />
   );
 }

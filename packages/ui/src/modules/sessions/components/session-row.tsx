@@ -33,6 +33,7 @@ import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { useAgent } from "../../agents/api/queries.js";
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { onboardingBadge } from "../../agents/utils/agent-kind.js";
 import { SessionRepositoryBadges } from "../../changes/components/session-repository-badges.js";
 import { badgeRepositories } from "../../changes/lib/pull-request-links.js";
@@ -60,6 +61,7 @@ const NO_WORK: readonly BackgroundWorkItemView[] = Object.freeze([]);
 
 interface Props {
   session: SessionView;
+  agent?: { name: string; avatar: string | null };
   active: boolean;
   working: boolean;
   needsApproval: boolean;
@@ -79,6 +81,7 @@ interface Props {
 
 export function SessionRow({
   session: s,
+  agent: listedAgent,
   active,
   working,
   needsApproval,
@@ -249,6 +252,18 @@ export function SessionRow({
               id={metaId}
               className="text-2xs text-muted-foreground truncate"
             >
+              {listedAgent && (
+                <span data-testid="session-agent">
+                  <AgentAvatar
+                    name={listedAgent.name}
+                    avatar={listedAgent.avatar}
+                    size={12}
+                    className="mr-1 inline-block align-[-2px]"
+                  />
+                  {listedAgent.name}
+                  {" · "}
+                </span>
+              )}
               <span title={formatTimestamp(s.updatedAt ?? s.createdAt)}>
                 {timeAgo(s.updatedAt ?? s.createdAt)}
               </span>

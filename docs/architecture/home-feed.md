@@ -84,6 +84,7 @@ The record files no rows for an editor, so a Shared Agent's Sessions show only i
 The Sessions are listed by **last activity, newest first**, and the user does not reorder them: a new Session, or a turn in an old one, puts that Session at the top.
 A Session row shows a blue dot while it is unread, and an approval dot in its place while an approval waits on the user.
 In All agents each row shows its Agent's avatar and name and its time, and after the time the email of whoever started the Session when that is not the viewer; in an agent view the Agent is not repeated.
+Every row, in both views, has the same ⋯ menu, also on a right click: Export telemetry where the installation has telemetry, Rename session and Delete session; on a row the record lists, Rename and Delete wake the Agent first, as on a provisional row.
 
 The Sessions section's filter keeps Sessions by status (All, Needs attention, In progress, Unread) and by type (Chat, Slack, Telegram, Artifact page, Schedule, Terminal); Needs attention is a Session with an approval waiting on the user.
 The filter follows the view: All agents has one filter, and each Agent has its own for its agent view; neither changes the other.

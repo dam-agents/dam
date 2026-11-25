@@ -21,8 +21,6 @@ vi.mock("../../modules/agents/hooks/use-order-drag.js", () => ({
 
 const { SidebarAgentRow } =
   await import("../../modules/agents/components/sidebar-agent-row.js");
-const { SidebarActivityRow } =
-  await import("../../modules/home/components/sidebar-activity-row.js");
 const { SessionRow } =
   await import("../../modules/sessions/components/session-row.js");
 
@@ -159,31 +157,29 @@ describe("unread markers", () => {
   });
 });
 
-describe("an Activity row", () => {
-  it("TEST_SCENARIO: the Agent's avatar sits beside its name", () => {
+describe("a Session row in All agents", () => {
+  it("TEST_SCENARIO: the row names its Agent, with the Agent's avatar beside the name, before the time", () => {
     const html = renderToStaticMarkup(
-      createElement(SidebarActivityRow, {
-        item: {
-          id: "a-1:s-1",
-          agent,
-          session: {
-            agentId: "a-1",
-            sessionId: "s-1",
-            title: "Fix the build",
-            type: SessionType.Regular,
-            mode: SessionMode.Chat,
-          },
-          at: "2026-10-20T08:00:00Z",
-          working: false,
-          unread: false,
-          needsApproval: false,
-        } as never,
-        selected: false,
-        now: new Date("2026-10-20T09:00:00Z"),
-        conversation: undefined,
-        onOpen: () => {},
+      createElement(SessionRow, {
+        session: {
+          agentId: "a-1",
+          sessionId: "s-1",
+          title: "Fix the build",
+          type: SessionType.Regular,
+          mode: SessionMode.Chat,
+          createdAt: "2026-10-20T08:00:00Z",
+        } as unknown as SessionView,
+        agent: { name: "Reviewer", avatar: null },
+        active: false,
+        working: false,
+        needsApproval: false,
+        onResume: () => {},
+        onRename: () => {},
+        onDelete: () => {},
       }),
     );
-    expect(html).toMatch(/data-testid="agent-avatar"[^]*Reviewer/);
+    expect(html).toMatch(
+      /data-testid="session-agent"[^]*data-testid="agent-avatar"[^]*Reviewer/,
+    );
   });
 });
