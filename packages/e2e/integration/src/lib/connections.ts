@@ -22,7 +22,10 @@ export async function createCustomHeaderConnection(
   await page.getByRole("tab", { name: "Connections", exact: true }).click();
   await page.getByTestId("open-connection-catalog").click();
   await page.getByTestId("catalog-tab-custom-headers").click();
-  await page.getByTestId("catalog-new-custom-header").click();
+  await page
+    .getByRole("dialog")
+    .getByTestId("catalog-new-custom-header")
+    .click();
 
   await page.getByTestId("connection-field-name").fill(input.name);
   await page.getByTestId("connection-field-host").fill(input.host);

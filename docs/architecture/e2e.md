@@ -20,8 +20,10 @@ The lane is one variable, `E2E_GATEWAY_PER_OWNER`, which the install reads to tu
 
 ## Projects and the order between them
 
-The specs are grouped into Playwright **projects**, one per area, whose dependencies chain the state they share: the auth project stores the user's login, the agent project creates the suite's mock Agent and the Connection its chat turns need, and the chain project drives that Agent through messages, Sessions, Slack and egress.
-The assistant ships on for everyone, so the auth project's own teardown stores its switch off for the shared account once that account has accepted the Terms, and then takes away the assistant a create in flight had already made, since a create runs behind the request that asked for one — no later spec counts an Agent it did not make.
+The specs are grouped into Playwright **projects**, one per area, and no spec reads state another spec made: the **setup project** makes the shared state every other project starts after — the shared account's stored login with its Terms accepted, the suite's custom-header Connection and model provider, and the suite's mock Agent, running.
+The other smoke projects run in **stages**, each waiting for setup and for the stage before: first the auth, connection, socket-auth, live-events and assistant projects, then the agent and API-key projects, then the chain project, which drives the suite's mock Agent through messages, Sessions, Slack and egress, and the projects whose specs boot Agents of their own.
+A project leaves the suite by leaving its stage, so a spec that a feature file replaces is deleted without breaking the ones after it.
+The assistant ships on for everyone, so the setup project stores its switch off for the shared account once that account has accepted the Terms, and then takes away the assistant a create in flight had already made, since a create runs behind the request that asked for one — no later spec counts an Agent it did not make.
 The assistant spec signs in as two accounts of its own that store nothing: one that owns no other Agent and lands in its chat, one that owns an Agent first and keeps its landing.
 A spec that boots and drives an Agent of its own runs in a project after those, one at a time, because each of them competes for the same cluster's compute.
 Five specs reach into the machine itself: the harness tools spec runs an agent on the harness tools the default image bakes, the browser tabs spec drives the agent's own browser, the boot matrix breaks a machine's boot the ways a host failure does — it kills the machine's VMM at the steps of a boot that platform-init reports on the machine's console, once at a running guest with writes synced into HOME, and empties the disk's layout mark — the storage trim spec measures the claim under an agent's machine, and the runner release spec rolls a live machine onto a second runner release and back, with the chart's own upgrade.
@@ -58,7 +60,8 @@ The slow scenario tier waits for smoke setup and runs one project at a time, bec
 A project whose prerequisite fails is left unrun.
 A local run asks for this tier with `--full`, and in upstream CI only the nightly run takes it.
 The tier under `src/tests/full/` is slow scenario specs: a local run asks for it with `--full`, and in CI only the nightly run takes it.
-Every project, the tier's too, starts after the auth project: its first test proves the Terms gate on the shared account before anything accepts the Terms, and `check:auth-first` fails a config where a project could run beside it.
+Every project, the tier's too, starts after the setup project, and `check:setup-first` fails a config where a project could run beside it.
+The auth project proves the Terms gate on an account of its own, `terms-gate`, that no setup accepts the Terms for, so the gate stands whatever ran before it.
 
 ## Scope: what a pull request runs
 
