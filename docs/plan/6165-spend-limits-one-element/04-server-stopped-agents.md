@@ -21,7 +21,7 @@ Apply `/typescript-engineering`.
    - for each payer agent with refusals, build the candidates that count its refused calls on each refused Connection (agent, connection, owner-connection, owner, ceiling) with `limitView`/`ceilingView`, keep those `state === "reached"`, and pick one with `domain/binding.ts`'s ordering (least left, then narrowest — reuse `bindingFrom`/`NARROWNESS` rather than a copy);
    - an agent with refusals but no reached limit now is not stopped (the owner raised it, removed it or continued);
    - return `{ resetsAt: nextUtcMidnight(now).toISOString(), agents }`, `sessionIds` de-duplicated.
-   Put the pure selection in `domain/` (e.g. `domain/stopped.ts`) so it is testable without a database.
+     Put the pure selection in `domain/` (e.g. `domain/stopped.ts`) so it is testable without a database.
 4. **Docs.** `docs/architecture/spend-limits.md` → **Refusal** or **Continue**: one paragraph on what "stopped" means and that the UI reads it per owner.
 
 ## Acceptance criteria

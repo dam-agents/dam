@@ -1,6 +1,7 @@
 # Spend and limits read as one thing
 
-> Working plan — temporary, committed on the feature branch. Deleted once the feature ships.
+> Working plan — temporary, committed on the feature branch.
+> Deleted once the feature ships.
 
 **Issue:** https://github.com/dam-agents/dam/issues/6165
 
@@ -31,16 +32,17 @@ Dark theme needs nothing extra: `bg-foreground` turns light.
 
 ### Copy
 
-| Where | Old | New |
-| --- | --- | --- |
+| Where                                                        | Old                                                                              | New                                                                                 |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | Chat error card, owner, a limit (not the operator's ceiling) | `…so its model calls stop. Continue it on Home, or wait until {time} your time.` | `…so its model calls stop. Raise your spend limit, or wait until {time} your time.` |
-| Chat error card, editor; the operator's ceiling | today's words | unchanged |
-| Chat error card, hint line | `Details: {raw error}` | `Change the limit · See what it counts` |
-| Sidebar, stopped agent (label and tooltip) | — | `Stopped by a limit: {limit name}. {left} left today, calls stop until {time}.` |
-| Settings → Providers, open row | — | `Limit for all agents` … `Resets at {time} your time.` |
-| Agent → Providers, open row | — | `Limit on the agent` …; `{Provider}, all agents` |
+| Chat error card, editor; the operator's ceiling              | today's words                                                                    | unchanged                                                                           |
+| Chat error card, hint line                                   | `Details: {raw error}`                                                           | `Change the limit · See what it counts`                                             |
+| Sidebar, stopped agent (label and tooltip)                   | —                                                                                | `Stopped by a limit: {limit name}. {left} left today, calls stop until {time}.`     |
+| Settings → Providers, open row                               | —                                                                                | `Limit for all agents` … `Resets at {time} your time.`                              |
+| Agent → Providers, open row                                  | —                                                                                | `Limit on the agent` …; `{Provider}, all agents`                                    |
 
-Naming the exact limit in the chat card ("{limit} reached its {amount} limit today, so this agent's model calls on {provider} stop.") waits until the refusal says which limit stopped the call; it is **not** in this feature.
+Naming the exact limit in the chat card ("{limit} reached its {amount} limit today, so this agent's model calls on {provider} stop.")
+waits until the refusal says which limit stopped the call; it is **not** in this feature.
 
 ### Contract for slice 04 (pinned)
 
@@ -75,14 +77,14 @@ The UI invalidates `spend.stopped` wherever it invalidates `spend.status` today 
 
 ## Sub-issues
 
-| #  | Title | Scope | Depends on |
-|----|-------|-------|------------|
-| 01 | One black meter and the limit row; agent Usage lists every limit | Meters drop the state colours; new `LimitRow`; Usage shows every other limit always, with no toggle | — |
-| 02 | Settings → Providers rows | Closed: spend as text; open: "Limit for all agents" with bar, Change, reset | 01 |
-| 03 | Agent → Providers rows | Open: "Limit on the agent", then "{Provider}, all agents" | 01 |
-| 04 | Server: which agents a limit stopped | `spend.stopped` per the contract above | — |
-| 05 | Sidebar stopped dot | Red dot in the unread dot's place, with its label | 04 |
-| 06 | Chat error card | New owner ending; two links to the agent's Usage at the limits list | 01 |
+| #   | Title                                                            | Scope                                                                                               | Depends on |
+| --- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------- |
+| 01  | One black meter and the limit row; agent Usage lists every limit | Meters drop the state colours; new `LimitRow`; Usage shows every other limit always, with no toggle | —          |
+| 02  | Settings → Providers rows                                        | Closed: spend as text; open: "Limit for all agents" with bar, Change, reset                         | 01         |
+| 03  | Agent → Providers rows                                           | Open: "Limit on the agent", then "{Provider}, all agents"                                           | 01         |
+| 04  | Server: which agents a limit stopped                             | `spend.stopped` per the contract above                                                              | —          |
+| 05  | Sidebar stopped dot                                              | Red dot in the unread dot's place, with its label                                                   | 04         |
+| 06  | Chat error card                                                  | New owner ending; two links to the agent's Usage at the limits list                                 | 01         |
 
 ```mermaid
 graph LR
@@ -118,4 +120,5 @@ On the local cluster (`cluster-ops` skill), signed in as an owner with an Anthro
 
 ## Delivery
 
-Each sub-issue is one atomic commit. The whole feature lands as a single PR for https://github.com/dam-agents/dam/issues/6165.
+Each sub-issue is one atomic commit.
+The whole feature lands as a single PR for https://github.com/dam-agents/dam/issues/6165.

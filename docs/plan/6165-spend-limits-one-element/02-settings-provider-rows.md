@@ -17,7 +17,8 @@ Apply `/react-ui-engineering`.
 1. **Disclosure.** In `packages/ui/src/modules/spend/components/all-agents-provider-limit.tsx`, replace `AllAgentsSpendBadge`'s `SpendPill` with a disclosure: a button showing the spend as `text-sm tabular-nums text-foreground` (`bareSpend(spent, unit)`, so Bob shows "50.00 Bc") and a chevron on the right; both toggle the same `aria-expanded` state (the spend text and the chevron are one button, or two buttons controlling one panel).
    The open panel is rendered by the row's Card below `ProviderRow`: give `ProviderRow` (`providers/components/provider-row.tsx`) a `panel?: ReactNode` (or render it from `provider-section.tsx` under the row inside the same `Card`) so it sits inside the card, under a hairline.
    Keep the raised layering the row uses so the disclosure does not trigger the row's `onOpen`.
-2. **Open panel.** "Limit for all agents" with the people icon (the `LevelIcon` all-connection look), a size-`md` black `LimitBar` filling the row, "$<spent>" over "of $<limit>", a `SpendLimitButton` (Change / Set a limit) for scope `{ kind: "owner-connection", connectionId }`, and "Resets at {localResetTime(status.resetsAt)} your time." in `text-muted-foreground`.
+2. **Open panel.** "Limit for all agents" with the people icon (the `LevelIcon` all-connection look), a size-`md` black `LimitBar` filling the row, "$<spent>" over "of $<limit>", a `SpendLimitButton` (Change / Set a limit) for scope `{ kind: "owner-connection", connectionId }`, and "Resets at {localResetTime(status.resetsAt)} your time."
+   in `text-muted-foreground`.
    Without a limit: the spent amount and "Set a limit", no bar.
    Reuse slice 01's `LimitRow` parts where they fit; the Change button sits at the row's end.
 3. Providers that take no limit show neither text nor chevron, as today with the pill.

@@ -18,7 +18,8 @@ Apply `/react-ui-engineering`.
    - "Limit on the agent" with the agent's avatar (`LevelIcon` with the `LevelAgent`), the black bar, spent over "of limit", a `SpendLimitButton` for `{ kind: "connection", agentId, connectionId }` with `compare`, and "Resets at … your time.".
      Without a limit: the spent amount and "Set a limit".
    - Under a hairline (`border-t border-border`), "{Provider}, all agents" with the provider icon and a small people badge, its bar and spent over "of limit", read only; absent when there is no such limit.
-3. Remove what no longer has a caller: `ProviderSpendBadge`, `SpendPill`, `LimitLine`, `also-counted-by.tsx`, `level-list.tsx`, `shared-limit-bar.tsx`, and `copy.ts` strings only they used (`ALSO_COUNTED_BY`, `STOPS_FIRST`, `badgeSpend*`, …). Check `rg` before deleting each.
+3. Remove what no longer has a caller: `ProviderSpendBadge`, `SpendPill`, `LimitLine`, `also-counted-by.tsx`, `level-list.tsx`, `shared-limit-bar.tsx`, and `copy.ts` strings only they used (`ALSO_COUNTED_BY`, `STOPS_FIRST`, `badgeSpend*`, …).
+   Check `rg` before deleting each.
 4. **Docs.** `docs/architecture/spend-limits.md` → **Screens**: the agent's Providers bullet (pill → spend text that opens both limits); drop the "Also counted by" pattern paragraph, now gone from every screen.
 5. Update any `.quality-inspector/qi-profile-dam/` helper that uses `provider-spend-badge` or `provider-set-limit` on the agent.
 

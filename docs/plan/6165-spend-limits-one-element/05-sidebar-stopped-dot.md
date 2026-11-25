@@ -18,7 +18,8 @@ Apply `/react-ui-engineering`.
 3. **Dot.** In `agents/components/sidebar-agent-row.tsx`, where the unread dot renders: when `stopped`, render the same `size-4` box with a `size-2 rounded-full bg-danger` dot, `role="img"` and `aria-label` = the label, wrapped in the product `Tooltip` with the same text; skip the blue dot and its "(unread)" text.
    Keep the hover/selection layout rules the unread dot uses (`HIDDEN_WHEN_REVEALED`, `filtered && "ml-6"`, the `pr-[34px]` padding that checks `unread`).
 4. **Label.** `stoppedByLimit(name, left, time)` in `spend/lib/copy.ts`: `Stopped by a limit: {name}. {left} left today, calls stop until {time}.`, with `left = bareSpend(leftMicros, unit)` and `time = localResetTime(resetsAt)`.
-   Name by kind: agent → "Limit on the agent", connection → "{agent} on {provider}" as the Usage list names it, owner-connection → "{provider}, all agents", owner → "Total daily limit", ceiling → "Spend ceiling". Reuse `level-labels.ts` names where they match.
+   Name by kind: agent → "Limit on the agent", connection → "{agent} on {provider}" as the Usage list names it, owner-connection → "{provider}, all agents", owner → "Total daily limit", ceiling → "Spend ceiling".
+   Reuse `level-labels.ts` names where they match.
 5. **Docs.** `docs/architecture/spend-limits.md` → **Screens**: a sidebar bullet.
 
 ## Acceptance criteria

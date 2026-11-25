@@ -23,7 +23,8 @@ Apply `/react-ui-engineering`.
 
 ## Acceptance criteria
 
-- [ ] The owner's refusal reads "Spend limit reached: This agent reached a daily spend limit, so its model calls stop. Raise your spend limit, or wait until <time> your time."
+- [ ] The owner's refusal reads "Spend limit reached: This agent reached a daily spend limit, so its model calls stop.
+  Raise your spend limit, or wait until <time> your time."
 - [ ] The editor's and the ceiling's cards keep today's words and hint.
 - [ ] Pressing either link opens the agent's settings on Usage with the limits list in view; both links are keyboard-reachable with a visible focus ring.
 - [ ] `spend-refusal-copy.test.ts`, `send-error.test.ts` and `send-error-card.test.ts` are updated; UI checks and tests pass.
