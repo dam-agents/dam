@@ -30,7 +30,7 @@ export function securityCheckLevelOptions(
     {
       value: "deep",
       label: "Deep",
-      description: `${brand.assistantName} also asks the agents you share with other people about their instructions. Each of them runs once, at its usual cost.`,
+      description: `${brand.assistantName} also asks the agents you share with other people about their instructions. Those agents run too, at their usual cost.`,
     },
   ];
 }

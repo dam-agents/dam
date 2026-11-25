@@ -1,6 +1,6 @@
 # Assistant
 
-Last verified: 2026-11-23
+Last verified: 2026-11-25
 
 ## Overview
 
@@ -197,8 +197,9 @@ A problem the owner calls fine goes into the assistant's memory file, and later 
 The check sees what the CLI lists, what an Agent's instruction files say, and at the deep level what the Agent says about itself.
 For each Agent that anyone besides the owner steers it reads the instruction files through the CLI, with the skills and memory they point to; an Agent only the owner steers is left alone.
 A read wakes that Agent and calls no model, so it spends compute and nothing of a model budget.
-At the deep level it also asks such an Agent, in one prompt, what its files left open: what it is for and what a message may change in it.
-The question runs a turn on that Agent, on that Agent's model, so a deep check costs more the more Agents the owner shares, and the assistant names in the check's Session each Agent it asked.
+At the deep level it also asks such an Agent what its files left open: what it is for and what a message may change in it.
+It asks again when an answer leaves that open, so how many questions an Agent gets is the assistant's to decide and no limit of the platform.
+Each question runs a turn on that Agent, on that Agent's model, so a deep check costs more the more Agents the owner shares and the more the assistant asks, and the assistant names in the check's Session each Agent it asked and how many times.
 The answer is the Agent's own word and not a test: the check sends nothing that tries to break an Agent's rules, so a weakness that neither the files nor the Agent describe stays unseen.
 It reads no other file of an agent and none of its earlier sessions, so a secret left in a file is found only by the agent that works with that file.
 It uses the access the assistant already has: there is no narrower read-only grant, and the task is what keeps a check from changing anything.
