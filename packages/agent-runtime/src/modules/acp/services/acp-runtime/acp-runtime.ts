@@ -343,6 +343,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   let initializeAnswer: { result?: unknown; error?: unknown } | null = null;
   let initializeWaiters: { channel: ClientChannel; id: unknown }[] | null =
     null;
+  let initializeInFlight: number | null = null;
+  let framesAwaitingInitialize: unknown[] | null = null;
   const engagedSessions = new Map<ClientChannel, Set<string>>();
   const nonViewerChannels = new Set<ClientChannel>();
   const unseeingChannels = new Set<ClientChannel>();
@@ -454,8 +456,40 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     );
   }
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a harness may refuse every request until it has
+   * answered its first initialize, as Bob does. While a forwarded initialize is
+   * unanswered, every other frame waits here in order and goes to the harness
+   * right after the answer. Each waiting request already has its outbound
+   * mapping, so a teardown before the answer answers it like any request the
+   * harness never answered. The hold ends on the answer to that initialize's
+   * id, not on its outbound mapping, which a client that leaves before the
+   * answer takes away.
+   */
   function sendToHarness(frame: unknown): boolean {
-    return lease.send(deps.harnessState?.request(frame) ?? frame);
+    const outgoing = deps.harnessState?.request(frame) ?? frame;
+    if (framesAwaitingInitialize !== null) {
+      framesAwaitingInitialize.push(outgoing);
+      return true;
+    }
+    const sent = lease.send(outgoing);
+    if (
+      sent &&
+      isNonNullObject(outgoing) &&
+      outgoing.method === "initialize" &&
+      typeof outgoing.id === "number"
+    ) {
+      initializeInFlight = outgoing.id;
+      framesAwaitingInitialize = [];
+    }
+    return sent;
+  }
+
+  function releaseFramesAwaitingInitialize(): void {
+    const waiting = framesAwaitingInitialize ?? [];
+    initializeInFlight = null;
+    framesAwaitingInitialize = null;
+    for (const frame of waiting) lease.send(frame);
   }
 
   function dropHarnessWork(sessionId: string): void {
@@ -1229,6 +1263,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       });
     initializeAnswer = null;
     initializeWaiters = null;
+    initializeInFlight = null;
+    framesAwaitingInitialize = null;
     deps.backgroundWork.clear();
     if (reason === "agent-exited") deps.onHarnessExited?.();
   }
@@ -2272,6 +2308,30 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         ownReply(frame);
         return;
       }
+      if (outboundId === initializeInFlight) {
+        sessionCloseSupported = hasSessionCapability(frame, "close");
+        sessionResumeSupported = hasSessionCapability(frame, "resume");
+        sessionForkSupported = hasSessionCapability(frame, "fork");
+        harnessSteers = steeringSupported(
+          (frame as { result?: unknown }).result,
+        );
+        if (deps.steering === "native" && !harnessSteers)
+          deps.log?.(
+            "the manifest says the harness steers natively, but its initialize answer does not advertise steering; mid-turn messages wait for the next turn",
+          );
+        const { result, error } = frame as {
+          result?: unknown;
+          error?: unknown;
+        };
+        for (const w of initializeWaiters ?? [])
+          sendToChannel(
+            w.channel,
+            JSON.stringify({ jsonrpc: "2.0", id: w.id, result, error }),
+          );
+        initializeWaiters = null;
+        if (result !== undefined) initializeAnswer = { result };
+        releaseFramesAwaitingInitialize();
+      }
       const mapping = outboundIdToClient.get(outboundId);
       if (mapping) {
         outboundIdToClient.delete(outboundId);
@@ -2288,30 +2348,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           )
         )
           return;
-
-        if (mapping.method === "initialize") {
-          sessionCloseSupported = hasSessionCapability(frame, "close");
-          sessionResumeSupported = hasSessionCapability(frame, "resume");
-          sessionForkSupported = hasSessionCapability(frame, "fork");
-          harnessSteers = steeringSupported(
-            (frame as { result?: unknown }).result,
-          );
-          if (deps.steering === "native" && !harnessSteers)
-            deps.log?.(
-              "the manifest says the harness steers natively, but its initialize answer does not advertise steering; mid-turn messages wait for the next turn",
-            );
-          const { result, error } = frame as {
-            result?: unknown;
-            error?: unknown;
-          };
-          for (const w of initializeWaiters ?? [])
-            sendToChannel(
-              w.channel,
-              JSON.stringify({ jsonrpc: "2.0", id: w.id, result, error }),
-            );
-          initializeWaiters = null;
-          if (result !== undefined) initializeAnswer = { result };
-        }
 
         const sidFromResult = extractResultSessionId(frame);
         const sidForChannel = sidFromResult ?? mapping.attachSessionId;

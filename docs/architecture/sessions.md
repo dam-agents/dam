@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-11-24
+Last verified: 2026-11-25
 
 ## Session inside the machine
 
@@ -25,6 +25,7 @@ A model resolved while the session's turn runs waits for that turn to end, so a 
 A `session/new` released on its kind's default opens on that default's model, settings and follow marker, as the api-server fills them into a run that names no model; a harness that does not reach its models through the Model Router needs no model, so it bypasses the gate, and a sub-agent session has no kind default to take.
 The default harness's lease starts once the server listens, so a waking chat finds it loaded; where the machine kept the [model catalog](harness-config.md#the-model-catalog) it last routed on, the lease starts on that instead of waiting for the provider listing.
 Any other lease starts on the first frame naming a session on its harness.
+A new harness process gets no other frame until it has answered its first `initialize`, since a harness may refuse every request before that; the frames sent meanwhile reach it in order once it answers.
 A lease that held no session for a while shuts down, the default's included, and one whose harness crashes is respawned by the next frame.
 A lease outlives connections.
 ACP channels attach concurrently and engage sessions by the `sessionId` each frame carries.
