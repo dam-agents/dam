@@ -49,11 +49,11 @@ No client, API or database change is needed.
 
 ## Sub-issues
 
-| #   | Title                                                                                                            | Scope                                                        | Depends on |
-| --- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ---------- |
-| 01  | [Pi keeps the platform's session id when it restarts before the first message](./01-pi-session-id-on-restart.md) | `pi-acp-patch.mjs`, pi-agent README                          | —          |
-| 02  | [The runtime waits for a new harness process to answer `initialize`](./02-wait-for-initialize-answer.md)         | `acp-runtime.ts`, `sessions.md`                              | —          |
-| 03  | [codex-acp exits when its `codex` process exits](./03-codex-acp-exits-with-codex.md)                             | `codex-acp-patch.mjs`, codex README, `check/codex-acp-patch` | —          |
+| #     | Title                                                                                                            | Scope                                                        | Depends on |
+| ----- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ---------- |
+| ✅ 01 | [Pi keeps the platform's session id when it restarts before the first message](./01-pi-session-id-on-restart.md) | `pi-acp-patch.mjs`, pi-agent README                          | —          |
+| 02    | [The runtime waits for a new harness process to answer `initialize`](./02-wait-for-initialize-answer.md)         | `acp-runtime.ts`, `sessions.md`                              | —          |
+| 03    | [codex-acp exits when its `codex` process exits](./03-codex-acp-exits-with-codex.md)                             | `codex-acp-patch.mjs`, codex README, `check/codex-acp-patch` | —          |
 
 The order is a suggestion: 01 first, because it is the bug the issue was opened for.
 
