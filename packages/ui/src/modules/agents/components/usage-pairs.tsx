@@ -1,9 +1,6 @@
-import type { CarbonIconType } from "@carbon/icons-react";
-
 import { Tooltip } from "@/components/ui/tooltip";
 
 import { formatBytes } from "../../../lib/format-size.js";
-import { RESOURCE_ICON } from "../../budgets/lib/resource-icons.js";
 import type { AgentUsage } from "../utils/sandbox-subtitle.js";
 
 export function UsagePairs({ usage }: { usage: AgentUsage }) {
@@ -11,14 +8,14 @@ export function UsagePairs({ usage }: { usage: AgentUsage }) {
     <>
       {usage.memoryBytes !== null && (
         <UsagePair
-          icon={RESOURCE_ICON.memory}
+          word="memory"
           what="Memory used by this agent"
           bytes={usage.memoryBytes}
         />
       )}
       {usage.storageBytes !== null && (
         <UsagePair
-          icon={RESOURCE_ICON.storage}
+          word="storage"
           what="Storage used by this agent"
           bytes={usage.storageBytes}
         />
@@ -28,11 +25,11 @@ export function UsagePairs({ usage }: { usage: AgentUsage }) {
 }
 
 function UsagePair({
-  icon: Icon,
+  word,
   what,
   bytes,
 }: {
-  icon: CarbonIconType;
+  word: string;
   what: string;
   bytes: number;
 }) {
@@ -42,10 +39,9 @@ function UsagePair({
       <span
         tabIndex={0}
         aria-label={`${what}: ${amount}`}
-        className="inline-flex items-center gap-1 rounded-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex items-center rounded-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <Icon size={14} aria-hidden className="shrink-0" />
-        {amount}
+        {amount} {word}
       </span>
     </Tooltip>
   );

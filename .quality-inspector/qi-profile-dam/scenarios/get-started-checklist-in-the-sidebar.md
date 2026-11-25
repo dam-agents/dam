@@ -11,6 +11,7 @@ Then Get started sits above Documentation and Settings, with a ring that shows h
 Given the Get started item
 When the owner clicks it
 Then a popover opens beside the item with the done count, a strip of eight slots and the eight tasks
+And the popover offers no other way to close than its close button, Escape and a click outside
 When they click its close button
 Then the popover closes back to the item, which stays in the footer
 
@@ -26,15 +27,7 @@ Given the open checklist
 When the owner clicks, taps, or reaches with the Tab key, the ⓘ beside Schedule a recurring task
 Then a small card shows one line about that task, and the task itself is not started
 
-## AC-5 — Dismiss hides the checklist until the next unlock
-
-Given the open checklist
-When the owner clicks Dismiss
-Then Get started leaves the sidebar footer
-When they finish another checklist task elsewhere
-Then the item comes back, counting the unlock they have not seen
-
-## AC-6 — an unseen unlock carries a count, and the checklist celebrates it once
+## AC-5 — an unseen unlock carries a count, and the checklist celebrates it once
 
 Given an unlock the owner has not seen, counted on the Get started item
 When they open the checklist
@@ -42,13 +35,13 @@ Then the popover shows the celebration for that character in place of the task l
 When they click Nice
 Then the task list comes back with the character in its slot, and the count is gone
 
-## AC-7 — a collapsed sidebar keeps the ring alone
+## AC-6 — a collapsed sidebar keeps the ring alone
 
 Given the sidebar collapsed with the chevron in its header
 When the owner looks at the footer
 Then Get started shows as the ring alone, and a screen reader reads its progress
 
-## AC-8 — on a phone the checklist opens inside the navigation drawer
+## AC-7 — on a phone the checklist opens inside the navigation drawer
 
 Given a narrow window with the navigation drawer closed
 When the owner opens the avatar picker and clicks See how to unlock the rest

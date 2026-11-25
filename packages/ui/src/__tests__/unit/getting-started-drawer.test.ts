@@ -44,7 +44,6 @@ vi.mock("../../modules/getting-started/api/queries.js", () => ({
 }));
 vi.mock("../../modules/getting-started/api/mutations.js", () => ({
   useMarkUnlockSeen: () => ({ mutate: vi.fn() }),
-  useSetChecklistDismissed: () => ({ mutate: vi.fn() }),
 }));
 vi.mock("../../modules/getting-started/hooks/use-start-task.js", () => ({
   useStartTask: () => vi.fn(),
