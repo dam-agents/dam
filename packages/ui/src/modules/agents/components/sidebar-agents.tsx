@@ -47,6 +47,7 @@ export function SidebarAgents({
   const available = agentsData?.availableChannels ?? {};
   const openAgentSettings = useStore((s) => s.openAgentSettings);
   const setSidebarAgent = useStore((s) => s.setSidebarAgent);
+  const setSidebarBackFrom = useStore((s) => s.setSidebarBackFrom);
   const showFolded = useStore((s) => s.sidebarShowHibernating);
   const setShowFolded = useStore((s) => s.setSidebarShowHibernating);
   const sessionOpen = useStore((s) => s.view === "chat" && !!shownSessionId(s));
@@ -125,7 +126,12 @@ export function SidebarAgents({
           <CreateAgentMenu onChoose={onNavigate} />
         </div>
       ) : (
-        <AllAgentsButton onClick={() => setSidebarAgent(null)} />
+        <AllAgentsButton
+          onClick={() => {
+            setSidebarBackFrom(sidebarAgent);
+            setSidebarAgent(null);
+          }}
+        />
       )}
       {sidebarAgent === null && activity.unreadable && (
         <p className="px-2.5 py-1.5 text-xs text-muted-foreground">

@@ -35,6 +35,8 @@ export interface SidebarSlice {
   setSidebarShowHibernating: (show: boolean) => void;
   sidebarAgent: string | null;
   setSidebarAgent: (agentId: string | null) => void;
+  sidebarBackFrom: string | null;
+  setSidebarBackFrom: (agentId: string | null) => void;
   sidebarWakeDecided: ReadonlySet<string>;
   setSidebarWakeDecided: (agentId: string, decided: boolean) => void;
   mobileNavOpen: boolean;
@@ -93,6 +95,8 @@ export const createSidebarSlice: StateCreator<
   },
   sidebarAgent: null,
   setSidebarAgent: (agentId) => set({ sidebarAgent: agentId }),
+  sidebarBackFrom: null,
+  setSidebarBackFrom: (agentId) => set({ sidebarBackFrom: agentId }),
   sidebarWakeDecided: new Set(),
   setSidebarWakeDecided: (agentId, decided) =>
     set((s) => {

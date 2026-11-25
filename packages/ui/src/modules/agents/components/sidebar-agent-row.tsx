@@ -89,6 +89,7 @@ export function SidebarAgentRow({
             orderReady ? "Alt+ArrowUp Alt+ArrowDown" : undefined
           }
           data-testid="sidebar-agent-row"
+          data-agent-id={agent.id}
           className={cn(
             "flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg pr-2 pl-3 text-left select-none",
             selected ? padding.shown : padding.revealed,

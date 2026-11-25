@@ -1,5 +1,5 @@
 import type { SessionPin } from "api-server-api";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -26,6 +26,7 @@ import {
 import { provisionalSessionView } from "../api/queries.js";
 import { useSessionPinActions, useSessionPins } from "../api/session-pins.js";
 import { useOpenSession } from "../hooks/use-open-session.js";
+import { useReturnToAllAgents } from "../hooks/use-return-to-all-agents.js";
 import { useSessionRowActions } from "../hooks/use-session-row-actions.js";
 import {
   setAgentSessionFilter,
@@ -127,6 +128,8 @@ function AllAgentsSessions({
 }) {
   const { items, openSessionKey, loading, unreadable } = useActivitySessions();
   const { pins, pinnedKeys } = useSessionPins();
+  const listRef = useRef<HTMLDivElement>(null);
+  useReturnToAllAgents(listRef);
   const filters = useStore((s) => s.sidebarActivityFilters);
   const openSession = useOpenSession();
   const [shown, setShown] = useState(PAGE);
@@ -171,7 +174,7 @@ function AllAgentsSessions({
   );
 
   return (
-    <>
+    <div ref={listRef}>
       {pinned.length > 0 && (
         <div data-testid="sidebar-pinned" className="mb-4">
           {pinnedHeader}
@@ -213,7 +216,7 @@ function AllAgentsSessions({
           onClose={() => setRenaming(null)}
         />
       )}
-    </>
+    </div>
   );
 }
 

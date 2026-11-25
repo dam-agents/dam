@@ -54,13 +54,13 @@ sessionPins.unpin  : mutation ({ agentId, sessionId })            -> void   // i
 
 ## Sub-issues
 
-| #   | Title                               | Scope                                                                                                                                                            | Depends on |
-| --- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | ✅ Session pins on the server       | `session-pins` table, module and router; cleanup on agent and session delete; retention skips pinned rows                                                        | —          |
-| 02  | ✅ Agent view and one Sessions list | `sidebarAgent`; "← All agents"; agent-row clicks; nested lists removed; Activity → Sessions by view; view-following filter; Shared with me; collapsed rail; docs | —          |
-| 03  | ✅ ⋯ menu on every session row      | Rename, Delete, Export telemetry on all-agents rows                                                                                                              | 02         |
-| 04  | ✅ Pinned section                   | Pin/Unpin in the menu; Pinned above Sessions in both views; never repeated in Sessions                                                                           | 01, 03     |
-| 05  | Back to All agents keeps your place | Scroll to the open session's row when loaded                                                                                                                     | 04         |
+| #   | Title                                  | Scope                                                                                                                                                            | Depends on |
+| --- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| 01  | ✅ Session pins on the server          | `session-pins` table, module and router; cleanup on agent and session delete; retention skips pinned rows                                                        | —          |
+| 02  | ✅ Agent view and one Sessions list    | `sidebarAgent`; "← All agents"; agent-row clicks; nested lists removed; Activity → Sessions by view; view-following filter; Shared with me; collapsed rail; docs | —          |
+| 03  | ✅ ⋯ menu on every session row         | Rename, Delete, Export telemetry on all-agents rows                                                                                                              | 02         |
+| 04  | ✅ Pinned section                      | Pin/Unpin in the menu; Pinned above Sessions in both views; never repeated in Sessions                                                                           | 01, 03     |
+| 05  | ✅ Back to All agents keeps your place | Scroll to the open session's row when loaded                                                                                                                     | 04         |
 
 ```mermaid
 graph LR

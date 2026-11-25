@@ -57,6 +57,7 @@ The sidebar has one list of Sessions, the **Sessions** section, and two views of
 In **All agents**, the default view, the Agents section lists every Agent and no Agent lists Sessions of its own; the Sessions section lists the record's rows for every Agent the user owns.
 A click on an Agent opens its **agent view**: the other Agents and Shared with me hide, **All agents** shows above the selected Agent, the Sessions section lists only that Agent's own list, and the page opens the Agent's new-session page, with its Files and Artifacts sections as this browser last left them (closed at first).
 A click on the selected Agent opens its new-session page again; only All agents leaves the view.
+All agents scrolls the list to the open Session's row, in Pinned or Sessions, when that row is already loaded, and moves keyboard focus to the row of the Agent the user came from; it never loads another page to find the Session.
 The view lives in the page and is not kept: a reload opens All agents.
 Opening a Session from the list never changes the view, and leaving the chat for another page keeps it; when the chat moves to another Agent's Session from outside the sidebar, by a link, a notification or the palette, the view goes back to All agents, so the open Session is always one the list can hold.
 
