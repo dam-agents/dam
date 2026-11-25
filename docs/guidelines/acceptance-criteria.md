@@ -46,7 +46,7 @@ Then Ben sees the setup read-only, with Ada named as the one who can change it
 ## Writing an Example
 
 - **Concrete.** Name the people, the agents and the values: "Ada", "triage", "Hello Ada", never "a user" or "an agent".
-  The suite's personas are Ada, Ben and Jo.
+  The suite's personas are Ada, Ben and Jo, and Kim, a newcomer who has never accepted the Terms of Use.
   Concrete data is what makes an Example check one thing.
 - **One action.** One When; the Given steps set the state up, the Then steps check the outcome.
   A long story is a journey, not an Example (see [Journeys](#journeys)).
@@ -63,6 +63,8 @@ Then Ben sees the setup read-only, with Ada named as the one who can change it
 ## From the map to the feature file
 
 A feature's Examples merge first, in a pull request of their own: the spec pull request adds them to the capability's feature file, tagged `@wip`, and a code owner approves what they mean.
+The capability's feature file is `features/<area>/<capability>.feature`; a new capability adds a file, in the area a person would look for it.
+A pull request that writes the Examples of a Rule tagged `@todo` removes the tag.
 A `@wip` Example runs as an expected failure until the implementation pull request removes the tag and makes it pass.
 A bug's Example and its fix share one pull request, whose body shows the Example failing before the fix.
 

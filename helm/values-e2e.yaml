@@ -80,6 +80,10 @@ keycloak:
     - username: acceptance-jo-0
       password: acceptance-e2e
       firstName: Jo
+    # Kim, the newcomer, never accepts the Terms and makes no Agent.
+    - username: acceptance-kim-0
+      password: acceptance-e2e
+      firstName: Kim
   resources:
     limits:
       cpu: "2"

@@ -9,89 +9,14 @@ import {
 } from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
-import { agentName } from "../../lib/fixtures.js";
-
-const scriptedReply = "scripted-reply-from-e2e";
-const userPrompt = "hello-from-playwright";
+import { agentName, mockDefaultReply } from "../../lib/fixtures.js";
 
 const offsetUserPrompt = "what-files-changed-703";
 const offsetReplyHead = "Let me check the repository. ";
 const offsetBackgroundPrompt = "Run the nightly cleanup task";
 const offsetReplyTail = "Found 3 changed files.";
 
-test("exchange messages with the agent", async ({ page }) => {
-  test.setTimeout(300_000);
-
-  const token = await getAccessToken();
-  const api = createApiClient(token);
-
-  const agentId = await waitForAgentRunning(api, agentName);
-  await setMockAgentReply(api, agentId, scriptedReply);
-
-  await test.step("open the agent chat from the agent list", async () => {
-    await openAgentChat(page, agentName, agentId);
-  });
-
-  await test.step("the chat view keeps its top bar, which holds the bell, and has no icon bar", async () => {
-    const bell = page.getByTestId("side-panel-tab-approvals");
-    await expect(bell).toBeVisible();
-    await expect(page.getByTestId("side-panel-bar")).toHaveCount(0);
-  });
-
-  await test.step("the new session page names the agent", async () => {
-    await expect(
-      page.getByRole("heading", { level: 2, name: agentName, exact: true }),
-    ).toBeVisible();
-  });
-
-  await test.step("send a message and receive the scripted reply", async () => {
-    await sendMessageToAgent(page, userPrompt);
-
-    await expect(page.getByText(scriptedReply)).toBeVisible({
-      timeout: 30_000,
-    });
-
-    const { prompts } = await api.e2e.getReceivedPrompts.query({ agentId });
-    expect(prompts.length).toBeGreaterThan(0);
-    expect(JSON.stringify(prompts)).toContain(userPrompt);
-  });
-
-  await test.step("the agent's name above its reply opens its settings over the chat, and they offer no page beside them", async () => {
-    await page
-      .getByTestId("chat-message")
-      .filter({ hasText: scriptedReply })
-      .getByRole("button", { name: `${agentName} settings` })
-      .click();
-    await expect(page.getByTestId("configure-agent-modal")).toBeVisible();
-    await expect(page).toHaveURL(new RegExp(`/chat/${agentId}`));
-    await expect(page.getByTestId("configure-agent-modal-page")).toHaveCount(0);
-  });
-
-  await test.step("the avatar picker opens on hover and closes when the pointer leaves", async () => {
-    // TEST_SCENARIO: the settings show the avatar picker twice, in the banner and at the top of General, as the design draws them; this step drives the General one.
-    const picker = page
-      .getByTestId("agent-general-identity")
-      .getByTestId("avatar-picker");
-    const grid = page.getByRole("group", { name: "Avatar" });
-    await picker.hover();
-    await expect(grid).toBeVisible();
-    await page.mouse.move(0, 0);
-    await expect(grid).toBeHidden();
-  });
-
-  await test.step("Enter moves focus into the avatar picker and Escape returns it", async () => {
-    const picker = page
-      .getByTestId("agent-general-identity")
-      .getByTestId("avatar-picker");
-    const grid = page.getByRole("group", { name: "Avatar" });
-    await picker.press("Enter");
-    await expect(grid.getByRole("button", { pressed: true })).toBeFocused();
-    await page.keyboard.press("Escape");
-    await expect(grid).toBeHidden();
-    await expect(picker).toBeFocused();
-  });
-});
-
+// TEST_OVERVIEW: a background prompt the agent receives mid-turn keeps the chat's reply paired with the person's message (#703). Sending a message and getting the answer, and the agent's settings over its chat, are Examples of the acceptance suite (features/agents/agents.feature, features/agents/settings.feature).
 test("background prompt mid-turn keeps the reply paired with the user message (#703)", async ({
   page,
 }) => {
@@ -134,6 +59,6 @@ test("background prompt mid-turn keeps the reply paired with the user message (#
       await expect(backgroundPrompt).toContainText(offsetBackgroundPrompt);
     });
   } finally {
-    await setMockAgentReply(api, agentId, scriptedReply);
+    await setMockAgentReply(api, agentId, mockDefaultReply);
   }
 });

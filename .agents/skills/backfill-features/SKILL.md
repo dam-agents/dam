@@ -23,7 +23,7 @@ Read first: [`docs/guidelines/acceptance-criteria.md`](../../../docs/guidelines/
 ## 2. Write the Rules and Examples
 
 - `features/<capability>/<subject>.feature`: one Feature per subject, its Rules, each with at least one concrete Example.
-- An Example follows the guideline: named personas (Ada, Ben, Jo), names and values, one When, Given/When/Then in order, the domain's words, no part of the screen.
+- An Example follows the guideline: named personas (Ada, Ben, Jo; Kim never accepts the Terms), names and values, one When, Given/When/Then in order, the domain's words, no part of the screen.
 - Tag `@ui` or `@cli` when the behaviour lives on that surface too; every Example runs through the API.
 - A user's story across several actions is a journey in `features/journeys/`, built only from steps the Examples use.
 - `check:features` and `check:steps` hold the files to these rules.

@@ -14,6 +14,10 @@ function mockHarness(
     text: "",
     result: {},
   }),
+  env: Record<string, string> = {},
+  fetched: { url: string; headers?: Record<string, string> }[] = [],
+  shell: string | null = null,
+  ran: { command: string; args: string[] }[] = [],
 ) {
   const sent: JsonRpcFrame[] = [];
   const responses = new Map<number, () => void>();
@@ -34,11 +38,21 @@ function mockHarness(
     },
     state,
     workspace: { writeFile: async () => {} },
-    proxyFetch: async () => ({ status: 200, body: "" }),
-    processRunner: { run: async () => ({ code: 0, output: "" }) },
+    proxyFetch: async (request) => {
+      fetched.push(request);
+      return { status: 200, body: "" };
+    },
+    processRunner: {
+      run: async ({ command, args }) => {
+        ran.push({ command, args });
+        return { code: 0, output: "Alpha\n" };
+      },
+    },
     slackReply: async () => {},
     callTool,
     toolCall,
+    readEnv: (name) => env[name],
+    shell,
   });
   const request = async (id: number, method: string, params = {}) => {
     const replied = new Promise<void>((resolve) => responses.set(id, resolve));
@@ -202,5 +216,98 @@ describe("scripted platform tool call", () => {
       id: 2,
       result: { stopReason: "end_turn" },
     });
+  });
+});
+
+describe("scripted environment reads", () => {
+  const replyOf = (sent: JsonRpcFrame[]) =>
+    sent
+      .map(
+        (f) =>
+          (f as { params?: { update?: { content?: { text?: string } } } })
+            .params?.update?.content?.text,
+      )
+      .filter((t): t is string => t !== undefined)
+      .join("");
+
+  // TEST_SCENARIO: an example reads what a variable holds in the harness process: __ENV__ answers its value, or says it is unset.
+  it("answers a variable's value, or that it is unset", async () => {
+    const harness = mockHarness(null, undefined, { WEATHER_UNITS: "metric" });
+    await harness.request(1, "session/new");
+    const { sessionId } = (harness.sent[0] as { result: { sessionId: string } })
+      .result;
+    await harness.request(2, "session/prompt", {
+      sessionId,
+      prompt: [{ type: "text", text: "__ENV__ WEATHER_UNITS" }],
+    });
+    expect(replyOf(harness.sent)).toBe("[env WEATHER_UNITS] metric");
+    harness.sent.length = 0;
+    await harness.request(3, "session/prompt", {
+      sessionId,
+      prompt: [{ type: "text", text: "__ENV__ MISSING_ONE" }],
+    });
+    expect(replyOf(harness.sent)).toBe("[env MISSING_ONE unset]");
+  });
+
+  // TEST_SCENARIO: a fetch header written as $NAME carries the value the harness holds in NAME, as a tool reading its environment sends it.
+  it("sends the value a $NAME header names", async () => {
+    const fetched: { url: string; headers?: Record<string, string> }[] = [];
+    const harness = mockHarness(
+      null,
+      undefined,
+      { ECHO_KEY: "platform:conn:abc" },
+      fetched,
+    );
+    await harness.request(1, "session/new");
+    const { sessionId } = (harness.sent[0] as { result: { sessionId: string } })
+      .result;
+    await harness.request(2, "session/prompt", {
+      sessionId,
+      prompt: [
+        {
+          type: "text",
+          text: "__FETCH__ https://echo.test/headers x-api-key:$ECHO_KEY",
+        },
+      ],
+    });
+    expect(fetched).toEqual([
+      {
+        url: "https://echo.test/headers",
+        headers: { "x-api-key": "platform:conn:abc" },
+      },
+    ]);
+  });
+});
+
+describe("scripted shell command", () => {
+  // TEST_SCENARIO: an example scripts a command the agent runs in its machine on every turn, as a harness runs a tool, and the agent answers what the command printed.
+  it("runs the command and answers its output", async () => {
+    const ran: { command: string; args: string[] }[] = [];
+    const harness = mockHarness(
+      null,
+      undefined,
+      {},
+      [],
+      "agent-browser eval document.title",
+      ran,
+    );
+    await harness.request(1, "session/new");
+    const { sessionId } = (harness.sent[0] as { result: { sessionId: string } })
+      .result;
+    await harness.request(2, "session/prompt", {
+      sessionId,
+      prompt: [{ type: "text", text: "which page?" }],
+    });
+    expect(ran).toEqual([
+      { command: "sh", args: ["-c", "agent-browser eval document.title"] },
+    ]);
+    const texts = harness.sent
+      .map(
+        (f) =>
+          (f as { params?: { update?: { content?: { text?: string } } } })
+            .params?.update?.content?.text,
+      )
+      .filter((t): t is string => t !== undefined);
+    expect(texts).toContain("Alpha");
   });
 });

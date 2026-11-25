@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { baseUrl } from "../../config.js";
 import type { World } from "../../world.js";
 import type { AgentsDriver } from "../driver.js";
 import { agentCard, openHome, type Pages } from "./pages.js";
@@ -28,6 +29,7 @@ export function uiAgents(world: World, pages: Pages): AgentsDriver {
     },
     async makeFromGeneralist(person, alias) {
       const page = await pages.of(person);
+      await openHome(page);
       await page
         .getByTestId("app-sidebar")
         .getByRole("button", { name: "Starter kits" })
@@ -41,6 +43,7 @@ export function uiAgents(world: World, pages: Pages): AgentsDriver {
         await page.getByRole("heading", { level: 2 }).first().innerText()
       ).trim();
       world.agents.set(alias, { owner: person.persona, name, id });
+      world.made.push({ kind: "agent", owner: person.persona, id });
       world.note({ step: "agent made in one click", alias, name, id });
     },
     async make() {
@@ -48,6 +51,44 @@ export function uiAgents(world: World, pages: Pages): AgentsDriver {
     },
     async expectProvider() {
       test.skip(true, "no UI driver for an agent's providers yet");
+    },
+    async expectIdle(person, name) {
+      const page = await pages.of(person);
+      await openHome(page);
+      await expect(
+        agentCard(page, world.nameOf(name)).getByText("Idle", { exact: true }),
+      ).toBeVisible();
+    },
+    async openSettingsFromAnswer(person, name) {
+      const page = await pages.of(person);
+      const agent = world.agent(name);
+      await page
+        .locator('[data-testid="chat-message"][data-role="assistant"]')
+        .last()
+        .getByRole("button", { name: `${agent.name} settings` })
+        .click();
+    },
+    async openOldAddress(person, name, section) {
+      const page = await pages.of(person);
+      await page.goto(
+        `${baseUrl}/sandboxes/${world.agent(name).id}/${section}`,
+      );
+    },
+    async expectSettingsOverChat(person, name, section) {
+      const page = await pages.of(person);
+      const agent = world.agent(name);
+      await expect(page.getByTestId("configure-agent-modal")).toBeVisible();
+      await expect(
+        page.getByRole("dialog", { name: `${agent.name} settings` }),
+      ).toBeVisible();
+      await expect(page).toHaveURL(new RegExp(`/chat/${agent.id}`));
+      await expect(page.getByTestId("configure-agent-modal-page")).toHaveCount(
+        0,
+      );
+      if (section === "connections")
+        await expect(
+          page.getByTestId("open-connection-catalog").first(),
+        ).toBeVisible();
     },
     async remove(person, name) {
       const page = await pages.of(person);

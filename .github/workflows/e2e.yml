@@ -138,6 +138,7 @@ jobs:
       # The nightly run adds the full/ tier here, in this lane alone; the
       # summary says so beside the scope.
       E2E_FULL: ${{ inputs.full-tier && '1' || '' }}
+      E2E_SUITES: integration
       E2E_TIMINGS: &e2e-timings /tmp/e2e-timings
       E2E_REPORT_JSON: &e2e-report-json /tmp/playwright-report.json
       # This job restores the release build's `packages/vm-runner/target`, so
@@ -543,8 +544,6 @@ jobs:
           path: &e2e-report-paths |
             packages/e2e/integration/playwright-report/
             packages/e2e/integration/test-results/
-            packages/e2e/acceptance/playwright-report/
-            packages/e2e/acceptance/test-results/
           retention-days: 7
           if-no-files-found: ignore
 
@@ -575,6 +574,7 @@ jobs:
     env:
       IS_SANDBOX: "1"
       E2E_GATEWAY_PER_OWNER: "1"
+      E2E_SUITES: integration
       E2E_TIMINGS: *e2e-timings
       E2E_REPORT_JSON: *e2e-report-json
       E2E_SCOPE: ${{ inputs.pr-scope && 'pr' || '' }}
@@ -614,3 +614,78 @@ jobs:
       - *e2e-kernel-log-artifact
       - *e2e-timing-summary
       - *e2e-report
+
+  e2e-acceptance:
+    name: mise e2e (vm, acceptance ${{ matrix.shard }}/3)
+    # The acceptance suite (packages/e2e/acceptance) on a cluster of its own,
+    # beside e2e-agent-gateway's integration suite: every owner gets a VM runner
+    # that reserves memory, and the two suites' owners together left one CI node
+    # without room to boot a machine. The cluster comes up the same way, through
+    # e2e-agent-gateway's anchors, on the chart's default topology; the two jobs
+    # run at once, so a pull request waits for the longer one, not the sum. It
+    # uploads its report under a name of its own.
+    # The suite is split in three shards, each on a cluster of its own, so a
+    # pull request waits for a third of the Examples on top of one cluster's
+    # start, not for all of them in a row.
+    needs: [docs-only]
+    if: ${{ !cancelled() && needs.docs-only.outputs.docs != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    permissions:
+      contents: read
+      actions: read
+    env:
+      IS_SANDBOX: "1"
+      E2E_SUITES: acceptance
+      E2E_ACCEPTANCE_SHARD: ${{ matrix.shard }}/3
+      E2E_TIMINGS: *e2e-timings
+      E2E_REPORT_JSON: *e2e-report-json
+      MBX_DISABLE: "1"
+    steps:
+      - *e2e-timing-start
+      - *e2e-checkout
+      - *e2e-provision
+      - *e2e-free-disk
+      - *e2e-kvm
+      - *e2e-keycloak-theme-cache
+      - *e2e-pnpm-cache
+      - *e2e-pnpm-verified-cache
+      - *e2e-controller-changed
+      - *e2e-go-cache
+      - *e2e-setup-mise
+      - *e2e-vm-runner-build
+      - *e2e-rust-release
+      - *e2e-rust-cache
+      - *e2e-vm-runner-deps-cache
+      - *e2e-keycloak-theme
+      - *e2e-pnpm-install
+      - *e2e-ci-images-platform
+      - *e2e-agents-build
+      - *e2e-agent-tools
+      - *e2e-ci-images-agents
+      - *e2e-playwright-version
+      - *e2e-playwright-cache
+      - *e2e-provision-wait
+      - *e2e-free-disk-wait
+      - *e2e-suite
+      - *e2e-playwright-save
+      - *e2e-image-log
+      - *e2e-provision-log
+      - *e2e-kernel-log
+      - *e2e-kernel-log-artifact
+      - *e2e-timing-summary
+      - *e2e-report
+      - name: Upload the acceptance report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-report-acceptance-${{ matrix.shard }}
+          path: |
+            packages/e2e/acceptance/playwright-report/
+            packages/e2e/acceptance/test-results/
+          retention-days: 7
+          if-no-files-found: ignore

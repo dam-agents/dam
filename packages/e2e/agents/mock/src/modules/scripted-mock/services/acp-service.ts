@@ -20,6 +20,8 @@ import type {
 const FETCH_DIRECTIVE = /__FETCH__\s+(\S+)(?:\s+([^\s:]+):(\S+))?/;
 const SLACK_THREAD_DIRECTIVE = /threadTs="([^"]+)"/;
 const PYRUN_DIRECTIVE = /__PYRUN__\s+(\S+)/;
+const ENV_DIRECTIVE = /__ENV__\s+([A-Z_][A-Z0-9_]*)/;
+const ENV_REFERENCE = /^\$([A-Z_][A-Z0-9_]*)$/;
 const ASK_DIRECTIVE = /__ASK__\s+(\S+)(?:\s+(\S+))?/;
 const FAIL_MIDTURN_DIRECTIVE = /__FAIL_MIDTURN__/;
 const EXIT_MIDTURN_DIRECTIVE = /__EXIT_MIDTURN__\s+(\d+)/;
@@ -34,6 +36,8 @@ export interface AcpServiceDeps {
   slackReply: SlackReplyPoster;
   callTool: PlatformToolCaller;
   toolCall: ToolCall | null;
+  readEnv: (name: string) => string | undefined;
+  shell: string | null;
 }
 
 export function startAcpService(deps: AcpServiceDeps): void {
@@ -132,12 +136,30 @@ export function startAcpService(deps: AcpServiceDeps): void {
     const promptStr = promptText(promptPayload);
     const slackThreadTs = SLACK_THREAD_DIRECTIVE.exec(promptStr)?.[1];
 
+    const envName = ENV_DIRECTIVE.exec(promptStr)?.[1];
+    if (envName) {
+      const value = deps.readEnv(envName);
+      const text =
+        value === undefined
+          ? `[env ${envName} unset]`
+          : `[env ${envName}] ${value}`;
+      emitText(sid, text);
+      await maybeSlackReply(text, slackThreadTs);
+      respond(id, { stopReason: "end_turn" });
+      return;
+    }
+
     const fetched = FETCH_DIRECTIVE.exec(promptStr);
     const fetchUrl = fetched?.[1];
     if (fetchUrl) {
       const headerName = fetched?.[2];
+      const reference = ENV_REFERENCE.exec(fetched?.[3] ?? "")?.[1];
+      const headerValue =
+        reference === undefined
+          ? fetched?.[3]
+          : (deps.readEnv(reference) ?? "");
       const headers =
-        headerName && fetched?.[3] ? { [headerName]: fetched[3] } : undefined;
+        headerName && headerValue ? { [headerName]: headerValue } : undefined;
       const text = await replyWithFetch(sid, fetchUrl, headers);
       await maybeSlackReply(text, slackThreadTs);
       respond(id, { stopReason: "end_turn" });
@@ -185,6 +207,15 @@ export function startAcpService(deps: AcpServiceDeps): void {
     }
 
     if (deps.toolCall) await callScriptedTool(sid, deps.toolCall);
+
+    if (deps.shell) {
+      const { output } = await deps.processRunner.run({
+        command: "sh",
+        args: ["-c", deps.shell],
+        timeoutMs: 60_000,
+      });
+      emitText(sid, output.trim());
+    }
 
     for (const entry of deps.state.scriptEntries) {
       if (entry.delayMs && entry.delayMs > 0) await sleep(entry.delayMs);
@@ -301,12 +332,19 @@ export function startAcpService(deps: AcpServiceDeps): void {
     url: string,
     headers?: Record<string, string>,
   ): Promise<string> {
-    let text: string;
-    try {
-      const { status, body } = await deps.proxyFetch({ url, headers });
-      text = `[fetch ${status}] ${body}`;
-    } catch (err) {
-      text = `[fetch error] ${err instanceof Error ? err.message : String(err)}`;
+    let text = "";
+    // UNIT_BOUNDARY_DESCRIPTION: a request that fails on the way, a refused connection or an upstream's 502 to 504, is tried again twice, as an HTTP client of a tool does, so a public echo service's hiccup is not read as the platform's answer; a request held for an approval runs out its time once and is not tried again.
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const { status, body } = await deps.proxyFetch({ url, headers });
+        text = `[fetch ${status}] ${body}`;
+        if (status < 502 || status > 504) break;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        text = `[fetch error] ${message}`;
+        if (/timeout/i.test(message)) break;
+      }
+      if (attempt < 3) await sleep(2_000);
     }
     emitText(sid, text);
     return text;

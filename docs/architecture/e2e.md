@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Last verified: 2026-11-20
+Last verified: 2026-11-25
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so a full-suite run takes it twice, once per lane.
@@ -11,6 +11,8 @@ The suite has two packages.
 It also still holds the smoke specs of product behaviour that the feature files have not replaced yet; each moves out when a feature file covers its behaviour.
 
 ## Lanes
+
+The lanes run the integration suite; the acceptance suite has a job of its own on the default topology, beside them ([Acceptance suite](#acceptance-suite)).
 
 A **lane** is a gateway topology for the Agents a spec creates, each a machine on its owner's VM runner.
 One lane runs the chart's default, a gateway pod per Agent; the other turns on the [owner gateway](credential-gateway.md#owner-gateway), one gateway pod per owner.
@@ -61,7 +63,7 @@ A project whose prerequisite fails is left unrun.
 A local run asks for this tier with `--full`, and in upstream CI only the nightly run takes it.
 The tier under `src/tests/full/` is slow scenario specs: a local run asks for it with `--full`, and in CI only the nightly run takes it.
 Every project, the tier's too, starts after the setup project, and `check:setup-first` fails a config where a project could run beside it.
-The auth project proves the Terms gate on an account of its own, `terms-gate`, that no setup accepts the Terms for, so the gate stands whatever ran before it.
+The auth project proves the Terms gate on both tRPC transports, and a deep link through both the sign-in and the Terms gate, on an account of its own, `terms-gate`, that no setup accepts the Terms for, so the gate stands whatever ran before it; what a person meets at the gate, and the CLI's sign-in, are the acceptance suite's Examples.
 
 ## Scope: what a pull request runs
 
@@ -87,11 +89,17 @@ The two summaries hold the same table, so a phase of one lane compares with the 
 
 ## Acceptance suite
 
-The **acceptance suite** in [`packages/e2e/acceptance`](../../packages/e2e/acceptance/) states what the product does as Gherkin feature files, and `mise run e2e` runs them on the same install after the smoke suite, so both CI lanes run them; `e2e:loop` runs the smoke suite alone.
+The **acceptance suite** in [`packages/e2e/acceptance`](../../packages/e2e/acceptance/) states what the product does as Gherkin feature files, and runs them on every run the integration suite runs, in CI jobs of its own, `mise e2e (vm, acceptance N/3)`, each on a cluster of its own: every owner gets a VM runner that reserves memory, and the two suites' owners together left one CI node without room to boot a machine.
+The three jobs run a third of the Examples each (`E2E_ACCEPTANCE_SHARD`, Playwright's `--shard`), so a pull request waits for one third of them on top of one cluster's start.
 Its package depends only on the API contract package and its test tools, so a test cannot import the server's internals: `check:boundary` refuses any other dependency, and any import in its sources that leaves the package or names another package, in every import form TypeScript and Node read.
 A feature file holds **Rules**, each with concrete **Examples** in Given/When/Then form, written in the words of the [glossary](../ubiquitous-language.md) and never in the words of a screen.
-`playwright-bdd` turns the feature files into Playwright tests, and `check:steps` refuses a step that has no step definition.
-`check:features` holds the feature files to the writing rules: an Example sits under a Rule, shows one action (one When), keeps Given, When and Then in that order, ends in a Then, takes at most 8 steps and a tag of the allowed set, and names no part of the screen (a click, a button, a dialog, a menu, …), so a redesign changes a Driver and not the spec.
+A feature file is one **capability**, something a person does and would name, such as sharing an Agent or scheduling a task, and it sits in the folder of its **area**: `features/<area>/<capability>.feature`.
+The folders are therefore the list of what the product does, and what the suite covers is read from them alone.
+A capability nobody has written Examples for yet is still a file: its Rules with no Examples, tagged `@todo`, so a gap in the suite is written down where the suite is read, and the pull request that writes its Examples drops the tag.
+`playwright-bdd` makes no test of a Rule with no Examples.
+`mise run //packages/e2e/acceptance:coverage` prints each capability's Rules and Examples by area, the capabilities still todo, and the ones whose Rules pass three times the median, so a lopsided suite shows.
+`playwright-bdd` turns the feature files into Playwright tests, and `check:steps` refuses a step that has no step definition, and a step definition no feature file uses.
+`check:features` holds the feature files to the writing rules: a file sits in one area folder, a Rule with no Examples carries `@todo` and one with Examples does not, an Example sits under a Rule, shows one action (one When), keeps Given, When and Then in that order, ends in a Then, takes at most 8 steps and a tag of the allowed set, and names no part of the screen (a click, a button, a dialog, a menu, …), so a redesign changes a Driver and not the spec.
 A journey takes a looser profile: When and Then may alternate after its Givens, it takes at most 25 steps, and it names its surfaces.
 Names are unique across the files, so a report line points at one scenario.
 The `developers` team owns the feature files (`.github/CODEOWNERS`), and the main branch requires a code owner's review, so a change to what an Example means merges only with a person's approval, never the review bot's alone.
@@ -109,18 +117,20 @@ It runs only on the surfaces its tags name, and a step that crosses surfaces nam
 Unlike the smoke suite's chained projects, a journey depends on no other test.
 
 Each Playwright worker signs in as the accounts of its own slot, `acceptance-<persona>-<slot>`, which the e2e values provision and nothing else uses, so tests in two workers never see each other's Agents.
+One persona, Kim, never accepts the Terms of Use, so the Examples of the Terms gate find it standing; the others accept them at a worker's first use of their account.
 A worker's first use of an account connects a model provider, because the web UI lets a person write to an Agent only once one is connected, and an Agent made afterwards gets it as its default provider.
 The suite runs one worker, with one slot: every owner gets a VM runner of its own that reserves memory, so each extra slot costs the node three runners beside the smoke suite's Agents, and a second slot left a CI node without the memory to boot a machine.
 A slot keeps booted mock Agents, marked by their description, that the Given steps rename and give an answer: an Example costs seconds instead of a machine boot, and a later worker of the slot wakes and reuses them.
-A Given step scripts an Agent through its environment, because the mock starts a new process for a new Session and each process takes its first script from there: `MOCK_DEFAULT_REPLY` is the answer, and `MOCK_TOOL_CALL` names a platform tool, with its arguments, that the Agent calls on every turn before it answers.
+A Given step scripts an Agent through its environment, because the mock starts a new process for a new Session and each process takes its first script from there: `MOCK_DEFAULT_REPLY` is the answer, `MOCK_TOOL_CALL` names a platform tool, with its arguments, that the Agent calls on every turn before it answers, and `MOCK_SHELL` is a command it runs in its machine on every turn, answering what the command printed, as the agent-browser commands of the browser Examples run.
 The call goes to the Agent's platform MCP server the way a real harness's does, and the turn reports it as a `tool_call` and a `tool_call_update` carrying the tool's result, so an artifact the tool publishes reaches the library, attributed to the Agent and its Session, as one a real model's call publishes.
+A message can also ask the mock what its harness process holds or sends: `__ENV__ <NAME>` answers the variable's value, and `__FETCH__ <url> <header>:$<NAME>` sends a request through the Agent's gateway with that variable's value in the header and answers what came back, so a Given step waits for a harness that runs with its script, and an Example sees the credentials an Agent's request carries through the Agent itself; a variable an Example reads, it reads from the Agent's runtime (`e2e.getEnv`), since a change of values only reaches the running harness once the Agent is idle.
 A Given step sets the answer when the Example names one, sets or clears the tool call on every warm Agent it takes, and waits until the Agent reports both.
 A failed test carries its own log bundle in the report: the Playwright trace and a screenshot of every persona's page, the ACP frames and Agent listings the API driver saw, and the state of every Agent it named.
 The job summary times the suite as its own phase beside the smoke suite.
 
 ## Running it
 
-`mise run e2e` is the CI path: a fresh cluster, the suite and the acceptance suite, teardown.
+`mise run e2e` is the CI path: a fresh cluster, the suites `E2E_SUITES` names — `integration`, `acceptance`, or both by default — and teardown; the integration lanes set `integration`, the acceptance jobs `acceptance`.
 `mise run //packages/e2e/acceptance:run` runs the acceptance suite alone against an install, with `PLATFORM_BASE_URL` and `PLATFORM_KEYCLOAK_URL` pointing at it.
 `e2e:loop` iterates against a warm cluster, and the [cluster-ops skill](../../.agents/skills/cluster-ops/SKILL.md) covers both.
 A warm cluster shares its machine's CPUs with the browser, so `e2e:loop` sets `E2E_TIMEOUT_SCALE` to 3 and the config multiplies its default test and expect timeouts by it; a spec that sets its own timeout keeps it, and CI keeps the defaults.

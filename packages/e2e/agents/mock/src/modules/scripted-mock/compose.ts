@@ -66,6 +66,8 @@ export function composeScriptedMock(): { scriptedMock: ScriptedMockService } {
     slackReply: createSlackReplyPoster(callTool),
     callTool,
     toolCall: toolCallFromEnv(),
+    readEnv: (name) => process.env[name],
+    shell: process.env.MOCK_SHELL || null,
   });
 
   return { scriptedMock };
