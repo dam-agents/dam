@@ -10,7 +10,11 @@ import {
   steerResponseSchema,
   type AcpPermissionOption,
 } from "api-server-api";
-import { NO_MODEL_REASON, PIN_MODEL_METHOD } from "agent-runtime-api";
+import {
+  MODEL_REFUSED_BY_HARNESS_REASON,
+  NO_MODEL_REASON,
+  PIN_MODEL_METHOD,
+} from "agent-runtime-api";
 import { z } from "zod";
 import {
   client,
@@ -638,9 +642,31 @@ async function resolvePair(
   return (await runBoundary.pair(agentId, pair)) ?? undefined;
 }
 
-export const refusedForNoModel = (err: unknown): boolean =>
+const platformReason = (err: unknown): unknown =>
   (err as { data?: { platform?: { reason?: unknown } } } | null)?.data?.platform
-    ?.reason === NO_MODEL_REASON;
+    ?.reason;
+
+export const refusedForNoModel = (err: unknown): boolean =>
+  platformReason(err) === NO_MODEL_REASON;
+
+const HARNESS_REFUSED_MODEL_PREFIX = "The harness refused the session's model: ";
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the harness refused the session's model — it is
+ * gone, invalid, or its provider's key is refused — so the turn never ran and
+ * the same turn fails the same way until the model or the provider changes.
+ * The runtime names the refusal in the error's data; a runtime older than that
+ * reason is known by the message it has always sent. Returns the harness's own
+ * reason, or null when the error is not this refusal.
+ */
+export function harnessModelRefusal(err: unknown): string | null {
+  const message = (err as { message?: unknown } | null)?.message;
+  const text = typeof message === "string" ? message : "";
+  const prefixed = text.startsWith(HARNESS_REFUSED_MODEL_PREFIX);
+  if (platformReason(err) !== MODEL_REFUSED_BY_HARNESS_REASON && !prefixed)
+    return null;
+  return prefixed ? text.slice(HARNESS_REFUSED_MODEL_PREFIX.length) : text;
+}
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a session from before the Model Router carries
