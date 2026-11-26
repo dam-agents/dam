@@ -3,7 +3,9 @@ import {
   type SpendStatus,
   type SpendUnit,
 } from "api-server-api";
+import { useEffect } from "react";
 
+import { useStore } from "../../../store.js";
 import { useAgentDisplayName } from "../../agents/api/queries.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
 import { useProviderConnections } from "../../sessions/api/session-pair.js";
@@ -87,6 +89,7 @@ function DriverSpendLimitBody({
   const totals = unitTotals(status.spent);
   const agent = useLevelAgent(agentId);
   const view = agentLevels(status, agentId, levelConnections(granted));
+  useScrollToLimits(view.others.length > 0);
 
   return (
     <DailyLimitCard
@@ -133,6 +136,20 @@ function DriverSpendLimitBody({
       )}
     </DailyLimitCard>
   );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: when the settings were opened to show what counts the agent, bring the list of its limits into view once it renders, then forget the request. */
+function useScrollToLimits(listed: boolean) {
+  const focus = useStore((s) => s.agentSettings?.focus);
+  const clearFocus = useStore((s) => s.clearAgentSettingsFocus);
+  useEffect(() => {
+    if (focus !== AGENT_LIMITS_ID) return;
+    if (listed)
+      document
+        .getElementById(AGENT_LIMITS_ID)
+        ?.scrollIntoView({ block: "center" });
+    clearFocus();
+  }, [focus, listed, clearFocus]);
 }
 
 function OtherSpendLine({

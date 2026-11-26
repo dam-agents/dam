@@ -84,7 +84,7 @@ The UI invalidates `spend.stopped` wherever it invalidates `spend.status` today 
 | 03  | ✅ Agent → Providers rows                                           | Open: "Limit on the agent", then "{Provider}, all agents"                                           | 01         |
 | 04  | ✅ Server: which agents a limit stopped                             | `spend.stopped` per the contract above                                                              | —          |
 | 05  | ✅ Sidebar stopped dot                                              | Red dot in the unread dot's place, with its label                                                   | 04         |
-| 06  | Chat error card                                                     | New owner ending; two links to the agent's Usage at the limits list                                 | 01         |
+| 06  | ✅ Chat error card                                                  | New owner ending; two links to the agent's Usage at the limits list                                 | 01         |
 
 ```mermaid
 graph LR

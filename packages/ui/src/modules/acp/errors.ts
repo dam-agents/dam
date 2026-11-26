@@ -70,7 +70,7 @@ interface SendErrorDescription {
   title?: string;
   message: string;
   hint?: string;
-  kind?: "provider-unavailable";
+  kind?: "provider-unavailable" | "spend-limit";
 }
 
 const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
@@ -126,8 +126,8 @@ function describeSpendRefusal(
   if (viewer.role === "owner")
     return {
       title: "Spend limit reached:",
-      message: `${stopped} Continue it on Home, or wait until ${reset} your time.`,
-      hint,
+      message: `${stopped} Raise your spend limit, or wait until ${reset} your time.`,
+      kind: "spend-limit",
     };
   const ask = viewer.agentLimitReached
     ? `Ask ${viewer.owner} to continue or raise this agent's spend limit`

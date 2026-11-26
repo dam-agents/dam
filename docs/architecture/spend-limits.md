@@ -367,6 +367,8 @@ A limit that counts all agents, the own limit or a Connection limit for all agen
 Its card and its toast name "All your agents" instead of that agent, with no avatar.
 A question expires at the next UTC midnight, when the limit starts again, and continuing it writes no egress rule.
 Setting or removing a limit closes its pending question, so a new refusal asks again, and so does removing the Connection of a Connection limit.
+**Stopped agents.** A limit stops an agent while a call of its sessions was refused today and a limit that counts that call is still reached.
+The web UI reads the owner's stopped agents, and the limit that stopped each, in one query.
 
 ## Unattended work
 
@@ -439,17 +441,15 @@ The screens:
   The agent's summary shows today's spend in each unit and the limit.
   Below the card, the section shows the same measured view as the Settings tab, for the spend that the agent pays, so the spend of the sub-agents that it started is included.
   A sub-agent's card shows only the note about its root driver.
-- **The agent's Providers section:** each provider is one line, and a granted Connection that takes a limit carries a pill with today's spend against the agent's limit on it, in the Connection's unit (`$1.23 / $4.56 today`); clicking the pill opens the limit dialog.
+- **The agent's Providers section:** each provider is one line, and a granted Connection that takes a limit shows the agent's spend on it today, and opens below the line to the agent's limit there and the limit for all agents.
   The limit dialog says, while the user types, whether the new amount is already reached and which limit would stop the agent first.
-  A Connection that takes no limit shows no pill.
-- **Settings, Providers tab:** each connected Connection that takes a limit carries the same pill for the Connection limit for all agents.
+  A Connection that takes no limit shows no spend.
+- **Settings, Providers tab:** each connected Connection that takes a limit shows all agents' spend on it today, and opens to its limit for all agents.
   The attach dialog that lists the same Connections shows no limit.
 - **Settings, Usage tab:** the card for the own limit comes first, under the metering notice.
   Its "Also counted by" line holds the spend ceiling, when the operator has set one.
   When the user has Connection limits for all agents, the card lists them below, read only: each with its icon, a thin meter, the share used and the spend against the limit, and one link to Settings › Providers to change them.
   Below the card, a period picker keeps its period in the URL.
-  It has presets, arrows that step one period of the same kind, and a calendar with week numbers for a custom range of up to 366 UTC days; the days before T are struck out.
-  The calendar gives the local time at which a day starts.
   Below it are the paid Metered Spend with the same date range as on Home, the spend by day (by week above 62 days), the counts of calls and tokens, the sum of call times, and the spend by agent, model and provider.
   Under the total, a line gives the subscription value when the checkbox is on, and a line tells when the subscriptions covered more than the user paid.
   Bobcoins get their own line, which says that they are not in the total.
@@ -485,8 +485,9 @@ A spend-limit question shows on Home with "Continue" only; "Dismiss" hides it fr
 The surfaces name five limits: the agent spend limit, the user's spend limit for all agents, a Connection's spend limit, the user's spend limit for all agents on a Connection ("Your ‹Connection› spend limit (all agents)"), and the spend ceiling that the operator sets.
 Every surface calls the ceiling the spend ceiling; its help tip says that the operator sets it.
 The Claude subscription's unit shows in dollars as "covered", for example "covered by subscriptions today" in a Connection limit; the help tips call it the subscription value at API prices.
-In the chat, a refused call shows as "Spend limit reached" or "Spend ceiling reached" with what to do and the local reset time; the harness's own error text stays below it as detail.
+In the chat, a refused call shows as "Spend limit reached" or "Spend ceiling reached" with what to do and the local reset time; the owner gets links to the agent's limits, others the harness's error.
 Every text that a person reads gives the reset in that person's own time, on the screens, in the CLI and in the channel notices; texts for agents give it in UTC.
+In the sidebar, an agent that a limit stopped has a red dot that names the limit.
 **Per Session and per turn.** Each Session in the sidebar shows its Metered Spend: paid dollars, else the plan use as "covered", else Bobcoins.
 The figure includes the sub-agents spawned from that Session, and its tooltip names their part.
 The Usage pages also show the sum of call times and the spend by session type, with a "Sub-agents" row for the calls of sub-agents and a "No session" row for calls with no Session.
