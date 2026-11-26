@@ -6,18 +6,61 @@ export const OWNER_REQUEST_OPEN_ACTION = `${OWNER_REQUEST_ACTION_PREFIX}open`;
 export const OWNER_REQUEST_RELEASE_ACTION = `${OWNER_REQUEST_ACTION_PREFIX}release`;
 export const OWNER_REQUEST_APPROVE_ONCE_ACTION = `${OWNER_REQUEST_ACTION_PREFIX}approve-once`;
 export const OWNER_REQUEST_DENY_ONCE_ACTION = `${OWNER_REQUEST_ACTION_PREFIX}deny-once`;
+export const OWNER_REQUEST_APPROVE_PATH_ACTION = `${OWNER_REQUEST_ACTION_PREFIX}approve-path`;
+export const OWNER_REQUEST_APPROVE_HOST_ACTION = `${OWNER_REQUEST_ACTION_PREFIX}approve-host`;
+export const OWNER_REQUEST_DENY_FOREVER_ACTION = `${OWNER_REQUEST_ACTION_PREFIX}deny-forever`;
+export const OWNER_REQUEST_DISMISS_ACTION = `${OWNER_REQUEST_ACTION_PREFIX}dismiss`;
 
 export const MAX_CARD_ROWS = 10;
 export const SUMMARY_MAX = 200;
 export const ARGUMENTS_MAX = 2500;
+export const QUERY_MAX = 200;
+export const HOST_ROW_PATHS = 5;
+export const DISMISS_DAYS = 7;
 
 export type OwnerCardKind = "turn" | "background" | "call";
 
-export type OwnerAnswer = "approve-once" | "deny-once";
+export type OwnerAnswer =
+  | "approve-once"
+  | "deny-once"
+  | "approve-path"
+  | "approve-host"
+  | "deny-forever"
+  | "dismiss";
+
+const ANSWER_OF_ACTION: Record<string, OwnerAnswer> = {
+  [OWNER_REQUEST_APPROVE_ONCE_ACTION]: "approve-once",
+  [OWNER_REQUEST_DENY_ONCE_ACTION]: "deny-once",
+  [OWNER_REQUEST_APPROVE_PATH_ACTION]: "approve-path",
+  [OWNER_REQUEST_APPROVE_HOST_ACTION]: "approve-host",
+  [OWNER_REQUEST_DENY_FOREVER_ACTION]: "deny-forever",
+  [OWNER_REQUEST_DISMISS_ACTION]: "dismiss",
+};
 
 export function answerOfAction(actionId: string): OwnerAnswer | null {
-  if (actionId === OWNER_REQUEST_APPROVE_ONCE_ACTION) return "approve-once";
-  if (actionId === OWNER_REQUEST_DENY_ONCE_ACTION) return "deny-once";
+  return ANSWER_OF_ACTION[actionId] ?? null;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the requests a card button answers, from its value: one request, or every request of a host row or of the turn card's "Allow all once" and "Deny all". Null for a value the platform did not write.
+export function requestsOfValue(value: string): string[] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const { request, requests } = parsed as {
+    request?: unknown;
+    requests?: unknown;
+  };
+  if (typeof request === "string") return [request];
+  if (
+    Array.isArray(requests) &&
+    requests.length > 0 &&
+    requests.every((id) => typeof id === "string")
+  )
+    return requests as string[];
   return null;
 }
 
@@ -41,6 +84,18 @@ export interface OwnerRequestView {
     targetLabel: string | null;
     arguments: string | null;
   } | null;
+  network: {
+    method: string;
+    host: string;
+    port: number | null;
+    path: string;
+    query: string | null;
+  } | null;
+  search: { query: string | null; followUps: number } | null;
+  from: { kind: "environment"; name: string } | { kind: "sub-agent" } | null;
+  refusedIn: "slack" | "telegram" | "artifact" | "unknown" | null;
+  timesToday: number;
+  restart: { path: boolean; host: boolean };
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a Slack thread a turn card holds requests from: where it is, who started the turn, the people whose messages the turn carried, the line the app posted there, and when its person pressed "Don't wait" or the line last said that the agent went on without the step.
@@ -59,6 +114,7 @@ export interface OwnerCardThread {
 export interface CardRow {
   view: OwnerRequestView;
   nobodyWaits: boolean;
+  dismissed: boolean;
 }
 
 export function cut(text: string, max: number): string {
@@ -114,9 +170,15 @@ export function fallbackRow(row: CardRow, appUrl: string): SlackBlock[] {
   ];
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the outcome line of a settled request, in the owner's words: what the answer was and who gave it, or that the request expired, or that the card could not reach the owner.
-export function outcomeLine(view: OwnerRequestView): string {
-  if (view.status === "expired") return "Expired: the call was refused";
+// UNIT_BOUNDARY_DESCRIPTION: the outcome line of a settled request, in the owner's words: what the answer was and who gave it, that the owner dismissed its host, that the request expired, or that the card could not reach the owner.
+export function outcomeLine(view: OwnerRequestView, dismissed = false): string {
+  if (dismissed) return `Dismissed for ${DISMISS_DAYS} days`;
+  if (view.status === "expired")
+    return view.kind === "mcp_tool_call"
+      ? "Expired: the call was refused"
+      : view.kind === "web_search"
+        ? "Expired: the search was refused"
+        : "Expired: the request was refused";
   if (view.decidedBy === "system:owner-unreachable")
     return "Refused: the card could not reach you";
   const who = view.decidedBy === view.ownerSub ? "by you" : "in the app";
@@ -129,24 +191,380 @@ export function outcomeLine(view: OwnerRequestView): string {
   return `${answer} ${who}`;
 }
 
-function answerButtons(view: OwnerRequestView) {
-  const value = JSON.stringify({ request: view.id });
+const REFUSED_IN: Record<NonNullable<OwnerRequestView["refusedIn"]>, string> = {
+  slack: "Refused at once in a Slack channel",
+  telegram: "Refused at once in a Telegram chat",
+  artifact: "Refused at once in an artifact's viewer",
+  unknown: "Refused at once in a chat",
+};
+
+const NOBODY_WAITS =
+  "Nobody waits for this now. Your answer counts for the next try.";
+
+function isWaiting(view: OwnerRequestView): boolean {
+  return view.status === "pending" && view.refusedIn === null;
+}
+
+function isRuleKind(view: OwnerRequestView): boolean {
+  return view.kind === "ext_authz" || view.kind === "web_search";
+}
+
+function confirmOf(input: {
+  title: string;
+  text: string;
+  confirm: string;
+  danger?: boolean;
+}) {
+  return {
+    title: plainText(cut(input.title, 100)),
+    text: plainText(cut(input.text, 300)),
+    confirm: plainText(cut(input.confirm, 30)),
+    deny: plainText("Cancel"),
+    ...(input.danger ? { style: "danger" } : {}),
+  };
+}
+
+function button(input: {
+  label: string;
+  actionId: string;
+  requests: readonly string[];
+  style?: "primary" | "danger";
+  confirm?: ReturnType<typeof confirmOf>;
+}) {
+  return {
+    type: "button",
+    action_id: input.actionId,
+    text: plainText(input.label),
+    value: JSON.stringify({ requests: input.requests }),
+    ...(input.style ? { style: input.style } : {}),
+    ...(input.confirm ? { confirm: input.confirm } : {}),
+  };
+}
+
+function hostLabel(network: NonNullable<OwnerRequestView["network"]>): string {
+  return network.port && network.port !== 443
+    ? `${network.host}:${String(network.port)}`
+    : network.host;
+}
+
+function requestLine(view: OwnerRequestView): string {
+  const { network } = view;
+  if (network) {
+    const host = hostLabel(network);
+    return network.method === "*"
+      ? `HTTPS to ${host}`
+      : `${network.method} ${host}${network.path}`;
+  }
+  if (view.kind === "web_search") return "Web search";
+  return callTitle(view);
+}
+
+function searchLine(view: OwnerRequestView): string {
+  return `Web search: ${view.search?.query ?? "the model chooses the query"}`;
+}
+
+function fromLine(view: OwnerRequestView): string | null {
+  if (!view.from) return null;
+  return view.from.kind === "environment"
+    ? `From its Environment ${view.from.name}`
+    : `From its sub-agent ${view.agentName}`;
+}
+
+const RESTART_NOTE =
+  "This restarts the agent's network access, so its outbound requests stop for a moment.";
+
+function allowOnceButtons(requests: readonly string[]) {
   return [
-    {
-      type: "button",
-      action_id: OWNER_REQUEST_APPROVE_ONCE_ACTION,
-      text: plainText("Approve once"),
+    button({
+      label: "Allow once",
+      actionId: OWNER_REQUEST_APPROVE_ONCE_ACTION,
+      requests,
       style: "primary",
-      value,
-    },
-    {
-      type: "button",
-      action_id: OWNER_REQUEST_DENY_ONCE_ACTION,
-      text: plainText("Deny once"),
+    }),
+    button({
+      label: "Deny",
+      actionId: OWNER_REQUEST_DENY_ONCE_ACTION,
+      requests,
       style: "danger",
-      value,
+    }),
+  ];
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the rule buttons of network requests to one host: "Always allow this path" when they share one real path, "Allow whole host", and "Always deny…", which writes the web's deny rule for each path; a rule that restarts the agent's network access, and every deny, asks Slack to confirm first. "Dismiss" comes last when the row may offer it.
+function networkRuleButtons(input: {
+  views: readonly OwnerRequestView[];
+  dismiss: boolean;
+}) {
+  const ids = input.views.map((view) => view.id);
+  const [first] = input.views;
+  const network = first?.network;
+  if (!first || !network) return [];
+  const host = hostLabel(network);
+  const paths = new Set(
+    input.views.map(
+      (view) =>
+        `${view.network?.method} ${view.network?.path}${view.network?.query ?? ""}`,
+    ),
+  );
+  const onePath = paths.size === 1 && network.path !== "*";
+  const restartsPath = input.views.some((view) => view.restart.path);
+  const target = onePath
+    ? `${host}${network.path}${network.query ?? ""}`
+    : network.path === "*" && paths.size === 1
+      ? host
+      : `these ${String(paths.size)} paths on ${host}`;
+  return [
+    ...(onePath
+      ? [
+          button({
+            label: "Always allow this path",
+            actionId: OWNER_REQUEST_APPROVE_PATH_ACTION,
+            requests: ids,
+            ...(first.restart.path
+              ? {
+                  confirm: confirmOf({
+                    title: "Restart network access?",
+                    text: `Every later request to ${target} goes through. ${RESTART_NOTE}`,
+                    confirm: "Allow and restart",
+                  }),
+                }
+              : {}),
+          }),
+        ]
+      : []),
+    button({
+      label: "Allow whole host",
+      actionId: OWNER_REQUEST_APPROVE_HOST_ACTION,
+      requests: ids,
+      ...(first.restart.host
+        ? {
+            confirm: confirmOf({
+              title: "Restart network access?",
+              text: `Every later request to ${host} goes through. ${RESTART_NOTE}`,
+              confirm: "Allow and restart",
+            }),
+          }
+        : {}),
+    }),
+    button({
+      label: "Always deny…",
+      actionId: OWNER_REQUEST_DENY_FOREVER_ACTION,
+      requests: ids,
+      confirm: confirmOf({
+        title: "Always deny?",
+        text: `Every later request to ${target} is refused at once, and you get no card for it.${restartsPath ? ` ${RESTART_NOTE}` : ""}`,
+        confirm: restartsPath ? "Deny and restart" : "Always deny",
+        danger: true,
+      }),
+    }),
+    ...(input.dismiss ? [dismissButton(ids)] : []),
+  ];
+}
+
+function searchRuleButtons(input: {
+  views: readonly OwnerRequestView[];
+  dismiss: boolean;
+}) {
+  const ids = input.views.map((view) => view.id);
+  const agent = input.views[0]?.agentName ?? "the agent";
+  return [
+    button({
+      label: "Always allow web search",
+      actionId: OWNER_REQUEST_APPROVE_PATH_ACTION,
+      requests: ids,
+    }),
+    button({
+      label: "Always deny web search…",
+      actionId: OWNER_REQUEST_DENY_FOREVER_ACTION,
+      requests: ids,
+      confirm: confirmOf({
+        title: "Always deny web search?",
+        text: `Every later web search of ${agent} is refused at once, and you get no card for it. Change it under Web search in the agent's network settings.`,
+        confirm: "Always deny",
+        danger: true,
+      }),
+    }),
+    ...(input.dismiss ? [dismissButton(ids)] : []),
+  ];
+}
+
+function dismissButton(requests: readonly string[]) {
+  return button({
+    label: "Dismiss",
+    actionId: OWNER_REQUEST_DISMISS_ACTION,
+    requests,
+  });
+}
+
+function ruleButtons(input: {
+  views: readonly OwnerRequestView[];
+  dismiss: boolean;
+}) {
+  return input.views[0]?.kind === "web_search"
+    ? searchRuleButtons(input)
+    : networkRuleButtons(input);
+}
+
+function contextOf(lines: readonly string[]): SlackBlock[] {
+  return lines.length === 0
+    ? []
+    : [{ type: "context", elements: lines.map((line) => plainText(line)) }];
+}
+
+function waitLine(rows: readonly CardRow[]): SlackBlock {
+  const waiting = rows.filter((row) => isWaiting(row.view));
+  const until = waiting
+    .map((row) => row.view.expiresAt)
+    .sort()
+    .at(-1);
+  return {
+    type: "context",
+    elements: [
+      {
+        type: "mrkdwn",
+        text:
+          waiting.every((row) => row.nobodyWaits) || !until
+            ? NOBODY_WAITS
+            : `Answer by ${slackDate(until)}`,
+      },
+    ],
+  };
+}
+
+function followUpLine(view: OwnerRequestView): string {
+  return `If you allow it, the search can also run up to ${String(view.search?.followUps ?? 0)} more queries that the model writes after it reads the first results.`;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the row of one network request or web search on a turn card. While it waits: the request without its query string as the title, the query string or the search under it as plain text cut at about 200 characters, the sub-agent or Environment it came from, the expiry, and the web's verdicts for its type. A row whose request expired or was refused at once offers only the rule buttons.
+export function networkRow(row: CardRow, appUrl: string): SlackBlock[] {
+  const { view } = row;
+  const search = view.kind === "web_search";
+  const title = search ? searchLine(view) : requestLine(view);
+  if (!isWaiting(view))
+    return [
+      { type: "section", text: plainText(cut(requestLine(view), SUMMARY_MAX)) },
+      ...contextOf([
+        view.refusedIn ? REFUSED_IN[view.refusedIn] : outcomeLine(view),
+      ]),
+      {
+        type: "actions",
+        elements: [
+          ...ruleButtons({ views: [view], dismiss: true }),
+          openInAppButton(appUrl),
+        ],
+      },
+    ];
+  const query = search ? null : view.network?.query;
+  const from = fromLine(view);
+  return [
+    { type: "section", text: plainText(cut(title, 300)) },
+    ...contextOf([
+      ...(query ? [`Query: ${cut(query, QUERY_MAX)}`] : []),
+      ...(search ? [followUpLine(view)] : []),
+      ...(from ? [from] : []),
+    ]),
+    waitLine([row]),
+    {
+      type: "actions",
+      elements: [
+        ...allowOnceButtons([view.id]),
+        ...ruleButtons({ views: [view], dismiss: false }),
+        openInAppButton(appUrl),
+      ],
     },
   ];
+}
+
+function pathLine(view: OwnerRequestView): string {
+  const network = view.network;
+  if (!network) return view.search?.query ?? "the model chooses the query";
+  const path = `${network.method === "*" ? "" : `${network.method} `}${network.path}`;
+  return isWaiting(view) && network.query
+    ? `${path}${cut(network.query, QUERY_MAX)}`
+    : path;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the row of every network request to one host, or every web search, on a background card: "Blocked on <host>", its paths with their query strings while they wait (up to five, then how many more), how many times the agent was blocked there today, the sub-agent or Environment, and the expiry of the newest waiting request. While a request waits it offers Allow once and Deny for every waiting request of the host; it always offers the rule buttons and "Dismiss" until every request settled. A row whose requests the gate refused at once says so and where, and offers no Allow once.
+export function hostRow(
+  rows: readonly CardRow[],
+  appUrl: string,
+): SlackBlock[] {
+  const views = rows.map((row) => row.view);
+  const [first] = views;
+  if (!first) return [];
+  const search = first.kind === "web_search";
+  const title = search
+    ? `Web search blocked`
+    : `Blocked on ${first.network ? hostLabel(first.network) : (first.host ?? "a host")}`;
+  const open = rows.filter(
+    (row) => row.view.status !== "resolved" && !row.dismissed,
+  );
+  if (open.length === 0) {
+    const last = rows.at(-1)!;
+    return [
+      { type: "section", text: plainText(cut(title, SUMMARY_MAX)) },
+      ...contextOf([outcomeLine(last.view, last.dismissed)]),
+    ];
+  }
+  const waiting = open.filter((row) => isWaiting(row.view));
+  const paths = [
+    ...new Set(
+      (search ? open.filter((row) => isWaiting(row.view)) : open).map((row) =>
+        pathLine(row.view),
+      ),
+    ),
+  ];
+  const shown = paths.slice(0, HOST_ROW_PATHS);
+  const more = paths.length - shown.length;
+  const refused = open.find((row) => row.view.refusedIn !== null)?.view
+    .refusedIn;
+  const from = fromLine(first);
+  const timesToday = Math.max(...views.map((view) => view.timesToday));
+  return [
+    { type: "section", text: plainText(cut(title, SUMMARY_MAX)) },
+    ...(shown.length > 0 && !(paths.length === 1 && paths[0] === "*")
+      ? [
+          {
+            type: "section",
+            text: plainText(
+              cut(
+                [
+                  ...shown,
+                  ...(more > 0 ? [`and ${String(more)} more`] : []),
+                ].join("\n"),
+                2900,
+              ),
+            ),
+          },
+        ]
+      : []),
+    ...contextOf([
+      `${String(timesToday)} ${timesToday === 1 ? "time" : "times"} today`,
+      ...(search && waiting.length > 0 ? [followUpLine(first)] : []),
+      ...(from ? [from] : []),
+      ...(waiting.length === 0
+        ? [refused ? REFUSED_IN[refused] : outcomeLine(open.at(-1)!.view)]
+        : []),
+    ]),
+    ...(waiting.length > 0 ? [waitLine(waiting)] : []),
+    {
+      type: "actions",
+      elements: [
+        ...(waiting.length > 0
+          ? allowOnceButtons(waiting.map((row) => row.view.id))
+          : []),
+        ...ruleButtons({
+          views: open.map((row) => row.view),
+          dismiss: true,
+        }),
+        openInAppButton(appUrl),
+      ],
+    },
+  ];
+}
+
+function answerButtons(view: OwnerRequestView) {
+  return allowOnceButtons([view.id]);
 }
 
 function callTitle(view: OwnerRequestView): string {
@@ -155,7 +573,7 @@ function callTitle(view: OwnerRequestView): string {
     : cut(view.summary, SUMMARY_MAX);
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the row of a held MCP tool call: the agent, the tool and the Connection, the target the Template named, the arguments as a code block cut at about 2,500 characters with "Open in app" when cut, the expiry, and Approve once and Deny once. Every part the agent wrote shows as plain text or inside the code block, never as Slack markup.
+// UNIT_BOUNDARY_DESCRIPTION: the row of a held MCP tool call: the agent, the tool and the Connection, the target the Template named, the arguments as a code block cut at about 2,500 characters with "Open in app" when cut, the expiry, and Allow once and Deny. Every part the agent wrote shows as plain text or inside the code block, never as Slack markup.
 export function callRow(row: CardRow, appUrl: string): SlackBlock[] {
   const { view } = row;
   const call = view.call;
@@ -185,7 +603,7 @@ export function callRow(row: CardRow, appUrl: string): SlackBlock[] {
         {
           type: "mrkdwn",
           text: row.nobodyWaits
-            ? "Nobody waits for this now. Your answer counts for the next try."
+            ? NOBODY_WAITS
             : `Answer by ${slackDate(view.expiresAt)}${argsCut ? ". The arguments are cut: open the request in the app to read them all." : ""}`,
         },
       ],
@@ -201,16 +619,18 @@ function settledRow(row: CardRow): SlackBlock[] {
   return [
     {
       type: "section",
-      text: plainText(cut(callTitle(row.view), SUMMARY_MAX)),
+      text: plainText(cut(requestLine(row.view), SUMMARY_MAX)),
     },
     {
       type: "context",
-      elements: [plainText(outcomeLine(row.view))],
+      elements: [plainText(outcomeLine(row.view, row.dismissed))],
     },
   ];
 }
 
 function rowBlocks(row: CardRow, appUrl: string): SlackBlock[] {
+  if (row.dismissed || row.view.status === "resolved") return settledRow(row);
+  if (isRuleKind(row.view)) return networkRow(row, appUrl);
   if (row.view.status !== "pending") return settledRow(row);
   return row.view.kind === "mcp_tool_call"
     ? callRow(row, appUrl)
@@ -238,20 +658,104 @@ function threadContext(threads: readonly OwnerCardThread[]): SlackBlock[] {
   ];
 }
 
-function rowsOf(rows: readonly CardRow[], appUrl: string): SlackBlock[] {
-  const rank = (row: CardRow) =>
-    row.view.status !== "pending" ? 2 : row.nobodyWaits ? 1 : 0;
-  const ordered = [...rows].sort((a, b) => rank(a) - rank(b));
+type CardUnit = { rows: CardRow[]; host: boolean };
+
+function unitsOf(kind: OwnerCardKind, rows: readonly CardRow[]): CardUnit[] {
+  if (kind !== "background")
+    return rows.map((row) => ({ rows: [row], host: false }));
+  const units: CardUnit[] = [];
+  const byHost = new Map<string, CardUnit>();
+  for (const row of rows) {
+    const key = isRuleKind(row.view) ? row.view.host : null;
+    if (key === null) {
+      units.push({ rows: [row], host: false });
+      continue;
+    }
+    const known = byHost.get(key);
+    if (known) {
+      known.rows.push(row);
+      continue;
+    }
+    const unit = { rows: [row], host: true };
+    byHost.set(key, unit);
+    units.push(unit);
+  }
+  return units;
+}
+
+function rankOf(unit: CardUnit): number {
+  const open = unit.rows.filter(
+    (row) => !row.dismissed && row.view.status !== "resolved",
+  );
+  if (open.length === 0) return 3;
+  const waiting = open.filter((row) => isWaiting(row.view));
+  if (waiting.length === 0)
+    return open.some((row) => isRuleKind(row.view)) ? 2 : 3;
+  return waiting.every((row) => row.nobodyWaits) ? 1 : 0;
+}
+
+function unitBlocks(unit: CardUnit, appUrl: string): SlackBlock[] {
+  return unit.host
+    ? hostRow(unit.rows, appUrl)
+    : rowBlocks(unit.rows[0]!, appUrl);
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: "Allow all once" and "Deny all" of a turn card that names one thread, for the network and web-search rows the card shows that still wait; an MCP call or a row the card does not show keeps waiting for its own click. None when fewer than two such rows show.
+function allButtons(units: readonly CardUnit[]): SlackBlock[] {
+  const ids = units
+    .flatMap((unit) => unit.rows)
+    .filter((row) => isRuleKind(row.view) && isWaiting(row.view))
+    .map((row) => row.view.id);
+  if (ids.length < 2) return [];
+  return [
+    {
+      type: "actions",
+      elements: [
+        button({
+          label: "Allow all once",
+          actionId: OWNER_REQUEST_APPROVE_ONCE_ACTION,
+          requests: ids,
+          style: "primary",
+        }),
+        button({
+          label: "Deny all",
+          actionId: OWNER_REQUEST_DENY_ONCE_ACTION,
+          requests: ids,
+          style: "danger",
+        }),
+      ],
+    },
+  ];
+}
+
+function rowsOf(input: {
+  kind: OwnerCardKind;
+  threads: readonly OwnerCardThread[];
+  rows: readonly CardRow[];
+  appUrl: string;
+}): SlackBlock[] {
+  const ordered = unitsOf(input.kind, input.rows).sort(
+    (a, b) => rankOf(a) - rankOf(b),
+  );
   const shown = ordered.slice(0, MAX_CARD_ROWS);
   const more = ordered.length - shown.length;
   return [
-    ...shown.flatMap((row) => [{ type: "divider" }, ...rowBlocks(row, appUrl)]),
+    ...(input.kind === "turn" && input.threads.length === 1
+      ? allButtons(shown)
+      : []),
+    ...shown.flatMap((unit) => [
+      { type: "divider" },
+      ...unitBlocks(unit, input.appUrl),
+    ]),
     ...(more > 0
       ? [
           {
             type: "context",
             elements: [
-              { type: "mrkdwn", text: `<${appUrl}|${more} more: Open in app>` },
+              {
+                type: "mrkdwn",
+                text: `<${input.appUrl}|${String(more)} more: Open in app>`,
+              },
             ],
           },
         ]
@@ -263,7 +767,7 @@ function requestCount(n: number): string {
   return n === 1 ? "1 request" : `${n} requests`;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a card in the owner's DM, as text and blocks: the turn card holds the requests of the agent's addressed Slack turns and names each thread with the person who started it; the background card holds the agent's other requests. Rows that still wait come first, at most ten, then a count with "Open in app". Agent-written text never appears as Slack markup.
+// UNIT_BOUNDARY_DESCRIPTION: a card in the owner's DM, as text and blocks: the turn card holds the requests of the agent's addressed Slack turns, one row per request, and names each thread with the person who started it; the background card holds the agent's other requests, with one row per host for network requests and one for web searches. Rows that still wait come first, then rule rows, then settled rows, at most ten, then a count with "Open in app". Agent-written text never appears as Slack markup.
 export function ownerCard(input: {
   kind: OwnerCardKind;
   agentName: string;
@@ -271,7 +775,7 @@ export function ownerCard(input: {
   rows: readonly CardRow[];
   appUrl: string;
 }): { text: string; blocks: SlackBlock[] } {
-  const waiting = input.rows.filter((row) => row.view.status === "pending");
+  const waiting = input.rows.filter((row) => isWaiting(row.view));
   if (input.kind === "call") {
     const [row] = input.rows;
     const text = row ? callTitle(row.view) : `${input.agentName} wants a call`;
@@ -289,7 +793,7 @@ export function ownerCard(input: {
     blocks: [
       { type: "header", text: plainText(cut(header, 150)) },
       ...(input.kind === "turn" ? threadContext(input.threads) : []),
-      ...rowsOf(input.rows, input.appUrl),
+      ...rowsOf(input),
     ],
   };
 }

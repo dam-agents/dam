@@ -68,6 +68,19 @@ export function createEgressRuleMatchAdapter(db: Db) {
   };
 }
 
+export function createPromotionRulesReader(db: Db) {
+  const repo = createEgressRulesRepository(db);
+  return async (agentId: string) =>
+    (await repo.listForAgent(agentId)).map((row) => ({
+      id: row.id,
+      host: row.host,
+      ...(row.port ? { port: row.port } : {}),
+      method: row.method,
+      pathPattern: row.pathPattern,
+      source: row.source,
+    }));
+}
+
 export function createEgressRuleWriterAdapter(
   db: Db,
   l7Hosts: AgentL7HostsPort,

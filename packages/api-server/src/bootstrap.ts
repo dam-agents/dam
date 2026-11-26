@@ -405,6 +405,7 @@ import {
   listEgressRuleAgentIds,
   markTrustedRowsTakenOverAdapter,
   createEgressRuleWriterAdapter,
+  createPromotionRulesReader,
 } from "./modules/egress-rules/compose.js";
 import {
   createWebSearchCleanupHook,
@@ -2169,13 +2170,26 @@ export async function bootstrap() {
         wrapperFrameSender,
         childEgressAnswered: recordEgressAnswerAdapter(db),
       });
-      const outcome = await match(answer)
-        .with("approve-once", () => service.approveOnce(requestId))
-        .with("deny-once", () => service.dismiss(requestId))
-        .exhaustive();
-      return outcome.outcome === "not_actionable"
-        ? "not-actionable"
-        : "applied";
+      try {
+        const outcome = await match(answer)
+          .with("approve-once", () => service.approveOnce(requestId))
+          .with("deny-once", () => service.dismiss(requestId))
+          .with("approve-path", () => service.approvePermanent(requestId))
+          .with("approve-host", () => service.approveHost(requestId))
+          .with("deny-forever", () => service.denyForever(requestId))
+          .exhaustive();
+        return outcome.outcome === "not_actionable"
+          ? "not-actionable"
+          : "applied";
+      } catch (err) {
+        if (
+          err instanceof Error &&
+          "code" in err &&
+          (err as { code?: unknown }).code === "CONFLICT"
+        )
+          return "conflict";
+        throw err;
+      }
     },
     cards: createOwnerRequestCardsRepository(db),
   };
@@ -2411,6 +2425,7 @@ export async function bootstrap() {
     })),
     ruleMatcher: createEgressRuleMatchAdapter(db),
     waitingRuleSpeaksFor: ruleSpeaksFor,
+    promotionRulesOf: createPromotionRulesReader(db),
     providerScopes: createProviderEgressScopes(db),
     toolAccessConnections: createToolAccessConnections(
       db,

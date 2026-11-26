@@ -1,6 +1,7 @@
 import { getLogger } from "../../../core/logger.js";
 import { formatError } from "../../../core/format-error.js";
 import {
+  DISMISS_DAYS,
   cardMetadata,
   ownerCard,
   threadLine,
@@ -31,13 +32,17 @@ export interface OwnerRequestPortsForSlack {
   ): Promise<void>;
   decide(input: {
     requestId: string;
-    answer: OwnerAnswer;
+    answer: DecidedAnswer;
     ownerSub: string;
     slackUserId: string;
     teamId: string;
-  }): Promise<"applied" | "not-actionable">;
+  }): Promise<DecideResult>;
   cards: OwnerRequestCardsRepository;
 }
+
+export type DecidedAnswer = Exclude<OwnerAnswer, "dismiss">;
+
+export type DecideResult = "applied" | "not-actionable" | "conflict";
 
 export interface AddressedTurnThread {
   turnKey: string;
@@ -66,7 +71,7 @@ function lasting(err: unknown): boolean {
   return LASTING_POST_ERRORS.some((code) => text.includes(code));
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: places owner requests on cards in the owner's Slack DM and keeps the line in each waiting thread true. It runs on the channels leader, and one lock per owner orders every placement and edit, so two requests that arrive together join one card. A `turn` request joins the agent's turn card and names the thread it came from; a `background` request joins the agent's background card; a raise moves a request from the background card to the turn card. A card's row is written before its post; a join from a thread the card does not name yet, or a new row of a background card, posts the card again when the old post is more than five minutes old, so Slack notifies the owner once more, and any other join edits it. A turn card that cannot post for a lasting reason denies its waiting requests at once, so no thread waits for a card that never comes. The line in each thread says that the agent asked its owner while a request waits, that the agent went on without the step while one is still pending, and that the wait ended once every request settled.
+// UNIT_BOUNDARY_DESCRIPTION: places owner requests on cards in the owner's Slack DM and keeps the line in each waiting thread true. It runs on the channels leader, and one lock per owner orders every placement and edit, so two requests that arrive together join one card. A `turn` request joins the agent's turn card and names the thread it came from; a `background` request joins the agent's background card, a network request under the row of its host and a web search under the row of all searches, and gets no row while the owner's dismissal of that agent and host lasts; a raise moves a request from the background card to the turn card. A card's row is written before its post; a join from a thread the card does not name yet, or a background row that starts to wait, posts the card again when the old post is more than five minutes old, so Slack notifies the owner once more, and any other join edits it. A click answers every request its button names, as the owner; Dismiss also denies the row's waiting requests once and writes the dismissal. A turn card that cannot post for a lasting reason denies its waiting requests at once, so no thread waits for a card that never comes. The line in each thread says that the agent asked its owner while a request waits, that the agent went on without the step while one is still pending, and that the wait ended once every request settled.
 export function createSlackOwnerRequests(deps: {
   ports: OwnerRequestPortsForSlack;
   gateway: () => Promise<SlackGateway | null>;
@@ -127,6 +132,7 @@ export function createSlackOwnerRequests(deps: {
       rows.push({
         view: { ...view, agentName: await deps.agentName(view.agentId) },
         nobodyWaits: !waits,
+        dismissed: item.state === "dismissed",
       });
     }
     return rows;
@@ -370,6 +376,19 @@ export function createSlackOwnerRequests(deps: {
     if (changed) await cards.setThreads(card.id, card.threads);
   }
 
+  async function hostWaits(
+    card: OwnerCard,
+    host: string,
+    exceptId: string,
+  ): Promise<boolean> {
+    for (const item of await cards.items(card.id)) {
+      if (item.host !== host || item.requestId === exceptId) continue;
+      const other = await deps.ports.view(item.requestId);
+      if (other?.status === "pending" && other.refusedIn === null) return true;
+    }
+    return false;
+  }
+
   async function placeOn(
     view: Omit<OwnerRequestView, "agentName">,
     kind: OwnerCardKind,
@@ -401,6 +420,10 @@ export function createSlackOwnerRequests(deps: {
             teamId: link.teamId,
             kind,
           });
+    const hostWaited =
+      kind === "background" && view.host !== null
+        ? await hostWaits(card, view.host, view.id)
+        : false;
     const isNewRow = await cards.addItem(card.id, {
       requestKind: "approval",
       requestId: view.id,
@@ -420,7 +443,9 @@ export function createSlackOwnerRequests(deps: {
     const stale =
       card.postedAt !== null &&
       Date.now() - card.postedAt.getTime() > REPOST_AFTER_MS;
-    const repost = stale && (kind === "turn" ? newThread : isNewRow);
+    const waits = view.status === "pending" && view.refusedIn === null;
+    const repost =
+      stale && (kind === "turn" ? newThread : isNewRow && waits && !hostWaited);
     const shown = await show(card, link, repost);
     if (shown === "unreachable" && kind === "turn") {
       for (const item of await cards.items(card.id))
@@ -441,6 +466,19 @@ export function createSlackOwnerRequests(deps: {
           ? "call"
           : view.route;
       if ((await deps.reachOf(view.agentId).catch(() => "unlinked")) !== "ok")
+        return { placed: 0 };
+      if (
+        route === "background" &&
+        view.host !== null &&
+        (view.kind === "ext_authz" || view.kind === "web_search") &&
+        (await cards
+          .dismissed({
+            ownerSub: view.ownerSub,
+            agentId: view.agentId,
+            host: view.host,
+          })
+          .catch(() => false))
+      )
         return { placed: 0 };
       const links = await workspaceLinks(view.ownerSub);
       let placed = 0;
@@ -493,40 +531,89 @@ export function createSlackOwnerRequests(deps: {
     },
 
     async answer(input: {
-      requestId: string;
+      requestIds: readonly string[];
       answer: OwnerAnswer;
       slackUserId: string;
       teamId: SlackWorkspace;
       reply: SlackPrivateReply;
     }): Promise<void> {
-      const view = await deps.ports.view(input.requestId);
-      if (!view) return;
+      const views: Omit<OwnerRequestView, "agentName">[] = [];
+      for (const id of new Set(input.requestIds)) {
+        const view = await deps.ports.view(id);
+        if (view) views.push(view);
+      }
+      const [first] = views;
+      if (!first) return;
       const note = (text: string) =>
         input
           .reply(text)
           .catch((err: unknown) =>
             getLogger().warn(
-              { approvalId: input.requestId, error: formatError(err) },
+              { approvalId: first.id, error: formatError(err) },
               "owner_request.reply_failed",
             ),
           );
       const clicker = await deps.subOf(input.slackUserId).catch(() => null);
-      if (clicker !== view.ownerSub) {
-        const owner = await deps.ownerName(view.agentId, input.teamId);
+      if (clicker !== first.ownerSub) {
+        const owner = await deps.ownerName(first.agentId, input.teamId);
         await note(`Only ${owner} can answer this.`);
         return;
       }
-      const result = await deps.ports.decide({
-        requestId: input.requestId,
-        answer: input.answer,
-        ownerSub: view.ownerSub,
-        slackUserId: input.slackUserId,
-        teamId: input.teamId,
-      });
-      if (result === "not-actionable") await note("Already answered.");
-      await withOwnerLock(view.ownerSub, async () => {
-        const links = await workspaceLinks(view.ownerSub);
-        for (const card of await cards.cardsOfRequest(input.requestId)) {
+      const ownerSub = first.ownerSub;
+      const mine = views.filter((view) => view.ownerSub === ownerSub);
+      const results: DecideResult[] = [];
+      for (const view of mine) {
+        const verdict: DecidedAnswer | null =
+          input.answer !== "dismiss"
+            ? input.answer
+            : view.status === "pending" && view.refusedIn === null
+              ? "deny-once"
+              : null;
+        if (verdict === null) continue;
+        results.push(
+          await deps.ports
+            .decide({
+              requestId: view.id,
+              answer: verdict,
+              ownerSub,
+              slackUserId: input.slackUserId,
+              teamId: input.teamId,
+            })
+            .catch((err: unknown): DecideResult => {
+              getLogger().warn(
+                { approvalId: view.id, error: formatError(err) },
+                "owner_request.decide_failed",
+              );
+              return "not-actionable";
+            }),
+        );
+      }
+      if (input.answer === "dismiss" && first.host !== null)
+        await cards.dismiss({
+          ownerSub,
+          agentId: first.agentId,
+          host: first.host,
+          until: new Date(Date.now() + DISMISS_DAYS * 24 * 60 * 60 * 1000),
+        });
+      if (results.includes("conflict"))
+        await note(
+          "A rule for this host already says the opposite. Change it in the agent's network settings in the app.",
+        );
+      else if (
+        results.length > 0 &&
+        results.every((result) => result === "not-actionable")
+      )
+        await note("Already answered.");
+      await withOwnerLock(ownerSub, async () => {
+        const links = await workspaceLinks(ownerSub);
+        const touched = new Map<string, OwnerCard>();
+        for (const view of mine)
+          for (const card of await cards.cardsOfRequest(view.id)) {
+            if (input.answer === "dismiss")
+              await cards.setItemState(card.id, view.id, "dismissed");
+            touched.set(card.id, card);
+          }
+        for (const card of touched.values()) {
           const link = links.find((l) => l.teamId === card.teamId);
           if (link && card.messageTs) await show(card, link, false);
           if (card.kind === "turn") await refreshLines(card);
@@ -534,9 +621,12 @@ export function createSlackOwnerRequests(deps: {
       });
       getLogger().info(
         {
-          approvalId: input.requestId,
+          approvalIds: mine.map((view) => view.id),
           answer: input.answer,
-          result,
+          applied: results.filter((result) => result === "applied").length,
+          notActionable: results.filter((result) => result === "not-actionable")
+            .length,
+          conflicts: results.filter((result) => result === "conflict").length,
           teamId: input.teamId,
         },
         "owner_request.answered",

@@ -1,8 +1,12 @@
 import {
   describeApprovalPayload,
+  gatewayRestartImpact,
+  WEB_SEARCH_FOLLOW_UP_QUERIES,
   type ApprovalStatus,
   type ApprovalVerdict,
   type OwnerRoute,
+  type PromotionRule,
+  type RefusedIn,
 } from "api-server-api";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
 import type { PendingApprovalRow } from "../domain/types.js";
@@ -28,7 +32,21 @@ export interface OwnerRequestViewData {
     targetLabel: string | null;
     arguments: string | null;
   } | null;
+  network: {
+    method: string;
+    host: string;
+    port: number | null;
+    path: string;
+    query: string | null;
+  } | null;
+  search: { query: string | null; followUps: number } | null;
+  from: { kind: "environment"; name: string } | { kind: "sub-agent" } | null;
+  refusedIn: RefusedIn | null;
+  timesToday: number;
+  restart: { path: boolean; host: boolean };
 }
+
+export const WEB_SEARCH_HOST = "web search";
 
 const UNREACHABLE_DECIDER = "system:owner-unreachable";
 
@@ -64,14 +82,90 @@ function callOf(row: PendingApprovalRow): OwnerRequestViewData["call"] {
 }
 
 function hostOf(row: PendingApprovalRow): string | null {
-  return row.payload.kind === "ext_authz" ? row.payload.host : null;
+  if (row.payload.kind === "ext_authz") return row.payload.host;
+  return row.payload.kind === "web_search" ? WEB_SEARCH_HOST : null;
+}
+
+function networkOf(row: PendingApprovalRow): OwnerRequestViewData["network"] {
+  if (row.payload.kind !== "ext_authz") return null;
+  const { method, host, port, path } = row.payload;
+  const mark = path.indexOf("?");
+  return {
+    method,
+    host,
+    port: port ?? null,
+    path: mark < 0 ? path : path.slice(0, mark),
+    query: mark < 0 ? null : path.slice(mark),
+  };
+}
+
+function fromOf(row: PendingApprovalRow): OwnerRequestViewData["from"] {
+  const { payload } = row;
+  if (
+    payload.kind !== "ext_authz" &&
+    payload.kind !== "web_search" &&
+    payload.kind !== "mcp_tool_call"
+  )
+    return null;
+  if (payload.viaEnvironment)
+    return { kind: "environment", name: payload.viaEnvironment };
+  return payload.forAgentId ? { kind: "sub-agent" } : null;
+}
+
+function refusedInOf(row: PendingApprovalRow): RefusedIn | null {
+  const { payload } = row;
+  return (payload.kind === "ext_authz" || payload.kind === "web_search") &&
+    payload.refusedIn
+    ? payload.refusedIn
+    : null;
+}
+
+function startOfDay(now: Date): Date {
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what the approvals module gives the Slack cards of owner requests: a view of one routed request in the platform's own words, the refusal of a `turn` request whose card cannot reach its owner (denied as the system, so the thread does not wait for a card that never comes), and whether any held request still waits for an answer.
 export function createOwnerRequestPorts(deps: {
-  repo: Pick<ApprovalsRepository, "getPending" | "resolvePending">;
+  repo: Pick<
+    ApprovalsRepository,
+    "getPending" | "resolvePending" | "countSince"
+  >;
   waiters: HoldWaiters;
+  promotionRulesOf: (
+    agentId: string,
+  ) => Promise<readonly (PromotionRule & { id: string })[]>;
 }) {
+  async function restartOf(
+    row: PendingApprovalRow,
+  ): Promise<OwnerRequestViewData["restart"]> {
+    if (row.payload.kind !== "ext_authz") return { path: false, host: false };
+    const { host, port, method, path } = row.payload;
+    const current = await deps.promotionRulesOf(row.agentId).catch(() => []);
+    const restarts = (rule: Omit<PromotionRule, "source">) =>
+      gatewayRestartImpact({
+        current,
+        adds: [{ ...rule, ...(port ? { port } : {}), source: "inbox" }],
+      }).willRestart;
+    return {
+      path: restarts({ host, method, pathPattern: path }),
+      host: restarts({ host, method: "*", pathPattern: "*" }),
+    };
+  }
+
+  async function timesTodayOf(row: PendingApprovalRow): Promise<number> {
+    if (row.type !== "ext_authz" && row.type !== "web_search") return 0;
+    return deps.repo
+      .countSince({
+        agentId: row.agentId,
+        type: row.type,
+        host: row.payload.kind === "ext_authz" ? row.payload.host : null,
+        since: startOfDay(new Date()),
+      })
+      .catch(() => 0);
+  }
+
   return {
     async view(id: string): Promise<OwnerRequestViewData | null> {
       const row = await deps.repo.getPending(id);
@@ -89,6 +183,18 @@ export function createOwnerRequestPorts(deps: {
         verdict: row.verdict,
         decidedBy: row.decidedBy,
         call: callOf(row),
+        network: networkOf(row),
+        search:
+          row.payload.kind === "web_search"
+            ? {
+                query: row.payload.query,
+                followUps: WEB_SEARCH_FOLLOW_UP_QUERIES,
+              }
+            : null,
+        from: fromOf(row),
+        refusedIn: refusedInOf(row),
+        timesToday: await timesTodayOf(row),
+        restart: await restartOf(row),
       };
     },
 

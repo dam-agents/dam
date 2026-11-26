@@ -5,6 +5,8 @@ import {
   isNull,
   ownerRequestCardItems,
   ownerRequestCards,
+  ownerRequestDismissals,
+  sql,
   type Db,
 } from "db";
 import type {
@@ -30,7 +32,7 @@ export interface OwnerCardItem {
   requestKind: "approval" | "question";
   requestId: string;
   host: string | null;
-  state: "waiting" | "rule" | "settled";
+  state: "waiting" | "rule" | "settled" | "dismissed";
 }
 
 export interface OwnerRequestCardsRepository {
@@ -64,6 +66,22 @@ export interface OwnerRequestCardsRepository {
   ): Promise<void>;
   setThreads(cardId: string, threads: OwnerCardThread[]): Promise<void>;
   touch(cardId: string): Promise<void>;
+  setItemState(
+    cardId: string,
+    requestId: string,
+    state: OwnerCardItem["state"],
+  ): Promise<void>;
+  dismiss(input: {
+    ownerSub: string;
+    agentId: string;
+    host: string;
+    until: Date;
+  }): Promise<void>;
+  dismissed(input: {
+    ownerSub: string;
+    agentId: string;
+    host: string;
+  }): Promise<boolean>;
 }
 
 type CardRow = typeof ownerRequestCards.$inferSelect;
@@ -83,7 +101,7 @@ function toCard(row: CardRow): OwnerCard {
   };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the owner's request cards in Slack and what each one holds. One open turn card and one open background card exist per owner, agent and workspace, which a unique index holds even when two placements race; a request is an item of a card until the card closes. A card's row is written before its post, so a post that fails leaves a row the sweep can post later.
+// UNIT_BOUNDARY_DESCRIPTION: the owner's request cards in Slack and what each one holds. One open turn card and one open background card exist per owner, agent and workspace, which a unique index holds even when two placements race; a request is an item of a card until the card closes. A card's row is written before its post, so a post that fails leaves a row the sweep can post later. A dismissal keeps new background rows of one agent and host off the owner's cards until it ends.
 export function createOwnerRequestCardsRepository(
   db: Db,
 ): OwnerRequestCardsRepository {
@@ -220,6 +238,48 @@ export function createOwnerRequestCardsRepository(
         .update(ownerRequestCards)
         .set({ lastChange: new Date() })
         .where(eq(ownerRequestCards.id, cardId));
+    },
+
+    async setItemState(cardId, requestId, state) {
+      await db
+        .update(ownerRequestCardItems)
+        .set({ state })
+        .where(
+          and(
+            eq(ownerRequestCardItems.cardId, cardId),
+            eq(ownerRequestCardItems.requestId, requestId),
+          ),
+        );
+    },
+
+    async dismiss({ ownerSub, agentId, host, until }) {
+      await db
+        .insert(ownerRequestDismissals)
+        .values({ ownerSub, agentId, host, until })
+        .onConflictDoUpdate({
+          target: [
+            ownerRequestDismissals.ownerSub,
+            ownerRequestDismissals.agentId,
+            ownerRequestDismissals.host,
+          ],
+          set: { until },
+        });
+    },
+
+    async dismissed({ ownerSub, agentId, host }) {
+      const rows = await db
+        .select({ host: ownerRequestDismissals.host })
+        .from(ownerRequestDismissals)
+        .where(
+          and(
+            eq(ownerRequestDismissals.ownerSub, ownerSub),
+            eq(ownerRequestDismissals.agentId, agentId),
+            eq(ownerRequestDismissals.host, host),
+            sql`${ownerRequestDismissals.until} > now()`,
+          ),
+        )
+        .limit(1);
+      return rows.length > 0;
     },
   };
 }

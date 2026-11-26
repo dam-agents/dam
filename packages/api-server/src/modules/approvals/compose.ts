@@ -9,6 +9,7 @@ import {
 import type { Db } from "db";
 import type {
   ApprovalsService,
+  PromotionRule,
   SpendLimitPayload,
   ToolApprovalReports,
 } from "api-server-api";
@@ -135,6 +136,9 @@ interface ComposeApprovalsSystemDeps {
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
   waitingRuleSpeaksFor: WaitingRuleSpeaksFor;
+  promotionRulesOf: (
+    agentId: string,
+  ) => Promise<readonly (PromotionRule & { id: string })[]>;
 }
 
 export { turnReleaseChannelOf } from "./services/held-verdict.js";
@@ -185,7 +189,11 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     staleMs: 30_000,
     batchSize: 50,
   });
-  const ownerRequests = createOwnerRequestPorts({ repo, waiters });
+  const ownerRequests = createOwnerRequestPorts({
+    repo,
+    waiters,
+    promotionRulesOf: deps.promotionRulesOf,
+  });
   return { relay, gate, sweeper, wakeSaga, ownerRequests };
 }
 

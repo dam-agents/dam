@@ -70,6 +70,13 @@ export interface ApprovalsRepository {
     agentId: string;
     key: string;
   }): Promise<PendingApprovalRow | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: how many approvals of one type an agent filed since a time, in every state: for a network request only those of one host, for a web search all of them. A request that joined a waiting approval filed none, so it does not count. */
+  countSince(input: {
+    agentId: string;
+    type: "ext_authz" | "web_search";
+    host: string | null;
+    since: Date;
+  }): Promise<number>;
   /* UNIT_BOUNDARY_DESCRIPTION: uses up one approve once, so a request the client sent again after it gave up can pass once. By shape, it takes the oldest unused approve once of that request (a network request by host, port, method and path; a web search or a tool call by its key) answered after `answeredSince`, so an answer stays usable for a hold window after it was given; by id, it takes that approval, for the held request it released. It returns the id it used, or null when there was none to use, such as when another request got there first. */
   consumeAllowOnce(
     target:
@@ -353,6 +360,23 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
         .orderBy(desc(pendingApprovals.createdAt))
         .limit(1);
       return rows.length ? toPendingRow(rows[0] as RawPending) : null;
+    },
+
+    async countSince({ agentId, type, host, since }) {
+      const rows = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(pendingApprovals)
+        .where(
+          and(
+            eq(pendingApprovals.agentId, agentId),
+            eq(pendingApprovals.type, type),
+            sql`${pendingApprovals.createdAt} >= ${since.toISOString()}::timestamptz`,
+            ...(host === null
+              ? []
+              : [sql`${pendingApprovals.payload}->>'host' = ${host}`]),
+          ),
+        );
+      return rows[0]?.n ?? 0;
     },
 
     async consumeAllowOnce(target) {

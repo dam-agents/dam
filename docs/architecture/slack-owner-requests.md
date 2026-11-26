@@ -76,7 +76,7 @@ Agent-written text never reaches Slack as markup, and host, Connection and agent
 
 Placing runs on the channels leader, one owner at a time, so requests that arrive together join one card.
 The card is recorded before it is posted, so a post that failed can be posted later.
-A join from a thread the turn card does not name yet, or a new row of a background card, posts the card again when the old post is more than five minutes old, so Slack notifies the owner once more; any other join edits the card silently.
+A join from a thread the turn card does not name yet, or a background row that starts to wait, posts the card again when the old post is more than five minutes old, so Slack notifies the owner once more; any other join edits the card silently.
 A turn card that cannot be posted for a lasting reason, such as a missing scope or a direct message that cannot open, denies its waiting requests at once, so no thread waits for a card that never comes.
 Every card post carries message metadata that marks it as a card: history reads drop such posts, and the app's own posts are never turns, so an agent bound to the owner's direct message never reads or answers a card.
 
@@ -96,9 +96,27 @@ A press first takes the turn out of the addressed count, so its later requests a
 Only the owner answers in Slack: a click counts only when the clicking Slack user's identity link resolves to the request's owner, and anyone else gets a private note that only the owner can answer.
 Editors answer in the web, and their answer shows on the card.
 A click goes through the same approvals service as an answer in the web, run as the owner, so the first answer counts wherever it comes from; a click on a request that is already settled gets a private "Already answered".
+Every click redraws the cards of the requests it answered from those requests, so a card shows the real outcome even where Slack shows no private note.
 The verdict records the owner as who decided, and its audit line names the Slack user and workspace that clicked.
 A click never posts a message, so a direct message bound to an Agent through the DM Bridge starts no turn from it.
 
-A held MCP tool call shows as a row of the turn card, or as a **call card** of its own when it is a `background` request, so a call never waits behind blocked hosts: the agent, the tool and the Connection, the target the Template named, the arguments as a code block cut at about 2,500 characters, the expiry, and Approve once and Deny once.
-Approve once runs exactly one call; Deny once refuses it.
+A held MCP tool call shows as a row of the turn card, or as a **call card** of its own when it is a `background` request, so a call never waits behind blocked hosts: the agent, the tool and the Connection, the target the Template named, the arguments as a code block cut at about 2,500 characters, the expiry, and Allow once and Deny.
+Allow once runs exactly one call; Deny refuses it.
 Once settled, the row shows its outcome instead of its buttons.
+
+## Network and web-search rows
+
+On a turn card, each held network request or web search is a row of its own: the request without its query string, then the query string or the search as plain text cut at about 200 characters, because a query can carry data out.
+While it waits, the row offers the web's verdicts in Slack's words: Allow once, Deny, "Always allow this path" when it has a real path, "Allow whole host" and "Always deny…"; a web search offers Allow once, Deny, "Always allow web search" and "Always deny web search…".
+A turn card that names one thread and shows at least two waiting network or web-search rows also offers "Allow all once" and "Deny all", which answer those rows only; an MCP call keeps waiting for its own click.
+
+On a background card, every network request to one host shares one row, and every web search shares another: "Blocked on <host>", its paths with their query strings while they wait (up to five, then how many more), how many times the agent was blocked there today, and the expiry of the newest waiting request.
+Allow once and Deny answer every waiting request of the row.
+
+A row whose request expired, or that the gate refused at once, is a **rule row**: it offers only the rule buttons, because nobody waits on it, and a refused row says where it was refused, such as "Refused at once in a Slack channel".
+A rule verdict writes the same rule as the web, also on an expired request.
+"Always deny…" writes the web's deny rule for each path of the row, and Slack asks to confirm it first; so does a rule that restarts the agent's network access, which the card checks against the agent's current rules when it is drawn.
+A rule that clashes with an existing rule of the opposite verdict changes nothing, and the owner is sent to the app.
+
+"Dismiss" denies the row's waiting requests once, shows "Dismissed for 7 days", and for seven days no background row goes out for that agent and host; its blocks still show on Home.
+A Slack-turn request still gets its row, because a person waits on it.

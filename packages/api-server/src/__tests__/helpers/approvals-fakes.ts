@@ -119,6 +119,7 @@ export function makeFakeApprovalsRepo(): FakeRepo {
     markDelivered: async () => {},
     correctResolvedVerdict: async () => false,
     listResolvedUndelivered: async () => [],
+    countSince: async () => 0,
     raiseRoute: async () => false,
     expirePending: async (id) => {
       expirePendingCalls.push(id);

@@ -16,6 +16,7 @@ import {
 } from "./slack-owner-requests.js";
 import {
   answerOfAction,
+  requestsOfValue,
   OWNER_REQUEST_OPEN_ACTION,
   OWNER_REQUEST_RELEASE_ACTION,
 } from "../domain/owner-request-cards.js";
@@ -5588,15 +5589,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
     const ownerAnswer = answerOfAction(event.actionId);
     if (ownerAnswer !== null) {
-      let requestId: unknown;
-      try {
-        requestId = (JSON.parse(event.value) as { request?: unknown }).request;
-      } catch {
-        return;
-      }
-      if (typeof requestId === "string" && !event.ephemeral)
+      const requestIds = requestsOfValue(event.value);
+      if (requestIds && !event.ephemeral)
         await ownerRequestCards?.answer({
-          requestId,
+          requestIds,
           answer: ownerAnswer,
           slackUserId: event.userId,
           teamId: event.teamId,
