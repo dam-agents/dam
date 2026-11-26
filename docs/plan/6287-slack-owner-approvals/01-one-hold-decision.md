@@ -9,7 +9,7 @@ Three gates hold an unmatched request: `ext-authz-gate.ts` (network), `web-searc
 Each has its own copy of one check: a channel turn is open and nobody is attached → refuse at once.
 This slice puts the decision in one pure function that also gives each request its route (`turn` or `background`), and makes an addressed Slack turn of an owner who can get cards hold instead of refusing.
 An addressed Slack turn is one that a person's message started and that shows the working status, because there a person can end the wait with the "Don't wait" button of [02](./02-card-base.md), in every workspace, whether or not Slack shows its own Stop button; ambient rounds, replies in an agent's own thread, a whisper sent with its message, and turns that a bot, an app or an agent started keep today's refusal.
-The slice also makes the network and web-search holds end when their client goes away, lets an approve once made after that serve the next identical request, and makes a hold's expiry follow its row, so a Slack turn that joins an old row gets the whole hold window.
+The slice also makes the network and web-search holds end when their client goes away, counts who still waits on a row so the cards and the thread can say when nobody does, lets an approve once made after that serve the next identical request, and makes a hold's expiry follow its row, so a Slack turn that joins an old row gets the whole hold window.
 It also lets every `turn` wait of an agent end on a release, which the "Don't wait" button of [02](./02-card-base.md) sends: the client gets a refusal at once, and the row stays pending for the owner.
 No card exists yet: a held request shows on Home and in the web approvals list as today, and a verdict there lets it through.
 An owner who cannot get cards keeps today's behavior exactly.
@@ -59,6 +59,10 @@ Apply the `/typescript-engineering` skill.
 
 8. **A hold ends with its client.** Add `signal` to `WebSearchGateInput`, and let the ext-authz app pass the gRPC cancel `signal` to both the network gate and the web-search gate; both pass it to `waitForVerdict`, as `tool-call-hold.ts` does.
    On `hold-abandoned`, log the decision with that reason and leave the row pending for the owner.
+   In `held-verdict.ts`, count the live waits of each routed row on the Redis bus (illustrative key `approval-waiters:<id>`): up when a wait starts, down when it ends, refreshed with the attendance heartbeat so the waits of a replica that died expire.
+   When the count leaves zero, or returns to zero without a verdict (`hold-abandoned` or `hold-released`), emit (illustrative) `ApprovalWaitChanged` with the row id, the agent, the owner, the route and `waiting: true` or `false`; a verdict emits nothing here, because `ApprovalResolved` covers it.
+   Add a read that answers whether a row's count is zero; [05](./05-card-lifecycle.md) uses it to tell a late allow.
+   The count tells the owner and the member what is true now: in most cases the client gives up long before the hold window (Claude Code's WebFetch after 60 s, its Bash tool after 120 s), and the gateway ends a hold after 15 s to 5 minutes until #6855 is fixed.
 
 9. **A release ends the turn waits.** In `held-verdict.ts`, `waitForVerdict` takes an optional release channel and ends with a new reason (illustrative `hold-released`) when a release on it matches the wait; like `hold-abandoned`, it leaves the row pending, and the expiry sweep (`delivery-sweeper.ts`) flips the row at its `expires_at`.
    Each of the three gates passes the release channel of its attendee (illustrative `turn-release:<agentId>` on the Redis bus) only for a request whose route is `turn`, so a `background` wait never ends on a release.
@@ -77,13 +81,13 @@ Apply the `/typescript-engineering` skill.
       The MCP hold keeps its rule: one call per approve once.
 
 11. **Turn contract.** In `packages/api-server/src/modules/channels/infrastructure/network-access-copy.ts`, and in the refusal and hold texts of the web-search and MCP holds, pick the text by `canCard`:
-    - `ok`: an unallowed host, search or tool call waits for the owner's answer in Slack, up to the hold window (from `config.approvalHoldSeconds`, never a literal); the person who asked can press "Don't wait" on the thread's line to go on without the step, or Stop where Slack shows it to end the turn; a request refused with `hold-released` was not denied, so the agent goes on without it and tells the person who asked that they can ask again once the owner answers;
+    - `ok`: an unallowed host, search or tool call goes to the owner in Slack and waits for the answer while the tool waits, with no promised time; the person who asked can press "Don't wait" on the thread's line to go on without the step, or Stop where Slack shows it to end the turn; a request that ends without an answer (the tool gave up, or `hold-released`) was not denied, so the agent goes on without it and tells the person who asked that the thread will say when the owner allows it, and that they can then ask again;
     - `unlinked`: today's text, plus that the agent's owner can answer such requests from Slack after linking their Slack account with the login command.
       Address the owner, not the sender, and take the command's name from the brand config.
 
 12. **Security log.** The decision logs which rule decided (`basis`), the route, and whether the turn was addressed, on the existing hold and refusal lines; a raise logs the row and the new expiry; a release logs each wait it ended with the reason `hold-released`; never the request body.
 
-13. **Docs.** Create `docs/architecture/slack-owner-requests.md` (title "Owner requests in Slack"): why it exists, addressed Slack turns and why only they hold, the routes, the shared decision with its five rules, "owner can get cards", the raise and the expiry that follows the row, the hold that ends with its client, the release that ends the turn waits, and approve once.
+13. **Docs.** Create `docs/architecture/slack-owner-requests.md` (title "Owner requests in Slack"): why it exists, addressed Slack turns and why only they hold, the routes, the shared decision with its five rules, "owner can get cards", the raise and the expiry that follows the row, the hold that ends with its client, the count of who still waits, the release that ends the turn waits, and approve once.
     Add its line to `docs/architecture.md`.
     In `docs/configuration.md`, the operator switch.
     In `docs/architecture/security-and-credentials.md`, "Unattended requests are refused, not held" and "Channel turns": an addressed Slack turn of an owner who can get cards holds, and an approve once outlives the client; link the new page rather than adding prose.
@@ -106,20 +110,23 @@ Apply the `/typescript-engineering` skill.
 - [ ] A schedule fire's request holds with the route `background`; a scheduled session's web search holds for a linked owner and is refused at once for an unlinked one, also while someone is attached.
 - [ ] A Slack-turn request that joins a 25-minute-old `background` row raises it to `turn`, emits the raise event, and waits a full hold window from the join.
 - [ ] Stop on a turn that waits on a held network request, or on a held web search, ends the wait at once; the row stays pending.
+- [ ] When the last wait on a routed row ends without a verdict (the client gave up, Stop, or a release), the row stays pending and `ApprovalWaitChanged` says `waiting: false`; a request that joins it later emits `waiting: true`; a verdict emits no such event.
 - [ ] A release for an agent ends at once every `turn` wait of its network, web-search and MCP holds that began after the released turn did: each client gets the neutral refusal with its gate's text, and each row stays pending.
   A `background` wait of the same agent, a wait that began before the turn, and a web search of another session go on.
 - [ ] After a release, a new request of the agent is refused at once, also while someone has the agent open in the web, while no other addressed turn of the agent is open.
 - [ ] An approve once given while three identical network requests wait lets all three through; given after the clients left, it lets the next identical request through once within the hold window after the answer, also after the row's own expiry, and a second one holds again.
-- [ ] The turn contract carries the "waits for your owner in Slack" text for a linked owner, and the link hint, addressed to the owner, for an unlinked one.
+- [ ] The turn contract carries the "goes to your owner in Slack" text, with no promised time, for a linked owner, and the link hint, addressed to the owner, for an unlinked one.
 - [ ] `mise run check` and `mise run //packages/api-server:test` pass.
 
 ## Smoke test
 
 On the local cluster with Slack wired (`cluster-ops` skill; a worktree passes `--helm-values=`), with `APPROVAL_HOLD_SECONDS=300`.
+Until #6855 is fixed, a site can drop a held HTTPS request after 15 s, and Claude Code's fetch tool gives up after 60 s: approve a request that must pass while it waits within 10 seconds.
 
 1. Link the owner with `/dam login` and bind an agent to a test channel.
 2. From another member, ask the agent to fetch `https://example.org/`: the thread shows the working status, and Home shows a waiting network approval.
-3. Approve once on Home: the agent answers with the page's title.
+3. Approve once on Home within 10 seconds: the agent answers with the page's title.
+   Ask for `https://example.edu/` and do not answer: when the fetch gives up, the security log shows the wait ended with `hold-abandoned`, the row's wait count reads zero, and the row stays pending; approve once, ask again: it passes.
 4. Ask for `https://example.com/` and press Stop: the turn ends at once; Home still shows the approval.
    Approve once on Home, then ask again: the request goes through.
 5. Ask for `https://www.iana.org/`, and while it waits publish a release for the agent by hand (`valkey-cli` with the pod's auth, per the `cluster-ops` skill): the agent answers at once that the wait ended and that the owner can still approve the request; Home still shows the approval.

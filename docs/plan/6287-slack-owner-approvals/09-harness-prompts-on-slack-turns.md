@@ -51,7 +51,7 @@ Apply the `/typescript-engineering` skill.
 
 ## Acceptance criteria
 
-- [ ] With a linked owner, a harness prompt on an addressed Slack turn does not fail at once: the owner's turn card gets a row with the tool, its input and the harness's options, and the thread shows the line that the agent waits.
+- [ ] With a linked owner, a harness prompt on an addressed Slack turn does not fail at once: the owner's turn card gets a row with the tool, its input and the harness's options, and the thread shows the line that the agent asked its owner.
 - [ ] Allow once runs the call and the agent replies in the thread; Reject refuses it and the agent says so.
 - [ ] No answer within the hold window refuses the call, and the row reads "Expired".
 - [ ] Stop during a wait ends the turn at once, and the row reads "The turn was stopped".
@@ -65,7 +65,7 @@ Apply the `/typescript-engineering` skill.
 
 Set up as in [01](./01-one-hold-decision.md), with a Bob agent on Auto-approve bound to the test channel.
 
-1. From another member, ask the Bob agent to write a file into `~/.bob`: Bob asks; the owner's turn card gets a row with the path and Allow once / Reject; the thread shows the line that the agent waits.
+1. From another member, ask the Bob agent to write a file into `~/.bob`: Bob asks; the owner's turn card gets a row with the path and Allow once / Reject; the thread shows the line that the agent asked its owner.
 2. Click Allow once: the write goes through and the agent replies; the row shows the outcome without the input.
 3. Ask again and press Stop on the working status: the turn ends, and the row reads "The turn was stopped".
 4. Ask again and press "Don't wait" on the thread's line: the agent replies without the write, and the row reads "The person who asked went on without it".

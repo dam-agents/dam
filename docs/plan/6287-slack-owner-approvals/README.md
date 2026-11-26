@@ -27,7 +27,7 @@ Production, last 30 days:
 
 After this feature:
 
-- A request on an addressed Slack turn reaches the owner as a card at once, and the turn waits for the answer; the person who asked can press "Don't wait" to go on without the step, or Stop to end the turn.
+- A request on an addressed Slack turn reaches the owner as a card at once, and the turn waits for the answer while the agent's tool waits; when the tool gives up, or the person who asked presses "Don't wait" or Stop, the agent goes on without the step, and a later allow tells the person who asked to ask again.
 - A request that nobody answers in the app reaches the owner as a card after a minute, unless the owner is active in the web UI.
 - The cards cover network holds, web-search holds, MCP tool-call holds, sub-agent questions and launch rules and, last, harness prompts.
 - `/dam approvals` gives the owner a private list of everything that waits for them, the same set the web approvals bell shows, and turns the cards off or on.
@@ -110,8 +110,11 @@ Read these pages first:
   - `background` and sub-agent questions → when the request still waits after 60 seconds, the owner can get cards, and the owner is not active in the web UI.
     The web UI sets the owner's activity key every 60 seconds while its tab is visible and was used in the last two minutes, and the key lives 120 seconds: the owner counts as active for two to four minutes after the last input, and for up to two minutes after the tab is hidden.
     An SSH session or an editor's browser does not count.
-- **Wait.** Every hold waits the hold window (30 min), Slack turns included.
+- **Wait.** A hold waits until the owner answers, its client gives up, or the hold window (30 min) ends, Slack turns included.
+  The client decides first in most cases: Claude Code's WebFetch gives up after 60 s and its Bash tool after 120 s, Codex and Pi wait for the gateway, and the gateway itself ends a hold after 15 s to 5 minutes until #6855 is fixed ([Measured](#measured)).
+  So nothing the owner or the member reads promises a time for the wait; a row stays answerable until its expiry, whatever ended the wait.
   Stop on a turn ends the wait at once: the client goes away, the gateway's `signal` fires, and the request stays pending for the owner.
+  Each row counts the waits that still listen for its answer; when the last one ends without a verdict, the row is "nobody waits", and a request that joins it later makes it "waits" again.
   When a `turn` request joins an older row, the row's expiry moves to now plus the hold window.
   Sub-agent questions keep their own deadline and default.
 - **Don't wait.** The thread's line carries a "Don't wait" button; the person who started the turn, a person whose message joined it, or the owner may press it, as with Stop.
@@ -119,11 +122,13 @@ Read these pages first:
   A press makes the turn stop counting as addressed, so its new requests are refused at once, also while someone has the agent open in the web; it then ends the turn's current waits with a neutral refusal (the wait ended, the request was not denied), and the agent finishes its answer without those steps.
   The member rejects the wait, not the request: the rows stay pending for the owner until their expiry, because only the owner decides access, and the gateway cannot tell which thread or run sent a request.
   An approve once or a rule that the owner gives later counts for the next try; an approve once stays usable for a full hold window after the answer.
-  A late allow posts a new reply in the thread that mentions the people who asked, because Slack sends no notice for an edit.
   A held harness prompt is released in its own turn's relay, gets the reject option at once, and its row expires, because the harness takes one answer per prompt.
   A release ends only waits that began after the turn did; a web search is released only when it comes from one of the turn's sessions.
   Network and MCP requests carry no session, so while two threads of the agent wait at the same time, a press in one ends the current network and MCP waits of both.
   Example: at 10:00 a member asks for a report and the agent waits for a host; at 10:03 the member presses "Don't wait" and the agent answers without that page; at 10:20 the owner allows the host, a reply in the thread tells the member, and the member asks again.
+- **Late allow.** An allow that comes when nobody waits on the row any more, whatever ended the wait (the tool gave up, Stop, or "Don't wait"), posts a new reply in the thread that mentions the people who asked, because Slack sends no notice for an edit: "<owner's display name> allowed it.
+  Ask again by <time>."
+  Example: at 10:00 a member asks the agent to summarize a page, and the fetch is held; at 10:01 the fetch tool gives up and the agent answers without the page; at 10:12 the owner clicks Allow once, and a reply in the thread tells the member to ask again by 10:42.
 - **Approve once.**
   - Network and web search: an approve once lets every request that waits on the row through, as today; with no waiter, the next identical request within the hold window uses it, once.
   - MCP tool calls keep #6421's rule: one call per approve once.
@@ -161,11 +166,13 @@ Read these pages first:
 - **Owner can get cards.** The owner has a Slack identity link in an installed, active workspace, has not turned the cards off with `/dam approvals off`, and the operator has not turned the feature off.
   The leader checks the workspace's scopes when it posts.
   When a turn card cannot post for a lasting reason (a missing scope, a DM that cannot open, a revoked token), its waiting rows are denied at once, so no thread waits for a card that never comes; a passing error is retried by the sweep.
-- **The thread.** While an addressed Slack turn waits on a request, the app posts one visible line in its thread, with the card metadata so no agent reads it: "<Agent> waits for its owner, <owner's display name>, to approve a step.
-  Up to <hold window>.", with the "Don't wait" button and the context line "The person who asked can go on without the step."
-  The line names no host, path or command, and it does not mention the owner, so the owner gets no second notice.
-  When no request of the turn card waits any more, or the turn ends, the line changes to "The wait ended."
-  After "Don't wait", the line says that the agent goes on without the step and that the owner can still approve it until the row's expiry; a late allow posts a new reply that mentions the people who asked.
+- **The thread.** While an addressed Slack turn waits on a request, the app posts one visible line in its thread, with the card metadata so no agent reads it: "<Agent> asked its owner, <owner's display name>, to approve a step.", with the "Don't wait" button and the context line "The person who asked can go on without the step."
+  The line gives no time, names no host, path or command, and does not mention the owner, so the owner gets no second notice.
+  When nobody waits on the agent's `turn` rows any more and one of them is still pending (the tool gave up, Stop, or "Don't wait"), the line changes to "<Agent> went on without the step.
+  <owner's display name> can still approve it until <time>.", with the latest expiry of those rows, and the rows on the turn card get the note "Nobody waits for this now.
+  Your answer counts for the next try."
+  When a request waits on them again, the line and the notes change back.
+  When every row the line covered has settled, the line changes to "The wait ended."; a late allow also posts its reply.
   An owner who sent the turn also gets a private note with a link to the card; an editor who sent it gets a private note that they can answer in the app.
   In the owner's own 1:1 DM with the app, no line goes out, because the card lands in that conversation.
 - **Operator switch.** One Helm value (illustrative `slackOwnerRequests.enabled`), on by default; off makes `canCard` answer `unlinked` for every owner, which gives today's behavior everywhere, for an incident.
@@ -213,11 +220,14 @@ Names are illustrative where marked.
   A release carries the time the turn began and the turn's session ids: a wait that began earlier is not released, and a web search is released only when its session stamp is one of the turn's sessions.
   The Slack worker calls `releaseAddressed` for every `TurnRef` of the turn and sets each stored `addressed` to false, then publishes the release once Redis has confirmed the change.
   A held harness prompt ([09](./09-harness-prompts-on-slack-turns.md)) is released in its turn's own relay, not on the bus.
+- **Who still waits.** `waitForVerdict` counts the live waits of each routed row on the Redis bus (illustrative key `approval-waiters:<id>`), up when a wait starts and down when it ends, refreshed with the attendance heartbeat so a lost replica's waits expire.
+  When the count leaves zero or returns to zero without a verdict (the client went away, or a release), it emits (illustrative) `ApprovalWaitChanged` with the row id, the agent, the owner, the route and `waiting: true` or `false`.
+  The thread lines and the "Nobody waits for this now" notes follow that event ([02](./02-card-base.md)); a late allow is an allow on a row whose count was zero ([05](./05-card-lifecycle.md)).
 - **Approve once outlives the client.** `consumeAllowOnce`, generalized by type: a network row matches on host, port, method and path; a web-search row on the query key; an MCP row on the call's key.
   For network and web search, every waiter that gets "allow" marks the row used without refusing the others; a request that finds an unused approve once of its shape uses it and passes.
   An unused approve once stays usable until its decision time plus the hold window, not until the row's own expiry.
 - **Card tables** (new, channels-owned):
-  - a card: id, owner, kind (`turn`, `background`, `call` or `question`), agent, team, DM channel, message `ts` (empty until posted), when it was posted, the threads a turn card names (each with the person who started it, the people whose messages the turn carried, the `ts` of its thread line, and when its asker pressed "Don't wait"), the last change, and when it was closed;
+  - a card: id, owner, kind (`turn`, `background`, `call` or `question`), agent, team, DM channel, message `ts` (empty until posted), when it was posted, the threads a turn card names (each with the person who started it, the people whose messages the turn carried, the `ts` of its thread line, when its asker pressed "Don't wait", and when its line last changed to the went-on text), the last change, and when it was closed;
   - a card item: the card, the request kind (`approval` or `question`), the request id, the host its row groups it under (network and web-search items of a background card), and its state on the card (`waiting`, `rule` or `settled`); a request is an item of at most one open card per workspace;
   - a dismissal: owner, agent, host, and until when no new row goes out for them.
     The place method writes the card row before it posts.
@@ -359,11 +369,14 @@ Petr has not confirmed these choices; a reviewer may challenge them.
 
 On the local cluster with Slack wired (the `cluster-ops` skill; a worktree passes `--helm-values=`), with a Slack test workspace whose app has agent messaging, a second one whose app has none, and two people: the owner (linked with `/dam login`) and a second member.
 Set `APPROVAL_HOLD_SECONDS=300` for the run, and turn on `mcp-tool-approval` for the owner.
+Until #6855 is fixed, a site can drop a held HTTPS request after 15 s, and the agent's fetch tool gives up after 60 s: answer a request that must pass while it waits within 10 seconds.
 
 1. Bind an agent to a test channel.
    As the second member, ask it to fetch three pages from three hosts no rule covers, in one message.
-   The owner gets one turn card with three rows at once; the thread shows a line that the agent waits for its owner, with "Don't wait".
-2. Click "Allow all once": the agent answers with the three pages.
+   The owner gets one turn card with three rows at once; the thread shows a line that the agent asked its owner, with "Don't wait" and no time.
+2. Click "Allow all once" within 10 seconds: the agent answers with the three pages.
+   Ask for one more new host and do not answer: when the fetch gives up, the agent answers without the page, the line says that it went on without the step and until when the owner can approve it, and the row gets the note "Nobody waits for this now".
+   Click Allow once: a new reply in the thread mentions the member and says by when to ask again; ask again: it passes.
 3. Ask again for one new host and press Stop on the working status: the turn ends at once, and the row stays answerable until the hold window ends.
 4. Ask again for another new host and, as the member, press "Don't wait" on the thread's line: the agent answers at once without the page, and the line says that the owner can still approve it.
    As the owner, click Allow once on the card: a new reply in the thread tells the member; ask again: it passes.

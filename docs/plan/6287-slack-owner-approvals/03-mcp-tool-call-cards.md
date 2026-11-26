@@ -8,7 +8,8 @@
 After [02](./02-card-base.md), every routed request reaches the owner's DM, but the only button is "Open in app".
 This slice adds the first answers in Slack: the MCP tool-call row of the turn card and the call card, with their buttons, the click route that applies a choice as the owner, and the audit of a Slack answer.
 It comes first because it serves the one need with a named stakeholder: a person approves each email an agent sends through an Outlook Connection.
-It is also the one hold where the whole hold window works today: #6421 sets the MCP tool timeout to the hold window, and an approve once outlives the client.
+It is also the one hold where an answer always counts today: #6421 sets the MCP tool timeout to the hold window, and an approve once outlives the client, so a call that waited too long passes on the next try.
+The gateway still ends a held call after 5 minutes until #6855 is fixed.
 MCP tool-call approval is behind the experimental `mcp-tool-approval` feature, so these cards appear only where it is on.
 A background tool call always gets a card of its own, so an email never waits behind blocked hosts.
 

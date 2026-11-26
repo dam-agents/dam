@@ -20,16 +20,16 @@ Apply the `/typescript-engineering` skill.
    - a network or web-search row of a turn card → the outcome line when a verdict ended it; when it expired, "Expired: the call was refused" as a rule row of [04](./04-network-and-web-search-cards.md); the path's query string leaves Slack;
    - a host row of a background card → a rule row when its last waiting request expired, or the outcome line when a verdict ended it;
    - a turn card with no waiting row takes no new rows: it closes when none of its rows offers a rule, else 24 hours after its last row settled;
-   - the thread lines of [02](./02-card-base.md): when the turn card has no waiting row, or the turn ends, each line changes to "The wait ended.";
-   - a line whose thread pressed "Don't wait" keeps its text until the requests that were waiting at the press settle.
-     When a verdict allowed one of them, the app posts one new reply in the thread, because Slack sends no notice for an edit: it mentions the people whose messages the turn carried, and says "<owner's display name> allowed it.
+   - the thread lines of [02](./02-card-base.md): when every row a line covered has settled, the line changes to "The wait ended."; while one is still pending, the line keeps the went-on text of [02](./02-card-base.md), also after the turn ended;
+   - a late allow: when a verdict allows a row whose wait count of [01](./01-one-hold-decision.md) is zero (its requests stopped waiting: the tool gave up, Stop, or "Don't wait"), the app posts one new reply in each thread whose line shows the went-on text, because Slack sends no notice for an edit: it mentions the people whose messages the turn carried, and says "<owner's display name> allowed it.
      Ask again by <time>."
      for an approve once (its decision time plus the hold window, [01](./01-one-hold-decision.md)), or "… Ask again to use it."
-     for a rule; the line changes to "The wait ended.".
-     A deny or an expiry only changes the line to "The wait ended.".
+     for a rule.
+     An allow while a request still waits posts no reply, because the turn goes on with it.
+     A deny or an expiry posts no reply.
      A saga in `modules/channels/sagas/` calls it on `ApprovalResolved` with `ownerRoute`.
-     Log one line per settled item (illustrative `owner_request.card_settled`: card, request, how it settled, who and where — Slack, the web, expiry or Stop —, whether its thread had pressed "Don't wait", and the delay since the post), never the request's content.
-     The share of released requests that the owner allows later tells whether a turn that resumes by itself is worth building.
+     Log one line per settled item (illustrative `owner_request.card_settled`: card, request, how it settled, who and where — Slack, the web, expiry or Stop —, whether a request still waited when it settled, whether its thread had pressed "Don't wait", and the delay since the post), never the request's content.
+     The share of requests that the owner allows after nobody waited any more tells whether a turn that resumes by itself is worth building.
 3. **Who decided, in words.** The click path of [03](./03-mcp-tool-call-cards.md) settles the request's items itself after its `decide` wins, with "… by you".
    Any other settle reaches the saga, which writes "Answered in the app by <name>" (the decider's display name; "you" when it is the owner), "Expired: the call was refused", or the denial line.
    An item already settled is left alone, so the two paths never fight.
@@ -53,9 +53,9 @@ Apply the `/typescript-engineering` skill.
 - [ ] An expired Slack-turn network row reads "Expired: the call was refused" and keeps the rule buttons; a click on "Allow whole host" writes the rule.
 - [ ] After the hold window ends, a host row of a background card offers only the rule buttons, and Allow whole host still writes the rule.
 - [ ] The thread's line reads "The wait ended."
-  once nothing of the turn waits.
-- [ ] After "Don't wait", an approve once on the card posts one new reply in the thread that mentions the member and says by when to ask again; the next identical request passes.
-- [ ] After "Don't wait", a deny or an expiry posts no reply and only changes the line.
+  once every row it covered has settled; until then, after the tool gave up, it keeps the text that the agent went on without the step, also after the turn ended.
+- [ ] After the agent went on without the step (its tool gave up, Stop, or "Don't wait"), an approve once on the card posts one new reply in the thread that mentions the member and says by when to ask again; the next identical request passes.
+- [ ] An approve once while the request still waits posts no reply; a deny or an expiry posts no reply and only changes the line.
 - [ ] Each settle of a carded request writes one log line with how it settled and the delay since the post.
 - [ ] An owner linked in two workspaces gets two cards; a click on one edits both.
 - [ ] No settled row or card still shows the request's query string or arguments.
@@ -73,6 +73,7 @@ Set up as in [01](./01-one-hold-decision.md).
 1. From another member, ask the agent to fetch `https://example.org/?q=test`; approve it in the web: the row reads "Answered in the app by you" without the query.
 2. Ask for `https://example.com/` and let the hold window pass: the row reads "Expired: the call was refused" and keeps "Allow whole host"; click it, ask again: it passes.
 3. Ask for `https://www.iana.org/`, press "Don't wait" as the member, then click Allow once on the card: a new reply in the thread mentions the member and says that the owner allowed it; ask again: it passes.
-4. Run a schedule that fetches `https://example.net/` and let the hold window pass: its row keeps Allow whole host and "Always deny…".
-5. Restart the api-server leader pod right after a schedule fires (`mise run cluster:kubectl -- rollout restart …` per the `cluster-ops` skill): the card still arrives within a minute, once.
-6. `/dam logout`: the open cards read "Slack was unlinked: answer in the app".
+4. Ask for `https://www.wikipedia.org/` and do not answer; when the fetch gives up and the agent has answered without the page, click Allow once: the same reply arrives, with the time to ask again; ask again: it passes.
+5. Run a schedule that fetches `https://example.net/` and let the hold window pass: its row keeps Allow whole host and "Always deny…".
+6. Restart the api-server leader pod right after a schedule fires (`mise run cluster:kubectl -- rollout restart …` per the `cluster-ops` skill): the card still arrives within a minute, once.
+7. `/dam logout`: the open cards read "Slack was unlinked: answer in the app".

@@ -43,34 +43,36 @@ Apply the `/typescript-engineering` skill.
    Any other join edits the card, and Slack sends no notice.
 9. **Sagas.** In `packages/api-server/src/modules/channels/sagas/`, subscribe to `ApprovalRequested` with an `ownerRoute`, and to `ApprovalRouteRaised`, and call the place method; on a raise, the place method moves the item from the agent's background card to its turn card and adds the thread.
    Log and continue on failure.
-10. **The line in the thread.** When the place method places a `turn` request, it posts one visible line, from the app and with the card metadata, in the thread of each open addressed Slack turn of the agent, once per turn: "<Agent> waits for its owner, <owner's display name>, to approve a step.
-    Up to <hold window>."
+10. **The line in the thread.** When the place method places a `turn` request, it posts one visible line, from the app and with the card metadata, in the thread of each open addressed Slack turn of the agent, once per turn: "<Agent> asked its owner, <owner's display name>, to approve a step."
+    The line gives no time: the client decides how long a request waits, and in most cases it gives up long before the hold window ([README › Measured](./README.md#measured)).
     It has a "Don't wait" button (action id `owner-request:release`, with the team, the channel and the thread `ts` in its value) and a context line: "The person who asked can go on without the step."
     The line names only "Don't wait", not Stop, because Slack shows Stop only where the app has agent messaging, and the line then needs no record of which workspace shows it.
     Keep the line's `ts` on the turn card's entry for that thread, so [05](./05-card-lifecycle.md) can still change the line after the turn ended.
     - The line names the owner by display name, never as a mention, so the owner gets no second notice; it names no host, path or command.
     - An owner who sent the turn (the sender's identity link resolves to the owner) also gets a private note (`postEphemeral`) with a link to the card; an editor of the agent who sent it gets a private note that they can answer in the app.
     - In the owner's own 1:1 DM with the app, no line goes out, because the card lands in that same conversation.
+    - The line follows `ApprovalWaitChanged` of [01](./01-one-hold-decision.md) (a saga beside the place saga): when nobody waits on the agent's `turn` rows any more and one of them is still pending, the line changes to "<Agent> went on without the step.
+      <owner's display name> can still approve it until <time>.", with the latest expiry of those rows and without the button, and each such row on the turn card gets the note "Nobody waits for this now.
+      Your answer counts for the next try."; when a request waits on them again, the line and the notes change back.
+      Store, on the turn card's entry for the thread, when its line last changed to that text, so [05](./05-card-lifecycle.md) knows which lines wait for a late answer.
       [05](./05-card-lifecycle.md) changes the line to "The wait ended."
-      when nothing waits any more.
+      when every row it covered has settled.
       Put the copy in a new copy file beside the others in `channels/infrastructure/`; take the app's name from the brand config, never a literal.
 11. **Don't wait.** A click on "Don't wait" reaches `handleMessageAction` (`slack.ts`):
     - only the person who started the turn, a person whose message joined it, or the owner may press it: reuse the Stop check and its private refusal, which find the turn by channel and thread; anyone else gets a private note (`postEphemeral`) that only the person who asked can choose, and nothing changes;
     - when the turn has ended, or its release was already sent, the click changes nothing;
     - otherwise, first, the turn stops counting as addressed: call `releaseAddressed` of [01](./01-one-hold-decision.md) for every `TurnRef` the turn carries (a batched turn holds several), and set each stored `addressed` to false, so the nudge after an undelivered reply does not hold again; a message that joins the turn later does not make it addressed again;
     - then, once Redis has confirmed the change, the worker publishes the release for the agent on the channel of [01](./01-one-hold-decision.md), with the time the turn began and its session ids, so the turn's waits end with the neutral refusal and the agent finishes its answer without those steps; a held harness prompt of the turn is released in the turn's relay ([09](./09-harness-prompts-on-slack-turns.md));
-    - the line changes to "<Agent> goes on without the step.
-      <owner's display name> can still approve it until <time>.", and each waiting row of the agent's turn card gets the note "Nobody waits for this now.
-      Your answer counts for the next try.";
+    - the released waits end, so the count of [01](./01-one-hold-decision.md) returns to zero and the line changes to the went-on text of step 10, as it does when the tool gives up;
     - every other open addressed turn of the agent loses its current waits too, because the gateway cannot tell which thread sent which request; its line changes the same way, and its next held request changes the line back to the waiting text.
-      Store the release time, and the people whose messages the turn carried, on the turn card's entry for the thread, so [05](./05-card-lifecycle.md) knows which lines wait for a late answer and whom its reply mentions.
+      Store the release time, and the people whose messages the turn carried, on the turn card's entry for the thread, so [05](./05-card-lifecycle.md) knows whom a late answer's reply mentions.
       Log one line (illustrative `owner_request.released`: card, agent, who pressed — starter, joiner or owner —, how many waits it ended, and the delay since the line was posted).
 12. **Docs.** In `docs/architecture/slack-owner-requests.md`, add: the card kinds, the turn card, the fallback, safe rendering, the card metadata and the read paths that drop it, the card tables, placing through the leader, the repost, the refusal on a lasting failure, the line in the thread, "Don't wait", and the log lines that measure the cards.
     In `docs/architecture/channels.md`, the bullet "The platform can message a linked person" gains cards, linking the page.
     In `docs/architecture/slack-dm-bridge.md`, one sentence: cards land in the owner's DM with the app, and an agent bound there never reads them.
     In `docs/architecture/channel-turns.md`, beside Stop: "Don't wait" ends the turn's waits and lets the turn go on, and who may press it.
     In `docs/architecture/slack-guarantees.md`, what the thread shows while the agent waits, and what "Don't wait" does.
-    In `.quality-inspector/qi-profile-dam/SKILL.md`, what a tester should know: a held Slack-turn request reaches a linked owner as a DM card, and the thread shows a line that the agent waits, with "Don't wait".
+    In `.quality-inspector/qi-profile-dam/SKILL.md`, what a tester should know: a held Slack-turn request reaches a linked owner as a DM card, and the thread shows a line that the agent asked its owner, with "Don't wait"; the line changes when the agent's tool gives up.
 
 ## Acceptance criteria
 
@@ -82,8 +84,9 @@ Apply the `/typescript-engineering` skill.
 - [ ] A row whose text holds `<https://example.org|Open in app>` shows it as plain text, not as a link.
 - [ ] A turn card that cannot post because the DM cannot open refuses the waiting request at once.
 - [ ] A leader restart between the card row and the post gives at most one card.
-- [ ] A waiting Slack turn shows one visible line per turn that names the owner without a mention and names no host; the owner as sender also gets a private link to the card; the owner's own DM gets no line.
-- [ ] "Don't wait" pressed by the member who asked ends the wait at once: the agent answers without the step, the line says that the owner can still approve it, and the row still waits on the owner's card with the note.
+- [ ] A waiting Slack turn shows one visible line per turn that names the owner without a mention, names no host and gives no time; the owner as sender also gets a private link to the card; the owner's own DM gets no line.
+- [ ] When the agent's tool gives up on a held request, the line changes within seconds to the text that the agent went on without the step and until when the owner can approve it, and the row gets the note "Nobody waits for this now"; when the member asks again and the request waits, the line and the note change back.
+- [ ] "Don't wait" pressed by the member who asked ends the wait at once: the agent answers without the step, the line says that the agent went on without it and that the owner can still approve it, and the row still waits on the owner's card with the note.
 - [ ] After "Don't wait", a new request of the same turn to another unallowed host is refused at once.
 - [ ] "Don't wait" pressed by a member who neither started nor joined the turn gives that member a private note, and the wait goes on.
 - [ ] Every card post writes one log line without the request's content.
@@ -93,9 +96,10 @@ Apply the `/typescript-engineering` skill.
 
 Set up as in [01](./01-one-hold-decision.md).
 
-1. From another member, ask the agent to fetch `https://example.org/`: the owner's DM shows a turn card with one row, "Open in app", and a link to the thread with the member's name; the thread shows the line that the agent waits, with "Don't wait".
-2. As a third member, press "Don't wait": a private note says that only the person who asked can choose, and the wait goes on.
-3. As the member who asked, press "Don't wait": the agent answers at once without the page; the line says that the owner can still approve it; the owner's row still waits, with the note.
+1. From another member, ask the agent to fetch `https://example.org/`: the owner's DM shows a turn card with one row, "Open in app", and a link to the thread with the member's name; the thread shows the line that the agent asked its owner, with "Don't wait" and no time.
+   Do not answer: when the fetch gives up (Claude Code's WebFetch after 60 s, or sooner when the site drops the held request, #6855), the line says that the agent went on without the step and until when the owner can approve it, and the row gets the note.
+2. Ask for `https://example.com/`; as a third member, press "Don't wait" at once: a private note says that only the person who asked can choose, and the wait goes on.
+3. As the member who asked, press "Don't wait" while the request still waits: the agent answers at once without the page; the line says that the agent went on without the step and that the owner can still approve it; the owner's row still waits, with the note.
 4. Ask for three pages on three new hosts in one message: one turn card with three rows.
 5. Wait six minutes, then ask the agent from a second thread for a new host: the card is posted again, with both threads named.
 6. Run a schedule that fetches `https://example.net/` and `https://example.com/` with no browser open: one background card with two rows arrives.
