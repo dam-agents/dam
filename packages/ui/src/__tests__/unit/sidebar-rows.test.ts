@@ -1,9 +1,10 @@
-// TEST_OVERVIEW: The classic sidebar marks unread work in blue with a text equivalent: on an unread Session row, and on the row of an Agent with an unread Session. An Activity row names its Agent with the Agent's avatar beside the name. An Agent row whose Sessions are closed keeps its unread marker and is not highlighted when its chat shows a Session. A revealed Agent row hides its blue dot, so it never sits on an action, and a filtered row keeps the dot at the right end with the filter icon next to it.
+// TEST_OVERVIEW: The classic sidebar marks unread work in blue with a text equivalent: on an unread Session row, and on the row of an Agent with an unread Session. An Activity row names its Agent with the Agent's avatar beside the name. An Agent row whose Sessions are closed keeps its unread marker and is not highlighted when its chat shows a Session. A revealed Agent row hides its blue dot, so it never sits on an action, and a filtered row keeps the dot at the right end with the filter icon next to it. An Agent that a limit stopped shows a red dot in the same place, named by its label, and no blue dot even with unread Sessions; the unread text stays for screen readers.
 import { SessionMode, SessionType } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import { TooltipProvider } from "../../components/ui/tooltip.js";
 import type { AgentView, SessionView } from "../../types.js";
 
 vi.stubGlobal("window", new EventTarget());
@@ -38,23 +39,53 @@ const agentRow = (props: {
   actionCount?: 2 | 3;
   filtered?: boolean;
   unread?: boolean;
+  stopped?: string | null;
 }) =>
   renderToStaticMarkup(
-    createElement(SidebarAgentRow, {
-      agent,
-      current: false,
-      unread: true,
-      orderReady: true,
-      onMove: () => {},
-      onStep: () => {},
-      onSelect: () => {},
-      onOpenPeople: () => {},
-      actions: null,
-      actionCount: 2,
-      filtered: false,
-      ...props,
-    }),
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidebarAgentRow, {
+        agent,
+        current: false,
+        unread: true,
+        orderReady: true,
+        onMove: () => {},
+        onStep: () => {},
+        onSelect: () => {},
+        onOpenPeople: () => {},
+        actions: null,
+        actionCount: 2,
+        filtered: false,
+        ...props,
+      }),
+    ),
   );
+
+const STOPPED =
+  "Stopped by a limit: Agent limit. $0.00 left today, calls stop until 1:00 AM.";
+
+describe("stopped marker", () => {
+  it("TEST_SCENARIO: an Agent that a limit stopped shows a red dot labelled with the limit, and no blue dot though it has unread Sessions, which a screen reader still hears", () => {
+    const html = agentRow({
+      viewing: false,
+      selected: false,
+      unread: true,
+      stopped: STOPPED,
+    });
+    expect(html).toMatch(
+      /role="img" aria-label="Stopped by a limit: Agent limit\./,
+    );
+    expect(html).toContain("bg-danger");
+    expect(html).not.toContain("bg-accent");
+    expect(html).toContain("(unread)");
+  });
+
+  it("TEST_SCENARIO: an Agent that no limit stopped shows no red dot", () => {
+    const html = agentRow({ viewing: false, selected: false, stopped: null });
+    expect(html).not.toContain("bg-danger");
+  });
+});
 
 describe("unread markers", () => {
   it("TEST_SCENARIO: an unread Session row shows a blue dot labelled Unread", () => {

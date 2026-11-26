@@ -367,6 +367,8 @@ A limit that counts all agents, the own limit or a Connection limit for all agen
 Its card and its toast name "All your agents" instead of that agent, with no avatar.
 A question expires at the next UTC midnight, when the limit starts again, and continuing it writes no egress rule.
 Setting or removing a limit closes its pending question, so a new refusal asks again, and so does removing the Connection of a Connection limit.
+**Stopped agents.** A limit stops an agent while a call of its sessions was refused today and a limit that counts that call is still reached.
+The web UI reads the owner's stopped agents, and the limit that stopped each, in one query.
 
 ## Unattended work
 
@@ -425,31 +427,26 @@ A line under the meter shows only when it matters: when the spend is close to th
 The last line gives the local time at which the day resets.
 A Connection limit uses the same parts in the Connection's unit: a title with a help tip, the button, the spend against the limit or "No limit", the meter and state line, and the reset time.
 Every place that shows a limit follows one pattern.
-It shows the limit that the place owns, which the user sets there, and under it one line, "Also counted by", for the other limits that count the same calls.
+It shows the limit that the place owns, which the user sets there, and under it, always, the other limits that count the same calls, each in one row: its icon, name, meter and spend against the limit.
 Each limit has its own icon on every screen: the provider's for an agent's Connection limit, the same with a people badge for a Connection limit for all agents, the agent's avatar for the agent limit, a sum sign for the own limit (the total daily limit) and a lock for the spend ceiling.
-Closed, the line shows each other limit's icon and share used; open, it lists them muted, each with its meter, its spend against the limit and where it is set.
-The limit with the least left today, when it is not the place's own, is marked "stops first", closed and open.
 The spend ceiling shows only when the operator has set one.
 The screens:
 
 - **The agent's settings:** the Usage section starts with the card for the agent limit, which counts the paid calls of the agent and its sub-agents.
   The card also gives today's spend in the other units, how many calls are estimates and how many have no price yet.
-  Its "Also counted by" list holds, by provider, the agent's Connection limits and the Connection limits for all agents on its Connections, then the total daily limit and the ceiling.
-  An agent with only the Claude subscription or Bob gets no button: its card gives today's spend in that unit and points to its Providers section.
+  Below it, the card always lists the other limits that count the agent: the limits for all agents on its Connections, its own Connection limits, the ceiling, then the total daily limit, each with its icon, name, meter and spend against the limit.
+  Every agent that pays for itself can set it, in dollars; for an agent with only the Claude subscription or Bob, the card says so and points to its Providers section.
   The agent's summary shows today's spend in each unit and the limit.
   Below the card, the section shows the same measured view as the Settings tab, for the spend that the agent pays, so the spend of the sub-agents that it started is included.
   A sub-agent's card shows only the note about its root driver.
-- **The agent's Providers section:** each provider is one line, and a granted Connection that takes a limit carries a pill with today's spend against the agent's limit on it, in the Connection's unit (`$1.23 / $4.56 today`); clicking the pill opens the limit dialog.
+- **The agent's Providers section:** each provider is one line, and a granted Connection that takes a limit shows the agent's spend on it today, and opens below the line to the agent's limit there and the limit for all agents.
   The limit dialog says, while the user types, whether the new amount is already reached and which limit would stop the agent first.
-  A Connection that takes no limit shows no pill.
-- **Settings, Providers tab:** each connected Connection that takes a limit carries the same pill for the Connection limit for all agents.
+  A Connection that takes no limit shows no spend.
+- **Settings, Providers tab:** each connected Connection that takes a limit shows all agents' spend on it today, and opens to its limit for all agents.
   The attach dialog that lists the same Connections shows no limit.
 - **Settings, Usage tab:** the card for the own limit comes first, under the metering notice.
-  Its "Also counted by" line holds the spend ceiling, when the operator has set one.
-  When the user has Connection limits for all agents, the card lists them below, read only: each with its icon, a thin meter, the share used and the spend against the limit, and one link to Settings › Providers to change them.
+  Under it, the card lists the Connection limits for all agents and the spend ceiling, when the operator has set one, with one link to Settings › Providers.
   Below the card, a period picker keeps its period in the URL.
-  It has presets, arrows that step one period of the same kind, and a calendar with week numbers for a custom range of up to 366 UTC days; the days before T are struck out.
-  The calendar gives the local time at which a day starts.
   Below it are the paid Metered Spend with the same date range as on Home, the spend by day (by week above 62 days), the counts of calls and tokens, the sum of call times, and the spend by agent, model and provider.
   Under the total, a line gives the subscription value when the checkbox is on, and a line tells when the subscriptions covered more than the user paid.
   Bobcoins get their own line, which says that they are not in the total.
@@ -461,18 +458,16 @@ The screens:
   An operator sets a ceiling by the user's email, changes one, or removes one after a confirmation.
   An email that no user has shows its error in the dialog.
   The Compute budgets section below it is the same screen for compute Budgets ([budgets](budgets.md#the-pool)).
-- **Home:** the spend card shows the paid Metered Spend in dollars for Today, This month or Last month, in UTC days.
-  Its help text gives the local time at which a day starts.
+- **Home:** the spend card shows the paid Metered Spend in dollars for Today (the default), This month or Last month, in UTC days.
   The date range under the total starts at T when the period starts before T.
   While the period runs, the range ends at today and says "so far".
   A period wholly before T shows no total.
-  The card keeps one height for each period and checkbox state, so it has one reserved line under the range.
   The checkbox "Show what subscriptions cover" is on Home only while the user has subscription-covered calls in any of the card's three periods; the card reads them as one daily range, so the checkbox does not move between the periods.
   When it is on, this line gives the subscription value at API prices.
   When the checkbox is off, this line tells when the subscriptions covered more than the user paid.
   The checkbox also adds the subscription value to the bars of the top agents, never to the total.
   The browser keeps the choice for Home and for the Usage pages.
-  The card shows no own limit and no Bobcoins; Settings › Usage shows both.
+  On Today it also shows the top agents' limits, their bars on one scale, and each provider limit for all agents in a box with its own bar; no own limit.
   "Usage details" opens Settings › Usage with the same period.
   The card does not need the telemetry store.
 - **The metering notice:** for 30 days after T, a user who had an agent before T sees a notice about the change.
@@ -480,14 +475,15 @@ The screens:
   When the user hides it, it goes from both places, in that browser only.
   The tooltip of its close button says so, and says that the earlier estimates stay on Settings › Usage while they are open.
 
-A meter is the foreground colour on a light tint of it, takes the warning colour at 80% of its limit and the danger colour when the limit is reached, and shows the share of the limit used beside it; the resource meters on Home use the same fill.
+A limit's meter is the foreground colour on a light tint of it at every level; words, not colour, say when a limit is close or reached, and the resource meters on Home use the same fill.
 A sub-agent's settings set no limit: its spend counts for its root driver, so its Usage section names the root driver instead.
 A spend-limit question shows on Home with "Continue" only; "Dismiss" hides it from Home and leaves it open, and Home's "Deny all" leaves it out.
 The surfaces name five limits: the agent spend limit, the user's spend limit for all agents, a Connection's spend limit, the user's spend limit for all agents on a Connection ("Your ‹Connection› spend limit (all agents)"), and the spend ceiling that the operator sets.
 Every surface calls the ceiling the spend ceiling; its help tip says that the operator sets it.
 The Claude subscription's unit shows in dollars as "covered", for example "covered by subscriptions today" in a Connection limit; the help tips call it the subscription value at API prices.
-In the chat, a refused call shows as "Spend limit reached" or "Spend ceiling reached" with what to do and the local reset time; the harness's own error text stays below it as detail.
+In the chat, a refused call shows as "Spend limit reached" or "Spend ceiling reached" with what to do and the local reset time; the owner gets links to the agent's limits, others the harness's error.
 Every text that a person reads gives the reset in that person's own time, on the screens, in the CLI and in the channel notices; texts for agents give it in UTC.
+In the sidebar, an agent that a limit stopped has a red dot that names the limit.
 **Per Session and per turn.** Each Session in the sidebar shows its Metered Spend: paid dollars, else the plan use as "covered", else Bobcoins.
 The figure includes the sub-agents spawned from that Session, and its tooltip names their part.
 The Usage pages also show the sum of call times and the spend by session type, with a "Sub-agents" row for the calls of sub-agents and a "No session" row for calls with no Session.

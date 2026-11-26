@@ -22,6 +22,7 @@ import type {
 } from "api-server-api";
 import { match } from "ts-pattern";
 import type { BreakdownRow } from "../domain/breakdown.js";
+import type { DayRefusal } from "../domain/stopped.js";
 import {
   UNKNOWN_MODEL,
   utcDay,
@@ -68,6 +69,11 @@ export interface SpendLedger {
     from: string;
     to: string;
   }): Promise<SpendDailyRow[]>;
+  refusals(query: {
+    ownerSub: string;
+    agentIds: readonly string[] | null;
+    day: string;
+  }): Promise<DayRefusal[]>;
   byConnection(query: {
     ownerSub: string;
     agentId: string | null;
@@ -388,6 +394,28 @@ export function createSpendLedger(db: Db): SpendLedger {
           ),
         );
       return row?.highest == null ? null : Number(row.highest);
+    },
+
+    async refusals({ ownerSub, agentIds, day }) {
+      const rows = await db
+        .selectDistinct({
+          payerAgentId: spendDaily.payerAgentId,
+          connectionId: spendDaily.connectionId,
+          sessionId: spendDaily.sessionId,
+          unit: spendDaily.unit,
+        })
+        .from(spendDaily)
+        .where(
+          and(
+            eq(spendDaily.ownerSub, ownerSub),
+            eq(spendDaily.day, day),
+            ne(spendDaily.refusedCalls, 0),
+            agentIds
+              ? inArray(spendDaily.payerAgentId, [...agentIds])
+              : undefined,
+          ),
+        );
+      return rows.map((r) => ({ ...r, unit: r.unit as SpendUnit }));
     },
 
     async daily({ ownerSub, agentIds, from, to }) {

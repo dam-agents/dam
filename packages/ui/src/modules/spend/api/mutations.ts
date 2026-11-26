@@ -13,6 +13,7 @@ export function useSetSpendCeiling({ inlineErrors = false } = {}) {
   const invalidates = [
     trpc.spend.ceilings.list.queryKey(),
     trpc.spend.status.queryKey(),
+    trpc.spend.stopped.queryKey(),
   ];
   return useMutation({
     ...trpc.spend.ceilings.set.mutationOptions({
@@ -30,7 +31,10 @@ export function useSetSpendLimit() {
   return useMutation({
     ...trpc.spend.setLimit.mutationOptions(),
     meta: {
-      invalidates: [trpc.spend.status.queryKey()],
+      invalidates: [
+        trpc.spend.status.queryKey(),
+        trpc.spend.stopped.queryKey(),
+      ],
       errorToast: "Couldn't save the spend limit",
     },
   });

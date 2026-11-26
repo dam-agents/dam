@@ -20,6 +20,7 @@ interface Props {
   checking?: boolean;
   balance?: ReactNode;
   spend?: ReactNode;
+  trailing?: ReactNode;
   onOpen?: () => void;
   connectedAction?: string;
 }
@@ -39,6 +40,7 @@ export function ProviderRow({
   checking,
   balance,
   spend,
+  trailing,
   onOpen,
   connectedAction = "Edit",
 }: Props) {
@@ -65,7 +67,7 @@ export function ProviderRow({
         onOpen && "hover:bg-muted/50",
       )}
     >
-      {/* UNIT_BOUNDARY_DESCRIPTION: the whole row opens the provider, its padding included. Whatever has a title or an action of its own sits above the button: the spend pill keeps its dialog, and the balance and the status show their tooltips and pass a click on. */}
+      {/* UNIT_BOUNDARY_DESCRIPTION: the whole row opens the provider, its padding included. Whatever has a title or an action of its own sits above the button: the spend and the chevron open the limit below the row, and the balance and the status show their tooltips and pass a click on. */}
       {onOpen && (
         <button
           type="button"
@@ -97,6 +99,11 @@ export function ProviderRow({
           reason={problemText}
         />
       </span>
+      {trailing && (
+        <span className="relative flex" data-layer="raised">
+          {trailing}
+        </span>
+      )}
     </div>
   );
 }

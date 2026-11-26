@@ -14,6 +14,7 @@ import { useAgentsWithUnreadListedSessions } from "../../sessions/api/queries.js
 import { useStartSession } from "../../sessions/hooks/use-start-session.js";
 import { useAgentSessionFilters } from "../../sessions/lib/agent-session-filters.js";
 import { shownSessionId } from "../../sessions/lib/shown-session.js";
+import { useStoppedAgents } from "../../spend/hooks/use-stopped-agents.js";
 import { findAgent, useAgents } from "../api/queries.js";
 import { useSidebarAgents } from "../hooks/use-sidebar-agents.js";
 import { useSidebarOrderActions } from "../hooks/use-sidebar-order-actions.js";
@@ -54,6 +55,7 @@ export function SidebarAgents({
   );
   const [binding, setBinding] = useState<BindMessenger | null>(null);
   const agentFilters = useAgentSessionFilters();
+  const stopped = useStoppedAgents();
 
   const viewGone =
     sidebarAgent !== null &&
@@ -82,6 +84,7 @@ export function SidebarAgents({
       selected={agent.id === sidebarAgent}
       current={agent.id === openAgentId && !sessionOpen}
       unread={unreadAgentIds.has(agent.id) || listedUnread.has(agent.id)}
+      stopped={stopped.get(agent.id) ?? null}
       filtered={agentFilters.has(agent.id)}
       orderReady={orderActions.ready && !viewed}
       onMove={(id, drop) => orderActions.moveAgent(shownAgentIds, id, drop)}

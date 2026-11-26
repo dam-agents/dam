@@ -13,7 +13,7 @@ export interface GrantedConnection {
   readonly unit: SpendUnit;
 }
 
-const NARROWNESS: readonly SpendBindingKind[] = [
+export const NARROWNESS: readonly SpendBindingKind[] = [
   "connection",
   "agent",
   "owner-connection",

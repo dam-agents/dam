@@ -1,6 +1,7 @@
 import { Filter } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
+import { Tooltip } from "@/components/ui/tooltip";
 import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +20,7 @@ interface Props {
   selected: boolean;
   current: boolean;
   unread: boolean;
+  stopped?: string | null;
   filtered: boolean;
   orderReady: boolean;
   onMove: (agentId: string, drop: OrderDrop) => void;
@@ -55,6 +57,7 @@ export function SidebarAgentRow({
   selected,
   current,
   unread,
+  stopped = null,
   filtered,
   orderReady,
   onMove,
@@ -131,19 +134,38 @@ export function SidebarAgentRow({
               <span className="sr-only">(sessions filtered)</span>
             </span>
           )}
-          {unread && (
+          {stopped !== null ? (
             <>
-              <span
-                aria-hidden
-                className={cn(
-                  "flex size-4 shrink-0 items-center justify-center",
-                  !selected && HIDDEN_WHEN_REVEALED,
-                )}
-              >
-                <span className="size-2 rounded-full bg-accent" />
-              </span>
-              <span className="sr-only">(unread)</span>
+              <Tooltip content={stopped}>
+                <span
+                  role="img"
+                  aria-label={stopped}
+                  data-testid="sidebar-agent-stopped"
+                  className={cn(
+                    "flex size-4 shrink-0 items-center justify-center",
+                    !selected && HIDDEN_WHEN_REVEALED,
+                  )}
+                >
+                  <span className="size-2 rounded-full bg-danger" />
+                </span>
+              </Tooltip>
+              {unread && <span className="sr-only">(unread)</span>}
             </>
+          ) : (
+            unread && (
+              <>
+                <span
+                  aria-hidden
+                  className={cn(
+                    "flex size-4 shrink-0 items-center justify-center",
+                    !selected && HIDDEN_WHEN_REVEALED,
+                  )}
+                >
+                  <span className="size-2 rounded-full bg-accent" />
+                </span>
+                <span className="sr-only">(unread)</span>
+              </>
+            )
           )}
         </div>
         <div

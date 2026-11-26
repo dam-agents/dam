@@ -12,6 +12,8 @@ import { useAgentDisplayName } from "../../agents/api/queries.js";
 import { AskAssistantLink } from "../../assistants/components/ask-assistant-link.js";
 import { askAboutTurn } from "../../assistants/lib/ask-prefill.js";
 import { routeToPath } from "../../platform/lib/routes.js";
+import { AGENT_LIMITS_ID } from "../../spend/components/agent-spend-limit-card.js";
+import { CHANGE_THE_LIMIT, SEE_WHAT_IT_COUNTS } from "../../spend/lib/copy.js";
 import { useSpendRefusalViewer } from "../hooks/use-spend-refusal-viewer.js";
 import { QuietNotice } from "./quiet-notice.js";
 
@@ -65,6 +67,33 @@ function withProvidersLink(text: string): ReactNode {
   );
 }
 
+const LIMIT_LINK =
+  "rounded-xs text-accent underline underline-offset-2 hover:no-underline";
+
+function SpendLimitLinks({ agentId }: { agentId: string }) {
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
+  const open = () => openAgentSettings(agentId, "usage", AGENT_LIMITS_ID);
+  return (
+    <p className="text-xs text-muted-foreground">
+      <button
+        type="button"
+        onClick={open}
+        className={cn(LIMIT_LINK, FOCUS_RING)}
+      >
+        {CHANGE_THE_LIMIT}
+      </button>
+      {" · "}
+      <button
+        type="button"
+        onClick={open}
+        className={cn(LIMIT_LINK, FOCUS_RING)}
+      >
+        {SEE_WHAT_IT_COUNTS}
+      </button>
+    </p>
+  );
+}
+
 function AskAboutTurn({
   agentId,
   sessionId,
@@ -95,7 +124,7 @@ export function SendErrorCard({
   at,
 }: Props) {
   const viewer = useSpendRefusalViewer(isSpendRefusal(rawError));
-  const { title, message, hint } = describeSendError(rawError, viewer);
+  const { title, message, hint, kind } = describeSendError(rawError, viewer);
   const askLink =
     agentId && sessionId ? (
       <AskAboutTurn
@@ -131,10 +160,13 @@ export function SendErrorCard({
           </span>{" "}
           {withProvidersLink(message)}
         </div>
-        {hint && (
+        {hint && !(kind === "spend-limit" && agentId) && (
           <p className="text-xs text-muted-foreground break-words">
             {withProvidersLink(hint)}
           </p>
+        )}
+        {kind === "spend-limit" && agentId && (
+          <SpendLimitLinks agentId={agentId} />
         )}
         {askLink}
       </div>

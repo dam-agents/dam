@@ -67,11 +67,13 @@ export function SpendLimitDialog({
     <Modal size="sm" onClose={pending ? undefined : onClose}>
       <DialogHeader
         title="Set daily limit"
-        subtitle={`For ${subject}. ${resetsAtLine(localDayStart(utcDayOf(new Date())))}`}
+        subtitle={`${subject}. ${resetsAtLine(localDayStart(utcDayOf(new Date())))}`}
         onClose={onClose}
         closeDisabled={pending}
+        divided={false}
+        className="pb-3 md:pb-3"
       />
-      <DialogBody>
+      <DialogBody className="py-0 md:py-0">
         <form
           className="flex flex-col gap-1.5"
           onSubmit={(event) => {
@@ -79,7 +81,7 @@ export function SpendLimitDialog({
             if (parsed.success && !pending) save(parsed.data);
           }}
         >
-          <label htmlFor={id} className="text-sm text-foreground">
+          <label htmlFor={id} className="sr-only">
             Daily limit
           </label>
           <div className="flex items-center gap-2">
@@ -121,6 +123,8 @@ export function SpendLimitDialog({
             </Button>
           )
         }
+        divided={false}
+        className="pt-5 md:pt-5"
         onCancel={onClose}
         cancelDisabled={pending}
         label="Save"
