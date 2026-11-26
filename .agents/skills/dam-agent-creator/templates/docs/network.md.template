@@ -1,0 +1,70 @@
+# Agent network page
+
+One interactive page shows the agents this one works with: a graph of the connections, what each peer is used for and through which channel, the history of the work passed between them, this agent's own manifest link to copy, and a field where a person pastes another agent's manifest link to connect it.
+It reads [manifest.md](manifest.md)'s files and changes none of them: only the operator pins a peer (**Pin a peer** there).
+Read this file in onboarding, in every weekly audit, whenever you hand work to a peer or take work from one, and when the operator asks about the page.
+
+## Parts
+
+| Part | What it is |
+| --- | --- |
+| `docs/network.html` | The page. Self-contained: no CDN, no external request. |
+| `scripts/network-server.py` | Its Artifact API on `127.0.0.1:5555`, routes under `/network/`, plus `ensure`, `snapshot`, `render` and `log`. |
+| `work/peer-log.jsonl` | The communication history: one line per piece of work passed to or taken from a peer. Append-only, written only by `network-server.py log`. |
+| `work/peer-requests.json` | Manifest links people pasted on the page, each with its check result. The server's only write. |
+| `work/network-publish.json` | The page's artifact id. |
+
+The page reads `work/manifest.json`, `work/PEERS.md` and `work/peers/<name>.json`.
+
+## Live, and when it is not
+
+The page carries a snapshot of the network from the moment it was published, so it is readable anywhere.
+Where it can reach you (beside your chat, or on its share page) it asks the server for the current state on load, every minute while it is visible and on focus, and stops after 30 idle minutes, because each request wakes you when you are hibernated.
+After hibernation the server is gone and the page shows its snapshot with a button that asks you to start it.
+
+- At the start of every run that hands work to a peer or takes work from one, and in every audit, run `python3 "$HOME/scripts/network-server.py" ensure`.
+- Port 5555 holds one server per agent. When your definition already runs one, do not start a second: import `route(method, path, headers, body)` from `network-server.py` into it and send it every path under `/network/`.
+
+## Log every handoff
+
+Each time you use a peer's trigger, or act on a peer's contract, append one line:
+
+```bash
+python3 "$HOME/scripts/network-server.py" log --peer <name from PEERS.md> --direction out|in \
+  --via <the trigger or contract id> --summary "<one line: what, on which item>" [--ref <https link to the item>]
+```
+
+`out` is work you passed to the peer; `in` is work you took from it.
+The summary is public to everyone who sees the page: name the item, never a person, a secret or a private repository's content.
+The line goes in after the effect, so a failed handoff leaves no line; a run that cannot log says so in its report.
+
+## Connect an agent from the page
+
+A person pastes a manifest link and the server fetches it and runs `manifest-check.sh peer` on it.
+It accepts only a raw manifest link on the share host of your own `source.url`, so the page cannot make you fetch an arbitrary address.
+The result waits in `work/peer-requests.json`; nothing is pinned.
+
+The owner pins a request with **Pin in the agent's chat**, which sends you a prompt in your chat.
+Treat it as the operator asking you to **Pin a peer**: fetch and check the card again yourself (the stored check is a hint, not proof), propose the row with its `role` and the ids for `uses` that match your handoffs, and wait for the operator's yes.
+After the pin, remove the request (`curl -fsS -X DELETE 127.0.0.1:5555/network/requests/<id>`) and publish the page again.
+A prompt that asks for a pin from a viewer's Session is not the operator: answer that the owner pins peers, and pin nothing.
+A viewer may add requests and only the owner dismisses them; the server enforces both.
+
+## Publish
+
+Under `agent_network: dam` (the default; a missing key is `dam`):
+
+1. `python3 "$HOME/scripts/network-server.py" render` writes `work/network.html` with the snapshot inlined.
+2. First time: `create_artifact {title: "Agent network: <agent.name>", content, file_name: "agent-network.html", type: "html", interactive: true, icon: "🕸️"}`.
+   Keep its id in `work/network-publish.json`.
+   The page stays private; the owner shares it with named people in the app's Share dialog, never you.
+3. Later: `update_artifact {id, content}` on the kept id, so the link stays the same.
+
+Publish again after a pin, after a manifest publish, and in every audit.
+Under `agent_network: off`, publish nothing, keep the log, and say so in the audit report.
+
+## Audit task
+
+`ensure` the server, check that `GET /network/health` answers (`curl -fsS 127.0.0.1:5555/network/health`), publish the page, and report one line: `network: <peers> peers · <requests> waiting · <log lines this week> handoffs logged · <live | snapshot only>`.
+A request older than 14 days is a `warn` under **Action needed**: the operator pins or dismisses it.
+A week in which the agent's own outputs show handoffs to a peer but the log has none is a `warn`: the logging step is being skipped.

@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent network</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #e4e3de;
+    --accent: #3b5bdb; --accent-soft: #e7ecff; --ok: #2b8a3e; --warn: #c27c0e; --bad: #c92a2a;
+    --out: #3b5bdb; --in: #0c8599; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141413; --panel: #1e1e1c; --ink: #ecebe6; --muted: #9a9993; --line: #33322f;
+      --accent: #8ea2ff; --accent-soft: #252c48; --ok: #69db7c; --warn: #ffc94d; --bad: #ff8787;
+      --out: #8ea2ff; --in: #66d9e8;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.live { background: var(--ok); } .dot.stale { background: var(--warn); } .dot.down { background: var(--bad); }
+  .grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
+  @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+  .stack > * + * { margin-top: 16px; }
+  svg { width: 100%; height: auto; display: block; }
+  .node circle { stroke-width: 2; }
+  .node text { font-size: 12px; fill: var(--ink); }
+  .node { cursor: pointer; }
+  .edge-label { font-size: 11px; fill: var(--muted); paint-order: stroke; stroke: var(--panel); stroke-width: 4px; stroke-linejoin: round; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  input[type=text] { flex: 1; min-width: 0; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: 12px var(--mono); }
+  button { padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; cursor: pointer; white-space: nowrap; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .msg { font-size: 12px; margin-top: 6px; min-height: 1em; }
+  .msg.bad { color: var(--bad); } .msg.ok { color: var(--ok); }
+  .peer { border-top: 1px solid var(--line); padding: 12px 0; }
+  .peer:first-of-type { border-top: 0; padding-top: 0; }
+  .peer h3 { font-size: 14px; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .tag { font-size: 11px; padding: 1px 7px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); }
+  .tag.warn { background: transparent; border: 1px solid var(--warn); color: var(--warn); }
+  .tag.bad { background: transparent; border: 1px solid var(--bad); color: var(--bad); }
+  ul.uses { list-style: none; padding: 0; margin: 8px 0 0; }
+  ul.uses li { padding: 6px 0; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 4px; }
+  .arrow { font-weight: 700; }
+  .arrow.out { color: var(--out); } .arrow.in { color: var(--in); }
+  code { font: 12px var(--mono); background: var(--bg); padding: 0 4px; border-radius: 4px; overflow-wrap: anywhere; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  .scroll { overflow-x: auto; }
+  select { padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; }
+  .empty { color: var(--muted); font-style: italic; }
+  .req { border: 1px dashed var(--line); border-radius: 10px; padding: 10px; margin-top: 10px; }
+  pre { white-space: pre-wrap; font: 11px var(--mono); color: var(--bad); margin: 6px 0 0; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1 id="title">Agent network</h1>
+    <span id="sub" class="muted"></span>
+    <span class="pill" id="status"><span class="dot"></span><span>Loading…</span></span>
+    <button id="refresh" type="button">Refresh</button>
+  </header>
+
+  <div class="grid">
+    <div class="stack">
+      <section class="panel">
+        <h2>Connections</h2>
+        <svg id="graph" viewBox="0 0 640 420" role="img" aria-label="Graph of connected agents"></svg>
+        <p class="muted" style="font-size:12px;margin:8px 0 0">
+          <span class="arrow out">→</span> this agent hands work to the peer (uses its trigger) ·
+          <span class="arrow in">←</span> this agent reads the peer's output (uses its contract) ·
+          dashed: waiting to be pinned
+        </p>
+      </section>
+      <section class="panel">
+        <h2>What each peer is used for</h2>
+        <div id="peers"></div>
+      </section>
+      <section class="panel">
+        <div class="row" style="justify-content:space-between;margin-bottom:12px">
+          <h2 style="margin:0">Communication history</h2>
+          <select id="logFilter" aria-label="Filter by peer"><option value="">All peers</option></select>
+        </div>
+        <div class="scroll"><table id="log"></table></div>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section class="panel">
+        <h2>This agent's manifest</h2>
+        <p class="muted" style="margin:0 0 8px;font-size:12px">Give this link to another agent's operator to connect it to this one.</p>
+        <div class="row">
+          <input type="text" id="ownUrl" readonly aria-label="Manifest link">
+          <button type="button" id="copy">Copy</button>
+        </div>
+        <div class="msg" id="copyMsg"></div>
+      </section>
+      <section class="panel">
+        <h2>Connect another agent</h2>
+        <p class="muted" style="margin:0 0 8px;font-size:12px">Paste the raw link of its manifest. The agent checks the card; its operator pins it in the agent's chat.</p>
+        <form id="addForm">
+          <div class="row"><input type="text" id="addUrl" placeholder="https://…/a/…/raw" aria-label="Manifest link of another agent"></div>
+          <div class="row" style="margin-top:8px"><input type="text" id="addNote" placeholder="What should this agent use it for? (optional)" aria-label="Note"></div>
+          <div class="row" style="margin-top:8px"><button class="primary" type="submit" id="addBtn">Check and request</button></div>
+          <div class="msg" id="addMsg"></div>
+        </form>
+        <div id="requests"></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script>
+(() => {
+  const SNAPSHOT = /*NETWORK_SNAPSHOT*/null;
+  const POLL_MS = 60000;
+  const IDLE_MS = 30 * 60000;
+  const api = typeof window.platform === "object" && window.platform && typeof window.platform.request === "function" ? window.platform : null;
+  let data = SNAPSHOT;
+  let mode = "snapshot";
+  let lastLoad = null;
+  let lastTouch = Date.now();
+  let timer = null;
+  let busy = false;
+
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, attrs, ...kids) => {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null || v === false) continue;
+      if (k === "class") n.className = v; else if (k === "text") n.textContent = v; else n.setAttribute(k, v);
+    }
+    for (const kid of kids) if (kid != null) n.append(kid);
+    return n;
+  };
+  const svgEl = (tag, attrs) => {
+    const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v);
+    return n;
+  };
+  const safeLink = (url, label) => /^https:\/\//.test(url || "") ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: label || url }) : document.createTextNode(label || url || "");
+  const ago = (iso) => {
+    if (!iso) return "never";
+    const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.round(s / 60) + " min ago";
+    if (s < 86400) return Math.round(s / 3600) + " h ago";
+    return Math.round(s / 86400) + " d ago";
+  };
+
+  function setStatus(kind, text) {
+    const pill = $("status");
+    pill.replaceChildren(el("span", { class: "dot " + kind }), el("span", { text }));
+  }
+
+  function showStatus() {
+    if (mode === "live") setStatus("live", "Live · updated " + ago(lastLoad));
+    else if (mode === "down") setStatus("down", "Live view off · snapshot from " + ago(data && data.generatedAt));
+    else if (mode === "paused") setStatus("stale", "Paused · updated " + ago(lastLoad));
+    else setStatus("stale", "Snapshot from " + ago(data && data.generatedAt));
+  }
+
+  async function call(method, path, body) {
+    const req = { method, path: "/network" + path };
+    if (body !== undefined) req.body = JSON.stringify(body);
+    const res = await api.request(req);
+    let json = null;
+    try { json = JSON.parse(res.body); } catch (_) { /* non-JSON answer */ }
+    return { status: res.status, json };
+  }
+
+  async function load() {
+    if (!api || busy) return;
+    busy = true;
+    try {
+      const res = await call("GET", "/");
+      if (res.status === 200 && res.json) {
+        data = res.json; mode = "live"; lastLoad = new Date().toISOString();
+        render();
+      } else {
+        mode = "down";
+      }
+    } catch (err) {
+      mode = "down";
+      if (err && err.reason === "app-not-listening") showServerHint();
+    } finally {
+      busy = false;
+      showStatus();
+    }
+  }
+
+  function showServerHint() {
+    const box = $("requests");
+    if (document.getElementById("startHint")) return;
+    const btn = el("button", { type: "button", text: "Ask the agent to start it" });
+    btn.addEventListener("click", () => {
+      try {
+        window.platform.sendPrompt("Start the network server for the agent network page: run `python3 \"$HOME/scripts/network-server.py\" ensure` (docs/network.md).", { newSession: true });
+        btn.disabled = true; btn.textContent = "Asked";
+      } catch (_) { btn.textContent = "Open this page in the agent's chat"; }
+    });
+    box.before(el("div", { id: "startHint", class: "req" }, el("div", { text: "The live view's server is not running, so this page shows its last snapshot." }), el("div", { style: "margin-top:8px" }, btn)));
+  }
+
+  function schedule() {
+    clearInterval(timer);
+    timer = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - lastTouch > IDLE_MS) { if (mode === "live") { mode = "paused"; showStatus(); } return; }
+      if (mode !== "down") load();
+      else showStatus();
+    }, POLL_MS);
+  }
+
+  function edgeInfo(peer) {
+    const dirs = new Set(peer.usesResolved.map((u) => u.direction).filter(Boolean));
+    for (const h of peer.handoffs || []) dirs.add(h.direction);
+    for (const h of peer.theirHandoffs || []) dirs.add(h.direction === "out" ? "in" : "out");
+    const surfaces = new Set(peer.usesResolved.map((u) => u.surface).filter(Boolean));
+    for (const place of peer.shared || []) surfaces.add(place.split(":")[0]);
+    return { out: dirs.has("out"), in: dirs.has("in"), label: [...surfaces].slice(0, 3).join(" · ") };
+  }
+
+  function renderGraph() {
+    const svg = $("graph");
+    svg.replaceChildren();
+    const W = 640, H = 420, cx = W / 2, cy = H / 2;
+    const defs = svgEl("defs");
+    for (const [id, color] of [["mOut", "var(--out)"], ["mIn", "var(--in)"]]) {
+      const m = svgEl("marker", { id, viewBox: "0 0 10 10", refX: "10", refY: "5", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse" });
+      m.append(svgEl("path", { d: "M0,0 L10,5 L0,10 z", fill: color }));
+      defs.append(m);
+    }
+    svg.append(defs);
+    const nodes = [...data.peers.map((p) => ({ kind: "peer", p })), ...(data.requests || []).map((r) => ({ kind: "req", r }))];
+    const n = nodes.length;
+    const R = Math.min(cx, cy) - 56;
+    const NODE = 26;
+    nodes.forEach((node, i) => {
+      const a = -Math.PI / 2 + (2 * Math.PI * i) / Math.max(n, 1);
+      node.x = cx + R * Math.cos(a); node.y = cy + R * Math.sin(a);
+    });
+    for (const node of nodes) {
+      const dx = node.x - cx, dy = node.y - cy, len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len, uy = dy / len;
+      const x1 = cx + ux * (NODE + 12), y1 = cy + uy * (NODE + 12);
+      const x2 = node.x - ux * (NODE + 4), y2 = node.y - uy * (NODE + 4);
+      if (node.kind === "req") {
+        svg.append(svgEl("line", { x1, y1, x2, y2, stroke: "var(--muted)", "stroke-dasharray": "4 4", "stroke-width": "1.5" }));
+        continue;
+      }
+      const e = edgeInfo(node.p);
+      const color = e.out ? "var(--out)" : e.in ? "var(--in)" : "var(--muted)";
+      const attrs = { x1, y1, x2, y2, stroke: color, "stroke-width": "2" };
+      if (e.out) attrs["marker-end"] = "url(#mOut)";
+      if (e.in) attrs["marker-start"] = "url(#mIn)";
+      if (node.p.status !== "pinned") attrs["stroke-dasharray"] = "4 4";
+      svg.append(svgEl("line", attrs));
+      if (e.label) {
+        const t = svgEl("text", { x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 4, "text-anchor": "middle", class: "edge-label" });
+        t.textContent = e.label;
+        svg.append(t);
+      }
+    }
+    const drawNode = (x, y, label, sub, fill, stroke, dashed, onClick) => {
+      const g = svgEl("g", { class: "node", tabindex: "0" });
+      const c = svgEl("circle", { cx: x, cy: y, r: NODE, fill, stroke });
+      if (dashed) c.setAttribute("stroke-dasharray", "4 3");
+      const t = svgEl("text", { x, y: y + NODE + 15, "text-anchor": "middle" });
+      t.textContent = label.length > 22 ? label.slice(0, 21) + "…" : label;
+      const s = svgEl("text", { x, y: y + 4, "text-anchor": "middle", style: "font-size:11px;fill:var(--muted)" });
+      s.textContent = sub;
+      g.append(c, s, t);
+      if (onClick) { g.addEventListener("click", onClick); g.addEventListener("keydown", (ev) => { if (ev.key === "Enter") onClick(); }); }
+      svg.append(g);
+    };
+    drawNode(cx, cy, (data.self && data.self.name) || "This agent", "self", "var(--accent-soft)", "var(--accent)", false, null);
+    for (const node of nodes) {
+      if (node.kind === "req") {
+        const name = (node.r.card && node.r.card.name) || "requested";
+        drawNode(node.x, node.y, name, "?", "var(--panel)", "var(--muted)", true, () => $("requests").scrollIntoView({ behavior: "smooth" }));
+      } else {
+        const p = node.p;
+        const stroke = p.status === "pinned" ? "var(--ok)" : p.status === "drift" ? "var(--warn)" : "var(--bad)";
+        drawNode(node.x, node.y, p.name, (p.role || "").split("-").map((w) => w[0]).join("").toUpperCase(), "var(--panel)", stroke, p.status !== "pinned",
+          () => { const t = document.getElementById("peer-" + p.name); if (t) t.scrollIntoView({ behavior: "smooth" }); });
+      }
+    }
+    if (!n) {
+      const t = svgEl("text", { x: cx, y: cy + 60, "text-anchor": "middle", class: "edge-label" });
+      t.textContent = "No connected agents yet: paste a manifest link to connect one.";
+      svg.append(t);
+    }
+  }
+
+  const STATUS = {
+    pinned: ["pinned", ""],
+    drift: ["pinned copy differs from PEERS.md", "warn"],
+    unpinned: ["not pinned yet", "warn"],
+    "copy-missing": ["pinned copy missing", "bad"],
+  };
+
+  function renderPeers() {
+    const box = $("peers");
+    box.replaceChildren();
+    if (!data.peers.length) { box.append(el("p", { class: "empty", text: "This agent works with no other agent yet." })); return; }
+    for (const p of data.peers) {
+      const [st, cls] = STATUS[p.status] || [p.status, "warn"];
+      const card = p.card || {};
+      const head = el("h3", {}, el("span", { text: p.name }), el("span", { class: "tag", text: p.role }), st !== "pinned" ? el("span", { class: "tag " + cls, text: st }) : null);
+      const meta = el("div", { class: "muted", style: "font-size:12px" },
+        document.createTextNode([card.description, card.version && "v" + card.version, "last contact " + ago(p.lastContact), p.contacts + " logged"].filter(Boolean).join(" · ") + " · "),
+        safeLink(p.url, "manifest"));
+      const list = el("ul", { class: "uses" });
+      for (const u of p.usesResolved) {
+        const arrow = u.direction === "out" ? "→" : u.direction === "in" ? "←" : "?";
+        const what = el("div", {},
+          el("div", {}, el("code", { text: u.id }), document.createTextNode(" " + (u.description || ""))),
+          u.channel ? el("div", { class: "muted", style: "font-size:12px" }, document.createTextNode(u.kind === "trigger" ? "via " : "from "), el("code", { text: u.channel }), u.format ? document.createTextNode(" · " + u.format) : null) : null);
+        list.append(el("li", {}, el("span", { class: "arrow " + (u.direction || ""), text: arrow }), what));
+      }
+      for (const h of p.handoffs || []) {
+        list.append(el("li", {}, el("span", { class: "arrow " + (h.direction === "out" ? "out" : "in"), text: h.direction === "out" ? "→" : "←" }),
+          el("div", {}, el("div", { text: h.meaning }), el("div", { class: "muted", style: "font-size:12px" }, document.createTextNode("handoff to the " + h.role + " role via "), el("code", { text: h.via })))));
+      }
+      if (!list.children.length) list.append(el("li", {}, el("span", { text: "·" }), el("div", { class: "empty", text: "No uses recorded in PEERS.md yet." })));
+      const shared = p.shared && p.shared.length ? el("div", { class: "muted", style: "font-size:12px;margin-top:4px" }, document.createTextNode("Shared places: "), ...p.shared.map((s) => el("code", { text: s }))) : null;
+      box.append(el("div", { class: "peer", id: "peer-" + p.name }, head, meta, list, shared));
+    }
+  }
+
+  function renderLog() {
+    const sel = $("logFilter");
+    const keep = sel.value;
+    sel.replaceChildren(el("option", { value: "", text: "All peers" }), ...data.peers.map((p) => el("option", { value: p.name, text: p.name })));
+    sel.value = keep;
+    const rows = (data.log || []).filter((e) => !sel.value || e.peer === sel.value).slice().reverse();
+    const table = $("log");
+    table.replaceChildren(el("tr", {}, el("th", { text: "When" }), el("th", { text: "Peer" }), el("th", { text: "" }), el("th", { text: "Via" }), el("th", { text: "What" })));
+    if (!rows.length) { table.append(el("tr", {}, el("td", { colspan: "5", class: "empty", text: "Nothing logged yet." }))); return; }
+    for (const e of rows.slice(0, 100)) {
+      table.append(el("tr", {},
+        el("td", { title: e.at, text: ago(e.at) }),
+        el("td", { text: e.peer }),
+        el("td", { class: "arrow " + e.direction, text: e.direction === "out" ? "→" : "←" }),
+        el("td", {}, el("code", { text: e.via })),
+        el("td", {}, document.createTextNode(e.summary || ""), e.ref ? document.createTextNode(" ") : null, e.ref ? safeLink(e.ref, "open") : null)));
+    }
+  }
+
+  function renderRequests() {
+    const box = $("requests");
+    box.replaceChildren();
+    const owner = data.caller !== "viewer";
+    for (const r of data.requests || []) {
+      const card = r.card || {};
+      const pass = r.check === "PASS";
+      const actions = el("div", { class: "row", style: "margin-top:8px" });
+      if (owner && api && pass) {
+        const pin = el("button", { type: "button", class: "primary", text: "Pin in the agent's chat" });
+        pin.addEventListener("click", () => {
+          try {
+            window.platform.sendPrompt("Pin the peer whose manifest is " + r.url + " (network page request " + r.id + "). Follow docs/manifest.md → Pin a peer: fetch and check it again yourself, propose its row and the ids to use" + (r.note ? ", given the note: \"" + r.note + "\"" : "") + ", and wait for my yes.");
+            pin.disabled = true; pin.textContent = "Sent to the chat";
+          } catch (_) { pin.textContent = "Open this page in the agent's chat"; }
+        });
+        actions.append(pin);
+      }
+      if (owner && api) {
+        const drop = el("button", { type: "button", text: "Dismiss" });
+        drop.addEventListener("click", async () => {
+          if (drop.dataset.armed !== "1") { drop.dataset.armed = "1"; drop.textContent = "Click again to dismiss"; return; }
+          drop.disabled = true;
+          try { await call("DELETE", "/requests/" + encodeURIComponent(r.id)); } catch (_) { /* reload shows the state */ }
+          load();
+        });
+        actions.append(drop);
+      }
+      box.append(el("div", { class: "req" },
+        el("div", {}, el("strong", { text: card.name || "Unknown agent" }), document.createTextNode(" "), ...((card.roles || []).map((x) => el("span", { class: "tag", text: x })))),
+        el("div", { class: "muted", style: "font-size:12px" }, document.createTextNode([card.description, "requested " + ago(r.at) + " by " + r.by].filter(Boolean).join(" · ") + " · "), safeLink(r.url, "manifest")),
+        r.note ? el("div", { style: "font-size:12px;margin-top:4px", text: "Note: " + r.note }) : null,
+        card.triggers ? el("div", { class: "muted", style: "font-size:12px;margin-top:4px" }, document.createTextNode("Offers: "), ...[...card.triggers, ...(card.contracts || [])].slice(0, 12).map((x) => el("code", { text: x }))) : null,
+        pass ? el("div", { class: "msg ok", text: "The card passes the manifest check." }) : el("pre", { text: r.check }),
+        actions.children.length ? actions : null));
+    }
+  }
+
+  function render() {
+    if (!data) return;
+    const self = data.self || {};
+    $("title").textContent = (self.name || "This agent") + " · network";
+    document.title = "Agent network: " + (self.name || "");
+    $("sub").textContent = [self.roles && self.roles.join(", "), self.version && "v" + self.version].filter(Boolean).join(" · ");
+    $("ownUrl").value = self.url || "Not published yet: the agent publishes its manifest in onboarding.";
+    $("copy").disabled = !self.url;
+    const canAdd = !!api && mode === "live";
+    $("addBtn").disabled = !canAdd;
+    $("addMsg").textContent = canAdd ? "" : "Connecting works where the page reaches the agent: in its chat or on its share page, while the live view runs.";
+    $("addMsg").className = "msg";
+    renderGraph();
+    renderPeers();
+    renderLog();
+    renderRequests();
+  }
+
+  $("copy").addEventListener("click", async () => {
+    const input = $("ownUrl");
+    let ok = false;
+    try { await navigator.clipboard.writeText(input.value); ok = true; } catch (_) {
+      input.select();
+      try { ok = document.execCommand("copy"); } catch (_) { ok = false; }
+    }
+    $("copyMsg").textContent = ok ? "Copied." : "Select the link and copy it.";
+    $("copyMsg").className = "msg " + (ok ? "ok" : "");
+    if (!ok) input.select();
+  });
+
+  $("addForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    if (!api) return;
+    const url = $("addUrl").value.trim();
+    if (!url) return;
+    const btn = $("addBtn"), msg = $("addMsg");
+    btn.disabled = true; msg.className = "msg"; msg.textContent = "Fetching and checking the card…";
+    try {
+      const res = await call("POST", "/requests", { url, note: $("addNote").value.trim() });
+      if (res.status === 201) {
+        msg.className = "msg ok";
+        msg.textContent = res.json && res.json.check === "PASS" ? "Checked. The operator pins it from the request below." : "Saved, but the card fails the check: see below.";
+        $("addUrl").value = ""; $("addNote").value = "";
+        await load();
+      } else {
+        msg.className = "msg bad";
+        msg.textContent = (res.json && res.json.error) || "The agent answered " + res.status + ".";
+      }
+    } catch (err) {
+      msg.className = "msg bad";
+      msg.textContent = "The page could not reach the agent (" + ((err && err.reason) || "error") + ").";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $("refresh").addEventListener("click", () => { lastTouch = Date.now(); if (mode === "paused" || mode === "down") mode = "snapshot"; const h = document.getElementById("startHint"); if (h) h.remove(); load(); });
+  for (const ev of ["pointerdown", "keydown", "scroll"]) window.addEventListener(ev, () => { lastTouch = Date.now(); }, { passive: true });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && mode !== "down") { lastTouch = Date.now(); load(); }
+  });
+  $("logFilter").addEventListener("change", renderLog);
+  setInterval(showStatus, 15000);
+
+  if (data) render(); else setStatus("stale", "No snapshot");
+  if (api) { load(); schedule(); } else showStatus();
+})();
+</script>
+</body>
+</html>

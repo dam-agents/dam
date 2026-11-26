@@ -40,6 +40,7 @@ One operating architecture for every agent:
 - **One fire, one pass**: the Precheck keeps the worklist in a file and the run reads it instead of recomputing it; when one tick finds several items, the run keeps the first and **fans the rest out** into one-time sessions of their own, each pinned to the configured model and titled by a script.
 - **A health monitor** between audits: a frequent gated tick over local files that alerts on model or integration outages, classifier refusals, a silent heartbeat, a failing backup and harness drift, with a claim-then-ack ledger so no alert is lost or repeated; optionally delivered by the script itself with no model in the loop.
 - **A public agent manifest**: one JSON card the agent writes about itself at runtime (triggers, skills, the blocks it reads and writes, channels, public pages, packages, trust rules), checked by a script and republished by the weekly audit; a peer list lets it follow the manifests of the agents it works with (`references/manifest.md`).
+- **An agent network page**: a private interactive artifact, live through a small Artifact API server, with the graph of the agent's peers, what it uses each for and through which channel, the history of the work passed between them, its own manifest link to copy and a field to connect another agent by its manifest link (`references/manifest.md` → The network page).
 - **Weekly self-audit**: deterministic health checks plus judgment checks, reported traffic-light style against a recorded trend history.
   Recommended for every agent, even purely reactive ones.
 - **An optional quality benchmark** where output quality is a judgment call: a monthly replay of synthetic items with seeded ground truth through the production pipeline in isolated sessions, scored by a deterministic matcher (plus a pinned judge model beside it), with time, tokens and a verdict per task tier accumulated into one report (`references/benchmark.md`).
@@ -111,6 +112,9 @@ Copy each template and resolve every `{{PLACEHOLDER}}` and `TODO(creator)` block
 | `templates/docs/manifest.md.template`          | `docs/manifest.md`             | Copied verbatim: how the agent writes, checks and publishes its manifest, and follows its peers.                                                                                       |
 | `templates/manifest.schema.json`               | `docs/manifest.schema.json`    | Copied verbatim; the shape of every DAM agent manifest.                                                                                                                                |
 | `templates/manifest-check.sh.template`         | `scripts/manifest-check.sh`    | Fill `PUBLIC_KEYS` from the design; nothing else changes.                                                                                                                              |
+| `templates/docs/network.md.template`           | `docs/network.md`              | Copied verbatim: the network page, its server, the handoff log and connecting a peer from the page.                                                                                    |
+| `templates/network.html.template`              | `docs/network.html`            | Copied verbatim; the page `network-server.py render` fills with a snapshot.                                                                                                            |
+| `templates/network-server.py.template`         | `scripts/network-server.py`    | Copied verbatim; the page's Artifact API and the `log` command.                                                                                                                        |
 | `templates/verify-onboarding.sh.template`      | `scripts/verify-onboarding.sh` | Structure verification by mode: `--config` mid-onboarding, bare at the end, `--live` for reachability; every `FAIL` carries its `fix:` (Phase 4).                                      |
 | `templates/preflight.sh.template`              | `scripts/preflight.sh`         | Only with scheduled runs (Phase 4).                                                                                                                                                    |
 | `templates/precheck.sh.template`               | `scripts/precheck.sh`          | With the pre-flight: the schedule gate — one pass per fire under a budget, the worklist in a file, the exit code. Copied verbatim; no domain logic. Runs `monitor.sh` for the monitor. |
@@ -143,6 +147,9 @@ Ask which **license** applies (default: the org's standard) and add `LICENSE`; w
 - `scripts/definition-issue.sh` (when the agent files issues on its definition repo) — `file <title> <body-file>` and `check <body-file>`: the switch, the scan against the instance's values, shapes and foreign terms, the title dedup, the create (`references/architecture.md` → Writes to the definition repo); plus the `PreToolUse` guard in the harness adapter.
 - `scripts/manifest-check.sh` — always; set `PUBLIC_KEYS` to the config keys whose values the design shows in public (labels, the target, the bot account).
   Write a sample card for the design into `scripts/tests/fixtures/manifest.json` and add a test that `manifest-check.sh check` passes on it, so a definition change that breaks the card shape fails CI.
+- `scripts/network-server.py` — always, copied verbatim.
+  Name its handoff `log` call in each domain procedure that uses a peer's trigger or acts on a peer's contract, and, with a harness adapter, add auto-mode rules for its `ensure`, `log` and `render` (`references/manifest.md` → The network page).
+  Add one test that runs `network-server.py snapshot` over the fixture card, a `PEERS.md` row and a pinned copy, and asserts the peer's resolved `uses`.
 - `scripts/verify-onboarding.sh` — always.
   One check per file, key and table ONBOARDING creates, one `--live` probe per integration, one read-only pre-flight per scheduled mode.
   Detect-never-repair; judges *shape*, never data; an unknown config bullet FAILs (the runtime can't see it); a probe that can't run is `warn`, never a silent pass.
@@ -199,6 +206,7 @@ Offer a test pass: walk one work item through the pipeline (mentally or against 
   `kit.yaml` binds every deployment made from it: only values *every* instance shares go in its `env`.
 - **Safe defaults.** Anything that contacts people or publishes defaults to off, opt-in at onboarding.
   The one exception is the agent manifest: public by default, because it repeats only what is already public (`references/manifest.md`).
+  The network page is on by default too, because it stays private until the owner shares it.
 - **Slim always-loaded core.** CLAUDE.md holds contracts and invariants; procedures live in `docs/`, read only when their work fires.
   One home per concept; links, not restatements.
 - **Determinism into scripts.** Mechanical decisions go in versioned, auditable scripts; judgment and outward effects stay with the agent, with its own action-time re-checks.

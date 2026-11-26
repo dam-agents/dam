@@ -238,6 +238,11 @@ immutable keys).
        it kept local (`off`)." Then ask which agents this one works with, and put each
        manifest link the operator gives into `work/PEERS.md` (docs/manifest.md → Peers);
        none is a fine answer.
+     - `agent_network` — not a question: write `dam` and tell the operator: "I keep a
+       private page of the agents I work with: a graph, what I use each for, the
+       history of the work between us, my manifest link to copy, and a field to connect
+       another agent. Only you see it until you share it from the app. Say so if you
+       want no page (`off`)."
      - the monitor thresholds keep their defaults and are never asked; a dashboard or a
        direct-delivery opt-in is a message of its own, default off.
      Each is a checklist item only when it needs the operator's answer. -->
@@ -318,7 +323,8 @@ Then write the agent manifest: follow `docs/manifest.md` → **Write, check, pub
 (the card in `work/manifest.json`, published under `agent_manifest: dam`) and create
 `work/PEERS.md` with the operator's rows from Step 3. Pin each row now
 (`docs/manifest.md` → **Pin a peer**), so `work/peers/` holds a copy before the first
-run reads it.
+run reads it. Then start the network server and publish the network page
+(`docs/network.md` → **Publish**), and give the operator its link.
 
 Then verify that onboarding produced the structure the templates promise — offline
 first, then the live end-to-end pass:

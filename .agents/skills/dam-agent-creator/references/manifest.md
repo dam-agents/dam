@@ -26,6 +26,22 @@ The agent-facing procedure is `templates/docs/manifest.md.template`; the shape i
 - **One name for every card.** The published artifact is always titled `Agent manifest: <agent.name>`, file `agent-manifest.json`, public, type `code`; the agent-facing procedure holds the exact call.
 - **Peers are local.** Each agent keeps its own `work/PEERS.md` with the manifest links the operator gives it; nothing new lives in DAM.
 
+## The network page
+
+The card says what an agent offers; it does not show whom the agent works with, for what, or what passed between them.
+Every generated agent therefore also publishes one **network page**: a private interactive HTML artifact titled `Agent network: <agent.name>`.
+The agent-facing procedure is `templates/docs/network.md.template`; the page is `templates/network.html.template`; its server is `templates/network-server.py.template`.
+
+- **Live through the Artifact API, readable without it.** The page carries a snapshot from its last publish and, where it can reach the agent, reads the current state from the agent's server on `127.0.0.1:5555`.
+  It polls only while visible and stops when idle, because each request wakes a hibernated agent.
+- **Private, shared by the owner.** An interactive page can never be public; the owner shares it with named people in the app.
+  Viewers see the peers, the history and the manifest link; that is why the log's summaries stay as public as the card.
+- **Connecting is a request, never a pin.** A pasted link is fetched only from the share host of the agent's own manifest and checked with `manifest-check.sh peer`; the owner's **Pin in the agent's chat** sends a prompt into the agent's chat, where the operator runs **Pin a peer** as before.
+  The server never writes `work/PEERS.md` or `work/peers/`.
+- **The history is the agent's own log.** `network-server.py log` appends one line per handoff to `work/peer-log.jsonl`; the platform has no record of which agent passed work to which.
+- **What a peer is used for comes from `uses`.** Each id resolves against the pinned card (a trigger is work handed out, a contract is work taken in), plus the agent's own `handoffs` to the peer's roles and the repos and conversations both cards name.
+- `agent_network` defaults to `dam`, a private page; `off` keeps the log and publishes nothing.
+
 ## What the proposal decides
 
 - The roles the agent serves and its handoffs (which trigger another role uses to pass it work, which of its contracts is work for another role).
@@ -59,4 +75,5 @@ The card is then a snapshot: it does not follow later changes.
 ### Step 2: keep it current
 
 The agent adopts the procedure into its own definition through its usual definition-change path (its self-modification rules, a pull request on its definition repo): copy the three files to `docs/manifest.md`, `docs/manifest.schema.json` and `scripts/manifest-check.sh` with its `PUBLIC_KEYS`, add the audit task, the `agent_manifest` config key and `work/PEERS.md`, and an upgrade step in its changelog that writes the first card.
+The network page comes the same way: `docs/network.md`, `docs/network.html` and `scripts/network-server.py` copied verbatim, the `agent_network` key, a `log` call in each procedure that hands work to a peer, and an upgrade step that starts the server and publishes the page.
 After that, its weekly audit rewrites and republishes the card, and step 1 is not needed again.
