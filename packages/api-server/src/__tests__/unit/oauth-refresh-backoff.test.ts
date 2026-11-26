@@ -2,10 +2,8 @@ import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect } from "vitest";
 import type { Db } from "db";
 import type { ConnectionAuthConfig } from "api-server-api";
-import {
-  backoffDelayMs,
-  createOAuthRefreshLoop,
-} from "../../modules/connections/services/oauth-refresh.js";
+import { createOAuthRefreshLoop } from "../../modules/connections/services/oauth-refresh.js";
+import { backoffDelayMs } from "../../modules/connections/domain/refresh-failure-marker.js";
 import { createOAuthEngine } from "../../modules/connections/infrastructure/oauth-engine.js";
 import { createGitHubAppEngine } from "../../modules/connections/infrastructure/github-app-engine.js";
 import type { ConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
