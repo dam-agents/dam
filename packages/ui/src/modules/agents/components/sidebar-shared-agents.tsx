@@ -1,3 +1,4 @@
+import { Filter } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
@@ -7,7 +8,9 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useStartSession } from "../../sessions/hooks/use-start-session.js";
+import { useAgentSessionFilters } from "../../sessions/lib/agent-session-filters.js";
 import { shownSessionId } from "../../sessions/lib/shown-session.js";
+import { useAutoWakeOnSidebarOpen } from "../hooks/use-auto-wake-on-sidebar-open.js";
 import { useSidebarSharedAgents } from "../hooks/use-sidebar-agents.js";
 import { holds } from "../lib/agent-permissions.js";
 import { AgentAvatar } from "./avatar/agent-avatar.js";
@@ -34,6 +37,7 @@ export function SidebarSharedAgents({
   const setSidebarAgent = useStore((s) => s.setSidebarAgent);
   const sessionOpen = useStore((s) => s.view === "chat" && !!shownSessionId(s));
   const startSession = useStartSession();
+  const agentFilters = useAgentSessionFilters();
   const navigate = (go: () => void) => () => {
     go();
     onNavigate?.();
@@ -57,6 +61,7 @@ export function SidebarSharedAgents({
         agent={agent}
         current={current}
         selected={agent.id === sidebarAgent}
+        filtered={agentFilters.has(agent.id)}
         onSelect={navigate(() => {
           setSidebarAgent(agent.id);
           startSession(agent.id);
@@ -104,15 +109,18 @@ function SharedAgentRow({
   agent,
   current,
   selected = false,
+  filtered = false,
   onSelect,
   actions,
 }: {
   agent: AgentView;
   current: boolean;
   selected?: boolean;
+  filtered?: boolean;
   onSelect: () => void;
   actions?: ReactNode;
 }) {
+  useAutoWakeOnSidebarOpen(agent, selected);
   return (
     <li data-testid="sidebar-shared-agent" data-agent-id={agent.id}>
       <div
@@ -145,6 +153,20 @@ function SharedAgentRow({
           >
             {agent.name}
           </span>
+          {filtered && (
+            <span
+              data-testid="sidebar-agent-filtered"
+              title="Sessions filtered"
+              className={cn(
+                "flex size-4 shrink-0 items-center justify-center text-primary",
+                !selected &&
+                  "group-hover/agent:hidden group-focus-within/agent:hidden",
+              )}
+            >
+              <Filter size={12} aria-hidden />
+              <span className="sr-only">(sessions filtered)</span>
+            </span>
+          )}
         </div>
         {actions && (
           <div className="pointer-events-none absolute right-1 flex items-center gap-0.5 opacity-0 transition-opacity group-focus-within/agent:pointer-events-auto group-focus-within/agent:opacity-100 group-hover/agent:pointer-events-auto group-hover/agent:opacity-100">

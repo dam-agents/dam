@@ -5,6 +5,8 @@ import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { Spinner } from "@/components/ui/spinner";
 
 import type { SessionView } from "../../../types.js";
+import { useAgent } from "../../agents/api/queries.js";
+import { isOwnAgent } from "../../agents/lib/agent-editors.js";
 import {
   type ActivityFilters,
   activityFilterSummary,
@@ -13,6 +15,7 @@ import {
 } from "../../home/lib/activity-filter.js";
 import { matchesActivityFilters } from "../../home/lib/activity-sessions.js";
 import {
+  attentionItemOfSession,
   prefetchSessionHistory,
   provisionalSessionView,
 } from "../api/queries.js";
@@ -141,6 +144,9 @@ function AgentSessionList({
   onNavigate?: () => void;
 }) {
   const list = useAgentSessionList(agentId, filter);
+  const unfiltered = useAgentSessionList(agentId);
+  const agent = useAgent(agentId);
+  const ownAgent = agent !== null && isOwnAgent(agent);
   const openSession = useOpenSession();
   const { pins } = useSessionPins();
   const pinActions = useSessionPinActions();
@@ -148,11 +154,19 @@ function AgentSessionList({
   const pinnedIds = new Set(agentPins.map((pin) => pin.sessionId));
   const pinnedRows = newestFirst(
     agentPins.flatMap((pin) => {
-      const session =
+      const listed =
         list.sessions.find((s) => s.sessionId === pin.sessionId) ??
-        (pin.item ? provisionalSessionView(pin.item) : null);
+        unfiltered.sessions.find((s) => s.sessionId === pin.sessionId);
+      const session =
+        listed ?? (pin.item ? provisionalSessionView(pin.item) : null);
       return session
-        ? [{ session, state: list.rowState(session), outsideFilter: false }]
+        ? [
+            {
+              session,
+              state: unfiltered.rowState(session),
+              outsideFilter: false,
+            },
+          ]
         : [];
     }),
     (row) => row.session.updatedAt ?? row.session.createdAt,
@@ -271,7 +285,7 @@ function AgentSessionList({
       onTogglePin={() => {
         const key = { agentId, sessionId: s.sessionId };
         if (pinned) pinActions.unpin(key);
-        else pinActions.pin(key, null);
+        else pinActions.pin(key, ownAgent ? attentionItemOfSession(s) : null);
       }}
     />
   );
@@ -310,6 +324,7 @@ function AgentSessionList({
         {!list.loading &&
           !list.failed &&
           rows.length === 0 &&
+          (pinnedRows.length === 0 || filtered) &&
           (!hasNextPage || filtered) && (
             <ListNote>{emptyText(filtered, hasNextPage)}</ListNote>
           )}

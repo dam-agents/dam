@@ -385,6 +385,24 @@ export function provisionalSessionView(item: AttentionItem): SessionView {
   };
 }
 
+export function attentionItemOfSession(session: SessionView): AttentionItem {
+  return {
+    agentId: session.agentId,
+    sessionId: session.sessionId,
+    mode: session.mode,
+    type: session.type,
+    title: session.title ?? null,
+    scheduleId: session.scheduleId ?? null,
+    threadTs: session.threadTs ?? null,
+    harness: session.harness ?? null,
+    createdAt: session.createdAt,
+    activityAt: session.updatedAt ?? null,
+    seenAt: session.seenAt ?? null,
+    working: session.running ?? false,
+    ...(session.startedBy !== undefined && { startedBy: session.startedBy }),
+  };
+}
+
 export function useProvisionalSessions(
   agentId: string | null,
   enabled: boolean,

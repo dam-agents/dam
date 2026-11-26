@@ -23,6 +23,7 @@ vi.mock("../../modules/agents/hooks/use-act-when-awake.js", () => ({
 }));
 vi.mock("../../modules/agents/api/queries.js", () => ({
   useAgentRunState: () => "running",
+  useAgent: () => null,
 }));
 vi.mock("../../modules/features/api/queries.js", () => ({
   useFeatures: () => ({ data: {} }),
@@ -34,6 +35,7 @@ vi.mock("../../modules/sessions/hooks/use-open-session.js", () => ({
 vi.mock("../../modules/sessions/api/queries.js", () => ({
   prefetchSessionHistory: () => {},
   provisionalSessionView: (s: unknown) => s,
+  attentionItemOfSession: (s: unknown) => s,
 }));
 vi.mock("../../modules/telemetry/api/download-export.js", () => ({
   downloadTelemetryExport: () => {},
