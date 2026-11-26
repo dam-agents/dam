@@ -467,7 +467,7 @@ The screens:
   When the checkbox is off, this line tells when the subscriptions covered more than the user paid.
   The checkbox also adds the subscription value to the bars of the top agents, never to the total.
   The browser keeps the choice for Home and for the Usage pages.
-  On Today it also shows the top agents' limits and the provider limits for all agents, all bars on one scale; no own limit, no Bobcoins.
+  On Today it also shows the top agents' limits, their bars on one scale, and each provider limit for all agents in a box with its own bar; no own limit.
   "Usage details" opens Settings › Usage with the same period.
   The card does not need the telemetry store.
 - **The metering notice:** for 30 days after T, a user who had an agent before T sees a notice about the change.

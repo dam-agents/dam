@@ -113,7 +113,7 @@ export function TopSpenders({
               spender={spender}
               showPlanUse={showPlanUse}
               limitMicros={
-                agentLimits.get(spender.agentId)?.amountMicros ?? null
+                agentLimits.get(spender.agentId)?.effectiveMicros ?? null
               }
               scale={scale}
             />
@@ -287,10 +287,7 @@ function ScaledRow({
     scale > 0 ? Math.min(100, (micros / scale) * 100) : 0;
   const label =
     limitMicros !== null
-      ? limitShareLabel(
-          name,
-          limitMicros > 0 ? (spentMicros / limitMicros) * 100 : 100,
-        )
+      ? limitShareLabel(name, percentOfLimit(spentMicros, limitMicros))
       : `${name}: ${bareSpend(spentMicros + planMicros, "usd")}`;
   return (
     <div className="flex h-9 items-center gap-2.5">
