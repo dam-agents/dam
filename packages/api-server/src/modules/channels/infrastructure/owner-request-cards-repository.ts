@@ -6,6 +6,7 @@ import {
   ownerRequestCardItems,
   ownerRequestCards,
   ownerRequestDismissals,
+  ownerRequestMutes,
   sql,
   type Db,
 } from "db";
@@ -88,6 +89,9 @@ export interface OwnerRequestCardsRepository {
   close(cardId: string): Promise<void>;
   openCards(limit: number): Promise<OwnerCard[]>;
   openCardsInTeam(ownerSub: string, teamId: string): Promise<OwnerCard[]>;
+  openCardsOf(ownerSub: string): Promise<OwnerCard[]>;
+  setMuted(ownerSub: string, muted: boolean): Promise<void>;
+  isMuted(ownerSub: string): Promise<boolean>;
   deleteEndedDismissals(): Promise<number>;
   hostsBlockedSince(input: {
     ownerSub: string;
@@ -327,6 +331,40 @@ export function createOwnerRequestCardsRepository(
           ),
         );
       return rows.map(toCard);
+    },
+
+    async openCardsOf(ownerSub) {
+      const rows = await db
+        .select()
+        .from(ownerRequestCards)
+        .where(
+          and(
+            eq(ownerRequestCards.ownerSub, ownerSub),
+            isNull(ownerRequestCards.closedAt),
+          ),
+        );
+      return rows.map(toCard);
+    },
+
+    async setMuted(ownerSub, muted) {
+      if (muted)
+        await db
+          .insert(ownerRequestMutes)
+          .values({ ownerSub })
+          .onConflictDoNothing();
+      else
+        await db
+          .delete(ownerRequestMutes)
+          .where(eq(ownerRequestMutes.ownerSub, ownerSub));
+    },
+
+    async isMuted(ownerSub) {
+      const rows = await db
+        .select({ ownerSub: ownerRequestMutes.ownerSub })
+        .from(ownerRequestMutes)
+        .where(eq(ownerRequestMutes.ownerSub, ownerSub))
+        .limit(1);
+      return rows.length > 0;
     },
 
     async deleteEndedDismissals() {

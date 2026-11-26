@@ -62,6 +62,8 @@ export const WEB_SEARCH_HOST = "web search";
 
 const UNREACHABLE_DECIDER = "system:owner-unreachable";
 
+const WAITING_FOR_OWNER_LIMIT = 100;
+
 function summaryOf(row: PendingApprovalRow): string {
   const { payload } = row;
   if (payload.kind === "ext_authz") {
@@ -138,11 +140,15 @@ function startOfDay(now: Date): Date {
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the approvals module gives the Slack cards of owner requests: a view of one routed request in the platform's own words, the refusal of a `turn` request whose card cannot reach its owner (denied as the system, so the thread does not wait for a card that never comes), whether any held request still waits for an answer, and the routed requests that still wait, bounded by age, for the sweep.
+// UNIT_BOUNDARY_DESCRIPTION: what the approvals module gives the Slack cards of owner requests: a view of one routed request in the platform's own words, the refusal of a `turn` request whose card cannot reach its owner (denied as the system, so the thread does not wait for a card that never comes), whether any held request still waits for an answer, the routed requests that still wait, bounded by age, for the sweep, and every pending request of one owner, newest first, as the web's approvals list has them.
 export function createOwnerRequestPorts(deps: {
   repo: Pick<
     ApprovalsRepository,
-    "getPending" | "resolvePending" | "countSince" | "listPendingRouted"
+    | "getPending"
+    | "resolvePending"
+    | "countSince"
+    | "listPendingRouted"
+    | "listPendingForOwner"
   >;
   waiters: HoldWaiters;
   promotionRulesOf: (
@@ -282,6 +288,14 @@ export function createOwnerRequestPorts(deps: {
 
     waiting(input: { since: Date; limit: number }): Promise<string[]> {
       return deps.repo.listPendingRouted(input);
+    },
+
+    async waitingFor(ownerSub: string): Promise<string[]> {
+      const rows = await deps.repo.listPendingForOwner(ownerSub, {
+        status: "pending",
+        limit: WAITING_FOR_OWNER_LIMIT,
+      });
+      return rows.map((row) => row.id);
     },
   };
 }

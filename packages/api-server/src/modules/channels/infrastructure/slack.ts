@@ -5253,6 +5253,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       .with("unignore", async () => {
         await handleUnignoreCommand(rest, command, ack);
       })
+      .with("approvals", async () => {
+        await handleApprovalsCommand(rest, command, reply);
+      })
       .with("delete", async () => {
         await handleDeleteCommand(command, ack);
       })
@@ -5275,7 +5278,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   }
 
   function usageText(): string {
-    return `Usage: \`/${brandShort} who\`, \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} history [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`;
+    return `Usage: \`/${brandShort} who\`, \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} history [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, \`/${brandShort} approvals [off|on]\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`;
   }
 
   async function commandMenuState(
@@ -5365,6 +5368,102 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return commandMenuNotice(
         "Couldn't read this conversation's agents just now. Try again in a moment.",
       );
+    }
+  }
+
+  async function approvalsListFor(
+    slackUserId: string,
+  ): Promise<SlackMessageReplacement> {
+    const ownerSub = await identityLinks.resolve("slack", slackUserId);
+    if (!ownerSub || !ownerRequestCards)
+      return commandMenuResult(
+        `Link your account first: run \`/${brandShort} login\`.`,
+      );
+    return ownerRequestCards.list(ownerSub);
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: `approvals` answers the caller alone, in any
+   * conversation: a list of every request that waits for them as the owner,
+   * the same set the web's approvals list shows, with each request's buttons
+   * or form where its type has a card. `approvals off` turns their request
+   * cards off and `approvals on` turns them back on; the list works either
+   * way. A caller with no linked account is told how to link one.
+   */
+  async function handleApprovalsCommand(
+    rest: string,
+    command: SlackSlashCommand,
+    reply: CommandReply,
+  ): Promise<void> {
+    const action = rest.trim().toLowerCase();
+    if (action !== "" && action !== "off" && action !== "on") {
+      await reply.ack({
+        text: `Usage: \`/${brandShort} approvals\`, \`/${brandShort} approvals off\` or \`/${brandShort} approvals on\`.`,
+      });
+      return;
+    }
+    const ownerSub = await identityLinks.resolve("slack", command.userId);
+    if (!ownerSub || !ownerRequestCards) {
+      await reply.ack({
+        text: `Link your account first: run \`/${brandShort} login\`.`,
+      });
+      return;
+    }
+    await reply.ack();
+    try {
+      if (action === "") {
+        const list = await ownerRequestCards.list(ownerSub);
+        await reply.respond(list.text, list.blocks);
+        return;
+      }
+      if (action === "off") {
+        await ownerRequestCards.cardsOff(ownerSub);
+        await reply.respond(
+          `Cards are off. Requests wait for you in the app, and \`/${brandShort} approvals\` still lists them. A card whose request still waits stays until the request ends. Run \`/${brandShort} approvals on\` to turn cards back on.`,
+        );
+        return;
+      }
+      await ownerRequestCards.cardsOn(ownerSub);
+      await reply.respond(
+        "Cards are on. Requests that wait for you come to your DM again.",
+      );
+    } catch (err) {
+      getLogger().warn(
+        { action, error: formatError(err) },
+        "owner_request.command_failed",
+      );
+      await reply
+        .respond("That didn't work. Try again in a moment.")
+        .catch(() => {});
+    }
+  }
+
+  async function refreshApprovalsList(
+    event: SlackMessageAction,
+    replace: SlackReplaceMessage,
+  ): Promise<void> {
+    const list = await approvalsListFor(event.userId);
+    try {
+      await replace(list);
+    } catch (err) {
+      getLogger().warn(
+        { channelId: event.channelId, error: formatError(err) },
+        "owner_request.list_refresh_failed",
+      );
+      const gw = await ensureGateway();
+      await gw
+        ?.postEphemeral({
+          channel: event.channelId,
+          user: event.userId,
+          ...list,
+          teamId: event.teamId,
+        })
+        .catch((postErr: unknown) =>
+          getLogger().warn(
+            { channelId: event.channelId, error: formatError(postErr) },
+            "owner_request.list_post_failed",
+          ),
+        );
     }
   }
 
@@ -5610,27 +5709,29 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
     if (event.actionId === OWNER_QUESTION_SEND_ACTION) {
       const runId = questionOfValue(event.value);
-      if (runId && !event.ephemeral)
-        await ownerRequestCards?.answerQuestion({
-          runId,
-          fields: event.post?.fields,
-          slackUserId: event.userId,
-          teamId: event.teamId,
-          reply,
-        });
+      if (!runId) return;
+      await ownerRequestCards?.answerQuestion({
+        runId,
+        fields: event.post?.fields,
+        slackUserId: event.userId,
+        teamId: event.teamId,
+        reply,
+      });
+      if (event.ephemeral) await refreshApprovalsList(event, replace);
       return;
     }
     const ownerAnswer = answerOfAction(event.actionId);
     if (ownerAnswer !== null) {
       const requestIds = requestsOfValue(event.value);
-      if (requestIds && !event.ephemeral)
-        await ownerRequestCards?.answer({
-          requestIds,
-          answer: ownerAnswer,
-          slackUserId: event.userId,
-          teamId: event.teamId,
-          reply,
-        });
+      if (!requestIds) return;
+      await ownerRequestCards?.answer({
+        requestIds,
+        answer: ownerAnswer,
+        slackUserId: event.userId,
+        teamId: event.teamId,
+        reply,
+      });
+      if (event.ephemeral) await refreshApprovalsList(event, replace);
       return;
     }
     const agentAction = agentActionOf(event.actionId);
@@ -5658,6 +5759,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         show(await commandMenuMessage(event.channelId, event.userId)),
       )
       .with({ kind: "close" }, () => show(null))
+      .with({ kind: "approvals" }, async () =>
+        show(await approvalsListFor(event.userId)),
+      )
       .with({ kind: "ignored-apps" }, async () =>
         show(
           await commandMenuMessage(
@@ -9231,6 +9335,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           agentPageUrl(uiBaseUrl, agentId, "network"),
         ...(deps.ownerQuestions ? { questions: deps.ownerQuestions } : {}),
         appUrl: `${uiBaseUrl}/`,
+        commandName: brandShort,
       })
     : null;
 

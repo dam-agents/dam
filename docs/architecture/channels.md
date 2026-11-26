@@ -245,7 +245,7 @@ The differences are transport, identity model, and where the bot token comes fro
 - **Re-install, not uninstall, is the lifecycle event.** A workspace re-authorizes to pick up scopes added to the manifest later; the handshake rewrites the same Secret in place, and bindings and identity links key on conversation and user id so they are untouched.
   A credential Slack rejects is **marked**, never cleaned up, and re-authorizing clears the mark.
   Nothing is deleted.
-- **Identity linking.** The link table is the source of truth for "who is this Slack user in Platform terms": it authorizes the in-chat `bind`, `unbind`, `ambient`, `history`, `whisper on|off`, `ignore`, `unignore`, `default` and `delete` commands, never a turn, and reaches a person directly.
+- **Identity linking.** The link table is the source of truth for "who is this Slack user in Platform terms": it authorizes the in-chat `bind`, `unbind`, `ambient`, `history`, `whisper on|off`, `ignore`, `unignore`, `default`, `delete` and `approvals` commands, never a turn, and reaches a person directly.
   A `/platform login` slash command proves the person, and the DM Bridge may also pair a link by verified email under rules of its own ([slack-dm-bridge](slack-dm-bridge.md)).
 - **A connect from the platform needs the person in the conversation.** A connect from the UI or the CLI binds only a conversation the person and the bot are both in: one of the person's linked Slack identities shares the channel with the bot in some connected workspace, or is the other side of the 1:1 DM.
   A group DM is outside what Slack lists for a person, so it is connected in-chat only.
@@ -258,7 +258,7 @@ The differences are transport, identity model, and where the bot token comes fro
   A workspace whose credential is rejected or that did not grant `im:write` is skipped, and a user with no link gets nothing in Slack.
   A notice that reaches nobody in Slack goes to Telegram instead (below), so a person gets one copy.
   Only the channel leader sends; other replicas reach it over the channel RPC.
-  `login`/`logout` stay working but are not listed in the usage help (which advertises the other nine); the flows that need a linked identity still point users at `/platform login` in context.
+  `login`/`logout` stay working but are not listed in the usage help (which advertises the other eleven); the flows that need a linked identity still point users at `/platform login` in context.
 - **In-chat binding.** Beyond the platform UI and CLI, a channel can be bound from inside Slack, mirroring Telegram: anyone runs `/platform bind`, authenticates through the same Keycloak OAuth flow, and picks one of *their own* Agents on a web picker — the binding lends that Agent, under its own credentials, to the whole channel, exactly like every binding.
   Being invited offers the same link without the command: when the bot itself is added to a conversation, it answers the inviter alone, privately, with the bind link, so nobody has to discover the slash command first.
   The binding is created ambient-off; an in-chat ambient command reports and flips the binding's ambient mode afterward under the same binder-or-owner authorization as unbind.

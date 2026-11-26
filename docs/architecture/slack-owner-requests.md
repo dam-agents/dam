@@ -31,7 +31,7 @@ The attendance reads cover every api-server replica and fail toward attended, so
 An agent whose rules allow everything never reaches the decision, because nothing it requests is unmatched.
 The gate cannot tell which session sent a network or MCP request, so while an addressed Slack turn runs, a schedule's request of the same agent also gets the `turn` route.
 
-**The owner can get cards** when the owner has a Slack identity link in a workspace whose install is on record with an active credential, and the operator has not turned the feature off ([configuration](../configuration.md)); otherwise every request behaves as before this feature.
+**The owner can get cards** when the owner has a Slack identity link in a workspace whose install is on record with an active credential, has not [turned the cards off](#turning-cards-off), and the operator has not turned the feature off ([configuration](../configuration.md)); otherwise every request behaves as before this feature.
 
 ## Route, raise and expiry
 
@@ -64,7 +64,7 @@ An MCP approve once serves exactly one call, as before.
 ## What the agent reads
 
 On an addressed Slack turn of an owner who can get cards, the turn's instructions say that such a request goes to the owner in Slack and waits while the tool waits, and that a request that ends without an answer was not denied: the agent finishes without the step and tells the person who asked that the thread will say when the owner allows it.
-For an owner without a Slack link, the agent also says that the owner can answer such requests from Slack after linking with the login command.
+For an owner without a Slack link, the agent also says that the owner can answer such requests from Slack after linking with the login command; for an owner who turned the cards off, that the owner does not take such requests in Slack now.
 
 ## Cards
 
@@ -168,3 +168,22 @@ An owner linked in several workspaces has a card in each, and every settle edits
 A sweep on the channels leader every 30 seconds repairs what a lost event or a leader change missed: it posts a card row that has no post after a minute, places a waiting routed request that no open card holds, settles items whose request settled, applies the close rules, and deletes ended dismissals.
 It reads only open cards and the routed requests of the last hold window, through an index on the route, so it never scans every approval.
 A Slack error leaves an item as it was, and the sweep tries it again until its card closes.
+
+## The approvals list
+
+Cards are a push, and not every request gets one, so `/dam approvals` is the pull: it answers the caller alone, in any conversation, with every request that waits for them as an owner, the same set as the web's approvals list, carded or not.
+A caller without a link is told to log in first, and an editor sees only the agents they own.
+The list groups the requests by agent, newest first; a network host or the web searches of one agent are one entry, as on the background card.
+A network, web-search, MCP tool-call, launch-rule or question entry carries the buttons or the form of its card, with the arguments and the question cut shorter; any other type shows its summary and "Open in app".
+The fields of each question carry its run in their ids, so the fields of one question are read apart from another's.
+The list stops before Slack's limit of 50 blocks and ends with how many more requests wait in the app.
+A click in the list answers through the same path as a click on a card, so it edits the request's cards too, and then draws the list again in place through the click's own response URL; when that fails, a new private list goes out.
+The command menu offers the list as "Your approvals".
+
+## Turning cards off
+
+`/dam approvals off` turns the owner's cards off, a choice kept per owner in the channels module's database.
+The owner's reach then reads as muted, which the [shared decision](#the-shared-decision) treats like no link: a new Slack-turn request is refused at once, and no new card or row goes out.
+A card whose request still waits stays until the request ends, so a held turn keeps its card; every other open card closes with "You turned cards off: answer in the app", and the sweep closes the rest once nothing on them waits.
+`/dam approvals on` turns the cards back on, and the list works either way.
+Each writes one log line, `owner_request.cards_off` or `owner_request.cards_on`, which gives the share of owners who turn cards off.

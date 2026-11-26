@@ -240,7 +240,7 @@ function isWaiting(view: OwnerRequestView): boolean {
   return rowWaits(view);
 }
 
-function isRuleKind(view: OwnerRequestView): boolean {
+export function isRuleKind(view: OwnerRequestView): boolean {
   return view.kind === "ext_authz" || view.kind === "web_search";
 }
 
@@ -609,18 +609,22 @@ function callTitle(view: OwnerRequestView): string {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the row of a held MCP tool call: the agent, the tool and the Connection, the target the Template named, the arguments as a code block cut at about 2,500 characters with "Open in app" when cut, the expiry, and Allow once and Deny. Every part the agent wrote shows as plain text or inside the code block, never as Slack markup.
-export function callRow(row: CardRow, appUrl: string): SlackBlock[] {
+export function callRow(
+  row: CardRow,
+  appUrl: string,
+  argumentsMax = ARGUMENTS_MAX,
+): SlackBlock[] {
   const { view } = row;
   const call = view.call;
   const args = call?.arguments ?? null;
-  const argsCut = args !== null && [...args].length > ARGUMENTS_MAX;
+  const argsCut = args !== null && [...args].length > argumentsMax;
   return [
     { type: "section", text: plainText(cut(callTitle(view), 300)) },
     ...(args !== null
       ? [
           {
             type: "section",
-            text: { type: "mrkdwn", text: codeBlock(args, ARGUMENTS_MAX) },
+            text: { type: "mrkdwn", text: codeBlock(args, argumentsMax) },
           },
         ]
       : []),
@@ -703,13 +707,17 @@ function settledRow(row: CardRow): SlackBlock[] {
   ];
 }
 
-function rowBlocks(row: CardRow, appUrl: string): SlackBlock[] {
+export function rowBlocks(
+  row: CardRow,
+  appUrl: string,
+  argumentsMax = ARGUMENTS_MAX,
+): SlackBlock[] {
   if (row.dismissed || row.view.status === "resolved") return settledRow(row);
   if (isRuleKind(row.view)) return networkRow(row, appUrl);
   if (row.view.status !== "pending") return settledRow(row);
   if (row.view.launch) return launchRow(row, appUrl);
   return row.view.kind === "mcp_tool_call"
-    ? callRow(row, appUrl)
+    ? callRow(row, appUrl, argumentsMax)
     : fallbackRow(row, appUrl);
 }
 
@@ -999,17 +1007,21 @@ export function lateAllowReply(input: {
   };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what an owner's card becomes when they unlink Slack in its workspace: its header, and that they answer its requests in the app from now on.
-export function unlinkedCard(input: {
+// UNIT_BOUNDARY_DESCRIPTION: what an owner's card becomes when it closes before its requests ended, because they unlinked Slack in its workspace or turned the cards off: its header, why it closed, and that they answer its requests in the app from now on.
+export function closedCard(input: {
   kind: OwnerCardKind;
   agentName: string;
   appUrl: string;
+  why: "unlinked" | "cards-off";
 }): { text: string; blocks: SlackBlock[] } {
   const header =
     input.kind === "turn"
       ? `${input.agentName} waits in Slack`
       : `${input.agentName} needs you`;
-  const line = "Slack was unlinked: answer in the app";
+  const line =
+    input.why === "unlinked"
+      ? "Slack was unlinked: answer in the app"
+      : "You turned cards off: answer in the app";
   return {
     text: line,
     blocks: [

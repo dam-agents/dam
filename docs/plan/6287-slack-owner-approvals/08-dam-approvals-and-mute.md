@@ -17,10 +17,10 @@ Apply the `/typescript-engineering` skill.
 1. **Command.** Add `approvals` to the `/dam` commands: the subcommand list and menu in `packages/api-server/src/modules/channels/infrastructure/slack-command-menu.ts`, the dispatch in `slack.ts` (beside `unignore`), and the usage help, with the forms `approvals`, `approvals off` and `approvals on`.
    It works in any conversation, and its answer is always ephemeral, for the caller alone.
    Take the command's name from the brand config, as the other commands do.
-2. **Caller.** Resolve the caller with `identityLinks.resolve("slack", userId)` in the command's team.
+2. **Caller.** Resolve the caller with `identityLinks.resolve("slack", userId)`; the link has no team to pass.
    No link → a private answer that the login command links the account.
    The list covers the agents the caller owns; an editor's agents are not listed.
-3. **The set.** Add `ownerRequests.listWaiting(ownerSub)`: the owner's pending approvals of every type (the approvals service path behind `approvals.listForOwner`) and the questions that wait for the owner (the `ownerQuestions` set `attention-service.ts` reads), newest first.
+3. **The set.** Add `waitingFor(ownerSub)` to the approvals ports and to the question ports: the owner's pending approvals of every type (the repository read behind `approvals.listForOwner`) and the questions that wait for the owner (the read behind the `ownerQuestions` set `attention-service.ts` reads), newest first.
    Group network approvals of one agent and host as the background card's host rows do.
 4. **Render.** Build one ephemeral message:
    - a header with the count, or "Nothing waits for you.";
@@ -31,7 +31,7 @@ Apply the `/typescript-engineering` skill.
    Check that `handleMessageAction` gets the message `ts` of an ephemeral post (`container.message_ts`).
    An ephemeral message changes only through a `response_url`, and Slack lets one `response_url` be used five times within 30 minutes.
    Each click carries its own `response_url`, and the refresh uses that one; check on the local cluster that six clicks in a row on one list still refresh it, and post a new private list when a refresh fails.
-6. **Turn cards off and on.** Store the caller's choice per owner in the channels module (a column on a channels-owned per-owner table, with a migration).
+6. **Turn cards off and on.** Store the caller's choice per owner in the channels module (a new table `owner_request_mutes`, because no channels-owned per-owner table exists, with a migration).
    `canCard` of [01](./01-one-hold-decision.md) reads it and returns `muted`, so a muted owner is treated like an unlinked one: a new Slack-turn request is refused at once, and no new card goes out.
    - `approvals off`: store it; keep each card that still has a waiting request until the request settles, so a held turn keeps its card; close every other open card of the caller with "You turned cards off"; answer privately how to turn them back on;
    - `approvals on`: clear it, and answer privately that cards are on;

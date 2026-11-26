@@ -241,6 +241,7 @@ export interface OwnerQuestionData {
 export interface OwnerQuestionPorts {
   view(runId: string): Promise<OwnerQuestionData | null>;
   open(limit: number): Promise<string[]>;
+  waitingFor(ownerSub: string): Promise<string[]>;
   answer(input: {
     runId: string;
     text: string;
@@ -248,7 +249,7 @@ export interface OwnerQuestionPorts {
   }): Promise<"applied" | "not-actionable">;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the owner's Slack cards need of sub-agent questions: a question by its run, the questions that still wait, and the owner's answer, which goes through the same delegation control as an answer in the web, run as the owner, so the first answer counts wherever it comes from.
+// UNIT_BOUNDARY_DESCRIPTION: what the owner's Slack cards need of sub-agent questions: a question by its run, the questions that still wait, those of one owner newest first, and the owner's answer, which goes through the same delegation control as an answer in the web, run as the owner, so the first answer counts wherever it comes from.
 export function composeOwnerQuestionPorts(opts: {
   db: Db;
   agentsFor: (owner: string) => AgentsService;
@@ -289,6 +290,17 @@ export function composeOwnerQuestionPorts(opts: {
       return (await repo.listAsking(limit)).flatMap((row) =>
         row.runId ? [row.runId] : [],
       );
+    },
+
+    async waitingFor(ownerSub) {
+      return (await repo.listAskingByOwner(ownerSub))
+        .flatMap((row) =>
+          row.runId
+            ? [{ runId: row.runId, at: row.completedAt?.getTime() ?? 0 }]
+            : [],
+        )
+        .sort((a, b) => b.at - a.at)
+        .map((row) => row.runId);
     },
 
     async answer({ runId, text, ownerSub }) {

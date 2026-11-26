@@ -11,6 +11,7 @@ export {
   ownerRequestCards,
   ownerRequestCardItems,
   ownerRequestDismissals,
+  ownerRequestMutes,
   slackUntaggedReplyNotes,
   publicImageUrls,
   telegramConversations,

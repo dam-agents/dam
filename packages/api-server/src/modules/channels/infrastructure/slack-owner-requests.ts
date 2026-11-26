@@ -3,12 +3,13 @@ import { formatError } from "../../../core/format-error.js";
 import {
   DISMISS_DAYS,
   cardMetadata,
+  closedCard,
+  isRuleKind,
   lateAllowReply,
   ownerCard,
   rowOffersRule,
   rowWaits,
   threadLine,
-  unlinkedCard,
   type CardRow,
   type OwnerCardKind,
   type OwnerAnswer,
@@ -19,7 +20,12 @@ import {
 import {
   answerFromFields,
   questionCard,
+  type OwnerQuestionView,
 } from "../domain/owner-question-card.js";
+import {
+  approvalsList,
+  type ApprovalsListEntry,
+} from "../domain/owner-approvals-list.js";
 import type {
   OwnerCard,
   OwnerCardItem,
@@ -36,6 +42,7 @@ export interface OwnerRequestPortsForSlack {
   refuseUnreachable(id: string): Promise<boolean>;
   anyoneWaits(id: string): Promise<boolean>;
   waiting(input: { since: Date; limit: number }): Promise<string[]>;
+  waitingFor(ownerSub: string): Promise<string[]>;
   releaseTurnWaits(
     agentId: string,
     release: { turnStartedAt: number; sessionIds: string[] },
@@ -54,7 +61,7 @@ export type DecidedAnswer = Exclude<OwnerAnswer, "dismiss">;
 
 export type DecideResult = "applied" | "not-actionable" | "conflict";
 
-// UNIT_BOUNDARY_DESCRIPTION: what the question cards read of sub-agent questions, by the asking run's id: the question as it stands, the questions that still wait, and the owner's answer through the delegation control the web uses.
+// UNIT_BOUNDARY_DESCRIPTION: what the question cards read of sub-agent questions, by the asking run's id: the question as it stands, the questions that still wait, those of one owner, and the owner's answer through the delegation control the web uses.
 export interface OwnerQuestionPortsForSlack {
   view(runId: string): Promise<{
     runId: string;
@@ -71,6 +78,7 @@ export interface OwnerQuestionPortsForSlack {
     answer: { text: string; by: "owner" | "default" } | null;
   } | null>;
   open(limit: number): Promise<string[]>;
+  waitingFor(ownerSub: string): Promise<string[]>;
   answer(input: {
     runId: string;
     text: string;
@@ -151,6 +159,7 @@ export function createSlackOwnerRequests(deps: {
   networkSettingsUrl: (agentId: string) => string;
   questions?: OwnerQuestionPortsForSlack;
   appUrl: string;
+  commandName: string;
 }) {
   const { cards } = deps.ports;
   let sweeping = false;
@@ -242,12 +251,11 @@ export function createSlackOwnerRequests(deps: {
     return deps.questions ? deps.questions.view(runId).catch(() => null) : null;
   }
 
-  async function renderQuestion(card: OwnerCard) {
-    const [item] = await cards.items(card.id);
-    if (!item) return null;
-    const q = await questionViewOf(item.requestId);
-    if (!q) return null;
-    return questionCard({
+  async function questionShown(
+    q: QuestionData,
+    answeredHere: boolean,
+  ): Promise<OwnerQuestionView> {
+    return {
       runId: q.runId,
       subAgentName: q.label ?? (await deps.agentName(q.invocationId)),
       driverName: await deps.agentName(q.driverAgentId),
@@ -257,7 +265,124 @@ export function createSlackOwnerRequests(deps: {
       answerBy: q.answerBy,
       status: q.status,
       answer: q.answer,
-      answeredHere: item.state === "answered",
+      answeredHere,
+    };
+  }
+
+  async function renderQuestion(card: OwnerCard) {
+    const [item] = await cards.items(card.id);
+    if (!item) return null;
+    const q = await questionViewOf(item.requestId);
+    if (!q) return null;
+    return questionCard(await questionShown(q, item.state === "answered"));
+  }
+
+  async function cardWaits(card: OwnerCard): Promise<boolean> {
+    if (card.kind === "question") {
+      const [item] = await cards.items(card.id);
+      const q = item ? await questionViewOf(item.requestId) : null;
+      return q?.status === "asking";
+    }
+    return (await rowsOf(card)).some((row) => rowWaits(row.view));
+  }
+
+  async function closeCard(
+    card: OwnerCard,
+    why: "unlinked" | "cards-off",
+  ): Promise<void> {
+    const gw = await deps.gateway();
+    if (gw && card.dmChannel && card.messageTs)
+      await gw
+        .updateMessage({
+          channel: card.dmChannel,
+          ts: card.messageTs,
+          ...closedCard({
+            kind: card.kind,
+            agentName: await deps.agentName(card.agentId),
+            appUrl: deps.appUrl,
+            why,
+          }),
+          metadata: cardMetadata(card.id),
+          teamId: card.teamId,
+        })
+        .catch((err: unknown) =>
+          getLogger().warn(
+            { card: card.id, why, error: formatError(err) },
+            "owner_request.close_edit_failed",
+          ),
+        );
+    await cards.close(card.id);
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: the owner's private list of every request that waits for them, newest first and grouped by agent, the way the web's approvals list has them: a network host or the web searches of one agent as one entry, as on the background card.
+  async function listMessage(ownerSub: string) {
+    const [ids, runIds, muted] = await Promise.all([
+      deps.ports.waitingFor(ownerSub).catch(() => []),
+      deps.questions
+        ? deps.questions.waitingFor(ownerSub).catch(() => [])
+        : Promise.resolve([]),
+      cards.isMuted(ownerSub).catch(() => false),
+    ]);
+    const timed: { agentId: string; at: number; entry: ApprovalsListEntry }[] =
+      [];
+    const hostRows = new Map<string, CardRow[]>();
+    for (const id of ids) {
+      const view = await deps.ports.view(id);
+      if (!view || view.status !== "pending" || view.ownerSub !== ownerSub)
+        continue;
+      const waits = await deps.ports.anyoneWaits(view.id).catch(() => true);
+      const row: CardRow = {
+        view: { ...view, agentName: await deps.agentName(view.agentId) },
+        nobodyWaits: !waits,
+        dismissed: false,
+        answeredHere: false,
+        deciderName: null,
+      };
+      const at = Date.parse(view.createdAt);
+      if (isRuleKind(row.view) && view.host !== null) {
+        const key = `${view.cardAgentId} ${view.host}`;
+        const known = hostRows.get(key);
+        if (known) {
+          known.push(row);
+          continue;
+        }
+        const rows = [row];
+        hostRows.set(key, rows);
+        timed.push({
+          agentId: view.cardAgentId,
+          at,
+          entry: { kind: "host", rows },
+        });
+        continue;
+      }
+      timed.push({
+        agentId: view.cardAgentId,
+        at,
+        entry: { kind: "request", row },
+      });
+    }
+    for (const runId of runIds) {
+      const q = await questionViewOf(runId);
+      if (!q || q.status !== "asking" || q.ownerSub !== ownerSub) continue;
+      timed.push({
+        agentId: q.driverAgentId,
+        at: Date.parse(q.askedAt),
+        entry: { kind: "question", view: await questionShown(q, false) },
+      });
+    }
+    timed.sort((a, b) => b.at - a.at);
+    const byAgent = new Map<string, ApprovalsListEntry[]>();
+    for (const { agentId, entry } of timed)
+      byAgent.set(agentId, [...(byAgent.get(agentId) ?? []), entry]);
+    const agents = [];
+    for (const [agentId, entries] of byAgent)
+      agents.push({ name: await deps.agentName(agentId), entries });
+    return approvalsList({
+      agents,
+      appUrl: deps.appUrl,
+      cardsOff: muted
+        ? { onCommand: `/${deps.commandName} approvals on` }
+        : null,
     });
   }
 
@@ -607,6 +732,13 @@ export function createSlackOwnerRequests(deps: {
   }
 
   async function sweepCard(card: OwnerCard): Promise<void> {
+    if (
+      (await cards.isMuted(card.ownerSub).catch(() => false)) &&
+      !(await cardWaits(card))
+    ) {
+      await closeCard(card, "cards-off");
+      return;
+    }
     const links = await workspaceLinks(card.ownerSub);
     const link = links.find((l) => l.teamId === card.teamId);
     if (
@@ -984,33 +1116,40 @@ export function createSlackOwnerRequests(deps: {
 
     async unlinked(input: { ownerSub: string; teamId: string }): Promise<void> {
       await withOwnerLock(input.ownerSub, async () => {
-        const gw = await deps.gateway();
         for (const card of await cards.openCardsInTeam(
           input.ownerSub,
           input.teamId,
-        )) {
-          if (gw && card.dmChannel && card.messageTs)
-            await gw
-              .updateMessage({
-                channel: card.dmChannel,
-                ts: card.messageTs,
-                ...unlinkedCard({
-                  kind: card.kind,
-                  agentName: await deps.agentName(card.agentId),
-                  appUrl: deps.appUrl,
-                }),
-                metadata: cardMetadata(card.id),
-                teamId: input.teamId,
-              })
-              .catch((err: unknown) =>
-                getLogger().warn(
-                  { card: card.id, error: formatError(err) },
-                  "owner_request.unlink_edit_failed",
-                ),
-              );
-          await cards.close(card.id);
-        }
+        ))
+          await closeCard(card, "unlinked");
       });
+    },
+
+    list(ownerSub: string) {
+      return listMessage(ownerSub);
+    },
+
+    // UNIT_BOUNDARY_DESCRIPTION: turns the owner's cards off: no new card goes out, and a new Slack-turn request is refused at once, because the owner's reach reads as muted. A card whose request still waits stays until the request settles, so a held turn keeps its card; every other open card closes at once, and the sweep closes the rest once they stop waiting.
+    async cardsOff(ownerSub: string): Promise<void> {
+      await cards.setMuted(ownerSub, true);
+      const counts = await withOwnerLock(ownerSub, async () => {
+        let closed = 0;
+        let kept = 0;
+        for (const card of await cards.openCardsOf(ownerSub)) {
+          if (await cardWaits(card)) {
+            kept++;
+            continue;
+          }
+          await closeCard(card, "cards-off");
+          closed++;
+        }
+        return { closed, kept };
+      });
+      getLogger().info({ ownerSub, ...counts }, "owner_request.cards_off");
+    },
+
+    async cardsOn(ownerSub: string): Promise<void> {
+      await cards.setMuted(ownerSub, false);
+      getLogger().info({ ownerSub }, "owner_request.cards_on");
     },
 
     async sweep(): Promise<void> {
@@ -1124,7 +1263,7 @@ export function createSlackOwnerRequests(deps: {
         );
         return;
       }
-      const parsed = answerFromFields(input.fields, q.options);
+      const parsed = answerFromFields(input.fields, q.options, input.runId);
       if ("hint" in parsed) {
         await note(parsed.hint);
         return;

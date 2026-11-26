@@ -14,6 +14,7 @@ export const OWNER_QUESTION_TEXT_ACTION = `${OWNER_REQUEST_ACTION_PREFIX}questio
 const OPTION_LABEL_MAX = 75;
 const OTHER = "other";
 const TEXT_MAX = 2900;
+const LIST_TEXT_MAX = 1000;
 
 export const ANSWER_HINT = "Pick an option or write an answer.";
 
@@ -49,16 +50,38 @@ function outcomeOf(view: OwnerQuestionView): string {
     : `Answered in the app: ${cut(answer.text, TEXT_MAX)}`;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the card of one sub-agent question in the owner's DM, which works like Claude's question UI: the options as a radio list with "Other", a text field for an answer of the owner's own, and "Send answer". An option longer than Slack shows is cut, and its index travels in its value, so the answer is the full option. Until the deadline the card says which default the sub-agent takes; once the question closed it says how. The question and the options show only as plain text.
-export function questionCard(view: OwnerQuestionView): {
+// UNIT_BOUNDARY_DESCRIPTION: the ids of a question form's fields. A card holds one question, so its ids are fixed; a list holds several, so each question's ids carry its run, and the fields of one are read apart from another's.
+function fieldIds(runId: string | null) {
+  const of = (id: string) => (runId === null ? id : `${id}:${runId}`);
+  return {
+    choice: of(OWNER_QUESTION_CHOICE_BLOCK),
+    text: of(OWNER_QUESTION_TEXT_BLOCK),
+  };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the card of one sub-agent question in the owner's DM, which works like Claude's question UI: the options as a radio list with "Other", a text field for an answer of the owner's own, and "Send answer". An option longer than Slack shows is cut, and its index travels in its value, so the answer is the full option. Until the deadline the card says which default the sub-agent takes; once the question closed it says how. The question and the options show only as plain text. In a list the form is shorter: the asker and the question share one block, the question is cut sooner, and its fields carry the run in their ids.
+export function questionCard(
+  view: OwnerQuestionView,
+  form: { inList: boolean } = { inList: false },
+): {
   text: string;
   blocks: SlackBlock[];
 } {
   const asker = `${view.driverName}'s sub-agent ${view.subAgentName} asks:`;
-  const head: SlackBlock[] = [
-    { type: "section", text: plainText(cut(asker, 300)) },
-    { type: "section", text: plainText(cut(view.question, TEXT_MAX)) },
-  ];
+  const ids = fieldIds(form.inList ? view.runId : null);
+  const head: SlackBlock[] = form.inList
+    ? [
+        {
+          type: "section",
+          text: plainText(
+            `${cut(asker, 300)}\n${cut(view.question, LIST_TEXT_MAX)}`,
+          ),
+        },
+      ]
+    : [
+        { type: "section", text: plainText(cut(asker, 300)) },
+        { type: "section", text: plainText(cut(view.question, TEXT_MAX)) },
+      ];
   if (view.status !== "asking")
     return {
       text: `${asker} ${cut(view.question, 200)}`,
@@ -72,7 +95,7 @@ export function questionCard(view: OwnerQuestionView): {
       ? [
           {
             type: "input",
-            block_id: OWNER_QUESTION_CHOICE_BLOCK,
+            block_id: ids.choice,
             optional: true,
             label: plainText("Your choice"),
             element: {
@@ -100,7 +123,7 @@ export function questionCard(view: OwnerQuestionView): {
       ...choice,
       {
         type: "input",
-        block_id: OWNER_QUESTION_TEXT_BLOCK,
+        block_id: ids.text,
         optional: true,
         label: plainText("Your answer"),
         element: {
@@ -156,21 +179,18 @@ function fieldOf(fields: unknown, block: string, action: string) {
     : undefined;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the owner's answer from a question card's fields when they pressed "Send answer": a picked option as its full text, found by its index; "Other" or no pick with text written as that text; nothing usable as the hint to give privately.
+// UNIT_BOUNDARY_DESCRIPTION: the owner's answer from a question's fields when they pressed "Send answer", on its card or in a list: a picked option as its full text, found by its index; "Other" or no pick with text written as that text; nothing usable as the hint to give privately.
 export function answerFromFields(
   fields: unknown,
   options: readonly string[],
+  runId: string,
 ): { text: string } | { hint: string } {
-  const picked = fieldOf(
-    fields,
-    OWNER_QUESTION_CHOICE_BLOCK,
-    OWNER_QUESTION_CHOICE_ACTION,
-  )?.selected_option?.value;
-  const typed = fieldOf(
-    fields,
-    OWNER_QUESTION_TEXT_BLOCK,
-    OWNER_QUESTION_TEXT_ACTION,
-  )?.value;
+  const field = (action: string, block: "choice" | "text") =>
+    fieldOf(fields, fieldIds(runId)[block], action) ??
+    fieldOf(fields, fieldIds(null)[block], action);
+  const picked = field(OWNER_QUESTION_CHOICE_ACTION, "choice")?.selected_option
+    ?.value;
+  const typed = field(OWNER_QUESTION_TEXT_ACTION, "text")?.value;
   const text = typeof typed === "string" ? typed.trim() : "";
   if (typeof picked === "string" && picked !== OTHER) {
     const option = options[Number(picked)];

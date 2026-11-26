@@ -1741,11 +1741,13 @@ export async function bootstrap() {
     delete: deleteIdentityLink(db),
   });
 
+  const ownerRequestCards = createOwnerRequestCardsRepository(db);
   const ownerCardReach = createOwnerCardReach({
     enabled: config.slackOwnerRequests,
     slackLinksOf: (ownerSub) =>
       identityLinkService.externalLinksOf("slack", ownerSub),
     installs: listSlackInstalls(db),
+    muted: (ownerSub) => ownerRequestCards.isMuted(ownerSub),
   });
 
   const pendingSlackOAuthFlows = createRedisTtlStore<SlackOAuthPending>(
@@ -2155,6 +2157,8 @@ export async function bootstrap() {
       ownerQuestionPorts ? ownerQuestionPorts.view(runId) : null,
     open: async (limit) =>
       ownerQuestionPorts ? ownerQuestionPorts.open(limit) : [],
+    waitingFor: async (ownerSub) =>
+      ownerQuestionPorts ? ownerQuestionPorts.waitingFor(ownerSub) : [],
     answer: async (input) =>
       ownerQuestionPorts ? ownerQuestionPorts.answer(input) : "not-actionable",
   };
@@ -2166,6 +2170,8 @@ export async function bootstrap() {
       ownerRequestPorts ? ownerRequestPorts.anyoneWaits(id) : false,
     waiting: async (input) =>
       ownerRequestPorts ? ownerRequestPorts.waiting(input) : [],
+    waitingFor: async (ownerSub) =>
+      ownerRequestPorts ? ownerRequestPorts.waitingFor(ownerSub) : [],
     releaseTurnWaits: (agentId, release) =>
       redisBus.publish(turnReleaseChannelOf(agentId), JSON.stringify(release)),
     decide: async ({ requestId, answer, ownerSub, slackUserId, teamId }) => {
@@ -2210,7 +2216,7 @@ export async function bootstrap() {
         throw err;
       }
     },
-    cards: createOwnerRequestCardsRepository(db),
+    cards: ownerRequestCards,
   };
 
   const slackWorker = slackGatewayFactory

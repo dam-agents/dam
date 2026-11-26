@@ -308,6 +308,11 @@ export const ownerRequestDismissals = pgTable(
   ],
 );
 
+export const ownerRequestMutes = pgTable("owner_request_mutes", {
+  ownerSub: text("owner_sub").primaryKey(),
+  mutedAt: timestamp("muted_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const publicImageUrls = pgTable("public_image_urls", {
   sha256: text("sha256").primaryKey(),
   url: text("url").notNull(),

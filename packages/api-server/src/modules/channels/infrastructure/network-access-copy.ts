@@ -25,7 +25,7 @@ const ASKS_THE_OWNER =
   "step, and tell the person who asked that the thread will say when the " +
   "owner allows it, and that they can then ask again.";
 
-// UNIT_BOUNDARY_DESCRIPTION: what a channel turn's agent reads about hosts, web searches and tool calls that need its owner's approval. On an addressed Slack turn of an owner who can get cards, the request goes to the owner in Slack and waits while the agent's tool waits, with no promised time; everywhere else it is refused at once and waits for the owner in the app. For an owner who has not linked Slack, the agent also says that the owner can answer such requests from Slack after linking with the login command.
+// UNIT_BOUNDARY_DESCRIPTION: what a channel turn's agent reads about hosts, web searches and tool calls that need its owner's approval. On an addressed Slack turn of an owner who can get cards, the request goes to the owner in Slack and waits while the agent's tool waits, with no promised time; everywhere else it is refused at once and waits for the owner in the app. For an owner who has not linked Slack, the agent also says that the owner can answer such requests from Slack after linking with the login command; for an owner who turned the cards off, that the owner does not take such requests in Slack now.
 export function channelNetworkAccessGuidance(
   brandName: string,
   ownerRequests?: { reach: OwnerRequestReach; loginCommand: string },
@@ -39,7 +39,13 @@ export function channelNetworkAccessGuidance(
         "answer such requests here in Slack after linking their Slack " +
         `account with \`${ownerRequests?.loginCommand ?? ""}\`.`,
     )
-    .with("muted", undefined, () => REFUSED_AT_ONCE(brandName))
+    .with(
+      "muted",
+      () =>
+        `${REFUSED_AT_ONCE(brandName)} Also say that the agent's owner does ` +
+        "not take such requests in Slack now.",
+    )
+    .with(undefined, () => REFUSED_AT_ONCE(brandName))
     .exhaustive();
   return ["<network-access>", body, "</network-access>"].join("\n");
 }
