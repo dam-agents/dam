@@ -48,13 +48,31 @@ Epics have no parent.
   Hard-wrapped bullets render as ragged, oddly indented text.
 - **"As a user" always.** A user story's role is always "a user" — never a narrower persona like "an operator", "a designer", or "a PM", even when the ask came from one person's workflow.
   A narrow role makes the issue read as if it only serves that group, and it narrows how the team scopes the work.
-- **State the problem, not the solution.** This holds hardest in the **title** — name the problem or the misbehaviour, never the fix.
-  "Network approval requests demand an answer before the user is ready" states a problem; "Add a dismiss button to approval toasts" prescribes an answer.
-  Watch for a title that commands a change: "add", "let users", "make it possible to", "support" all smuggle a solution into the one line everyone reads.
+- **State the problem, not the solution**, in the body.
+  The **Problem** section says what is wrong today, and that is the only place it goes: the title says what is wanted — see [Titles](#titles).
   A prescribed fix constrains whoever picks the issue up; they should judge the approach themselves.
-  A **task** is the exception — the work itself is the point, so its title may name the work ("Upgrade the node runtime"); it still must not name a chosen implementation.
   **Goal** states the user-visible outcome, not the mechanism.
   Put a solution you have in mind under **Proposed solution**, with the reasoning, and leave the genuine alternatives in **Open Questions**.
+
+## Titles
+
+The title is the one line everyone reads: in a list, on the board, in a notification.
+Keep it short, and make it say what is wanted.
+
+- **Name what will be different when the issue is closed**, in about ten words.
+  Start with a verb, or with the thing that changes: "Narrow a GitHub connection per agent", "A link to a deleted App says the App is gone".
+- **Do not describe today's state.** A sentence about what is wrong reads the same as a sentence about what is wanted, so nobody scanning a list can tell which one it is.
+  What is wrong today goes in the **Problem** section.
+- **One clause.** A title that needs "and", "so" or a comma is doing the body's job.
+  Cut the reason and the consequence; the body has them.
+- **The outcome, not the implementation.** "Dismiss a network approval request without answering it" leaves the approach open; "Add a dismiss button to approval toasts" picks one.
+- **By type:** a feature or an epic names the outcome, a **task** names the work ("Upgrade the node runtime"), a **bug** names the misbehaviour ("Run Now refuses on the first press after an image update"), and a **research task** asks the question.
+
+| Instead of                                                                                        | Write                                                        |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| An agent created by another agent shows up as one of three special kinds, not as an agent         | Show a sub-agent as an ordinary agent under its creator      |
+| Two agents that need different GitHub repositories need two connections                           | Narrow a GitHub connection per agent                         |
+| The agent settings page does not show which settings change one agent and which change all agents | Show which agent settings are global and which are per agent |
 
 ## Acceptance criteria
 
@@ -122,8 +140,8 @@ Only the people in a DM can open its link, so this tells the team who can:
 
 ## Templates
 
-Every template starts with a **Title** — short, declarative, no jargon; names the problem, not the component and not the fix, except in a **task**, whose title may name the work (see **State the problem, not the solution** above).
-Prefix the title with `UI - ` when the problem is in the web UI (e.g. `UI - A long artifact is unreadable in the chat view's narrow column`) — that prefix is how the board groups UI work.
+Every template starts with a **Title** — about ten words, no jargon, saying what is wanted (see [Titles](#titles)).
+Prefix the title with `UI - ` when the change is in the web UI (e.g. `UI - Make a long artifact readable in the chat view's narrow column`) — that prefix is how the board groups UI work.
 Every template then leads with **Context** — why we're here, what led to this.
 Features, tasks, bugs, and research tasks may carry an **Epic** line; it's metadata for the draft, not part of the issue body — the epic link is applied when the issue is filed.
 Every template ends with **Follow up** when the issue came from user feedback in Slack (see [Follow up](#follow-up)), then the **Filed by** footer, unless the account you file as belongs to the person who asked — see [Attribution](#attribution).
@@ -135,7 +153,7 @@ It should make sense to anyone on the team.
 The **Problem** is the most important part — spend the effort there.
 
 ```markdown
-**Title:** Epic - <the value delivered, short and declarative>
+**Title:** Epic - <the value delivered, in a few words>
 
 ## Context
 
@@ -176,10 +194,10 @@ The **Problem** describes what's wrong or missing today from the user's point of
 The **Goal** is what success looks like as user-visible outcome.
 The **User Stories** break the goal into the concrete things different users want to do and why.
 Keep it problem-first: if you have a solution in mind, put it under **Proposed solution** and explain the reasoning — otherwise leave it open.
-A feature is the type most likely to name a solution in its title; write the title from the **Problem**, not from the fix.
+A feature is the type most likely to name an implementation in its title; write the title from the **Goal**, not from the mechanism.
 
 ```markdown
-**Title:** <`UI - ` if the web UI; then short, declarative — the problem the user has, not the feature that fixes it>
+**Title:** <`UI - ` if the web UI; then about ten words — what the user can do or see when it is done, not how it is built>
 **Epic:** <#NNN — epic title, if one clearly fits>
 
 ## Context
@@ -235,7 +253,7 @@ A task states the work and what it unblocks.
 It's the one type where naming engineering work is expected — keep it as plain as the work allows.
 
 ```markdown
-**Title:** <`UI - ` if the web UI; then short, declarative — the work needed, not a chosen implementation>
+**Title:** <`UI - ` if the web UI; then about ten words — the work needed, not a chosen implementation>
 **Epic:** <#NNN — epic title, if one clearly fits>
 
 ## Context
@@ -273,7 +291,7 @@ Lead with observed vs. expected behavior.
 Reproduction steps should be minimal and numbered.
 
 ```markdown
-**Title:** <`UI - ` if the web UI; then short, declarative — the misbehavior, not the suspected cause>
+**Title:** <`UI - ` if the web UI; then about ten words — the misbehavior, not the suspected cause>
 **Epic:** <#NNN — epic title, if one clearly fits>
 
 ## Context
@@ -315,7 +333,7 @@ A research task defines what we need to learn and why, before committing to buil
 The value is the knowledge it produces, so it's done when it produces an answer someone can act on — not when "research happened."
 
 ```markdown
-**Title:** <`UI - ` if the web UI; then short, declarative — the question, not the answer>
+**Title:** <`UI - ` if the web UI; then about ten words — the question, not the answer>
 **Epic:** <#NNN — epic title, if one clearly fits>
 
 ## Context
