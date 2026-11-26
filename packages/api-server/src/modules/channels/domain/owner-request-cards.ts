@@ -76,6 +76,7 @@ export interface OwnerRequestView {
   summary: string;
   host: string | null;
   expiresAt: string;
+  resolvedAt: string | null;
   verdict: "allow_once" | "allow" | "deny_once" | "deny" | null;
   decidedBy: string | null;
   call: {
@@ -115,6 +116,8 @@ export interface CardRow {
   view: OwnerRequestView;
   nobodyWaits: boolean;
   dismissed: boolean;
+  answeredHere: boolean;
+  deciderName: string | null;
 }
 
 export function cut(text: string, max: number): string {
@@ -170,9 +173,12 @@ export function fallbackRow(row: CardRow, appUrl: string): SlackBlock[] {
   ];
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the outcome line of a settled request, in the owner's words: what the answer was and who gave it, that the owner dismissed its host, that the request expired, or that the card could not reach the owner.
-export function outcomeLine(view: OwnerRequestView, dismissed = false): string {
-  if (dismissed) return `Dismissed for ${DISMISS_DAYS} days`;
+// UNIT_BOUNDARY_DESCRIPTION: the outcome line of a settled request, in the owner's words: what the answer was and who gave it, "by you" for the owner's click on a card and "in the app by <name>" for any other answer; that the owner dismissed its host; that the request expired; or that the card could not reach the owner.
+export function outcomeLine(
+  row: Pick<CardRow, "view"> & Partial<Omit<CardRow, "view">>,
+): string {
+  const { view } = row;
+  if (row.dismissed) return `Dismissed for ${DISMISS_DAYS} days`;
   if (view.status === "expired")
     return view.kind === "mcp_tool_call"
       ? "Expired: the call was refused"
@@ -181,14 +187,31 @@ export function outcomeLine(view: OwnerRequestView, dismissed = false): string {
         : "Expired: the request was refused";
   if (view.decidedBy === "system:owner-unreachable")
     return "Refused: the card could not reach you";
-  const who = view.decidedBy === view.ownerSub ? "by you" : "in the app";
   const answer = {
     allow_once: "Allowed once",
     allow: "Always allowed",
     deny_once: "Denied",
     deny: "Always denied",
   }[view.verdict ?? "deny_once"];
-  return `${answer} ${who}`;
+  if (row.answeredHere) return `${answer} by you`;
+  if (view.decidedBy?.startsWith("system:")) return `${answer} automatically`;
+  const who =
+    view.decidedBy === view.ownerSub ? "you" : (row.deciderName ?? "an editor");
+  return `${answer} in the app by ${who}`;
+}
+
+export function rowWaits(view: OwnerRequestView): boolean {
+  return view.status === "pending" && view.refusedIn === null;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a row still offers a rule button: a network or web-search request that expired or that the gate refused at once, and that the owner neither answered nor dismissed.
+export function rowOffersRule(row: CardRow): boolean {
+  return (
+    !row.dismissed &&
+    row.view.status !== "resolved" &&
+    (row.view.kind === "ext_authz" || row.view.kind === "web_search") &&
+    !rowWaits(row.view)
+  );
 }
 
 const REFUSED_IN: Record<NonNullable<OwnerRequestView["refusedIn"]>, string> = {
@@ -202,7 +225,7 @@ const NOBODY_WAITS =
   "Nobody waits for this now. Your answer counts for the next try.";
 
 function isWaiting(view: OwnerRequestView): boolean {
-  return view.status === "pending" && view.refusedIn === null;
+  return rowWaits(view);
 }
 
 function isRuleKind(view: OwnerRequestView): boolean {
@@ -444,7 +467,7 @@ export function networkRow(row: CardRow, appUrl: string): SlackBlock[] {
     return [
       { type: "section", text: plainText(cut(requestLine(view), SUMMARY_MAX)) },
       ...contextOf([
-        view.refusedIn ? REFUSED_IN[view.refusedIn] : outcomeLine(view),
+        view.refusedIn ? REFUSED_IN[view.refusedIn] : outcomeLine(row),
       ]),
       {
         type: "actions",
@@ -503,7 +526,7 @@ export function hostRow(
     const last = rows.at(-1)!;
     return [
       { type: "section", text: plainText(cut(title, SUMMARY_MAX)) },
-      ...contextOf([outcomeLine(last.view, last.dismissed)]),
+      ...contextOf([outcomeLine(last)]),
     ];
   }
   const waiting = open.filter((row) => isWaiting(row.view));
@@ -543,7 +566,7 @@ export function hostRow(
       ...(search && waiting.length > 0 ? [followUpLine(first)] : []),
       ...(from ? [from] : []),
       ...(waiting.length === 0
-        ? [refused ? REFUSED_IN[refused] : outcomeLine(open.at(-1)!.view)]
+        ? [refused ? REFUSED_IN[refused] : outcomeLine(open.at(-1)!)]
         : []),
     ]),
     ...(waiting.length > 0 ? [waitLine(waiting)] : []),
@@ -623,7 +646,7 @@ function settledRow(row: CardRow): SlackBlock[] {
     },
     {
       type: "context",
-      elements: [plainText(outcomeLine(row.view, row.dismissed))],
+      elements: [plainText(outcomeLine(row))],
     },
   ];
 }
@@ -859,6 +882,53 @@ export function threadLine(input: {
     text: "The wait ended.",
     blocks: [
       { type: "section", text: { type: "mrkdwn", text: "The wait ended." } },
+    ],
+  };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the reply the app posts in a thread after the owner allowed a request that nobody waited for any more, because Slack sends no notice for an edit: it mentions the people whose messages the turn carried and says by when to ask again for an approve once, or to ask again for a rule.
+export function lateAllowReply(input: {
+  ownerName: string;
+  askers: readonly string[];
+  askBy: string | null;
+}): { text: string; blocks: SlackBlock[] } {
+  const mentions = input.askers.map((user) => `<@${user}>`).join(" ");
+  const owner = escapeMrkdwn(input.ownerName);
+  const next = input.askBy
+    ? `Ask again by ${slackDate(input.askBy)}.`
+    : "Ask again to use it.";
+  const text = `${input.ownerName} allowed it. ${input.askBy ? "Ask again soon." : "Ask again to use it."}`;
+  return {
+    text,
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `${mentions ? `${mentions} ` : ""}${owner} allowed it. ${next}`,
+        },
+      },
+    ],
+  };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what an owner's card becomes when they unlink Slack in its workspace: its header, and that they answer its requests in the app from now on.
+export function unlinkedCard(input: {
+  kind: OwnerCardKind;
+  agentName: string;
+  appUrl: string;
+}): { text: string; blocks: SlackBlock[] } {
+  const header =
+    input.kind === "turn"
+      ? `${input.agentName} waits in Slack`
+      : `${input.agentName} needs you`;
+  const line = "Slack was unlinked: answer in the app";
+  return {
+    text: line,
+    blocks: [
+      { type: "header", text: plainText(cut(header, 150)) },
+      { type: "section", text: plainText(line) },
+      { type: "actions", elements: [openInAppButton(input.appUrl)] },
     ],
   };
 }

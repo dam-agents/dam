@@ -1170,6 +1170,13 @@
       "when": 1795691281043,
       "tag": "0166_owner_request_cards",
       "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1795701875645,
+      "tag": "0167_owner_request_card_lifecycle",
+      "breakpoints": true
     }
   ]
 }

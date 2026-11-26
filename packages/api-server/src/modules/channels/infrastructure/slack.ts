@@ -1158,6 +1158,8 @@ export interface SlackWorker extends ChannelWorker, AddressedWorker {
   connect(): Promise<void>;
   placeOwnerRequest(approvalId: string): Promise<{ placed: number }>;
   ownerRequestWaitChanged(approvalId: string): Promise<void>;
+  settleOwnerRequest(approvalId: string): Promise<void>;
+  ownerRequestSweep(): Promise<void>;
   conversationStanding(
     slackChannelId: string,
     teamId: SlackWorkspace,
@@ -1672,6 +1674,7 @@ export type SlackWorkerDeps = {
   attendance: ChannelTurnAttendance;
   ownerRequestReach?: (agentId: string) => Promise<OwnerRequestReach>;
   ownerRequests?: OwnerRequestPortsForSlack;
+  ownerRequestHoldMs?: number;
   workspaceFiles: AgentWorkspaceFilesFactory;
   listWorkspaces: () => Promise<SlackWorkspace[]>;
   emit?: (event: DomainEvent) => void;
@@ -5112,6 +5115,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         }
 
         await identityLinks.unlink("slack", command.userId);
+        await ownerRequestCards
+          ?.unlinked({ ownerSub: existing, teamId: command.teamId })
+          .catch((err: unknown) =>
+            getLogger().warn(
+              { error: formatError(err) },
+              "owner_request.unlink_failed",
+            ),
+          );
         await ack({ text: "Account unlinked." });
       })
       .with("bind", async () => {
@@ -9191,6 +9202,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         subOf: (slackUserId) => identityLinks.resolve("slack", slackUserId),
         ephemeral: (channel, user, threadTs, text, teamId) =>
           ephemeral(channel, user, threadTs, text, teamId),
+        userName: ownerDisplayName,
+        holdWindowMs: deps.ownerRequestHoldMs ?? 30 * 60 * 1000,
         appUrl: `${uiBaseUrl}/`,
       })
     : null;
@@ -9204,6 +9217,21 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     async ownerRequestWaitChanged(approvalId) {
       await ownerRequestCards?.waitChanged(approvalId);
+    },
+
+    async settleOwnerRequest(approvalId) {
+      await ownerRequestCards?.settle(approvalId);
+    },
+
+    async ownerRequestSweep() {
+      void ownerRequestCards
+        ?.sweep()
+        .catch((err: unknown) =>
+          getLogger().warn(
+            { error: formatError(err) },
+            "owner_request.sweep_failed",
+          ),
+        );
     },
 
     type: ChannelType.Slack,

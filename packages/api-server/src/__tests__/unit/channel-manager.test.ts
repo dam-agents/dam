@@ -65,6 +65,8 @@ function fakeSlackWorker(): SlackWorker {
     notifyPerson: vi.fn(async () => ({ sent: 1 })),
     placeOwnerRequest: vi.fn(async () => ({ placed: 0 })),
     ownerRequestWaitChanged: vi.fn(async () => {}),
+    settleOwnerRequest: vi.fn(async () => {}),
+    ownerRequestSweep: vi.fn(async () => {}),
   };
 }
 

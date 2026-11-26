@@ -259,6 +259,7 @@ export const ownerRequestCards = pgTable(
     lastChange: timestamp("last_change", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    sealedAt: timestamp("sealed_at", { withTimezone: true }),
     closedAt: timestamp("closed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -267,7 +268,9 @@ export const ownerRequestCards = pgTable(
   (table) => [
     uniqueIndex("owner_request_cards_open_idx")
       .on(table.ownerSub, table.agentId, table.teamId, table.kind)
-      .where(sql`closed_at IS NULL AND kind IN ('turn', 'background')`),
+      .where(
+        sql`closed_at IS NULL AND sealed_at IS NULL AND kind IN ('turn', 'background')`,
+      ),
     index("owner_request_cards_owner_idx").on(table.ownerSub, table.closedAt),
   ],
 );
@@ -432,6 +435,11 @@ export const pendingApprovals = pgTable(
     index("pending_approvals_undelivered_idx")
       .on(table.resolvedAt)
       .where(sql`status = 'resolved' AND delivered_at IS NULL`),
+    index("pending_approvals_route_status_idx").on(
+      table.ownerRoute,
+      table.status,
+      table.createdAt,
+    ),
   ],
 );
 

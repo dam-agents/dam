@@ -24,6 +24,7 @@ export interface OwnerRequestViewData {
   summary: string;
   host: string | null;
   expiresAt: string;
+  resolvedAt: string | null;
   verdict: ApprovalVerdict | null;
   decidedBy: string | null;
   call: {
@@ -126,11 +127,11 @@ function startOfDay(now: Date): Date {
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the approvals module gives the Slack cards of owner requests: a view of one routed request in the platform's own words, the refusal of a `turn` request whose card cannot reach its owner (denied as the system, so the thread does not wait for a card that never comes), and whether any held request still waits for an answer.
+// UNIT_BOUNDARY_DESCRIPTION: what the approvals module gives the Slack cards of owner requests: a view of one routed request in the platform's own words, the refusal of a `turn` request whose card cannot reach its owner (denied as the system, so the thread does not wait for a card that never comes), whether any held request still waits for an answer, and the routed requests that still wait, bounded by age, for the sweep.
 export function createOwnerRequestPorts(deps: {
   repo: Pick<
     ApprovalsRepository,
-    "getPending" | "resolvePending" | "countSince"
+    "getPending" | "resolvePending" | "countSince" | "listPendingRouted"
   >;
   waiters: HoldWaiters;
   promotionRulesOf: (
@@ -180,6 +181,7 @@ export function createOwnerRequestPorts(deps: {
         summary: summaryOf(row),
         host: hostOf(row),
         expiresAt: row.expiresAt.toISOString(),
+        resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,
         verdict: row.verdict,
         decidedBy: row.decidedBy,
         call: callOf(row),
@@ -230,6 +232,10 @@ export function createOwnerRequestPorts(deps: {
 
     async anyoneWaits(id: string): Promise<boolean> {
       return (await deps.waiters.count(id)) > 0;
+    },
+
+    waiting(input: { since: Date; limit: number }): Promise<string[]> {
+      return deps.repo.listPendingRouted(input);
     },
   };
 }

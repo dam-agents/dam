@@ -17,9 +17,9 @@ Apply the `/typescript-engineering` skill.
    Add the field, or the event, where one is missing.
 2. **Close the items.** Add a channel RPC method (beside the place method of [02](./02-card-base.md)) that settles the items of one request on every card that holds them, under the same per-owner lock:
    - an MCP row or a call card → the outcome line; the arguments leave Slack;
-   - a network or web-search row of a turn card → the outcome line when a verdict ended it; when it expired, "Expired: the call was refused" as a rule row of [04](./04-network-and-web-search-cards.md); the path's query string leaves Slack;
+   - a network or web-search row of a turn card → the outcome line when a verdict ended it; when it expired, "Expired: the request was refused" (or "… the search …") as a rule row of [04](./04-network-and-web-search-cards.md); the path's query string leaves Slack;
    - a host row of a background card → a rule row when its last waiting request expired, or the outcome line when a verdict ended it;
-   - a turn card with no waiting row takes no new rows: it closes when none of its rows offers a rule, else 24 hours after its last row settled;
+   - a turn card with no waiting row is sealed and takes no new rows: it closes when none of its rows offers a rule, else 24 hours after its last row settled;
    - the thread lines of [02](./02-card-base.md): when every row a line covered has settled, the line changes to "The wait ended."; while one is still pending, the line keeps the went-on text of [02](./02-card-base.md), also after the turn ended;
    - a late allow: when a verdict allows a row whose wait count of [01](./01-one-hold-decision.md) is zero (its requests stopped waiting: the tool gave up, Stop, or "Don't wait"), the app posts one new reply in each thread whose line shows the went-on text, because Slack sends no notice for an edit: it mentions the people whose messages the turn carried, and says "<owner's display name> allowed it.
      Ask again by <time>."
@@ -31,7 +31,7 @@ Apply the `/typescript-engineering` skill.
      Log one line per settled item (illustrative `owner_request.card_settled`: card, request, how it settled, who and where — Slack, the web, expiry or Stop —, whether a request still waited when it settled, whether its thread had pressed "Don't wait", and the delay since the post), never the request's content.
      The share of requests that the owner allows after nobody waited any more tells whether a turn that resumes by itself is worth building.
 3. **Who decided, in words.** The click path of [03](./03-mcp-tool-call-cards.md) settles the request's items itself after its `decide` wins, with "… by you".
-   Any other settle reaches the saga, which writes "Answered in the app by <name>" (the decider's display name; "you" when it is the owner), "Expired: the call was refused", or the denial line.
+   Any other settle reaches the saga, which writes the verdict "in the app by <name>" (the decider's display name; "you" when it is the owner), such as "Allowed once in the app by Jana", the expiry line, or the denial line.
    An item already settled is left alone, so the two paths never fight.
 4. **Several workspaces.** An owner linked in two workspaces has one card per workspace; a click on one settles the items on both.
 5. **Unlinking.** When an owner's Slack identity link in a workspace is removed (`/dam logout`, or the unlink in the web), close the owner's cards in that workspace with "Slack was unlinked: answer in the app"; their requests stay pending on Home.

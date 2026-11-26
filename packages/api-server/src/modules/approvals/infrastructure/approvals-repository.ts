@@ -70,6 +70,8 @@ export interface ApprovalsRepository {
     agentId: string;
     key: string;
   }): Promise<PendingApprovalRow | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: the ids of routed approvals that still wait and have not expired, filed since a time, oldest first and at most `limit`, for the sweep that keeps the owner's Slack cards true. */
+  listPendingRouted(input: { since: Date; limit: number }): Promise<string[]>;
   /* UNIT_BOUNDARY_DESCRIPTION: how many approvals of one type an agent filed since a time, in every state: for a network request only those of one host, for a web search all of them. A request that joined a waiting approval filed none, so it does not count. */
   countSince(input: {
     agentId: string;
@@ -123,9 +125,14 @@ export interface ApprovalsRepository {
     limit: number;
   }): Promise<PendingApprovalRow[]>;
   expirePending(id: string, opts?: { onlyIfDue?: boolean }): Promise<boolean>;
-  expireOverdue(
-    now: Date,
-  ): Promise<Array<{ id: string; agentId: string; ownerSub: string }>>;
+  expireOverdue(now: Date): Promise<
+    Array<{
+      id: string;
+      agentId: string;
+      ownerSub: string;
+      ownerRoute: OwnerRoute | null;
+    }>
+  >;
   deleteForAgent(agentId: string): Promise<void>;
   listDistinctAgentIds(): Promise<string[]>;
 }
@@ -360,6 +367,23 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
         .orderBy(desc(pendingApprovals.createdAt))
         .limit(1);
       return rows.length ? toPendingRow(rows[0] as RawPending) : null;
+    },
+
+    async listPendingRouted({ since, limit }) {
+      const rows = await db
+        .select({ id: pendingApprovals.id })
+        .from(pendingApprovals)
+        .where(
+          and(
+            inArray(pendingApprovals.ownerRoute, ["turn", "background"]),
+            eq(pendingApprovals.status, "pending"),
+            sql`${pendingApprovals.createdAt} >= ${since.toISOString()}::timestamptz`,
+            sql`${pendingApprovals.expiresAt} > now()`,
+          ),
+        )
+        .orderBy(asc(pendingApprovals.createdAt))
+        .limit(limit);
+      return rows.map((row) => row.id);
     },
 
     async countSince({ agentId, type, host, since }) {
@@ -634,8 +658,12 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
           id: pendingApprovals.id,
           agentId: pendingApprovals.agentId,
           ownerSub: pendingApprovals.ownerSub,
+          ownerRoute: pendingApprovals.ownerRoute,
         });
-      return rows;
+      return rows.map((row) => ({
+        ...row,
+        ownerRoute: row.ownerRoute as OwnerRoute | null,
+      }));
     },
 
     async deleteForAgent(agentId) {

@@ -30,6 +30,7 @@ function emitResolved(row: PendingApprovalRow, verdict: ApprovalVerdict): void {
     row.payload.forAgentId
       ? { forAgentId: row.payload.forAgentId }
       : {}),
+    ...(row.ownerRoute ? { ownerRoute: row.ownerRoute } : {}),
   });
 }
 

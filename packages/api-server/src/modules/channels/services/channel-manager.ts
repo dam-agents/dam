@@ -174,6 +174,8 @@ export interface ChannelManager {
   slackGrantedScopes(teamId: string): Promise<string[] | null>;
   placeOwnerRequest(approvalId: string): Promise<{ placed: number }>;
   ownerRequestWaitChanged(approvalId: string): Promise<void>;
+  settleOwnerRequest(approvalId: string): Promise<void>;
+  ownerRequestSweep(): Promise<void>;
   readThread(
     instanceName: string,
     channelType: ChannelType,
@@ -243,6 +245,8 @@ const METHOD_NAMES = [
   "slackGrantedScopes",
   "placeOwnerRequest",
   "ownerRequestWaitChanged",
+  "settleOwnerRequest",
+  "ownerRequestSweep",
   "notifyPerson",
 ] as const;
 
@@ -318,6 +322,8 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   slackGrantedScopes: z.tuple([z.string()]),
   placeOwnerRequest: z.tuple([z.string()]),
   ownerRequestWaitChanged: z.tuple([z.string()]),
+  settleOwnerRequest: z.tuple([z.string()]),
+  ownerRequestSweep: z.tuple([]),
   readThread: forInstance.rest(z.unknown()),
   readChannelHistory: forInstance.rest(z.unknown()),
   fetchAttachment: forInstance.rest(z.unknown()),
@@ -408,6 +414,8 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   slackGrantedScopes: z.array(z.string()).nullable(),
   placeOwnerRequest: z.object({ placed: z.number() }),
   ownerRequestWaitChanged: z.null(),
+  settleOwnerRequest: z.null(),
+  ownerRequestSweep: z.null(),
   readThread: z.union([threadResultSchema, z.object({ error: z.string() })]),
   readChannelHistory: z.union([
     channelHistoryResultSchema,
@@ -679,6 +687,14 @@ export function createChannelManager(deps: {
       await deps.slackWorker?.ownerRequestWaitChanged(approvalId);
       return null;
     },
+    settleOwnerRequest: async (approvalId: string) => {
+      await deps.slackWorker?.settleOwnerRequest(approvalId);
+      return null;
+    },
+    ownerRequestSweep: async () => {
+      await deps.slackWorker?.ownerRequestSweep();
+      return null;
+    },
     slackGrantedScopes: (teamId: string) =>
       deps.slackWorker
         ? deps.slackWorker.grantedScopesOf(teamId)
@@ -948,6 +964,18 @@ export function createChannelManager(deps: {
     async ownerRequestWaitChanged(approvalId) {
       await dispatch("ownerRequestWaitChanged", [approvalId], () =>
         explicitHandlers.ownerRequestWaitChanged(approvalId),
+      );
+    },
+
+    async settleOwnerRequest(approvalId) {
+      await dispatch("settleOwnerRequest", [approvalId], () =>
+        explicitHandlers.settleOwnerRequest(approvalId),
+      );
+    },
+
+    async ownerRequestSweep() {
+      await dispatch("ownerRequestSweep", [], () =>
+        explicitHandlers.ownerRequestSweep(),
       );
     },
 

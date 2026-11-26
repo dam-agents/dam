@@ -3,8 +3,12 @@ import { formatError } from "../../../core/format-error.js";
 import {
   DISMISS_DAYS,
   cardMetadata,
+  lateAllowReply,
   ownerCard,
+  rowOffersRule,
+  rowWaits,
   threadLine,
+  unlinkedCard,
   type CardRow,
   type OwnerCardKind,
   type OwnerAnswer,
@@ -14,6 +18,7 @@ import {
 } from "../domain/owner-request-cards.js";
 import type {
   OwnerCard,
+  OwnerCardItem,
   OwnerRequestCardsRepository,
 } from "./owner-request-cards-repository.js";
 import type {
@@ -26,6 +31,7 @@ export interface OwnerRequestPortsForSlack {
   view(id: string): Promise<Omit<OwnerRequestView, "agentName"> | null>;
   refuseUnreachable(id: string): Promise<boolean>;
   anyoneWaits(id: string): Promise<boolean>;
+  waiting(input: { since: Date; limit: number }): Promise<string[]>;
   releaseTurnWaits(
     agentId: string,
     release: { turnStartedAt: number; sessionIds: string[] },
@@ -99,9 +105,12 @@ export function createSlackOwnerRequests(deps: {
     text: string,
     teamId: SlackWorkspace,
   ) => Promise<void>;
+  userName: (sub: string) => Promise<string | null>;
+  holdWindowMs: number;
   appUrl: string;
 }) {
   const { cards } = deps.ports;
+  let sweeping = false;
   const locks = new Map<string, Promise<unknown>>();
   const linedTurns = new Set<string>();
 
@@ -129,10 +138,22 @@ export function createSlackOwnerRequests(deps: {
         view.status === "pending"
           ? await deps.ports.anyoneWaits(view.id).catch(() => true)
           : false;
+      const answeredHere = item.state === "answered";
+      const decider = view.decidedBy;
+      const deciderName =
+        view.status === "resolved" &&
+        !answeredHere &&
+        decider !== null &&
+        decider !== view.ownerSub &&
+        !decider.startsWith("system:")
+          ? await deps.userName(decider).catch(() => null)
+          : null;
       rows.push({
         view: { ...view, agentName: await deps.agentName(view.agentId) },
         nobodyWaits: !waits,
         dismissed: item.state === "dismissed",
+        answeredHere,
+        deciderName,
       });
     }
     return rows;
@@ -376,6 +397,153 @@ export function createSlackOwnerRequests(deps: {
     if (changed) await cards.setThreads(card.id, card.threads);
   }
 
+  const FINAL_STATES: ReadonlySet<string> = new Set([
+    "settled",
+    "answered",
+    "dismissed",
+  ]);
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  type ItemOutcome = "answered" | "settled" | "dismissed";
+
+  function settledWhere(
+    view: Omit<OwnerRequestView, "agentName">,
+    outcome: ItemOutcome,
+  ): "slack" | "app" | "expiry" | "system" {
+    if (outcome !== "settled") return "slack";
+    if (view.status === "expired") return "expiry";
+    return view.decidedBy?.startsWith("system:") ? "system" : "app";
+  }
+
+  async function postLateAllow(
+    card: OwnerCard,
+    thread: OwnerCardThread,
+    view: Omit<OwnerRequestView, "agentName">,
+  ): Promise<void> {
+    const gw = await deps.gateway();
+    if (!gw) return;
+    const decided = view.resolvedAt ? Date.parse(view.resolvedAt) : Date.now();
+    const reply = lateAllowReply({
+      ownerName: await deps.ownerName(card.agentId, card.teamId),
+      askers: thread.askers,
+      askBy:
+        view.verdict === "allow_once"
+          ? new Date(decided + deps.holdWindowMs).toISOString()
+          : null,
+    });
+    await gw
+      .postMessage({
+        channel: thread.channelId,
+        threadTs: thread.threadTs,
+        ...reply,
+        metadata: cardMetadata(card.id),
+        teamId: thread.teamId,
+      })
+      .catch((err: unknown) =>
+        getLogger().warn(
+          { card: card.id, error: formatError(err) },
+          "owner_request.late_allow_failed",
+        ),
+      );
+  }
+
+  async function applyCloseRule(card: OwnerCard): Promise<void> {
+    if (card.kind === "background") return;
+    const rows = await rowsOf(card);
+    if (rows.some((row) => rowWaits(row.view))) return;
+    if (card.kind === "turn") {
+      await cards.seal(card.id);
+      if (rows.some(rowOffersRule)) return;
+    }
+    await cards.close(card.id);
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: settles one request's items on every card that holds them, under the owner's lock: the item's state, the card drawn again, the thread lines, the reply after a late allow, one log line, and the close rule. An item in a final state is left alone, so a click and the settle event never both edit a card; a card that cannot be edited keeps the item's old state, so the sweep tries again.
+  async function settleItems(
+    view: Omit<OwnerRequestView, "agentName">,
+    outcome: ItemOutcome,
+  ): Promise<void> {
+    const links = await workspaceLinks(view.ownerSub);
+    const allowed =
+      view.status === "resolved" &&
+      (view.verdict === "allow_once" || view.verdict === "allow");
+    for (const card of await cards.cardsOfRequest(view.id)) {
+      const item = (await cards.items(card.id)).find(
+        (it) => it.requestId === view.id,
+      );
+      if (!item || FINAL_STATES.has(item.state)) continue;
+      const next: OwnerCardItem["state"] =
+        outcome === "settled" &&
+        view.status === "expired" &&
+        (view.kind === "ext_authz" || view.kind === "web_search")
+          ? "rule"
+          : outcome;
+      if (item.state === next) continue;
+      const lateThreads =
+        card.kind === "turn" && allowed && item.state === "waiting"
+          ? card.threads.filter((t) => t.lineTs !== null && t.wentOnAt !== null)
+          : [];
+      await cards.setItemState(card.id, view.id, next);
+      const link = links.find((l) => l.teamId === card.teamId);
+      if (link && card.messageTs) {
+        const shown = await show(card, link, false);
+        if (shown === "failed" || shown === "unreachable") {
+          await cards.setItemState(card.id, view.id, item.state);
+          continue;
+        }
+      }
+      if (card.kind === "turn") {
+        await refreshLines(card);
+        for (const thread of lateThreads)
+          await postLateAllow(card, thread, view);
+      }
+      getLogger().info(
+        {
+          card: card.id,
+          kind: card.kind,
+          approvalId: view.id,
+          settled: view.status === "expired" ? "expired" : view.verdict,
+          where: settledWhere(view, outcome),
+          ...(card.kind === "turn"
+            ? {
+                waited: card.threads.some((t) => t.wentOnAt === null),
+                released: card.threads.some((t) => t.releasedAt !== null),
+                lateAllow: lateThreads.length > 0,
+              }
+            : {}),
+          delayMs: card.postedAt ? Date.now() - card.postedAt.getTime() : null,
+        },
+        "owner_request.card_settled",
+      );
+      await applyCloseRule(card);
+    }
+  }
+
+  async function sweepCard(card: OwnerCard): Promise<void> {
+    const links = await workspaceLinks(card.ownerSub);
+    const link = links.find((l) => l.teamId === card.teamId);
+    if (
+      !card.messageTs &&
+      link &&
+      Date.now() - card.createdAt.getTime() > 60_000
+    )
+      await show(card, link, false);
+    for (const item of await cards.items(card.id)) {
+      if (FINAL_STATES.has(item.state)) continue;
+      const view = await deps.ports.view(item.requestId);
+      if (!view || view.status === "pending") continue;
+      if (item.state === "rule" && view.status === "expired") continue;
+      await settleItems(view, "settled");
+    }
+    await applyCloseRule(card);
+    if (
+      card.kind !== "call" &&
+      Date.now() - card.lastChange.getTime() > DAY_MS &&
+      !(await rowsOf(card)).some((row) => rowWaits(row.view))
+    )
+      await cards.close(card.id);
+  }
+
   async function hostWaits(
     card: OwnerCard,
     host: string,
@@ -456,7 +624,7 @@ export function createSlackOwnerRequests(deps: {
     return shown === "posted" || shown === "edited";
   }
 
-  return {
+  const api = {
     async place(approvalId: string): Promise<{ placed: number }> {
       const view = await deps.ports.view(approvalId);
       if (!view || view.status !== "pending" || !view.route)
@@ -561,40 +729,66 @@ export function createSlackOwnerRequests(deps: {
       }
       const ownerSub = first.ownerSub;
       const mine = views.filter((view) => view.ownerSub === ownerSub);
-      const results: DecideResult[] = [];
-      for (const view of mine) {
-        const verdict: DecidedAnswer | null =
-          input.answer !== "dismiss"
-            ? input.answer
-            : view.status === "pending" && view.refusedIn === null
-              ? "deny-once"
-              : null;
-        if (verdict === null) continue;
-        results.push(
-          await deps.ports
-            .decide({
-              requestId: view.id,
-              answer: verdict,
-              ownerSub,
-              slackUserId: input.slackUserId,
-              teamId: input.teamId,
-            })
-            .catch((err: unknown): DecideResult => {
-              getLogger().warn(
-                { approvalId: view.id, error: formatError(err) },
-                "owner_request.decide_failed",
-              );
-              return "not-actionable";
-            }),
-        );
-      }
-      if (input.answer === "dismiss" && first.host !== null)
-        await cards.dismiss({
-          ownerSub,
-          agentId: first.agentId,
-          host: first.host,
-          until: new Date(Date.now() + DISMISS_DAYS * 24 * 60 * 60 * 1000),
-        });
+      const results = await withOwnerLock(ownerSub, async () => {
+        const decided: { view: typeof first; result: DecideResult }[] = [];
+        for (const view of mine) {
+          const verdict: DecidedAnswer | null =
+            input.answer !== "dismiss"
+              ? input.answer
+              : view.status === "pending" && view.refusedIn === null
+                ? "deny-once"
+                : null;
+          if (verdict === null) continue;
+          decided.push({
+            view,
+            result: await deps.ports
+              .decide({
+                requestId: view.id,
+                answer: verdict,
+                ownerSub,
+                slackUserId: input.slackUserId,
+                teamId: input.teamId,
+              })
+              .catch((err: unknown): DecideResult => {
+                getLogger().warn(
+                  { approvalId: view.id, error: formatError(err) },
+                  "owner_request.decide_failed",
+                );
+                return "not-actionable";
+              }),
+          });
+        }
+        if (input.answer === "dismiss" && first.host !== null)
+          await cards.dismiss({
+            ownerSub,
+            agentId: first.agentId,
+            host: first.host,
+            until: new Date(Date.now() + DISMISS_DAYS * 24 * 60 * 60 * 1000),
+          });
+        const links = await workspaceLinks(ownerSub);
+        for (const view of mine) {
+          const fresh = (await deps.ports.view(view.id)) ?? view;
+          const applied = decided.some(
+            (d) => d.view.id === view.id && d.result === "applied",
+          );
+          if (input.answer === "dismiss" || applied) {
+            await settleItems(
+              fresh,
+              input.answer === "dismiss" ? "dismissed" : "answered",
+            );
+            continue;
+          }
+          for (const card of await cards.cardsOfRequest(view.id)) {
+            const item = (await cards.items(card.id)).find(
+              (it) => it.requestId === view.id,
+            );
+            const link = links.find((l) => l.teamId === card.teamId);
+            if (item && !FINAL_STATES.has(item.state) && link && card.messageTs)
+              await show(card, link, false);
+          }
+        }
+        return decided.map((d) => d.result);
+      });
       if (results.includes("conflict"))
         await note(
           "A rule for this host already says the opposite. Change it in the agent's network settings in the app.",
@@ -604,21 +798,6 @@ export function createSlackOwnerRequests(deps: {
         results.every((result) => result === "not-actionable")
       )
         await note("Already answered.");
-      await withOwnerLock(ownerSub, async () => {
-        const links = await workspaceLinks(ownerSub);
-        const touched = new Map<string, OwnerCard>();
-        for (const view of mine)
-          for (const card of await cards.cardsOfRequest(view.id)) {
-            if (input.answer === "dismiss")
-              await cards.setItemState(card.id, view.id, "dismissed");
-            touched.set(card.id, card);
-          }
-        for (const card of touched.values()) {
-          const link = links.find((l) => l.teamId === card.teamId);
-          if (link && card.messageTs) await show(card, link, false);
-          if (card.kind === "turn") await refreshLines(card);
-        }
-      });
       getLogger().info(
         {
           approvalIds: mine.map((view) => view.id),
@@ -631,6 +810,73 @@ export function createSlackOwnerRequests(deps: {
         },
         "owner_request.answered",
       );
+    },
+
+    async settle(approvalId: string): Promise<void> {
+      const view = await deps.ports.view(approvalId);
+      if (!view || view.status === "pending") return;
+      await withOwnerLock(view.ownerSub, () =>
+        settleItems(view, "settled"),
+      ).catch((err: unknown) =>
+        getLogger().warn(
+          { approvalId, error: formatError(err) },
+          "owner_request.settle_failed",
+        ),
+      );
+    },
+
+    async unlinked(input: { ownerSub: string; teamId: string }): Promise<void> {
+      await withOwnerLock(input.ownerSub, async () => {
+        const gw = await deps.gateway();
+        for (const card of await cards.openCardsInTeam(
+          input.ownerSub,
+          input.teamId,
+        )) {
+          if (gw && card.dmChannel && card.messageTs)
+            await gw
+              .updateMessage({
+                channel: card.dmChannel,
+                ts: card.messageTs,
+                ...unlinkedCard({
+                  kind: card.kind,
+                  agentName: await deps.agentName(card.agentId),
+                  appUrl: deps.appUrl,
+                }),
+                metadata: cardMetadata(card.id),
+                teamId: input.teamId,
+              })
+              .catch((err: unknown) =>
+                getLogger().warn(
+                  { card: card.id, error: formatError(err) },
+                  "owner_request.unlink_edit_failed",
+                ),
+              );
+          await cards.close(card.id);
+        }
+      });
+    },
+
+    async sweep(): Promise<void> {
+      if (sweeping) return;
+      sweeping = true;
+      try {
+        await cards.deleteEndedDismissals();
+        for (const card of await cards.openCards(500))
+          await withOwnerLock(card.ownerSub, () => sweepCard(card)).catch(
+            (err: unknown) =>
+              getLogger().warn(
+                { card: card.id, error: formatError(err) },
+                "owner_request.sweep_card_failed",
+              ),
+          );
+        const since = new Date(Date.now() - deps.holdWindowMs - 60_000);
+        for (const id of await deps.ports.waiting({ since, limit: 200 })) {
+          if ((await cards.cardsOfRequest(id)).length > 0) continue;
+          await api.place(id);
+        }
+      } finally {
+        sweeping = false;
+      }
     },
 
     async released(input: {
@@ -658,6 +904,7 @@ export function createSlackOwnerRequests(deps: {
       });
     },
   };
+  return api;
 }
 
 export type SlackOwnerRequests = ReturnType<typeof createSlackOwnerRequests>;

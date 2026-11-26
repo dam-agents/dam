@@ -2147,6 +2147,8 @@ export async function bootstrap() {
       ownerRequestPorts ? ownerRequestPorts.refuseUnreachable(id) : false,
     anyoneWaits: async (id) =>
       ownerRequestPorts ? ownerRequestPorts.anyoneWaits(id) : false,
+    waiting: async (input) =>
+      ownerRequestPorts ? ownerRequestPorts.waiting(input) : [],
     releaseTurnWaits: (agentId, release) =>
       redisBus.publish(turnReleaseChannelOf(agentId), JSON.stringify(release)),
     decide: async ({ requestId, answer, ownerSub, slackUserId, teamId }) => {
@@ -2197,6 +2199,7 @@ export async function bootstrap() {
   const slackWorker = slackGatewayFactory
     ? createSlackWorker({
         ownerRequests: slackOwnerRequestPorts,
+        ownerRequestHoldMs: config.approvalHoldSeconds * 1000,
         makeAcpClient,
         channelPair,
         createGateway: slackGatewayFactory,
@@ -2462,7 +2465,11 @@ export async function bootstrap() {
     place: (approvalId) => channelManager.placeOwnerRequest(approvalId),
     waitChanged: (approvalId) =>
       channelManager.ownerRequestWaitChanged(approvalId),
+    settle: (approvalId) => channelManager.settleOwnerRequest(approvalId),
   });
+  await periodicJobs.register("owner-request-sweep", 30_000, () =>
+    channelManager.ownerRequestSweep(),
+  );
   if (slackAppTokens) {
     const renewAppToken = slackAppTokens.renew;
     await periodicJobs.register("slack-token-renew", 10 * 60_000, () =>

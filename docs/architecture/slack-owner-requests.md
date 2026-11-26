@@ -120,3 +120,24 @@ A rule that clashes with an existing rule of the opposite verdict changes nothin
 
 "Dismiss" denies the row's waiting requests once, shows "Dismissed for 7 days", and for seven days no background row goes out for that agent and host; its blocks still show on Home.
 A Slack-turn request still gets its row, because a person waits on it.
+
+## Card lifecycle
+
+A card stays a true view of its requests to the end, whoever answers them and wherever.
+Every settle of a routed request, from a verdict in the web, a click in Slack, an expiry or the refusal of an unreachable card, carries its route, and the channels leader settles the request's items on every card that holds them, under the owner's lock.
+A click settles its own items first, as answered "by you"; any other settle reads "in the app by <name>", with the decider's display name, or "you" for the owner; an item already settled is left alone, so the two paths never edit a card twice.
+A settled row shows its outcome line instead of its details: the arguments and the query string leave Slack.
+An expired network or web-search row becomes a rule row and keeps its rule buttons.
+
+When the owner allows a request that nobody waited for any more, the app posts one reply in each thread whose line says that the agent went on without the step, because Slack sends no notice for an edit: it mentions the people whose messages the turn carried and says when to ask again, the decision time plus the hold window for an approve once.
+An allow while a request still waits, a deny and an expiry post no reply.
+Each settled item writes one `owner_request.card_settled` log line: how and where it settled, whether its thread still waited or pressed "Don't wait", and the delay since the post, never the request's content.
+
+A turn card with no waiting row is sealed: it takes no new rows, so the next Slack-turn request opens a new card.
+It closes at once when none of its rows offers a rule, else 24 hours after its last change; a call card closes once its call settled, and a background card closes when nothing on it waits and its last change is 24 hours old.
+An owner linked in several workspaces has a card in each, and every settle edits all of them.
+`/dam logout` closes the owner's cards in that workspace with "Slack was unlinked: answer in the app"; their requests stay pending on Home.
+
+A sweep on the channels leader every 30 seconds repairs what a lost event or a leader change missed: it posts a card row that has no post after a minute, places a waiting routed request that no open card holds, settles items whose request settled, applies the close rules, and deletes ended dismissals.
+It reads only open cards and the routed requests of the last hold window, through an index on the route, so it never scans every approval.
+A Slack error leaves an item as it was, and the sweep tries it again until its card closes.

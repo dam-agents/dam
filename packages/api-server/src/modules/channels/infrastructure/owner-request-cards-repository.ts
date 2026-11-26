@@ -25,6 +25,8 @@ export interface OwnerCard {
   postedAt: Date | null;
   threads: OwnerCardThread[];
   lastChange: Date;
+  createdAt: Date;
+  sealedAt: Date | null;
 }
 
 export interface OwnerCardItem {
@@ -32,7 +34,7 @@ export interface OwnerCardItem {
   requestKind: "approval" | "question";
   requestId: string;
   host: string | null;
-  state: "waiting" | "rule" | "settled" | "dismissed";
+  state: "waiting" | "rule" | "settled" | "answered" | "dismissed";
 }
 
 export interface OwnerRequestCardsRepository {
@@ -82,6 +84,11 @@ export interface OwnerRequestCardsRepository {
     agentId: string;
     host: string;
   }): Promise<boolean>;
+  seal(cardId: string): Promise<void>;
+  close(cardId: string): Promise<void>;
+  openCards(limit: number): Promise<OwnerCard[]>;
+  openCardsInTeam(ownerSub: string, teamId: string): Promise<OwnerCard[]>;
+  deleteEndedDismissals(): Promise<number>;
 }
 
 type CardRow = typeof ownerRequestCards.$inferSelect;
@@ -98,10 +105,12 @@ function toCard(row: CardRow): OwnerCard {
     postedAt: row.postedAt,
     threads: (row.threads as OwnerCardThread[] | null) ?? [],
     lastChange: row.lastChange,
+    createdAt: row.createdAt,
+    sealedAt: row.sealedAt,
   };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the owner's request cards in Slack and what each one holds. One open turn card and one open background card exist per owner, agent and workspace, which a unique index holds even when two placements race; a request is an item of a card until the card closes. A card's row is written before its post, so a post that fails leaves a row the sweep can post later. A dismissal keeps new background rows of one agent and host off the owner's cards until it ends.
+// UNIT_BOUNDARY_DESCRIPTION: the owner's request cards in Slack and what each one holds. One open turn card and one open background card exist per owner, agent and workspace, which a unique index holds even when two placements race; a request is an item of a card until the card closes. A card's row is written before its post, so a post that fails leaves a row the sweep can post later. A dismissal keeps new background rows of one agent and host off the owner's cards until it ends. A sealed card stays open for its buttons but takes no new rows, so the next request opens a new card.
 export function createOwnerRequestCardsRepository(
   db: Db,
 ): OwnerRequestCardsRepository {
@@ -121,6 +130,7 @@ export function createOwnerRequestCardsRepository(
           eq(ownerRequestCards.teamId, input.teamId),
           eq(ownerRequestCards.kind, input.kind),
           isNull(ownerRequestCards.closedAt),
+          isNull(ownerRequestCards.sealedAt),
         ),
       )
       .limit(1);
@@ -264,6 +274,62 @@ export function createOwnerRequestCardsRepository(
           ],
           set: { until },
         });
+    },
+
+    async seal(cardId) {
+      await db
+        .update(ownerRequestCards)
+        .set({ sealedAt: new Date() })
+        .where(
+          and(
+            eq(ownerRequestCards.id, cardId),
+            isNull(ownerRequestCards.sealedAt),
+          ),
+        );
+    },
+
+    async close(cardId) {
+      await db
+        .update(ownerRequestCards)
+        .set({ closedAt: new Date() })
+        .where(
+          and(
+            eq(ownerRequestCards.id, cardId),
+            isNull(ownerRequestCards.closedAt),
+          ),
+        );
+    },
+
+    async openCards(limit) {
+      const rows = await db
+        .select()
+        .from(ownerRequestCards)
+        .where(isNull(ownerRequestCards.closedAt))
+        .orderBy(ownerRequestCards.lastChange)
+        .limit(limit);
+      return rows.map(toCard);
+    },
+
+    async openCardsInTeam(ownerSub, teamId) {
+      const rows = await db
+        .select()
+        .from(ownerRequestCards)
+        .where(
+          and(
+            eq(ownerRequestCards.ownerSub, ownerSub),
+            eq(ownerRequestCards.teamId, teamId),
+            isNull(ownerRequestCards.closedAt),
+          ),
+        );
+      return rows.map(toCard);
+    },
+
+    async deleteEndedDismissals() {
+      const removed = await db
+        .delete(ownerRequestDismissals)
+        .where(sql`${ownerRequestDismissals.until} <= now()`)
+        .returning({ host: ownerRequestDismissals.host });
+      return removed.length;
     },
 
     async dismissed({ ownerSub, agentId, host }) {
