@@ -462,7 +462,6 @@ The screens:
   An email that no user has shows its error in the dialog.
   The Compute budgets section below it is the same screen for compute Budgets ([budgets](budgets.md#the-pool)).
 - **Home:** the spend card shows the paid Metered Spend in dollars for Today, This month or Last month, in UTC days.
-  Its help text gives the local time at which a day starts.
   The date range under the total starts at T when the period starts before T.
   While the period runs, the range ends at today and says "so far".
   A period wholly before T shows no total.
@@ -471,7 +470,7 @@ The screens:
   When the checkbox is off, this line tells when the subscriptions covered more than the user paid.
   The checkbox also adds the subscription value to the bars of the top agents, never to the total.
   The browser keeps the choice for Home and for the Usage pages.
-  The card shows no own limit and no Bobcoins; Settings › Usage shows both.
+  On Today it also shows the top agents' limits and the provider limits for all agents, all bars on one scale; no own limit, no Bobcoins.
   "Usage details" opens Settings › Usage with the same period.
   The card does not need the telemetry store.
 - **The metering notice:** for 30 days after T, a user who had an agent before T sees a notice about the change.

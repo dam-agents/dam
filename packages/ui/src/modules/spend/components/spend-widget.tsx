@@ -39,6 +39,7 @@ import {
   SpenderRowsSizer,
   TopSpenders,
   TopSpendersSkeleton,
+  useProviderLimits,
 } from "./top-spenders.js";
 import { ViewDetailsLink } from "./view-details-link.js";
 
@@ -59,6 +60,7 @@ export function SpendWidget() {
   const covered = useAnyCoveredSpend(rangeOfPeriods(HOME_PERIODS, today));
   const data = query.data;
   const totals = unitTotals(data?.totals ?? []);
+  const providers = useProviderLimits();
   const measured = metering
     ? measuredRange(range, metering.startDay) !== null
     : true;
@@ -113,13 +115,14 @@ export function SpendWidget() {
         </div>
 
         <div className="relative">
-          <SpenderRowsSizer />
+          <SpenderRowsSizer providers={providers.length} />
           <div className="absolute inset-x-0 top-0">
             <SpendersArea
               byAgent={data?.byAgent}
               failed={query.isError}
               showPlanUse={showPlanUse}
               measured={measured}
+              withLimits={period === "today"}
             />
           </div>
         </div>
@@ -159,11 +162,13 @@ function SpendersArea({
   failed,
   showPlanUse,
   measured,
+  withLimits,
 }: {
   byAgent: SpendBreakdown["byAgent"] | undefined;
   failed: boolean;
   showPlanUse: boolean;
   measured: boolean;
+  withLimits: boolean;
 }) {
   if (byAgent) {
     return (
@@ -171,6 +176,7 @@ function SpendersArea({
         byAgent={byAgent}
         showPlanUse={showPlanUse}
         measured={measured}
+        withLimits={withLimits}
       />
     );
   }

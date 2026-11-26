@@ -10,7 +10,7 @@
 A user meets spend and spend limits on many screens, and each shows a different part, so it is hard to tell what an agent used, which limit stops it and how close it is.
 The approved design ("Spend first, one element everywhere", Design Desk option v1, version 10) shows each limit with the spend it counts, in one quiet black-and-white form, in Settings → Providers, on an agent's Providers and Usage, and in the chat.
 Red shows only where a limit has stopped an agent: a red dot in the sidebar, and the chat's existing error card.
-Home stays exactly as it is today.
+On Home, the API spend card shows on Today each top agent's own limit and each provider's limit for all agents, every bar on one scale (decided after handoff, 26 Nov).
 
 ## Approach
 
@@ -85,6 +85,7 @@ The UI invalidates `spend.stopped` wherever it invalidates `spend.status` today 
 | 04  | ✅ Server: which agents a limit stopped                             | `spend.stopped` per the contract above                                                              | —          |
 | 05  | ✅ Sidebar stopped dot                                              | Red dot in the unread dot's place, with its label                                                   | 04         |
 | 06  | ✅ Chat error card                                                  | New owner ending; two links to the agent's Usage at the limits list                                 | 01         |
+| 07  | ✅ Home API spend card                                              | Today: each top agent's limit and each provider limit for all agents, one scale                     | 01         |
 
 ```mermaid
 graph LR
@@ -92,6 +93,7 @@ graph LR
   01 --> 03
   01 --> 06
   04 --> 05
+  01 --> 07
 ```
 
 ## Conventions & glossary
@@ -100,7 +102,7 @@ graph LR
 - **Limit on the agent** — the agent's own limit (`agent` scope) on the Usage card, or its Connection limit (`connection` scope) under a provider row.
 - **Total daily limit** — the own limit (`owner` scope).
 - **Stopped** — see the contract above.
-- **Home is out of scope**: `spend-widget.tsx`, `top-spenders.tsx` and the Resources card keep today's look and code.
+- **Home** (07): only the API spend card changes; the Resources card keeps today's look and code.
 - UI slices apply `/react-ui-engineering`; slice 04 applies `/typescript-engineering`.
 - Comments follow `docs/guidelines/comment-guidelines.md`; run `mise run check:comment-types`.
 - Verification is the existing suite plus a manual smoke test; update the tests the change breaks, and add one only where a slice says so.
@@ -110,7 +112,7 @@ graph LR
 On the local cluster (`cluster-ops` skill), signed in as an owner with an Anthropic connection and Bob:
 
 1. Set a total daily limit, an "all agents" limit on Anthropic, and a $0.01 limit on one agent.
-2. Home: the API spend card is as on `main` (top three spenders, one scale, no limits).
+2. Home, Today: the top agents show "$x / of $y" with a grey track for the limit, and a row per provider limit for all agents, all bars on one scale; This month shows no limits.
 3. Settings → Providers: closed rows show "$x.xx" as text; opening Anthropic shows "Limit for all agents", a black bar, "$x of $y", Change, "Resets at …".
 4. The agent's Providers: open Anthropic shows "Limit on the agent" and "Anthropic, all agents", each with a black bar.
 5. The agent's Usage: under its own limit, the Total daily limit and "Anthropic, all agents" are listed with no toggle.
