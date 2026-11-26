@@ -20,6 +20,7 @@ import {
   useAgentSessionFilters,
 } from "../../sessions/lib/agent-session-filters.js";
 import { shownSessionId } from "../../sessions/lib/shown-session.js";
+import { useStoppedAgents } from "../../spend/hooks/use-stopped-agents.js";
 import { useAgents, useAgentsList } from "../api/queries.js";
 import { useSidebarAgents } from "../hooks/use-sidebar-agents.js";
 import { useSidebarOrderActions } from "../hooks/use-sidebar-order-actions.js";
@@ -75,6 +76,7 @@ export function SidebarAgents({
 
   const shownAgents = showFolded ? agents : active;
   const shownAgentIds = shownAgents.map((agent) => agent.id);
+  const stopped = useStoppedAgents();
   const row = (agent: AgentView) => {
     const current = agent.id === openAgentId;
     const open = isOpen(agent.id);
@@ -86,6 +88,7 @@ export function SidebarAgents({
         selected={current && open}
         current={current && !sessionOpen}
         unread={unreadAgentIds.has(agent.id) || listedUnread.has(agent.id)}
+        stopped={stopped.get(agent.id) ?? null}
         orderReady={orderActions.ready}
         onMove={(id, drop) => orderActions.moveAgent(shownAgentIds, id, drop)}
         onStep={(id, step) => orderActions.stepAgent(shownAgentIds, id, step)}

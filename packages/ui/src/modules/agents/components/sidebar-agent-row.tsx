@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { Tooltip } from "@/components/ui/tooltip";
 import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,7 @@ interface Props {
   selected: boolean;
   current: boolean;
   unread: boolean;
+  stopped?: string | null;
   orderReady: boolean;
   onMove: (agentId: string, drop: OrderDrop) => void;
   onStep: (agentId: string, step: -1 | 1) => void;
@@ -70,6 +72,7 @@ export function SidebarAgentRow({
   selected,
   current,
   unread,
+  stopped = null,
   orderReady,
   onMove,
   onStep,
@@ -82,6 +85,11 @@ export function SidebarAgentRow({
   children,
 }: Props) {
   useAutoWakeOnSidebarOpen(agent, open);
+  const marked = unread || stopped !== null;
+  const markerBox = cn(
+    "flex size-4 shrink-0 items-center justify-center",
+    !selected && [HIDDEN_WHEN_REVEALED, filtered && "ml-6"],
+  );
   const layout = ACTIONS_LAYOUT[actionCount];
   const drag = useOrderDrag({
     scope: "agents",
@@ -109,7 +117,7 @@ export function SidebarAgentRow({
             "flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg pr-2 pl-3 text-left select-none",
             selected
               ? layout.padding.shown
-              : [layout.padding.revealed, filtered && !unread && "pr-[34px]"],
+              : [layout.padding.revealed, filtered && !marked && "pr-[34px]"],
             open
               ? "text-foreground"
               : "text-foreground/90 hover:text-foreground",
@@ -135,19 +143,26 @@ export function SidebarAgentRow({
               />
             )}
           </span>
-          {unread && (
-            <>
+          {stopped !== null ? (
+            <Tooltip content={stopped}>
               <span
-                aria-hidden
-                className={cn(
-                  "flex size-4 shrink-0 items-center justify-center",
-                  !selected && [HIDDEN_WHEN_REVEALED, filtered && "ml-6"],
-                )}
+                role="img"
+                aria-label={stopped}
+                data-testid="sidebar-agent-stopped"
+                className={markerBox}
               >
-                <span className="size-2 rounded-full bg-accent" />
+                <span className="size-2 rounded-full bg-danger" />
               </span>
-              <span className="sr-only">(unread)</span>
-            </>
+            </Tooltip>
+          ) : (
+            unread && (
+              <>
+                <span aria-hidden className={markerBox}>
+                  <span className="size-2 rounded-full bg-accent" />
+                </span>
+                <span className="sr-only">(unread)</span>
+              </>
+            )
           )}
         </div>
         <div
@@ -158,7 +173,7 @@ export function SidebarAgentRow({
               ? [layout.filter.shown, "opacity-100"]
               : [
                   layout.filter.revealed,
-                  unread ? "right-6" : "right-1",
+                  marked ? "right-6" : "right-1",
                   filtered ? "opacity-100" : HIDDEN_UNTIL_HOVER,
                 ],
           )}
