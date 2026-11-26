@@ -11,7 +11,7 @@ import {
   refreshingToken,
   waitAgentState,
 } from "../../lib/backend.js";
-import { AGENT_NS, kubectl } from "../../lib/cluster.js";
+import { AGENT_NS, kubectl, kubectlOrEmpty } from "../../lib/cluster.js";
 import { baseUrl } from "../../config.js";
 
 test.describe.configure({ mode: "serial" });
@@ -62,6 +62,85 @@ async function openSession(): Promise<Frame[]> {
   return answers;
 }
 
+// TEST_SCENARIO: diagnostic only, on a throwaway branch: what the agent, its gateway and its machine's console say when the harness does not answer.
+async function diagnose(): Promise<void> {
+  const say = (label: string, text: string) =>
+    console.log(`\n#### diagnose 22: ${label}\n${text.slice(-6000)}`);
+  say(
+    "agent",
+    JSON.stringify(
+      await api.agents.get.query({ id: agentId }).catch((e) => String(e)),
+    ),
+  );
+  say("pods", kubectlOrEmpty("-n", AGENT_NS, "get", "pods", "-o", "wide"));
+  say(
+    "gateway events",
+    kubectlOrEmpty(
+      "-n",
+      AGENT_NS,
+      "get",
+      "events",
+      "--sort-by=.lastTimestamp",
+      "--field-selector",
+      `involvedObject.name=${agentId}-gateway-0`,
+    ),
+  );
+  for (const container of ["envoy", "machine-dns"])
+    say(
+      `gateway ${container}`,
+      kubectlOrEmpty(
+        "-n",
+        AGENT_NS,
+        "logs",
+        `${agentId}-gateway-0`,
+        "-c",
+        container,
+        "--tail=40",
+      ),
+    );
+  const owner = kubectlOrEmpty(
+    "-n",
+    AGENT_NS,
+    "get",
+    "configmaps",
+    "-l",
+    `agent-platform.ai/agent=${agentId}`,
+    "-o",
+    "jsonpath={.items[0].metadata.labels.agent-platform\\.ai/owner}",
+  );
+  const pod = kubectlOrEmpty(
+    "-n",
+    AGENT_NS,
+    "get",
+    "pod",
+    "-l",
+    `app.kubernetes.io/component=vm-runner,agent-platform.ai/owner=${owner}`,
+    "-o",
+    "jsonpath={.items[0].metadata.name}",
+  );
+  say("runner", `${owner} ${pod}`);
+  if (!pod) return;
+  say(
+    "newest machine console",
+    kubectlOrEmpty(
+      "-n",
+      AGENT_NS,
+      "exec",
+      pod,
+      "-c",
+      "vm-runner",
+      "--",
+      "sh",
+      "-c",
+      "f=$(ls -t /var/lib/platform/disks/.cache/smolvm/vms/*/agent-console.log | head -1); echo $f; grep -vi 'secret\\|token\\|key=' $f | tail -n 120",
+    ),
+  );
+  say(
+    "runner log",
+    kubectlOrEmpty("-n", AGENT_NS, "logs", pod, "-c", "vm-runner", "--tail=60"),
+  );
+}
+
 test.beforeAll(async () => {
   test.setTimeout(300_000);
   api = createRefreshingApiClient(token);
@@ -79,7 +158,10 @@ test("boots on the baked tools and opens a Claude Code session, twice", async ()
   await waitAgentState(api, agentId, "running");
 
   for (const connection of ["first", "second"]) {
-    const [init, session] = await openSession();
+    const [init, session] = await openSession().catch(async (error) => {
+      await diagnose();
+      throw error;
+    });
     expect(init?.error, `${connection} initialize`).toBeUndefined();
     expect(
       init?.result?.agentCapabilities,
