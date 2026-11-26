@@ -240,7 +240,7 @@ Names are illustrative where marked.
 
 | #   | Title                                                  | Scope                                                                                                                                                                                                                             | Depends on |
 | --- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 00  | Measure before building                                | How long common clients and harness model clients wait on a held request; whether Stop and a closed client cancel the gateway's check; results in this README                                                                     | —          |
+| 00  | ✅ Measure before building                             | How long common clients and harness model clients wait on a held request; whether Stop and a closed client cancel the gateway's check; results in this README                                                                     | —          |
 | 01  | One hold-or-refuse decision for the three gates        | Addressed turns, the shared decision, the route on the row, the raise, expiry that follows the row, `canCard`, holds that end with their client, the release of turn waits, approve once, turn-contract copy, the operator switch | 00         |
 | 02  | The card base                                          | Card tables, placing on the leader, the turn card with fallback rows, fallback cards, card metadata kept out of agent input, the repost, refusal on a lasting failure, the thread line with "Don't wait", the measures            | 01         |
 | 03  | MCP tool-call rows and cards                           | MCP rows and call cards with buttons, the click route and the owner check, audit                                                                                                                                                  | 02         |
@@ -283,11 +283,48 @@ graph LR
 
 ## Measured
 
-[00](./00-measure-before-building.md) fills this section.
+Measured on the local cluster on 2026-11-24, with a temporary log line on the gRPC check's `cancelled` event, against main `3f5dbecf6` (Envoy 1.40.2).
 
-| Client or harness | Gives up on a held request after | Stop or a closed client cancels the gateway's check |
-| ----------------- | -------------------------------- | --------------------------------------------------- |
-| *to measure*      |                                  |                                                     |
+**The gateway ends every hold long before the hold window.**
+
+| Held request                                                                                   | The gateway ends it after                                                                                                                                                                                                                           |
+| ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HTTPS to a host with no rule of its own (SNI-only chain)                                       | When the upstream server drops the TLS handshake that never arrives: 15–17 s (example.org, www.iana.org), 32 s (duckduckgo.com), 63 s (www.bbc.co.uk), 122 s (en.wikipedia.org), over 3 min (httpbin.org); the client gets a TLS EOF, not a refusal |
+| HTTPS on a TLS-terminated chain (a host with a path rule, a model provider, an MCP Connection) | 300 s: 504 `stream timeout` (Envoy's default stream idle timeout)                                                                                                                                                                                   |
+| Plain HTTP                                                                                     | 300 s: 504                                                                                                                                                                                                                                          |
+| Held web search (the model call on the provider chain)                                         | 300 s: 504                                                                                                                                                                                                                                          |
+
+Causes: the SNI-only chain's `tcp_proxy` connects upstream at once (`upstream_connect_mode` `IMMEDIATE`), before the check answers; and no HTTP connection manager sets `stream_idle_timeout`, so Envoy's 5-minute default applies.
+The network and web-search gates ignore the cancel and keep their waiter until the hold window ends: a check cancelled at 15 s logged its `deny` after 1,800 s.
+
+**Clients and harnesses.**
+
+| Client or harness                              | Gives up on a held request after                                                                                                                          | Stop or a closed client cancels the gateway's check                  |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `curl`, no timeout flag                        | The gateway's limit; with the gateway fixed, 300 s on an SNI-only chain (curl's connect timeout covers the TLS handshake), none on a TLS-terminated chain | Yes, at once                                                         |
+| Python `requests`, no timeout                  | The gateway's limit; none with the gateway fixed                                                                                                          | Yes, at once                                                         |
+| Node `fetch` (undici)                          | 10 s on an SNI-only chain (connect timeout covers the TLS handshake); 300 s on a TLS-terminated chain (headers timeout)                                   | Yes, at once                                                         |
+| Claude Code, WebFetch                          | 60 s                                                                                                                                                      | Stop: yes, at once                                                   |
+| Claude Code, Bash tool                         | 120 s, then the command moves to the background and keeps waiting; the turn ends without its result                                                       | Stop: yes, at once                                                   |
+| Claude Code, model client on a held web search | The gateway's 300 s, then it retries at once and the retry joins the same approval                                                                        | Stop: yes, at once                                                   |
+| Codex, shell tool                              | The gateway's 300 s; Codex polls the running command and keeps waiting                                                                                    | Stop: the turn ends at once, but the command keeps waiting 64 s more |
+| Codex, web search                              | Not held: Codex's hosted search runs inside the provider's Responses API, which web search control does not cover                                         | —                                                                    |
+| Pi, bash tool                                  | The gateway's 300 s; Pi has no fetch or web-search tool of its own                                                                                        | Stop: yes, at once                                                   |
+| Bob                                            | Not measured: on 2026-11-26 Bob's backend answered every model call with a server error (models `premium`, `premium-shell`, `fast`)                       | Not measured                                                         |
+
+Codex and Pi were measured on 2026-11-26 with `dam run` and its cancel, on IBM LiteLLM (`gpt-5.3-codex`, `claude-sonnet-4-6`), against a TLS-terminated chain.
+
+**The gateway bug is filed as #6855.**
+It is on main since held requests were added, and #6287 does not depend on it: an approve once that comes late counts for the next try.
+The fix tried on the local cluster has three parts:
+
+- the SNI-only chain's `tcp_proxy` connects after the check (`upstream_connect_mode: ON_DOWNSTREAM_DATA` with `max_early_data_bytes`);
+- the gateway's DNS cache keeps a host for the hold window plus 60 s (`host_ttl`); with the default 5 minutes, an approve once after about 5 minutes failed with a TLS EOF, and a 60 s TTL moved that cutoff to between 45 s and 151 s;
+- optionally, `stream_idle_timeout` at the check's timeout on the outer and the chain connection managers, for holds past 300 s on TLS-terminated chains, plain HTTP and web search.
+
+With the first two parts, SNI-only holds passed after approve once at 20 s, 420 s, 481 s (a request that joined 4 minutes later passed too) and 600 s.
+With all three, TLS-terminated, plain-HTTP and web-search holds passed after 6.5 minutes.
+A running gateway takes the change only when the controller's template revision changes, so each agent's gateway restarts once.
 
 ## Choices made in planning
 

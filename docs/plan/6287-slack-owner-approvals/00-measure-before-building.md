@@ -34,6 +34,7 @@ No code lands: a temporary log line used for a measurement is never committed.
 
 ## Acceptance criteria
 
-- [ ] The README's "Measured" table lists each client of step 2, each harness's model client on a held web search, and each harness, with the time it gives up on a held request.
-- [ ] The table says, for each harness, whether Stop cancels the gateway's check for a network request and for a web search, and whether a client that gives up does.
-- [ ] No code change is committed.
+- [x] The README's "Measured" table lists each client of step 2, each harness's model client on a held web search, and each harness, with the time it gives up on a held request.
+  Bob is listed as not measured: its backend failed every model call on 2026-11-26.
+- [x] The table says, for each harness, whether Stop cancels the gateway's check for a network request and for a web search, and whether a client that gives up does.
+- [x] No code change is committed.
