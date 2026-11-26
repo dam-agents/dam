@@ -127,6 +127,7 @@ function describeSpendRefusal(
     return {
       title: "Spend limit reached:",
       message: `${stopped} Raise your spend limit, or wait until ${reset} your time.`,
+      hint,
       kind: "spend-limit",
     };
   const ask = viewer.agentLimitReached

@@ -160,7 +160,7 @@ export function SendErrorCard({
           </span>{" "}
           {withProvidersLink(message)}
         </div>
-        {hint && (
+        {hint && !(kind === "spend-limit" && agentId) && (
           <p className="text-xs text-muted-foreground break-words">
             {withProvidersLink(hint)}
           </p>

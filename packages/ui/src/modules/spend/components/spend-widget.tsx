@@ -24,7 +24,7 @@ import { localDayStart, microsToUsd } from "../lib/format.js";
 import { unitTotals } from "../lib/measured-spend.js";
 import { measuredRange } from "../lib/range-label.js";
 import {
-  DEFAULT_PERIOD,
+  HOME_DEFAULT_PERIOD,
   HOME_PERIODS,
   type PresetPeriod,
   rangeOf,
@@ -51,7 +51,7 @@ const PERIOD_TABS = HOME_PERIODS.map((value) => ({
 }));
 
 export function SpendWidget() {
-  const [period, setPeriod] = useState<PresetPeriod>(DEFAULT_PERIOD);
+  const [period, setPeriod] = useState<PresetPeriod>(HOME_DEFAULT_PERIOD);
   const today = utcDayOf(useNow(REFRESH_MS));
   const range = rangeOf(period, today);
   const { data: metering } = useSpendMetering();

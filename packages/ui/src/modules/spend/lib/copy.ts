@@ -23,17 +23,15 @@ export const DAILY_LIMIT_TITLE = "Daily spend limit";
 export const OWN_LIMIT_HELP =
   "Counts the paid API calls of all your agents. Subscriptions and Bob are not counted here. To limit one of them, click its spend on Settings › Providers, or on an agent's Providers page for that agent.";
 
-export const PROVIDER_LIMITS_TITLE = "Provider limits for all agents";
-
-export const PROVIDER_LIMITS_HELP =
-  "Each one counts the calls of all your agents on one provider. Set them in Settings › Providers.";
-
 export const EDIT_IN_PROVIDERS = "Edit in Providers";
 
 export const AGENT_LIMIT_HELP =
   "Counts the paid API calls of this agent and its sub-agents.";
 
 export const ALL_YOUR_AGENTS = "all your agents";
+
+export const OWN_LIMIT_DESCRIPTION =
+  "Counts the paid API calls of all your agents.";
 
 export const SPEND_STATUS_ERROR = "Couldn't load today's spend.";
 
@@ -45,6 +43,15 @@ export function limitButtonLabel(hasLimit: boolean, subject: string): string {
   return hasLimit
     ? `Change the daily spend limit for ${subject}`
     : `Set a limit on the daily spend of ${subject}`;
+}
+
+export const COVERED_BY_SUBSCRIPTION =
+  "Covered by your subscription: its value at API prices, not billed.";
+
+export const PROVIDER_LIMITS_LINK = "Limits";
+
+export function leftToday(amount: string): string {
+  return `${amount} left`;
 }
 
 export const LIMIT_FOR_ALL_AGENTS = "Limit for all agents";
@@ -111,40 +118,6 @@ export function spentOfLimitToday(
   unit: SpendUnit,
 ): string {
   return `${spentOfLimit(spentMicros, amountMicros, unit)} today`;
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: a provider row's badge reads "spent / limit today", and a Bobcoin amount is written with the unit's short form rather than its name, since the badge has one line to spare.
-export function badgeSpend(
-  spentMicros: number,
-  limitMicros: number | null,
-  unit: SpendUnit,
-): string {
-  const amount = (micros: number) =>
-    unit === "bobcoin"
-      ? `${bareSpend(micros, unit)} Bc`
-      : bareSpend(micros, unit);
-  return limitMicros === null
-    ? `${amount(spentMicros)} today · no limit`
-    : `${amount(spentMicros)} / ${amount(limitMicros)} today`;
-}
-
-export function badgeSpendTip(unit: SpendUnit, hasLimit: boolean): string {
-  return match(unit)
-    .with(
-      "usd_list",
-      () =>
-        "Covered by a subscription, so the amount is shown for comparison only. Click to set a limit anyway.",
-    )
-    .with("bobcoin", () =>
-      hasLimit
-        ? "Bobcoins spent today of the daily limit. Click to change it."
-        : "Bobcoins spent today. Click to set a daily limit.",
-    )
-    .otherwise(() =>
-      hasLimit
-        ? "Spent today of the daily limit. Click to change it."
-        : "Spent today. Click to set a daily limit.",
-    );
 }
 
 export function percentOfLimit(
@@ -550,22 +523,6 @@ export function turnLineHelp(showsCost: boolean): string {
     : telemetry;
 }
 
-export function partThisAgent(amount: string): string {
-  return `This agent: ${amount}`;
-}
-
-export function partSpent(amount: string): string {
-  return `Spent: ${amount}`;
-}
-
-export function partOtherAgents(amount: string): string {
-  return `Other agents: ${amount}`;
-}
-
-export function partLeft(amount: string): string {
-  return `Left: ${amount}`;
-}
-
 export function spentTodayLine(spentMicros: number, unit: SpendUnit): string {
   return `${bareSpend(spentMicros, unit)} spent today.`;
 }
@@ -592,29 +549,10 @@ export function thisStopsFirstLine(
   return `This limit stops this agent first: ${bareSpend(leftMicros, unit)} left today.`;
 }
 
-export const ALSO_COUNTED_BY = "Also counted by";
-
-export const LEVEL_GROUP_NAMES = {
-  provider: "On one provider",
-  every: "Every provider",
-} as const;
-
-export const STOPS_FIRST = "stops first";
-
-export function setIn(place: string): string {
-  return `Set in ${place}`;
-}
-
 export const LEVEL_NAMES = {
   agent: "Agent limit",
   total: "Total daily limit",
   ceiling: "Spend ceiling",
-} as const;
-
-export const LEVEL_SCOPES = {
-  agent: "every paid provider",
-  total: "all agents, every paid provider",
-  ceiling: "set by your operator",
 } as const;
 
 export function allAgentsOn(connectionName: string): string {
@@ -629,7 +567,3 @@ export function thisAgentOn(connectionName: string): string {
 
 export const AGENT_PROVIDER_LIMIT_BUTTON_TIP =
   "This agent's daily limit on this provider";
-
-export function amountToday(text: string): string {
-  return `${text} today`;
-}

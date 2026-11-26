@@ -160,6 +160,25 @@ export function totalLevels(status: SpendStatus): LevelsView {
   };
 }
 
+/** UNIT_BOUNDARY_DESCRIPTION: every limit for all agents on a Connection that the owner set, as the own limit's card on Settings › Usage lists them. */
+export function ownerConnectionLevels(
+  status: SpendStatus,
+  connectionOf: (connectionId: string) => LevelConnection,
+): Level[] {
+  return status.limits.flatMap((limit) =>
+    limit.scope.kind === "owner-connection"
+      ? [
+          fromLimit(
+            limit,
+            "all-connection",
+            connectionOf(limit.scope.connectionId),
+            null,
+          ),
+        ]
+      : [],
+  );
+}
+
 /** UNIT_BOUNDARY_DESCRIPTION: an owner's limit for all agents on one Connection, as Settings › Providers owns it. A dollar Connection is also counted by the total and the ceiling; a subscription or Bob one by nothing else. */
 export function allAgentsConnectionLevels(
   status: SpendStatus,

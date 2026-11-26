@@ -17,10 +17,12 @@ export interface DayRefusal {
 
 interface Reached extends SpendStoppedLimit {
   readonly rank: number;
+  readonly counts: (refusal: DayRefusal) => boolean;
 }
 
 function fromLimit(
   limit: SpendLimitView,
+  agentId: string,
   names: ReadonlyMap<string, string>,
 ): Reached {
   const connectionId =
@@ -36,6 +38,7 @@ function fromLimit(
     amountMicros: limit.amountMicros,
     leftMicros: limit.leftMicros,
     rank: NARROWNESS.indexOf(limit.scope.kind),
+    counts: (refusal) => counts(limit, agentId, refusal),
   };
 }
 
@@ -49,6 +52,7 @@ function fromCeiling(ceiling: SpendCeilingView): Reached {
     amountMicros: ceiling.amountMicros,
     leftMicros: Math.max(0, ceiling.amountMicros - ceiling.spentMicros),
     rank: NARROWNESS.indexOf("ceiling"),
+    counts: (refusal) => refusal.unit === "usd",
   };
 }
 
@@ -96,7 +100,7 @@ export function stoppedAgent(input: {
   for (const refusal of refusals) {
     for (const limit of limits) {
       if (limit.state === "reached" && counts(limit, agentId, refusal))
-        reached.push(fromLimit(limit, connectionNames));
+        reached.push(fromLimit(limit, agentId, connectionNames));
     }
     if (ceiling?.state === "reached" && refusal.unit === "usd")
       reached.push(fromCeiling(ceiling));
@@ -105,10 +109,17 @@ export function stoppedAgent(input: {
     (a, b) => a.leftMicros - b.leftMicros || a.rank - b.rank,
   );
   if (!first) return null;
-  const { rank: _rank, ...limit } = first;
+  const { rank: _rank, counts: countedBy, ...limit } = first;
   return {
     agentId,
-    sessionIds: [...new Set(refusals.map((r) => r.sessionId).filter(Boolean))],
+    sessionIds: [
+      ...new Set(
+        refusals
+          .filter(countedBy)
+          .map((r) => r.sessionId)
+          .filter(Boolean),
+      ),
+    ],
     limit,
   };
 }

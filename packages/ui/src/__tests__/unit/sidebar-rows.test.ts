@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The classic sidebar marks unread work in blue with a text equivalent: on an unread Session row, and on the row of an Agent with an unread Session. An Activity row names its Agent with the Agent's avatar beside the name. An Agent row whose Sessions are closed keeps its unread marker and is not highlighted when its chat shows a Session. A revealed Agent row hides its blue dot, so it never sits on an action, and a filtered row keeps the dot at the right end with the filter icon next to it. An Agent that a limit stopped shows a red dot in the same place, named by its label, and no blue dot even with unread Sessions.
+// TEST_OVERVIEW: The classic sidebar marks unread work in blue with a text equivalent: on an unread Session row, and on the row of an Agent with an unread Session. An Activity row names its Agent with the Agent's avatar beside the name. An Agent row whose Sessions are closed keeps its unread marker and is not highlighted when its chat shows a Session. A revealed Agent row hides its blue dot, so it never sits on an action, and a filtered row keeps the dot at the right end with the filter icon next to it. An Agent that a limit stopped shows a red dot in the same place, named by its label, and no blue dot even with unread Sessions; the unread text stays for screen readers.
 import { SessionMode, SessionType } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -69,7 +69,7 @@ const STOPPED =
   "Stopped by a limit: Agent limit. $0.00 left today, calls stop until 1:00 AM.";
 
 describe("stopped marker", () => {
-  it("TEST_SCENARIO: an Agent that a limit stopped shows a red dot labelled with the limit, and no blue dot though it has unread Sessions", () => {
+  it("TEST_SCENARIO: an Agent that a limit stopped shows a red dot labelled with the limit, and no blue dot though it has unread Sessions, which a screen reader still hears", () => {
     const html = agentRow({
       open: false,
       selected: false,
@@ -81,7 +81,7 @@ describe("stopped marker", () => {
     );
     expect(html).toContain("bg-danger");
     expect(html).not.toContain("bg-accent");
-    expect(html).not.toContain("(unread)");
+    expect(html).toContain("(unread)");
   });
 
   it("TEST_SCENARIO: an Agent that no limit stopped shows no red dot", () => {

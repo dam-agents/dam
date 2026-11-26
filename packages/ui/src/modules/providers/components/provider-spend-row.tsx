@@ -87,11 +87,13 @@ function RowWithLimit({ agentId, ...row }: RowProps & { agentId: string }) {
       <Row
         {...row}
         spend={
-          <SpendToggle
-            spentMicros={spend.spentMicros}
-            unit={spend.rule.unit}
-            toggle={toggle}
-          />
+          !open && (
+            <SpendToggle
+              spentMicros={spend.spentMicros}
+              unit={spend.rule.unit}
+              toggle={toggle}
+            />
+          )
         }
         chevron={<LimitChevron toggle={toggle} />}
       />

@@ -33,6 +33,9 @@ export const HOME_PERIODS: readonly PresetPeriod[] = [
 
 export const DEFAULT_PERIOD: PresetPeriod = "this-month";
 
+/** UNIT_BOUNDARY_DESCRIPTION: Home's spend card opens on Today, the one period that shows the daily limits. */
+export const HOME_DEFAULT_PERIOD: PresetPeriod = "today";
+
 function weekOf(day: string): DayRange {
   const from = mondayOf(day);
   return { from, to: addDays(from, 6) };

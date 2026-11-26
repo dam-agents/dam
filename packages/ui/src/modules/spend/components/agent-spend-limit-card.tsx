@@ -7,18 +7,14 @@ import { useEffect } from "react";
 
 import { useStore } from "../../../store.js";
 import { useAgentDisplayName } from "../../agents/api/queries.js";
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
 import { useProviderConnections } from "../../sessions/api/session-pair.js";
 import type { ProviderConnectionRef } from "../../sessions/lib/session-pair-options.js";
 import { useAgentSpendStatus } from "../api/queries.js";
 import { useLevelAgent } from "../hooks/use-level-agent.js";
 import { agentLimitOf } from "../lib/agent-limit.js";
-import {
-  AGENT_LIMIT_HELP,
-  alsoSpent,
-  callsAreEstimates,
-  usedToday,
-} from "../lib/copy.js";
+import { AGENT_LIMIT_HELP, alsoSpent, callsAreEstimates } from "../lib/copy.js";
 import {
   type AgentLimitCoverage,
   agentLimitCoverage,
@@ -82,10 +78,7 @@ function DriverSpendLimitBody({
 }: BodyProps) {
   const agentName = useAgentDisplayName(agentId);
   const limit = agentLimitOf(status, agentId);
-  const settable = coverage.paid || limit !== undefined;
-  const primary: SpendUnit = settable
-    ? "usd"
-    : (coverage.uncountedUnits[0] ?? "usd");
+  const primary: SpendUnit = "usd";
   const totals = unitTotals(status.spent);
   const agent = useLevelAgent(agentId);
   const view = agentLevels(status, agentId, levelConnections(granted));
@@ -93,40 +86,37 @@ function DriverSpendLimitBody({
 
   return (
     <DailyLimitCard
-      help={AGENT_LIMIT_HELP}
+      description={AGENT_LIMIT_HELP}
       resetsAt={status.resetsAt}
-      action={
-        settable && (
-          <SpendLimitButton
-            scope={{ kind: "agent", agentId }}
-            subject={agentName}
-            amountMicros={limit?.amountMicros ?? null}
-          />
-        )
-      }
-    >
-      {settable ? (
-        <DailyLimitMeter
-          spentMicros={totals.usd}
-          limit={limit}
-          resetsAt={status.resetsAt}
-          subject={agentName}
-        />
-      ) : (
-        <p className="text-sm text-foreground tabular-nums">
-          {usedToday(totals[primary], primary)}
-        </p>
-      )}
-      <OtherSpendLine status={status} primary={primary} />
-      {view.others.length > 0 && (
-        <div className="border-t border-border pt-3">
+      list={
+        view.others.length > 0 && (
           <LimitRowList
             id={AGENT_LIMITS_ID}
             levels={inListOrder(view.others.map(({ level }) => level))}
             agent={agent}
           />
-        </div>
-      )}
+        )
+      }
+      action={
+        <SpendLimitButton
+          scope={{ kind: "agent", agentId }}
+          subject={agentName}
+          amountMicros={limit?.amountMicros ?? null}
+        />
+      }
+    >
+      <DailyLimitMeter
+        spentMicros={totals.usd}
+        limit={limit}
+        resetsAt={status.resetsAt}
+        subject={agentName}
+        icon={
+          agent && (
+            <AgentAvatar name={agent.name} avatar={agent.avatar} size={16} />
+          )
+        }
+      />
+      <OtherSpendLine status={status} primary={primary} />
       {coverageKnown && (
         <AgentLimitCoverageNote
           agentId={agentId}

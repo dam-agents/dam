@@ -3,6 +3,7 @@ import { connectionLimitRule } from "api-server-api";
 import { Tooltip } from "@/components/ui/tooltip";
 
 import { useAgentDisplayName } from "../../agents/api/queries.js";
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { useAgentSpendStatus } from "../api/queries.js";
 import { useLevelAgent } from "../hooks/use-level-agent.js";
 import {
@@ -81,7 +82,16 @@ export function AgentProviderLimitPanel({
       className="flex flex-col gap-3 border-t border-border px-4 py-3"
     >
       <ProviderLimitBlock
-        icon={{ kind: "agent", connection: null }}
+        icon={
+          <span
+            aria-hidden
+            className="flex size-5 shrink-0 items-center justify-center"
+          >
+            {agent && (
+              <AgentAvatar name={agent.name} avatar={agent.avatar} size={16} />
+            )}
+          </span>
+        }
         agent={agent}
         name={LIMIT_ON_THE_AGENT}
         level={view.current}

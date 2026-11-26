@@ -1,3 +1,4 @@
+import { UserMultiple } from "@carbon/icons-react";
 import { connectionLimitRule } from "api-server-api";
 
 import { useOwnerSpendStatus } from "../api/queries.js";
@@ -59,7 +60,7 @@ export function AllAgentsSpendToggle({
   ...props
 }: Props & { toggle: Toggle }) {
   const spend = useAllAgentsSpend(props);
-  if (!spend) return null;
+  if (!spend || toggle.open) return null;
   return (
     <SpendToggle
       spentMicros={spend.spentMicros}
@@ -87,7 +88,14 @@ export function AllAgentsLimitPanel({ id, ...props }: Props & { id: string }) {
   return (
     <div id={id} className="border-t border-border px-4 py-3">
       <ProviderLimitBlock
-        icon={{ kind: "all-connection", connection: spend.connection }}
+        icon={
+          <span
+            aria-hidden
+            className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+          >
+            <UserMultiple size={11} />
+          </span>
+        }
         agent={null}
         name={LIMIT_FOR_ALL_AGENTS}
         level={spend.level}

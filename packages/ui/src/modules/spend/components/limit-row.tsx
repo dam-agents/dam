@@ -24,7 +24,7 @@ export function LimitRow({
       <LevelIcon level={level} agent={agent} />
       <span
         title={name}
-        className="w-[34%] min-w-0 shrink-0 truncate text-[13px] text-foreground"
+        className="w-[34%] min-w-0 shrink-0 truncate text-sm text-foreground"
       >
         {name}
       </span>
@@ -36,7 +36,7 @@ export function LimitRow({
       />
       <LimitAmounts
         spentMicros={level.spentMicros}
-        amountMicros={level.amountMicros}
+        amountMicros={level.effectiveMicros}
         unit={level.unit}
       />
     </div>
@@ -53,11 +53,11 @@ export function LimitAmounts({
   unit: Level["unit"];
 }) {
   return (
-    <span className="flex min-w-18 shrink-0 flex-col items-end leading-tight whitespace-nowrap tabular-nums">
+    <span className="flex min-w-16 shrink-0 flex-col items-end leading-tight whitespace-nowrap tabular-nums">
       <span className="text-sm text-foreground">
         {meterAmount(spentMicros, unit)}
       </span>
-      <span className="text-xs text-muted-foreground">
+      <span className="text-[11px] text-muted-foreground">
         {ofLimit(meterAmount(amountMicros, unit))}
       </span>
     </span>

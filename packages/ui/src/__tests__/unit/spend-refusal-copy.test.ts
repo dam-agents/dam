@@ -14,14 +14,14 @@ const editor = (agentLimit: boolean) =>
   ({ role: "editor", owner: OWNER, agentLimitReached: agentLimit }) as const;
 
 describe("a spend limit in the chat", () => {
-  // TEST_SCENARIO: the owner reads to raise the spend limit, or wait for the reset, and the card links to the agent's limits instead of the raw error.
+  // TEST_SCENARIO: the owner reads to raise the spend limit, or wait for the reset, and the card links to the agent's limits, and keeps the raw error only where it cannot link.
   it("tells the owner to raise the spend limit", () => {
     const { message, hint, kind } = describeSendError(SOFT, { role: "owner" });
     expect(message).toMatch(
       /^This agent reached a daily spend limit, so its model calls stop\. Raise your spend limit, or wait until .+ your time\.$/,
     );
     expect(kind).toBe("spend-limit");
-    expect(hint).toBeUndefined();
+    expect(hint).toMatch(/^Details: /);
   });
 
   // TEST_SCENARIO: an editor and the operator's ceiling keep the raw error as detail, and no limit links.

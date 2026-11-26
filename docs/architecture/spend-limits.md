@@ -427,17 +427,15 @@ A line under the meter shows only when it matters: when the spend is close to th
 The last line gives the local time at which the day resets.
 A Connection limit uses the same parts in the Connection's unit: a title with a help tip, the button, the spend against the limit or "No limit", the meter and state line, and the reset time.
 Every place that shows a limit follows one pattern.
-It shows the limit that the place owns, which the user sets there, and under it the other limits that count the same calls, as a list or one "Also counted by" line.
+It shows the limit that the place owns, which the user sets there, and under it, always, the other limits that count the same calls, each in one row: its icon, name, meter and spend against the limit.
 Each limit has its own icon on every screen: the provider's for an agent's Connection limit, the same with a people badge for a Connection limit for all agents, the agent's avatar for the agent limit, a sum sign for the own limit (the total daily limit) and a lock for the spend ceiling.
-Closed, the line shows each other limit's icon and share used; open, it lists them muted, each with its meter, its spend against the limit and where it is set.
-The limit with the least left today, when it is not the place's own, is marked "stops first", closed and open.
 The spend ceiling shows only when the operator has set one.
 The screens:
 
 - **The agent's settings:** the Usage section starts with the card for the agent limit, which counts the paid calls of the agent and its sub-agents.
   The card also gives today's spend in the other units, how many calls are estimates and how many have no price yet.
-  Below it, the card always lists the other limits that count the agent: the total daily limit, the limits for all agents on its Connections, its own Connection limits, then the ceiling, each with its icon, name, meter and spend against the limit.
-  An agent with only the Claude subscription or Bob gets no button: its card gives today's spend in that unit and points to its Providers section.
+  Below it, the card always lists the other limits that count the agent: the limits for all agents on its Connections, its own Connection limits, the ceiling, then the total daily limit, each with its icon, name, meter and spend against the limit.
+  Every agent that pays for itself can set it, in dollars; for an agent with only the Claude subscription or Bob, the card says so and points to its Providers section.
   The agent's summary shows today's spend in each unit and the limit.
   Below the card, the section shows the same measured view as the Settings tab, for the spend that the agent pays, so the spend of the sub-agents that it started is included.
   A sub-agent's card shows only the note about its root driver.
@@ -447,8 +445,7 @@ The screens:
 - **Settings, Providers tab:** each connected Connection that takes a limit shows all agents' spend on it today, and opens to its limit for all agents.
   The attach dialog that lists the same Connections shows no limit.
 - **Settings, Usage tab:** the card for the own limit comes first, under the metering notice.
-  Its "Also counted by" line holds the spend ceiling, when the operator has set one.
-  When the user has Connection limits for all agents, the card lists them below, read only: each with its icon, a thin meter, the share used and the spend against the limit, and one link to Settings › Providers to change them.
+  Under it, the card lists the Connection limits for all agents and the spend ceiling, when the operator has set one, with one link to Settings › Providers.
   Below the card, a period picker keeps its period in the URL.
   Below it are the paid Metered Spend with the same date range as on Home, the spend by day (by week above 62 days), the counts of calls and tokens, the sum of call times, and the spend by agent, model and provider.
   Under the total, a line gives the subscription value when the checkbox is on, and a line tells when the subscriptions covered more than the user paid.
@@ -461,7 +458,7 @@ The screens:
   An operator sets a ceiling by the user's email, changes one, or removes one after a confirmation.
   An email that no user has shows its error in the dialog.
   The Compute budgets section below it is the same screen for compute Budgets ([budgets](budgets.md#the-pool)).
-- **Home:** the spend card shows the paid Metered Spend in dollars for Today, This month or Last month, in UTC days.
+- **Home:** the spend card shows the paid Metered Spend in dollars for Today (the default), This month or Last month, in UTC days.
   The date range under the total starts at T when the period starts before T.
   While the period runs, the range ends at today and says "so far".
   A period wholly before T shows no total.

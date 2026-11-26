@@ -8,9 +8,11 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import type { ReactNode } from "react";
 
+import { Button } from "@/components/ui/button";
 import { TextSkeleton } from "@/components/ui/text-skeleton";
 import { cn } from "@/lib/utils";
 
+import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
 import type { ProviderPresetType } from "../../../types.js";
 import {
@@ -23,13 +25,18 @@ import { useOwnerSpendStatus } from "../api/queries.js";
 import { agentLimitOf } from "../lib/agent-limit.js";
 import { agentLabel, agentNameOf } from "../lib/breakdown-sources.js";
 import {
+  allAgentsOn,
+  leftToday,
   limitShareLabel,
   NO_SPEND_IN_PERIOD,
   paidWithPlanUse,
+  percentOfLimit,
+  PROVIDER_LIMITS_LINK,
 } from "../lib/copy.js";
-import { bareSpend } from "../lib/format.js";
+import { bareSpend, meterAmount } from "../lib/format.js";
 import { connectionDisplayName } from "../lib/level-labels.js";
 import { amountsBy, VISIBLE_MICROS } from "../lib/measured-spend.js";
+import { LimitBar } from "./limit-bar.js";
 import { LimitAmounts } from "./limit-row.js";
 import { SpendAgentAvatar } from "./spend-agent-avatar.js";
 
@@ -89,8 +96,7 @@ export function TopSpenders({
     ...spenders.map(
       (spender) => spender.paidMicros + (showPlanUse ? spender.planMicros : 0),
     ),
-    ...[...agentLimits.values()].map((limit) => limit.amountMicros),
-    ...shownProviders.flatMap((p) => [p.spentMicros, p.amountMicros]),
+    ...[...agentLimits.values()].map((limit) => limit.effectiveMicros),
   );
   return (
     <div className="flex flex-col gap-3">
@@ -126,32 +132,9 @@ export function TopSpenders({
           </motion.p>
         )}
       </AnimatePresence>
-      {shownProviders.length > 0 && (
-        <div className="flex flex-col gap-3 border-t border-border-hairline pt-3">
-          {shownProviders.map((provider) => (
-            <ScaledRow
-              key={provider.limitId}
-              icon={
-                provider.type ? (
-                  <CardIcon provider={provider.type} size="tile-xs" />
-                ) : null
-              }
-              name={provider.name}
-              spentMicros={provider.spentMicros}
-              planMicros={0}
-              limitMicros={provider.amountMicros}
-              scale={scale}
-              amount={
-                <LimitAmounts
-                  spentMicros={provider.spentMicros}
-                  amountMicros={provider.amountMicros}
-                  unit={provider.unit}
-                />
-              }
-            />
-          ))}
-        </div>
-      )}
+      {shownProviders.map((provider) => (
+        <ProviderLimitBox key={provider.limitId} provider={provider} />
+      ))}
     </div>
   );
 }
@@ -180,16 +163,16 @@ interface ProviderLimit {
   type: ProviderPresetType | null;
   unit: SpendUnit;
   spentMicros: number;
-  amountMicros: number;
+  effectiveMicros: number;
+  leftMicros: number;
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: the owner's provider limits for all agents in dollars, as Home's spend card lists them under the agents on Today; a Bobcoin limit is left out, because it has no place on a dollar scale. */
+/** UNIT_BOUNDARY_DESCRIPTION: the owner's provider limits for all agents, as Home's spend card shows them under the agents on Today, each on its own scale; a provider with no such limit shows nothing. */
 export function useProviderLimits(): ProviderLimit[] {
   const { data: status } = useOwnerSpendStatus();
   const { data: connections } = useAppConnections();
   return (status?.limits ?? []).flatMap((limit) => {
-    if (limit.scope.kind !== "owner-connection" || limit.unit === "bobcoin")
-      return [];
+    if (limit.scope.kind !== "owner-connection") return [];
     const { connectionId } = limit.scope;
     const found = connections?.find((c) => c.id === connectionId);
     const templateId = found?.templateId ?? "";
@@ -200,10 +183,41 @@ export function useProviderLimits(): ProviderLimit[] {
         type: templateId ? providerTypeForTemplateId(templateId) : null,
         unit: limit.unit,
         spentMicros: limit.spentMicros,
-        amountMicros: limit.amountMicros,
+        effectiveMicros: limit.effectiveMicros,
+        leftMicros: limit.leftMicros,
       },
     ];
   });
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: one provider limit for all agents on Home, in a box of its own under the agents: its name and share used, what is left today, a link to the providers, and a bar of the limit's own. */
+function ProviderLimitBox({ provider }: { provider: ProviderLimit }) {
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
+  const name = allAgentsOn(provider.name);
+  const pct = percentOfLimit(provider.spentMicros, provider.effectiveMicros);
+  return (
+    <div className="flex flex-col gap-2 rounded-md bg-muted px-3 py-2.5">
+      <div className="flex items-center gap-2 text-sm">
+        {provider.type && <CardIcon provider={provider.type} size="tile-xs" />}
+        <span className="min-w-0 truncate text-foreground">
+          {`${name}: `}
+          <b className="font-semibold tabular-nums">{`${String(pct)}%`}</b>
+        </span>
+        <span className="ml-auto shrink-0 text-muted-foreground tabular-nums whitespace-nowrap">
+          {leftToday(meterAmount(provider.leftMicros, provider.unit))}
+        </span>
+        <Button
+          variant="link"
+          size="inline"
+          className="shrink-0"
+          onClick={() => navigateToSettings("providers")}
+        >
+          {PROVIDER_LIMITS_LINK}
+        </Button>
+      </div>
+      <LimitBar pct={pct} label={limitShareLabel(name, pct)} percent={false} />
+    </div>
+  );
 }
 
 function SpenderRow({
@@ -324,13 +338,9 @@ export function SpenderRowsSizer({ providers = 0 }: { providers?: number }) {
       {Array.from({ length: TOP_SPENDERS }, (_, i) => (
         <div key={i} className="h-9" />
       ))}
-      {providers > 0 && (
-        <div className="flex flex-col gap-3 border-t pt-3">
-          {Array.from({ length: providers }, (_, i) => (
-            <div key={i} className="h-9" />
-          ))}
-        </div>
-      )}
+      {Array.from({ length: providers }, (_, i) => (
+        <div key={i} className="h-[62px]" />
+      ))}
     </div>
   );
 }

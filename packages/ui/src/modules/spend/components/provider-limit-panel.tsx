@@ -5,7 +5,12 @@ import type { ReactNode } from "react";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { cn } from "@/lib/utils";
 
-import { limitShareLabel, resetsAtLine, showLimitLabel } from "../lib/copy.js";
+import {
+  COVERED_BY_SUBSCRIPTION,
+  limitShareLabel,
+  resetsAtLine,
+  showLimitLabel,
+} from "../lib/copy.js";
 import { localResetTime, meterAmount } from "../lib/format.js";
 import { type Level, levelPercent } from "../lib/limit-levels.js";
 import { type LevelAgent, LevelIcon } from "./level-icon.js";
@@ -89,7 +94,7 @@ export function ProviderLimitBlock({
   action,
   resetsAt,
 }: {
-  icon: Pick<Level, "kind" | "connection">;
+  icon: Pick<Level, "kind" | "connection"> | ReactNode;
   agent: LevelAgent | null;
   name: string;
   level: Level | null;
@@ -99,12 +104,12 @@ export function ProviderLimitBlock({
   resetsAt?: string;
 }) {
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex min-h-8 items-center gap-2.5">
-        <LevelIcon level={icon} agent={agent} />
+    <div className="flex flex-col gap-1.5">
+      <div className="flex min-h-8 items-center gap-3">
+        {isLevelIcon(icon) ? <LevelIcon level={icon} agent={agent} /> : icon}
         <span
           title={name}
-          className="w-[34%] min-w-0 shrink-0 truncate text-[13px] text-foreground"
+          className="w-36 min-w-0 shrink-0 truncate text-sm text-muted-foreground"
         >
           {name}
         </span>
@@ -118,7 +123,7 @@ export function ProviderLimitBlock({
             />
             <LimitAmounts
               spentMicros={level.spentMicros}
-              amountMicros={level.amountMicros}
+              amountMicros={level.effectiveMicros}
               unit={unit}
             />
           </>
@@ -129,11 +134,33 @@ export function ProviderLimitBlock({
         )}
         {action}
       </div>
-      {resetsAt && level && (
-        <p className="ml-[30px] text-xs text-muted-foreground">
-          {resetsAtLine(localResetTime(resetsAt))}
-        </p>
-      )}
+      <FooterLine
+        resets={
+          resetsAt && level ? resetsAtLine(localResetTime(resetsAt)) : null
+        }
+        covered={unit === "usd_list"}
+      />
     </div>
   );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the line under a limit: when it resets and, for a subscription, that its amounts are its value at API prices and nothing is billed. */
+function FooterLine({
+  resets,
+  covered,
+}: {
+  resets: string | null;
+  covered: boolean;
+}) {
+  const text = [resets, covered ? COVERED_BY_SUBSCRIPTION : null]
+    .filter(Boolean)
+    .join(" ");
+  if (!text) return null;
+  return <p className="text-xs text-muted-foreground">{text}</p>;
+}
+
+function isLevelIcon(
+  icon: Pick<Level, "kind" | "connection"> | ReactNode,
+): icon is Pick<Level, "kind" | "connection"> {
+  return typeof icon === "object" && icon !== null && "kind" in icon;
 }

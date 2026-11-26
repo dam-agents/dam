@@ -144,16 +144,19 @@ export function SidebarAgentRow({
             )}
           </span>
           {stopped !== null ? (
-            <Tooltip content={stopped}>
-              <span
-                role="img"
-                aria-label={stopped}
-                data-testid="sidebar-agent-stopped"
-                className={markerBox}
-              >
-                <span className="size-2 rounded-full bg-danger" />
-              </span>
-            </Tooltip>
+            <>
+              <Tooltip content={stopped}>
+                <span
+                  role="img"
+                  aria-label={stopped}
+                  data-testid="sidebar-agent-stopped"
+                  className={markerBox}
+                >
+                  <span className="size-2 rounded-full bg-danger" />
+                </span>
+              </Tooltip>
+              {unread && <span className="sr-only">(unread)</span>}
+            </>
           ) : (
             unread && (
               <>
