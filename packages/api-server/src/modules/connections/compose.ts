@@ -1,6 +1,7 @@
 import type { Db } from "db";
 import {
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  DAM_TEMPLATE_ID,
   type Connection,
   type ConnectionsService,
   type HarnessCatalog,
@@ -8,6 +9,7 @@ import {
 } from "api-server-api";
 import { createXactLock } from "../../core/xact-lock.js";
 import { connectionEnv } from "./domain/connection-env.js";
+import { readsItself } from "./domain/platform-access.js";
 import { getLogger } from "../../core/logger.js";
 import { createKbShareResolver } from "../kb-shares/index.js";
 import {
@@ -330,6 +332,20 @@ export function createToolCallLabels(deps: {
     repo: createConnectionsRepository(deps.db),
     secretStore: deps.secretStore,
   });
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: answers the login whether an Agent is on the Platform Access scale and may read itself: its grant of the platform Connection stores an access that says so. It reads the grant on every call, with no cache, so the owner's change holds from the Agent's next request.
+export function createPlatformAccessReader(db: Db): {
+  readsItself(agentId: string): Promise<boolean>;
+} {
+  const repo = createConnectionsRepository(db);
+  return {
+    async readsItself(agentId) {
+      return readsItself(
+        await repo.findPlatformAccess(agentId, DAM_TEMPLATE_ID),
+      );
+    },
+  };
 }
 
 export function createConnectionNames(db: Db): {

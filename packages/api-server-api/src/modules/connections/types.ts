@@ -139,6 +139,23 @@ export const grantToolAccess = z.object({
 });
 export type GrantToolAccess = z.infer<typeof grantToolAccess>;
 
+// UNIT_BOUNDARY_DESCRIPTION: one entry of a Platform Access, shaped like an authorization detail of a rich authorization request: `locations` names the areas of the platform, `actions` what may be done there, and `reach` whose things they apply to. `own` is the Agent itself and what it created. A `*` is written out, so an entry that leaves a field out is refused and never read as everything. The first step knows one entry: every area and every action, with reach `own`.
+export const platformAccessEntry = z.strictObject({
+  type: z.literal("platform"),
+  locations: z.tuple([z.literal("*")]),
+  reach: z.literal("own"),
+  actions: z.tuple([z.literal("*")]),
+});
+export type PlatformAccessEntry = z.infer<typeof platformAccessEntry>;
+
+// UNIT_BOUNDARY_DESCRIPTION: what one Agent may do on the platform through the platform Connection granted to it, kept on the grant. The Agent has a permission only when an entry names it, and entries add up. A grant that stores none is not on this scale: its Agent acts with the Connection's own key, as its owner.
+export const platformAccess = z.array(platformAccessEntry).length(1);
+export type PlatformAccess = z.infer<typeof platformAccess>;
+
+export const OWN_PLATFORM_ACCESS: PlatformAccess = [
+  { type: "platform", locations: ["*"], reach: "own", actions: ["*"] },
+];
+
 // UNIT_BOUNDARY_DESCRIPTION: the tool mode an MCP Connection stores, with the tools the api-server last read from its server. `tools` is null until the first read succeeded, and `listError` says why the last read failed.
 export const connectionToolAccessRecord = z.object({
   mode: toolMode,
@@ -323,6 +340,7 @@ export const agentConnections = z.object({
       grantedAt: z.string(),
       preferred: z.boolean(),
       toolAccess: grantToolAccess.optional(),
+      platformAccess: platformAccess.optional(),
       connection: connectionView.optional(),
     }),
   ),
@@ -477,6 +495,13 @@ export interface ConnectionsService {
     agentId: string;
     connectionId: string;
     access: GrantToolAccess;
+  }): Promise<void>;
+
+  /** UNIT_BOUNDARY_DESCRIPTION: sets the Platform Access of one Agent on the platform Connection granted to it, or clears it with null so the Agent acts with the Connection's own key again. Only a signed-in owner sets it, never a key, so an Agent that holds the Connection cannot change what it may do. The platform reads it on every request the Agent makes with its own key. */
+  setGrantPlatformAccess(input: {
+    agentId: string;
+    connectionId: string;
+    access: PlatformAccess | null;
   }): Promise<void>;
 
   /** UNIT_BOUNDARY_DESCRIPTION: reads the tool list of an MCP Connection's server again, with the Connection's own credential, and returns its tool access. A list that came back replaces the stored tools and `listedAt`; a failure keeps the old tools and says why in `listError`. Only an MCP Connection with a credential has a list to read. */

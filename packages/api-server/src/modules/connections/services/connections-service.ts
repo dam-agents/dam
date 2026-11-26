@@ -89,6 +89,7 @@ import {
   type ToolAccessTemplate,
 } from "../domain/tool-access.js";
 import { createMcpToolList } from "./mcp-tool-list.js";
+import { readsItself } from "../domain/platform-access.js";
 import {
   DAM_KEY_INPUT,
   isDamConnection,
@@ -2619,6 +2620,9 @@ export function createConnectionsService(deps: {
             grantedAt: g.grantedAt.toISOString(),
             preferred: g.preferred,
             ...(toolAccess ? { toolAccess } : {}),
+            ...(g.platformAccess !== null && readsItself(g.platformAccess)
+              ? { platformAccess: g.platformAccess }
+              : {}),
             ...(view ? { connection: view } : {}),
           };
         }),
@@ -3546,6 +3550,52 @@ export function createConnectionsService(deps: {
         },
       });
       await mirrorAccessToChildren(input.agentId, conn.id, access);
+    },
+
+    async setGrantPlatformAccess(input) {
+      const conn = await deps.repo.get(input.connectionId, deps.ownerId);
+      if (!conn) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "connection not found",
+        });
+      }
+      if (!isDamConnection(conn.templateId)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `The connection "${conn.name}" is not ${deps.brandName}'s own connection, so it has no platform access to set.`,
+        });
+      }
+      if (input.access === null)
+        await assertDamConnectionOffered(
+          "give an agent its owner's access again",
+        );
+      const notGranted = () =>
+        new TRPCError({
+          code: "BAD_REQUEST",
+          message: "connection is not granted to this agent",
+        });
+      const held = (await deps.repo.listAgentGrants(input.agentId)).find(
+        (g) => g.connectionId === conn.id,
+      );
+      if (!held) throw notGranted();
+      if (
+        !(await deps.repo.setGrantPlatformAccess(
+          conn.id,
+          input.agentId,
+          input.access,
+        ))
+      )
+        throw notGranted();
+      securityLog("info", "connection.grant_platform_access_update", {
+        category: "authz-list",
+        actor: deps.ownerId,
+        actorKind: "user",
+        agentId: input.agentId,
+        target: conn.id,
+        result: "success",
+        detail: { from: held.platformAccess, to: input.access },
+      });
     },
 
     async refreshTools(input) {

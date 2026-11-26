@@ -183,7 +183,7 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
       },
       attached: () =>
         logWsAttach(
-          user.sub,
+          user,
           site,
           Math.round(performance.now() - connectedAt),
         ),

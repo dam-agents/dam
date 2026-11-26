@@ -4,6 +4,7 @@ import {
   type ConnectionView,
   type DefaultAccountKindId,
   type GrantToolAccess,
+  type PlatformAccess,
 } from "api-server-api";
 
 export interface AgentGrant {
@@ -11,6 +12,7 @@ export interface AgentGrant {
   grantedAt: string;
   preferred: boolean;
   toolAccess?: GrantToolAccess;
+  platformAccess?: PlatformAccess;
 }
 
 export interface DefaultMark {

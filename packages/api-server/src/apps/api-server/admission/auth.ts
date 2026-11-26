@@ -17,6 +17,8 @@ import {
   type OwnerActiveState,
   type ValidatedApiKey,
 } from "../../../modules/api-keys/index.js";
+import { isAgentKey } from "../../../modules/agent-keys/index.js";
+import type { AgentCaller, AgentCallerRefusal } from "./agent-caller.js";
 
 class ForbiddenError extends Error {
   constructor(
@@ -96,6 +98,9 @@ export interface AuthDeps {
     token: string,
   ) => Promise<Result<ValidatedApiKey, ApiKeyValidationFailure>>;
   verifyOwnerActive?: (sub: string) => Promise<OwnerActiveState>;
+  verifyAgentKey?: (
+    key: string,
+  ) => Promise<Result<AgentCaller, AgentCallerRefusal>>;
 }
 
 export interface VerifiedPrincipal {
@@ -152,6 +157,38 @@ export function createAuth(config: AuthConfig, deps: AuthDeps = {}) {
     };
   }
 
+  async function assertOwnerActive(ownerSub: string): Promise<void> {
+    if (!deps.verifyOwnerActive) return;
+    const active = await deps.verifyOwnerActive(ownerSub);
+    if (active === "unknown")
+      throw new OwnerDirectoryUnavailableError("owner directory");
+    if (active === "inactive") throw new UnauthorizedError("owner inactive");
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: an Agent that presents its own Agent Key is that Agent, acting as itself: the principal names it in `actingAgent`, is bound to it alone and may only read. It carries its owner's subject, because everything it reaches is its owner's, and no key id, email or operator role, so nothing made for a person's key or sign-in applies to it. */
+  async function verifyAgentKey(token: string): Promise<VerifiedPrincipal> {
+    if (!deps.verifyAgentKey) {
+      throw new UnauthorizedError("agent keys not enabled");
+    }
+    const result = await deps.verifyAgentKey(token);
+    if (!result.ok) throw new UnauthorizedError(`agent-key-${result.error}`);
+
+    const caller = result.value;
+    await assertOwnerActive(caller.ownerSub);
+
+    return {
+      user: {
+        sub: caller.ownerSub,
+        preferredUsername: caller.ownerSub,
+        scopes: ["agents:read"],
+        agentIds: [caller.agentId],
+        actingAgent: caller.agentId,
+      },
+      azp: "",
+      roles: [],
+    };
+  }
+
   async function verifyApiKey(token: string): Promise<VerifiedPrincipal> {
     if (!deps.verifyApiKey) {
       throw new UnauthorizedError("api keys not enabled");
@@ -160,12 +197,7 @@ export function createAuth(config: AuthConfig, deps: AuthDeps = {}) {
     if (!result.ok) throw new UnauthorizedError(result.error);
 
     const key = result.value;
-    if (deps.verifyOwnerActive) {
-      const active = await deps.verifyOwnerActive(key.ownerSub);
-      if (active === "unknown")
-        throw new OwnerDirectoryUnavailableError("owner directory");
-      if (active === "inactive") throw new UnauthorizedError("owner inactive");
-    }
+    await assertOwnerActive(key.ownerSub);
 
     return {
       user: {
@@ -181,6 +213,7 @@ export function createAuth(config: AuthConfig, deps: AuthDeps = {}) {
   }
 
   async function verify(token: string): Promise<VerifiedPrincipal> {
+    if (isAgentKey(token)) return verifyAgentKey(token);
     return isApiKeyToken(token) ? verifyApiKey(token) : verifyJwt(token);
   }
 
@@ -239,6 +272,7 @@ export function emitUserAuthenticated(
   principal: VerifiedPrincipal,
   attribution: SurfaceAttribution,
 ): void {
+  if (principal.user.actingAgent !== undefined) return;
   const surface = clientSurface(principal, attribution);
   const isCore = attribution.coreRole
     ? principal.roles.includes(attribution.coreRole)
@@ -392,15 +426,23 @@ export async function authenticatePrincipal(
   return { ok: true, principal };
 }
 
+export function actorOf(user: Pick<UserIdentity, "sub" | "actingAgent">): {
+  actor: string;
+  actorKind: ActorKind;
+} {
+  return user.actingAgent === undefined
+    ? { actor: user.sub, actorKind: "user" }
+    : { actor: user.actingAgent, actorKind: "agent" };
+}
+
 export function logWsAttach(
-  sub: string,
+  user: Pick<UserIdentity, "sub" | "actingAgent">,
   site: WsAuthSite,
   sinceConnectMs?: number,
 ): void {
   securityLog("info", "relay.attach", {
     category: "privileged",
-    actor: sub,
-    actorKind: "user",
+    ...actorOf(user),
     surface: "ws",
     ...(site.agentId !== undefined ? { agentId: site.agentId } : {}),
     result: "success",

@@ -8,6 +8,10 @@ import {
   type SurfaceAttribution,
 } from "./auth.js";
 import { watchApiKey } from "./api-key-watch.js";
+import { AGENT_CALLER_REFUSAL } from "api-server-api";
+import { securityLog } from "../../../core/security-log.js";
+
+const TRPC_PREFIX = "/api/trpc/";
 
 const httpAuthDenial: Record<
   AuthDenialKind,
@@ -47,6 +51,20 @@ export function createAuthMiddleware(
     }
 
     const { user, roles } = admitted.principal;
+    if (user.actingAgent !== undefined && !c.req.path.startsWith(TRPC_PREFIX)) {
+      securityLog("warn", "agent.self_act", {
+        category: "authz",
+        actor: user.actingAgent,
+        actorKind: "agent",
+        agentId: user.actingAgent,
+        result: "failure",
+        decision: "deny",
+        reason: "route-closed-to-agents",
+        target: c.req.path,
+        sourceIp: site.sourceIp,
+      });
+      return c.json({ error: "forbidden", message: AGENT_CALLER_REFUSAL }, 403);
+    }
     c.set("user", user);
     c.set("roles", roles);
     c.set("surface", clientSurface(admitted.principal, attribution));

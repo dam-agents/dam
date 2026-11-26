@@ -11,6 +11,7 @@ import {
   readAgentProcedure,
   readCredentialsProcedure,
   requireWildcardBinding,
+  signedInProcedure,
 } from "../../auth-procedures.js";
 import {
   connectionCreateInputSchema,
@@ -22,6 +23,7 @@ import {
   connectionCreateFromParentInputSchema,
   connectionProbeGitHubUserTokenInputSchema,
   connectionUpdateGitHubUserTokenScopeInputSchema,
+  connectionSetGrantPlatformAccessInputSchema,
   connectionSetGrantToolAccessInputSchema,
   connectionSetToolModeInputSchema,
   connectionMoveToHostInputSchema,
@@ -175,6 +177,12 @@ export const connectionsRouter = t.router({
   setGrantToolAccess: manageCredentialsProcedure
     .input(connectionSetGrantToolAccessInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.setGrantToolAccess(input)),
+
+  setGrantPlatformAccess: signedInProcedure
+    .input(connectionSetGrantPlatformAccessInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.connections.setGrantPlatformAccess(input),
+    ),
 
   refreshTools: manageCredentialsProcedure
     .input(connectionIdInputSchema)

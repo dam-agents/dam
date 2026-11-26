@@ -1008,6 +1008,7 @@ export const connectionGrants = pgTable(
       .notNull(),
     preferred: boolean("preferred").notNull().default(false),
     toolAccess: jsonb("tool_access"),
+    platformAccess: jsonb("platform_access"),
   },
   (table) => [
     primaryKey({ columns: [table.connectionId, table.agentId] }),

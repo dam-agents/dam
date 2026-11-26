@@ -278,6 +278,7 @@ import {
   type SurfaceAttribution,
 } from "./apps/api-server/admission/auth.js";
 import { startJwksWarmup } from "./apps/api-server/admission/jwks-warmup.js";
+import { createAgentCallerVerifier } from "./apps/api-server/admission/agent-caller.js";
 import { createSessionPresence } from "./apps/api-server/agent-proxies/session-presence.js";
 import { readAgentSkill } from "./apps/api-server/routes/agent-discovery.js";
 import { createBrandIconRoutes } from "./apps/api-server/routes/brand.js";
@@ -414,6 +415,7 @@ import {
   createGrantedConnectionTemplates,
   createPricedConnections,
   createProviderEgressScopes,
+  createPlatformAccessReader,
   createToolAccessConnections,
   createToolCallLabels,
   listConnectionGrantAgentIds,
@@ -859,6 +861,21 @@ export async function bootstrap() {
     db,
     photoUrl: (id) => `${addresses.public.uiBaseUrl}/api/public/avatars/${id}`,
   });
+  const agentKeys = composeAgentKeys({
+    db,
+    k8s: k8sClient,
+    hmacKey: config.apiKeyHmacKey,
+    domain: environmentsDomainOf(config.environmentsUrl),
+    port: environmentsPortOf(config.environmentsUrl),
+    listAgents: async () =>
+      (await agentsRepo.list()).flatMap((a) =>
+        a.owner
+          ? [{ id: a.id, owner: a.owner, environmentOf: a.spec.environmentOf }]
+          : [],
+      ),
+    identityOf: (agentId) => agentsRepo.resolveIdentity(agentId),
+    log: (m) => getLogger().warn(`[agent-keys] ${m}`),
+  });
   const auth = createAuth(
     {
       issuers: addresses.all.map((set) =>
@@ -872,6 +889,10 @@ export async function bootstrap() {
     {
       verifyApiKey: apiKeysModule.validator,
       verifyOwnerActive: apiKeysModule.verifyOwnerActive,
+      verifyAgentKey: createAgentCallerVerifier({
+        agentOfKey: (key) => agentKeys.access.resolve(key),
+        readsItself: createPlatformAccessReader(db).readsItself,
+      }),
     },
   );
   const jwksWarmup = startJwksWarmup(auth.warmJwks);
@@ -906,21 +927,6 @@ export async function bootstrap() {
       : []),
   ];
   const { auth: shareAuth, cookie: shareCookie } = publicShareSignIn;
-  const agentKeys = composeAgentKeys({
-    db,
-    k8s: k8sClient,
-    hmacKey: config.apiKeyHmacKey,
-    domain: environmentsDomainOf(config.environmentsUrl),
-    port: environmentsPortOf(config.environmentsUrl),
-    listAgents: async () =>
-      (await agentsRepo.list()).flatMap((a) =>
-        a.owner
-          ? [{ id: a.id, owner: a.owner, environmentOf: a.spec.environmentOf }]
-          : [],
-      ),
-    identityOf: (agentId) => agentsRepo.resolveIdentity(agentId),
-    log: (m) => getLogger().warn(`[agent-keys] ${m}`),
-  });
   const environmentTokenKeys = createRemoteJWKSet(
     new URL(
       `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,

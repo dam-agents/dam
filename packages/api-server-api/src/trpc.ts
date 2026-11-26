@@ -5,6 +5,10 @@ import { storageFullSchema } from "./modules/budgets/schemas.js";
 import type { BudgetStorageFull } from "./modules/budgets/types.js";
 import { scanFailureSchema } from "./modules/skills/schemas.js";
 import { PRE_TERMS_PROCEDURES } from "./modules/terms/types.js";
+import {
+  AGENT_CALLER_PROCEDURES,
+  AGENT_CALLER_REFUSAL,
+} from "./agent-caller.js";
 import { withTrpcTelemetry } from "./trpc-telemetry.js";
 
 function extractScanFailure(cause: unknown): unknown {
@@ -130,10 +134,21 @@ const requireTermsAccepted = tBase.middleware(async ({ ctx, path, next }) => {
   return next();
 });
 
+const limitAgentCallers = tBase.middleware(({ ctx, path, type, next }) => {
+  if (ctx.user.actingAgent === undefined) return next();
+  if (type === "query" && AGENT_CALLER_PROCEDURES.has(path)) return next();
+  throw new TRPCError({
+    code: "FORBIDDEN",
+    message: AGENT_CALLER_REFUSAL,
+    cause: { agentCaller: ctx.user.actingAgent },
+  });
+});
+
 export const t = {
   ...tBase,
   procedure: tBase.procedure
     .use(({ path, type, next }) => withTrpcTelemetry(path, type, next))
+    .use(limitAgentCallers)
     .use(rejectOversizedArrays)
     .use(mapPgErrors)
     .use(requireTermsAccepted),

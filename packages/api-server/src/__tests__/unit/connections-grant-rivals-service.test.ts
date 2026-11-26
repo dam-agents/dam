@@ -113,6 +113,7 @@ function setup(
           grantedAt: new Date(0),
           preferred: false,
           toolAccess: null,
+          platformAccess: null,
         })),
       listConnectionsForAgent: async () =>
         [...grants].map((id) => byId.get(id)!),

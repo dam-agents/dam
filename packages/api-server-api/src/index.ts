@@ -2,6 +2,10 @@ export type { AppRouter } from "./router.js";
 export type { AgentActing, ApiContext, UserIdentity } from "./context.js";
 
 export { hasOversizedArray, OVERSIZED_ARRAY_MESSAGE } from "./input-bounds.js";
+export {
+  AGENT_CALLER_PROCEDURES,
+  AGENT_CALLER_REFUSAL,
+} from "./agent-caller.js";
 
 export { ChannelType, type EnvVar } from "./modules/shared.js";
 
@@ -806,6 +810,7 @@ export type {
   ToolMode,
   ToolRule,
   GrantToolAccess,
+  PlatformAccess,
   ConnectionTemplateView,
   ProviderBalance,
   ProviderKeyCheck,
@@ -834,6 +839,8 @@ export {
   toolMode as toolModeSchema,
   toolRule as toolRuleSchema,
   grantToolAccess as grantToolAccessSchema,
+  platformAccess as platformAccessSchema,
+  OWN_PLATFORM_ACCESS,
   providerKeyCheck as providerKeyCheckSchema,
   credentialCheck as credentialCheckSchema,
 } from "./modules/connections/types.js";

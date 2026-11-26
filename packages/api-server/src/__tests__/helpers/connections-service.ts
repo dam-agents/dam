@@ -1,4 +1,8 @@
-import type { Connection, GrantToolAccess } from "api-server-api";
+import type {
+  Connection,
+  GrantToolAccess,
+  PlatformAccess,
+} from "api-server-api";
 
 import type { ConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
@@ -70,6 +74,7 @@ export interface ConnectionsStore {
   rows: Map<string, Connection>;
   grants: Set<string>;
   grantAccess: Map<string, GrantToolAccess | null>;
+  platformAccess: Map<string, PlatformAccess>;
   secrets: Map<string, StoredSecret>;
 }
 
@@ -77,6 +82,7 @@ export const newConnectionsStore = (): ConnectionsStore => ({
   rows: new Map(),
   grants: new Set(),
   grantAccess: new Map(),
+  platformAccess: new Map(),
   secrets: new Map(),
 });
 
@@ -143,7 +149,7 @@ export function serviceHarness(opts: {
   providerModelCatalog?: ProviderModelCatalog;
 }) {
   const store = opts.store ?? newConnectionsStore();
-  const { rows, grants, grantAccess, secrets } = store;
+  const { rows, grants, grantAccess, platformAccess, secrets } = store;
   const secretReads: SecretReads = { get: 0, getField: 0 };
   const fannedOut: string[] = [];
   const grantKey = (connectionId: string, agentId: string) =>
@@ -207,10 +213,17 @@ export function serviceHarness(opts: {
       revoke: async (c, a) => {
         grants.delete(grantKey(c, a));
         grantAccess.delete(grantKey(c, a));
+        platformAccess.delete(grantKey(c, a));
       },
       setGrantToolAccess: async (c, a, toolAccess) => {
         if (!grants.has(grantKey(c, a))) return false;
         grantAccess.set(grantKey(c, a), toolAccess);
+        return true;
+      },
+      setGrantPlatformAccess: async (c, a, access) => {
+        if (!grants.has(grantKey(c, a))) return false;
+        if (access === null) platformAccess.delete(grantKey(c, a));
+        else platformAccess.set(grantKey(c, a), access);
         return true;
       },
       clearGrantToolAccess: async (c) => {
@@ -234,6 +247,8 @@ export function serviceHarness(opts: {
             preferred: false,
             toolAccess:
               grantAccess.get(grantKey(connectionId, agentId)) ?? null,
+            platformAccess:
+              platformAccess.get(grantKey(connectionId, agentId)) ?? null,
           })),
       listAgentsForConnection: async (id) =>
         rows.has(id) ? ["agent-1", ...agentsOf(id)] : [],
