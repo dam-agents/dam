@@ -46,16 +46,16 @@ const agentRow = (props: {
       TooltipProvider,
       null,
       createElement(SidebarAgentRow, {
-      agent,
-      current: false,
-      unread: true,
-      orderReady: true,
-      onMove: () => {},
-      onStep: () => {},
-      onSelect: () => {},
-      onOpenPeople: () => {},
-      actions: null,
-      actionCount: 2,
+        agent,
+        current: false,
+        unread: true,
+        orderReady: true,
+        onMove: () => {},
+        onStep: () => {},
+        onSelect: () => {},
+        onOpenPeople: () => {},
+        actions: null,
+        actionCount: 2,
         filtered: false,
         ...props,
       }),
@@ -73,7 +73,9 @@ describe("stopped marker", () => {
       unread: true,
       stopped: STOPPED,
     });
-    expect(html).toMatch(/role="img" aria-label="Stopped by a limit: Agent limit\./);
+    expect(html).toMatch(
+      /role="img" aria-label="Stopped by a limit: Agent limit\./,
+    );
     expect(html).toContain("bg-danger");
     expect(html).not.toContain("bg-accent");
     expect(html).toContain("(unread)");
