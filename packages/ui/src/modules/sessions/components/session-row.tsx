@@ -349,6 +349,9 @@ function SessionMenuItems({
           {pinned ? "Unpin session" : "Pin session"}
         </Item>
       )}
+      <Item data-testid="session-rename-button" onSelect={onRename}>
+        <Edit size={14} /> Rename session
+      </Item>
       {onExportTimeline && (
         <Item
           data-testid="session-export-timeline-button"
@@ -357,9 +360,6 @@ function SessionMenuItems({
           <Download size={14} /> Export telemetry
         </Item>
       )}
-      <Item data-testid="session-rename-button" onSelect={onRename}>
-        <Edit size={14} /> Rename session
-      </Item>
       <Item
         data-testid="session-delete-button"
         tone="danger"
