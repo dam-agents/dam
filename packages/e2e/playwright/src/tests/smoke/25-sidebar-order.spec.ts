@@ -237,7 +237,7 @@ test("drag reorders Agents, and a new Agent joins the foot", async ({
   });
 });
 
-// TEST_SCENARIO: Sessions are listed by last activity, newest first, and do not drag. A new Session goes to the top, a turn in the oldest Session moves it to the top, and the order is the same after a reload. The "⋯" button of a working row takes a click on every point: the hidden working indicator sits in the same place and must not catch it.
+// TEST_SCENARIO: Sessions are listed by last activity, newest first, and do not drag. A new Session goes to the top, a turn in the oldest Session moves it to the top, and the order is the same after a reload, once the user opens the Agent's view again. The "⋯" button of a working row takes a click on every point: the hidden working indicator sits in the same place and must not catch it.
 test("Sessions are listed newest first, and a turn moves its Session to the top", async ({
   page,
 }) => {
@@ -314,9 +314,12 @@ test("Sessions are listed newest first, and a turn moves its Session to the top"
     expect(await shownSessions(page)).toEqual([oldest, newest, middle]);
   });
 
-  await test.step("the order survives a reload", async () => {
+  await test.step("the order survives a reload, back in the Agent's view", async () => {
     await reload(page);
     await ensureSidebarExpanded(page);
+    await expect(page.getByTestId("sidebar-all-agents")).toBeHidden();
+    await agentRow(page, name).click();
+    await expect(page.getByTestId("sidebar-all-agents")).toBeVisible();
     await expect
       .poll(() => shownSessions(page))
       .toEqual([oldest, newest, middle]);
