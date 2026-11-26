@@ -235,7 +235,7 @@ dam agent create my-agent --wait --json
 
 ### Starter kits
 
-A starter kit is a proven way of working that an agent is created from: it brings its own setup, skills and network rules, and asks for the connections, channels and schedules the job needs.
+A starter kit is a proven way of working that an agent is created from, or that is applied to an agent later: it brings its own setup, skills and network rules, and asks for the connections, channels and schedules the job needs.
 A kit is not a template.
 A template (`dam template list`) is only the image an agent runs; when the user asks which kits there are, answer with `dam kit list`, never with templates.
 
@@ -267,6 +267,23 @@ dam agent create my-desk --kit research --connection github --json
 `dam kit changes <agent>` shows what the newer version changes.
 `dam kit update <agent>` takes it: the agent opens a session of its own that brings its setup up to date and asks the user about each change, so relay that session as above.
 `dam kit skip <agent>` keeps the current version until the next one is out.
+
+When the user wants a kit on an agent they already have, apply it there rather than creating a new agent, which would lose the agent's Slack channels, artifact links and sharing:
+
+```sh
+dam kit apply my-agent research --connection github --json
+```
+
+- It takes the same `--commit`, `--connection`, `--slack-channel` and `--skip-schedule` as `dam agent create --kit`, and returns the same `steps`; the connections the agent already holds count toward the kit's needs.
+- It refuses an agent that already has a kit (take its newer versions with `dam kit update`), a kit that runs on its own image (only a new agent gets that), a kit schedule named like one the agent has (pass `--skip-schedule`, or rename the agent's), and a kit env variable the agent sets to another value.
+  Nothing changes on a refusal.
+- `kept` (and a `warning:` line each) names what only a create sets and the agent keeps: its storage size, harness, egress preset or default model.
+  Tell the user, and offer `dam agent update <agent> --harness <harness>` or `--model <provider>/<model>` where the kit asks for another.
+- The kit's repository never overwrites the agent's files.
+  An agent that already runs the kit's definition, a checkout of the kit's repository, keeps it as it is, and `dam kit update` then brings it up to date.
+  A home that already holds one of the repository's files, a work directory that is not empty, or a checkout of another repository refuses the apply with the paths or repository it found: tell the user, and apply again once they moved those aside.
+- A kit that opens a first session holds every schedule of the agent, its own included, until that onboarding finishes: say so, and relay that session first.
+- `dam kit update` then works on the agent as on one created from the kit.
 
 ### Give an agent work
 

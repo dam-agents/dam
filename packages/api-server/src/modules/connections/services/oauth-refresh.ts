@@ -9,6 +9,10 @@ import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
 import {
   isPermanentTokenRejection,
+  nextRefreshBackoff,
+  REFRESH_BACKOFF_BASE_MS,
+  REFRESH_BACKOFF_MAX_MS,
+  REFRESH_SKEW_SECONDS,
   tokenRejectionOf,
 } from "../domain/refresh-failure-marker.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -44,19 +48,10 @@ interface RefreshDeps {
   log?: (msg: string) => void;
 }
 
-export function backoffDelayMs(
-  failures: number,
-  baseMs: number,
-  maxMs: number,
-): number {
-  const exponent = Math.min(Math.max(failures - 1, 0), 30);
-  return Math.min(baseMs * 2 ** exponent, maxMs);
-}
-
 export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
-  const skewSec = deps.refreshSkewSeconds ?? 5 * 60;
-  const backoffBaseMs = deps.backoffBaseMs ?? 60_000;
-  const backoffMaxMs = deps.backoffMaxMs ?? 30 * 60_000;
+  const skewSec = deps.refreshSkewSeconds ?? REFRESH_SKEW_SECONDS;
+  const backoffBaseMs = deps.backoffBaseMs ?? REFRESH_BACKOFF_BASE_MS;
+  const backoffMaxMs = deps.backoffMaxMs ?? REFRESH_BACKOFF_MAX_MS;
   const now = deps.now ?? (() => Date.now());
   const log =
     deps.log ?? ((m) => process.stderr.write(`[oauth-refresh] ${m}\n`));
@@ -103,16 +98,16 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
           ) {
             continue;
           }
-          const failures = (state?.failures ?? 0) + 1;
-          const delay = backoffDelayMs(failures, backoffBaseMs, backoffMaxMs);
-          await recordBackoff(
-            conn,
-            { failures, nextAttempt: Math.floor((startedAt + delay) / 1000) },
-            deps,
+          const backoff = nextRefreshBackoff(
+            state,
+            startedAt,
+            backoffBaseMs,
+            backoffMaxMs,
           );
+          await recordBackoff(conn, backoff, deps);
           log(
-            `connection ${conn.id} refresh failed (attempt ${failures}, ` +
-              `retry in ${Math.round(delay / 1000)}s): ${(err as Error).message}`,
+            `connection ${conn.id} refresh failed (attempt ${backoff.failures}, ` +
+              `retry in ${backoff.nextAttempt - Math.floor(startedAt / 1000)}s): ${(err as Error).message}`,
           );
         }
       }

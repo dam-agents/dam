@@ -383,6 +383,27 @@ async function main(): Promise<void> {
     JSON.stringify(hidden?.metadata?.annotations ?? {}),
   );
 
+  // TEST_SCENARIO: a kit apply on an existing Agent claims its Kit Version as one compare-and-set: the first claim lands, a second while it holds is refused, a release by another kit leaves it, and its own release clears it.
+  const claimKit = "platform/claim-check@1";
+  check(
+    "a kit claim lands on an Agent with no kit",
+    await repo.swapStarterKit(AGENT, null, claimKit),
+  );
+  check(
+    "a second kit claim is refused while the first holds",
+    !(await repo.swapStarterKit(AGENT, null, "platform/other@1")),
+  );
+  check(
+    "a release by another kit leaves the claim",
+    !(await repo.swapStarterKit(AGENT, "platform/other@1", null)) &&
+      (await repo.get(AGENT))?.starterKit === claimKit,
+  );
+  check(
+    "its own release clears the claim",
+    (await repo.swapStarterKit(AGENT, claimKit, null)) &&
+      (await repo.get(AGENT))?.starterKit === undefined,
+  );
+
   // TEST_SCENARIO: an observation the controller writes advances the version a decision compares, so a rollback decided before a condition changed is refused instead of landing on state it never saw.
   await db.execute(sql`
     INSERT INTO control.agent_status (agent_id, observed_generation) VALUES (${AGENT}, 1)

@@ -1,6 +1,6 @@
 # GitHub Connections
 
-Last verified: 2026-11-16
+Last verified: 2026-11-26
 
 ## Overview
 
@@ -46,6 +46,7 @@ Full access — everything the sign-in reaches through the app, or the whole ins
 No Connection exists after a sign-in until the user picks one, and the user may put that off; a save of an installation that names a scope or full access makes the installation and its first Connection at once, one that names neither — the user chose to make no Connection yet — makes the installation alone, and an Agent's own secret request may name only a scope.
 A sign-in's Connection injects a scoped token GitHub derives from the user token, authorized by the app's client secret, or the user token itself for full access; a renewal of the sign-in, a re-consent, and an edit of the scope give the Connections a token from the current user token, under the sign-in's refresh lock, and the sign-in renews before the earliest expiry among them.
 A scope GitHub refuses parks that one Connection as expired without costing the sign-in or its siblings anything, and never falls back to a wider token.
+A token GitHub fails to give without refusing it — a server error, or no answer — parks nothing: that Connection is retried on the same widening backoff the refresh loop keeps for any renewal, held on the Connection, and the sign-in renews again by that retry, so one transient error costs minutes rather than the user token's lifetime; a refusal on a later try parks it as above and ends the retries.
 A narrowed token still never does more than the user could.
 An installation's Connection mints its own installation token with the installation's key, and the refresh loop renews it like any minted token; a new key is given to the installation only, proven the same way, and every Connection made from it mints again with it.
 When the refresh loop finds that GitHub refuses the installation's key, it marks the installation expired as well, so the installation asks for a new key and the Connections made from it read paused until it gets one; a key replaced while that mint was out is never marked, and a refused scope or a removed installation fails only the one Connection.

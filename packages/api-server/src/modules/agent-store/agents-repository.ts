@@ -686,6 +686,32 @@ export function createControlAgentsRepository(
       return nudged.length > 0;
     },
 
+    async swapStarterKit(id, expected, next) {
+      const now = new Date();
+      const swapped =
+        expected === null
+          ? await db
+              .insert(controlAgentKitState)
+              .values({ agentId: id, starterKit: next, updatedAt: now })
+              .onConflictDoUpdate({
+                target: controlAgentKitState.agentId,
+                set: { starterKit: next, updatedAt: now },
+                setWhere: isNull(controlAgentKitState.starterKit),
+              })
+              .returning({ agentId: controlAgentKitState.agentId })
+          : await db
+              .update(controlAgentKitState)
+              .set({ starterKit: next, updatedAt: now })
+              .where(
+                and(
+                  eq(controlAgentKitState.agentId, id),
+                  eq(controlAgentKitState.starterKit, expected),
+                ),
+              )
+              .returning({ agentId: controlAgentKitState.agentId });
+      return swapped.length > 0;
+    },
+
     async setInvocationPin(id) {
       const pinned = await db
         .update(controlAgentSignals)

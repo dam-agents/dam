@@ -91,6 +91,10 @@ export interface OutboxRepo {
     agentId: string,
     detail: string | null,
   ): Promise<PendingEventRow | null>;
+  readEventReport(
+    agentId: string,
+    eventId: string,
+  ): Promise<{ reportedAt: Date | null; error: string | null } | null>;
   recordOutcome(
     agentId: string,
     settledVersion: number,
@@ -202,6 +206,23 @@ export function createOutboxRepo(db: Db): OutboxRepo {
           ),
         )
         .returning()) as PendingEventRow[];
+      return rows[0] ?? null;
+    },
+
+    async readEventReport(agentId, eventId) {
+      const rows = await db
+        .select({
+          reportedAt: runtimeEvents.reportedAt,
+          error: runtimeEvents.error,
+        })
+        .from(runtimeEvents)
+        .where(
+          and(
+            eq(runtimeEvents.id, eventId),
+            eq(runtimeEvents.agentId, agentId),
+          ),
+        )
+        .limit(1);
       return rows[0] ?? null;
     },
 
