@@ -19,4 +19,5 @@ export {
   workspaceCommandEvent,
   agentInstructionsEvent,
   workspaceSeedEvent,
+  kitSeedEvent,
 } from "./domain/outbox-events.js";

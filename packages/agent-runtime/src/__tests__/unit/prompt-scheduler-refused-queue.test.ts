@@ -67,4 +67,33 @@ describe("a refused queue", () => {
       },
     });
   });
+
+  /**
+   * TEST_SCENARIO: The refusal carries machine-readable data (why the harness
+   * refused). Every sender's error carries it beside the message, so a client
+   * can tell the cause without reading the text.
+   */
+  it("hands its senders the refusal's data", () => {
+    const sent: string[] = [];
+    const scheduler = createPromptScheduler({
+      canStart: () => true,
+      sendToAgent: () => false,
+      onQueueDropped: vi.fn(),
+    });
+
+    scheduler.submit(submission("s1", 8, sent));
+    scheduler.refuseQueue("s1", "refused", {
+      platform: { reason: "model-refused-by-harness" },
+    });
+
+    expect(sent.map((line) => JSON.parse(line))).toContainEqual({
+      jsonrpc: "2.0",
+      id: 8,
+      error: {
+        code: -32000,
+        message: "refused",
+        data: { platform: { reason: "model-refused-by-harness" } },
+      },
+    });
+  });
 });

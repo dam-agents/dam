@@ -218,6 +218,7 @@ describe("acp-runtime: env changes", () => {
     const world = createWorld({ envForceRecycleMs: 60_000 });
     const client = world.connect();
     client.send(frames.initialize(1));
+    world.harness().replyTo("initialize");
     client.send(frames.newSession(2));
     world.harness().replyTo("session/new", { sessionId: "s1" });
     client.send(frames.prompt(3, "s1", "run forever"));

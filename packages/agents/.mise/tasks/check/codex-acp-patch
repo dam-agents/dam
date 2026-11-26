@@ -25,6 +25,7 @@ if (pinnedVersion !== patched) {
       "names the session from session/new, #338, or carries a switch), " +
       "or fails a turn whose model request failed with the error in data.details and no error text in the reply (#647), " +
       "or starts no turn from a _session/steering request that asks for promptRequired, " +
+      "or starts a new codex process when its own exits, as 2.2.0 and later do, " +
       "drop the edits it makes unnecessary (packages/agents/codex/README.md, \"codex-acp patch\"); " +
       "otherwise confirm its edits still apply and update PATCHED_VERSION.",
   );

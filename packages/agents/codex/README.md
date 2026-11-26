@@ -150,9 +150,13 @@ So the chat showed the error as a reply, with no failed-message card and no Retr
 codex-acp 2.1.1 takes a `_session/steering` request into the running turn, but when no turn runs it starts a hidden turn from the steer, and ignores `idleBehavior: "promptRequired"`.
 The agent-runtime then queues the same message again, so the agent read it two times, and a Slack thread could get two replies.
 
+codex-acp 2.1.1 runs one `codex` process for all the chat sessions of its harness, and starts a new one only for a provider change, which the platform never sends.
+When that process exits, codex-acp stays alive and fails every request of every Codex chat with `Codex process has exited with code N`, until the agent restarts.
+codex-acp 2.2.0 and later start a new `codex` process on their own (`app-server-recovery`).
+
 Until upstream fixes these, [`codex-acp-patch.mjs`](rootfs/usr/local/share/codex-platform/codex-acp-patch.mjs) edits codex-acp's bundle in memory as it loads.
 `harness-chat` adds it to `NODE_OPTIONS` with `--import`, and the hook removes itself from `NODE_OPTIONS` so Codex and its tools do not inherit it.
-It patches three things:
+It patches four things:
 
 - Every title generator is born with a title already, so no ephemeral thread starts.
   The session's title is what it was before the generator would have run: the platform derives one from the first prompt, and Codex's thread preview reaches it through the session listing.
@@ -162,11 +166,14 @@ It patches three things:
   An error that Codex retries reaches the chat as a `session_info_update`, never as text, so it does not change; the terminal does not go through codex-acp.
 - A steer that finds no running turn answers `{ outcome: "promptRequired", reason: "noRunningTurn" }` and starts no turn.
   Only the agent-runtime and the api-server send `_session/steering`, and both ask for `promptRequired`, so the edit needs no condition.
+- When the `codex` process exits on its own, codex-acp lets its background tasks finish for at most five seconds, prints `codex-acp-patch: the codex process exited …` to the machine's log, and exits too.
+  The agent-runtime then drops the harness like any harness that crashed, and the next message starts a new one, which loads the chat with its history.
+  A provider change would start a new `codex` process on purpose, so the edit skips it.
 
 The hook patches only codex-acp 2.1.1 and only when every edit matches the bundle exactly.
 Otherwise it loads codex-acp unchanged and prints `codex-acp-patch: not applied …` to the machine's log.
-**To remove it** once a codex-acp release closes #663, by #595, #338 or a switch of its own, fails a turn whose model request failed with the error in `data.details` and no reply text, and starts no turn from a steer that asks for `promptRequired`: bump `npm:@agentclientprotocol/codex-acp` in [`image.toml`](image.toml), delete `codex-acp-patch.mjs` and its check ([`check/codex-acp-patch`](../.mise/tasks/check/codex-acp-patch)), drop the `NODE_OPTIONS` line from `harness-chat`, and with #338 send the session's title on `session/new`.
-A release that fixes only some of the three lets you drop just their edits.
+**To remove it** once a codex-acp release closes #663, by #595, #338 or a switch of its own, fails a turn whose model request failed with the error in `data.details` and no reply text, starts no turn from a steer that asks for `promptRequired`, and starts a new `codex` process when its own exits: bump `npm:@agentclientprotocol/codex-acp` in [`image.toml`](image.toml), delete `codex-acp-patch.mjs` and its check ([`check/codex-acp-patch`](../.mise/tasks/check/codex-acp-patch)), drop the `NODE_OPTIONS` line from `harness-chat`, and with #338 send the session's title on `session/new`.
+A release that fixes only some of the four lets you drop just their edits.
 #647 as proposed keeps the error text in the reply and puts the error in `data.message`, so a release with only that fix keeps the second edit.
 
 ## Usage

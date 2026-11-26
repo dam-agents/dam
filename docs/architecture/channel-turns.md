@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-11-20
+Last verified: 2026-11-25
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -183,8 +183,8 @@ A steer held for a running turn has no time limit either; the turn is judged onl
 
 An addressed turn that fails is answered in plain language keyed to what happened, never a raw error — and answered not at all where the thread already carries the agent's own post or a deliberate decline or hand-off.
 A turn that failed because the model provider is down or overloaded is answered with what [Provider Status](provider-status.md#screens) knows: the provider's outage and since when, a fault on the platform's side, or only that the provider did not respond.
-A turn the model refused (ACP's `refusal` stop reason) fails as `model-refused`; one whose model call failed, as `model-call-rejected` or `model-call-failed`.
-Either reply links the agent's Providers section; a failed call's reply also quotes the provider's error, never the agent's text, and links the session.
+A turn fails as `model-refused` when the model refused it, `model-call-rejected` or `model-call-failed` when the call failed, and `model-refused-by-harness` when the harness refused its model.
+Each reply links the agent's Providers section; a failed call's also quotes the provider's error, never the agent's text, and links the session.
 On Slack a refusal's reply advises a new thread, since the thread's session keeps the refused message.
 Either message counts as delivered, so the next turn's catch-up does not hand it to the agent again.
 A turn that a spend limit or the ceiling stops partway fails with the harness's report of the gate's refusal, and the relay counts it as failed with the `spend-limit` or `spend-ceiling` reason.

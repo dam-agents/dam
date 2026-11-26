@@ -1,3 +1,4 @@
+import { Filter } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import { Tooltip } from "@/components/ui/tooltip";
@@ -15,47 +16,31 @@ import { SharedAgentIcon } from "./shared-agent-icon.js";
 
 interface Props {
   agent: AgentView;
-  open: boolean;
+  viewing: boolean;
   selected: boolean;
   current: boolean;
   unread: boolean;
   stopped?: string | null;
+  filtered: boolean;
   orderReady: boolean;
   onMove: (agentId: string, drop: OrderDrop) => void;
   onStep: (agentId: string, step: -1 | 1) => void;
   onSelect: () => void;
   onOpenPeople: () => void;
   actions: ReactNode;
-  actionCount: 3 | 4;
-  filter: ReactNode;
-  filtered: boolean;
-  children?: ReactNode;
+  actionCount: 2 | 3;
 }
 
-const ACTIONS_LAYOUT = {
-  3: {
-    padding: {
-      shown: "pr-[86px]",
-      revealed:
-        "group-hover/agent:pr-[86px] group-focus-within/agent:pr-[86px] group-has-[[data-state=open]]/agent:pr-[86px]",
-    },
-    filter: {
-      shown: "right-[56px]",
-      revealed:
-        "group-hover/agent:right-[56px] group-focus-within/agent:right-[56px] group-has-[[data-state=open]]/agent:right-[56px]",
-    },
+const ACTIONS_PADDING = {
+  2: {
+    shown: "pr-[60px]",
+    revealed:
+      "group-hover/agent:pr-[60px] group-focus-within/agent:pr-[60px] group-has-[[data-state=open]]/agent:pr-[60px]",
   },
-  4: {
-    padding: {
-      shown: "pr-[112px]",
-      revealed:
-        "group-hover/agent:pr-[112px] group-focus-within/agent:pr-[112px] group-has-[[data-state=open]]/agent:pr-[112px]",
-    },
-    filter: {
-      shown: "right-[82px]",
-      revealed:
-        "group-hover/agent:right-[82px] group-focus-within/agent:right-[82px] group-has-[[data-state=open]]/agent:right-[82px]",
-    },
+  3: {
+    shown: "pr-[86px]",
+    revealed:
+      "group-hover/agent:pr-[86px] group-focus-within/agent:pr-[86px] group-has-[[data-state=open]]/agent:pr-[86px]",
   },
 } as const;
 
@@ -68,11 +53,12 @@ const HIDDEN_WHEN_REVEALED =
 
 export function SidebarAgentRow({
   agent,
-  open,
+  viewing,
   selected,
   current,
   unread,
   stopped = null,
+  filtered,
   orderReady,
   onMove,
   onStep,
@@ -80,17 +66,9 @@ export function SidebarAgentRow({
   onOpenPeople,
   actions,
   actionCount,
-  filter,
-  filtered,
-  children,
 }: Props) {
-  useAutoWakeOnSidebarOpen(agent, open);
-  const marked = unread || stopped !== null;
-  const markerBox = cn(
-    "flex size-4 shrink-0 items-center justify-center",
-    !selected && [HIDDEN_WHEN_REVEALED, filtered && "ml-6"],
-  );
-  const layout = ACTIONS_LAYOUT[actionCount];
+  useAutoWakeOnSidebarOpen(agent, viewing);
+  const padding = ACTIONS_PADDING[actionCount];
   const drag = useOrderDrag({
     scope: "agents",
     id: agent.id,
@@ -104,21 +82,21 @@ export function SidebarAgentRow({
         {...drag.dragProps}
         className={cn(
           "group group/agent relative flex items-center rounded-lg transition-colors",
-          current ? "bg-muted" : "hover:bg-muted",
+          current || selected ? "bg-muted" : "hover:bg-muted",
         )}
       >
         <div
           {...clickableProps(onSelect)}
           aria-current={current ? "page" : undefined}
-          aria-expanded={open}
-          aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+          aria-keyshortcuts={
+            orderReady ? "Alt+ArrowUp Alt+ArrowDown" : undefined
+          }
           data-testid="sidebar-agent-row"
+          data-agent-id={agent.id}
           className={cn(
             "flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg pr-2 pl-3 text-left select-none",
+            selected ? padding.shown : padding.revealed,
             selected
-              ? layout.padding.shown
-              : [layout.padding.revealed, filtered && !marked && "pr-[34px]"],
-            open
               ? "text-foreground"
               : "text-foreground/90 hover:text-foreground",
           )}
@@ -143,6 +121,19 @@ export function SidebarAgentRow({
               />
             )}
           </span>
+          {filtered && (
+            <span
+              data-testid="sidebar-agent-filtered"
+              title="Sessions filtered"
+              className={cn(
+                "flex size-4 shrink-0 items-center justify-center text-primary",
+                !selected && HIDDEN_WHEN_REVEALED,
+              )}
+            >
+              <Filter size={12} aria-hidden />
+              <span className="sr-only">(sessions filtered)</span>
+            </span>
+          )}
           {stopped !== null ? (
             <>
               <Tooltip content={stopped}>
@@ -150,7 +141,10 @@ export function SidebarAgentRow({
                   role="img"
                   aria-label={stopped}
                   data-testid="sidebar-agent-stopped"
-                  className={markerBox}
+                  className={cn(
+                    "flex size-4 shrink-0 items-center justify-center",
+                    !selected && HIDDEN_WHEN_REVEALED,
+                  )}
                 >
                   <span className="size-2 rounded-full bg-danger" />
                 </span>
@@ -160,28 +154,19 @@ export function SidebarAgentRow({
           ) : (
             unread && (
               <>
-                <span aria-hidden className={markerBox}>
+                <span
+                  aria-hidden
+                  className={cn(
+                    "flex size-4 shrink-0 items-center justify-center",
+                    !selected && HIDDEN_WHEN_REVEALED,
+                  )}
+                >
                   <span className="size-2 rounded-full bg-accent" />
                 </span>
                 <span className="sr-only">(unread)</span>
               </>
             )
           )}
-        </div>
-        <div
-          className={cn(
-            "absolute flex items-center",
-            HOVER_REVEAL,
-            selected
-              ? [layout.filter.shown, "opacity-100"]
-              : [
-                  layout.filter.revealed,
-                  marked ? "right-6" : "right-1",
-                  filtered ? "opacity-100" : HIDDEN_UNTIL_HOVER,
-                ],
-          )}
-        >
-          {filter}
         </div>
         <div
           className={cn(
@@ -194,7 +179,6 @@ export function SidebarAgentRow({
         </div>
         <OrderDropIndicator at={drag.indicator} />
       </div>
-      {children}
     </li>
   );
 }

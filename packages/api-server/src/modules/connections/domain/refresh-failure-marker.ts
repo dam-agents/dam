@@ -51,3 +51,36 @@ export function withoutRefreshFailureMarker<
   delete next.refreshBackoff;
   return next;
 }
+
+export const REFRESH_SKEW_SECONDS = 5 * 60;
+export const REFRESH_BACKOFF_BASE_MS = 60_000;
+export const REFRESH_BACKOFF_MAX_MS = 30 * 60_000;
+
+export interface RefreshBackoff {
+  failures: number;
+  nextAttempt: number;
+}
+
+export function backoffDelayMs(
+  failures: number,
+  baseMs: number,
+  maxMs: number,
+): number {
+  const exponent = Math.min(Math.max(failures - 1, 0), 30);
+  return Math.min(baseMs * 2 ** exponent, maxMs);
+}
+
+export function nextRefreshBackoff(
+  previous: RefreshBackoff | undefined,
+  nowMs: number,
+  baseMs = REFRESH_BACKOFF_BASE_MS,
+  maxMs = REFRESH_BACKOFF_MAX_MS,
+): RefreshBackoff {
+  const failures = (previous?.failures ?? 0) + 1;
+  return {
+    failures,
+    nextAttempt: Math.floor(
+      (nowMs + backoffDelayMs(failures, baseMs, maxMs)) / 1000,
+    ),
+  };
+}

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The Get started checklist is a sidebar footer item: a progress ring with its label, or the ring alone on the collapsed rail, named with the progress and the unseen unlocks in both states. A click opens the checklist beside it, Escape, its close button, Dismiss or a task row closes it back to the item, and an unseen unlock is celebrated in the popover's place before it counts, taking the keyboard with it. It is gone once every avatar character is unlocked, or while the user has dismissed it, and the open flag goes when the item leaves the screen or its drawer closes.
+// TEST_OVERVIEW: The Get started checklist is a sidebar footer item: a progress ring with its label, or the ring alone on the collapsed rail, named with the progress and the unseen unlocks in both states. A click opens the checklist beside it, Escape, its close button or a task row closes it back to the item, and an unseen unlock is celebrated in the popover's place before it counts, taking the keyboard with it. It is gone once every avatar character is unlocked, or while the user has dismissed it, and the open flag goes when the item leaves the screen or its drawer closes.
 import type { AvatarUnlock, GettingStartedProgress } from "api-server-api";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -11,7 +11,6 @@ const fake = vi.hoisted(() => ({
   wide: true,
   setExpanded: vi.fn(),
   markSeen: vi.fn(),
-  setDismissed: vi.fn(),
   startTask: vi.fn(),
 }));
 
@@ -36,7 +35,6 @@ vi.mock("../../modules/getting-started/api/queries.js", () => ({
 }));
 vi.mock("../../modules/getting-started/api/mutations.js", () => ({
   useMarkUnlockSeen: () => ({ mutate: fake.markSeen }),
-  useSetChecklistDismissed: () => ({ mutate: fake.setDismissed }),
 }));
 vi.mock("../../modules/getting-started/hooks/use-start-task.js", () => ({
   useStartTask: () => fake.startTask,
@@ -225,19 +223,6 @@ it("closes on Escape", async () => {
     );
   });
   expect(fake.setExpanded).toHaveBeenCalledWith(false);
-});
-
-// TEST_SCENARIO: Dismiss closes the checklist and records it, so the next unlock, which clears the dismissal on the server, cannot open one the user asked to close.
-it("dismisses from the panel footer", () => {
-  fake.expanded = true;
-  render();
-  act(() => {
-    [...document.querySelectorAll("button")]
-      .find((b) => b.textContent === "Dismiss")
-      ?.click();
-  });
-  expect(fake.setExpanded).toHaveBeenCalledWith(false);
-  expect(fake.setDismissed).toHaveBeenCalledWith({ dismissed: true });
 });
 
 // TEST_SCENARIO: a row opens the place where the task is done and closes the checklist on its way.

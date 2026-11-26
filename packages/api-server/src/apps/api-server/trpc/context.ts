@@ -23,6 +23,10 @@ import { createAgentTargetResolver } from "./agent-target.js";
 import { createActOnAgent } from "./act-on-agent.js";
 import { ANN_STARTER_KIT_ONBOARDED } from "../../../modules/agents/infrastructure/labels.js";
 import { createKitUpdateMarks } from "../../../modules/agents/infrastructure/kit-update-marks.js";
+import {
+  createKitClaim,
+  createKitStamp,
+} from "../../../modules/agents/infrastructure/kit-stamp.js";
 import { TRPCError } from "@trpc/server";
 import {
   composeHarnessConfigModule,
@@ -66,7 +70,10 @@ import {
   composeInvocationsControlForOwner,
   isInvocationTargetName,
 } from "../../../modules/invocations/index.js";
-import { composeStarterKitsForOwner } from "../../../modules/starter-kits/index.js";
+import {
+  composeStarterKitsForOwner,
+  createKitSeedDelivery,
+} from "../../../modules/starter-kits/index.js";
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
 import {
@@ -180,6 +187,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     onboardingChecklists,
     gettingStarted,
     sidebarOrder,
+    sessionPins,
     getAgentCapabilities,
     schedulesBoot,
     listRegisteredAgentIds,
@@ -574,6 +582,14 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       egressRules: createKitRulesSeederAdapter(db, l7Hosts),
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
+      stampKit: createKitStamp(agentsRepo),
+      kitClaim: createKitClaim(agentsRepo),
+      kitSeed: createKitSeedDelivery({
+        capabilities: getAgentCapabilities,
+        runtimeMutator,
+        readEventReport: (agentId, eventId) =>
+          outboxRepo.readEventReport(agentId, eventId),
+      }),
       linkedKits,
       chatFormPreferences: (agentId) =>
         readChatFormPreferences(
@@ -924,6 +940,16 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       chatFormPreferences,
       gettingStarted: gettingStarted.forOwner(user.sub),
       sidebarOrder: sidebarOrder.forOwner(user.sub),
+      sessionPins: sessionPins.forOwner(user.sub, async (agentId) => {
+        if (await agentsRepo.isOwnedBy(agentId, user.sub)) return true;
+        const editorEmail = editorEmailOf(user);
+        if (editorEmail === null) return false;
+        const standing = await editorStanding(agentId, {
+          sub: user.sub,
+          editorEmail,
+        });
+        return standing?.permissions.includes("sessions") ?? false;
+      }),
       files,
       harnessConfig,
       links: config.links,

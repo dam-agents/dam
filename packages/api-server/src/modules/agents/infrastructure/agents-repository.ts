@@ -13,6 +13,7 @@ import {
   DISABLED_KEY,
   INVOCATIONS_ACTIVE_KEY,
   ANN_KIT_UPDATE_PENDING,
+  ANN_STARTER_KIT,
   LAST_ACTIVITY_KEY,
   RECLAIMED_AT_KEY,
   STOP_REQUESTED_KEY,
@@ -81,6 +82,11 @@ export interface AgentsRepository {
     id: string,
     expectedCommit: string,
     at: string,
+  ): Promise<boolean>;
+  swapStarterKit(
+    id: string,
+    expected: string | null,
+    next: string | null,
   ): Promise<boolean>;
   listAgentIdsWithAnnotation(key: string, value: string): Promise<string[]>;
 
@@ -184,6 +190,32 @@ export function createAgentsRepository(
           },
         },
       });
+      return true;
+    } catch (e) {
+      if (isConflict(e) || isNotFound(e)) return false;
+      throw e;
+    }
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: a compare-and-set on the Kit Version annotation: it is written only while it still holds `expected` (null for none), through a patch that names the resourceVersion it was decided from, so of two kit applies on one Agent only one can claim it.
+  async function swapStarterKit(
+    id: string,
+    expected: string | null,
+    next: string | null,
+  ): Promise<boolean> {
+    const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+    if (!obj) return false;
+    if ((obj.metadata?.annotations?.[ANN_STARTER_KIT] ?? null) !== expected)
+      return false;
+    try {
+      const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+        metadata: {
+          resourceVersion: obj.metadata?.resourceVersion,
+          annotations: { [ANN_STARTER_KIT]: next },
+        },
+      });
+      const written = updated.metadata?.resourceVersion;
+      if (written) await cache.awaitObserved(id, written);
       return true;
     } catch (e) {
       if (isConflict(e) || isNotFound(e)) return false;
@@ -482,6 +514,7 @@ export function createAgentsRepository(
     },
 
     nudgeKitUpdate,
+    swapStarterKit,
 
     async listAgentIdsWithAnnotation(key, value) {
       const objs = await cache.list();

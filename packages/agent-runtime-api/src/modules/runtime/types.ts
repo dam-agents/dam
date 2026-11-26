@@ -36,6 +36,7 @@ export const eventKind = z.enum([
   "session-message",
   "session-defaults",
   "startup-items",
+  "kit-seed",
 ]);
 export type EventKind = z.infer<typeof eventKind>;
 
@@ -287,6 +288,30 @@ export const workspaceSeedEvent = z.object({
   payload: workspaceSeedEventPayload,
 });
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the repository of a Starter Kit applied to an
+ * Agent that already exists. Unlike a create's seed it never overwrites: a
+ * checkout of the kit's own repository is adopted as it is, any other
+ * checkout is refused, and so is a home that already holds one of the
+ * repository's files. The runtime answers through an event report, whose
+ * detail on success is the commit the agent now shares with the kit.
+ */
+export const kitSeedEventPayload = z.object({
+  url: z.string().min(1),
+  branch: z.string().min(1).optional(),
+  commit: z.string().min(1).optional(),
+  into: z.enum(["work", "home"]),
+});
+export type KitSeedEventPayload = z.infer<typeof kitSeedEventPayload>;
+
+export const kitSeedEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("kit-seed"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: kitSeedEventPayload,
+});
+
 export const workspaceCommandEventPayload = z.object({
   command: z.string().min(1),
 });
@@ -490,6 +515,7 @@ export const event = z.discriminatedUnion("kind", [
   sessionMessageEvent,
   sessionDefaultsEvent,
   startupItemsEvent,
+  kitSeedEvent,
 ]);
 export type Event = z.infer<typeof event>;
 

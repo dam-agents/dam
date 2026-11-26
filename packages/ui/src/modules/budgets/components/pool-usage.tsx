@@ -10,7 +10,6 @@ import {
   storageBar,
   storageRows,
 } from "../lib/pools.js";
-import { RESOURCE_ICON } from "../lib/resource-icons.js";
 import { CpuRow } from "./cpu-row.js";
 import { PoolBar } from "./pool-bar.js";
 import { StorageBreakdown } from "./storage-breakdown.js";
@@ -49,7 +48,6 @@ export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
     <div className="flex flex-col gap-4">
       <PoolBar
         title="Memory"
-        icon={RESOURCE_ICON.memory}
         value={memoryValue}
         valueText={`${memoryValue}${LEVEL_WORD[memory.level]}`}
         bar={memoryBar(usage, ownAgents)}
@@ -63,7 +61,6 @@ export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
       />
       <PoolBar
         title="Storage"
-        icon={RESOURCE_ICON.storage}
         value={storageValue}
         valueText={`${storageValue}${LEVEL_WORD[storage.level]}`}
         bar={storageBar(usage, ownAgents)}

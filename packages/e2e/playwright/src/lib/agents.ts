@@ -163,6 +163,11 @@ export async function openAgentChat(
     timeout: cardTimeoutMs,
   });
   await gotoAgentChat(page, agentName, agentId);
+  await ensureSidebarExpanded(page);
+  await sidebarAgentRow(page, agentName)
+    .getByTestId("sidebar-agent-row")
+    .click();
+  await expect(page.getByTestId("sidebar-all-agents")).toBeVisible();
   await expect(chatInput(page)).toBeVisible();
 }
 

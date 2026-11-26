@@ -8,6 +8,7 @@ import {
   AcpModelCallFailedError,
   AcpModelRefusedError,
   AcpTurnAbandonedError,
+  harnessModelRefusal,
   refusedForNoModel,
 } from "../../../core/acp-client.js";
 import { agentSessionUrl } from "./agent-footer.js";
@@ -91,6 +92,17 @@ export function classifyTurnFailure(err: unknown): TurnFailure {
       kind: "provider-unavailable",
       reason: PROVIDER_UNAVAILABLE_TURN_REASON,
     };
+  const harnessRefusal = harnessModelRefusal(err);
+  if (harnessRefusal !== null)
+    return {
+      kind: "plain",
+      reason: "model-refused-by-harness",
+      copy: ({ uiBaseUrl, agentId }) =>
+        harnessRefusedModelUserCopy(
+          harnessRefusal,
+          agentPageUrl(uiBaseUrl, agentId, "providers"),
+        ),
+    };
   if (err instanceof AcpModelCallFailedError)
     return {
       kind: "plain",
@@ -160,6 +172,23 @@ function modelRefusedUserCopy(
     : `${refused} Try rephrasing it, or ${switchModel}`;
 }
 
+function harnessRefusedModelUserCopy(
+  harnessText: string,
+  providersUrl: string,
+): string {
+  const said =
+    harnessText.trim() === ""
+      ? ""
+      : ` The error was: “${quoted(harnessText.trim())}”.`;
+  return (
+    "The agent can't run on its model — the model is not available, or its provider refused the key — so it couldn't answer this message." +
+    `${said} Trying again won't help until it is fixed: ask the agent's owner to pick another model or check its model provider at ${providersUrl}`
+  );
+}
+
+const quoted = (text: string): string =>
+  text.replace(/</g, "‹").replace(/>/g, "›");
+
 function modelCallFailedUserCopy(
   err: AcpModelCallFailedError,
   links: { providersUrl: string; sessionUrl: string },
@@ -171,7 +200,7 @@ function modelCallFailedUserCopy(
   const said =
     err.providerText === null
       ? ""
-      : ` The error was: “${err.providerText.replace(/</g, "‹").replace(/>/g, "›")}”.`;
+      : ` The error was: “${quoted(err.providerText)}”.`;
   const next =
     err.failure === "rejected"
       ? `Try again in a moment. If it fails again, ask the agent's owner to check its model provider — its key, its quota and its access to the model — at ${links.providersUrl}`

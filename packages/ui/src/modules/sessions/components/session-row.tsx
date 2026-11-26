@@ -2,6 +2,8 @@ import {
   Download,
   Edit,
   Pen,
+  Pin,
+  PinFilled,
   Terminal,
   Time,
   TrashCan,
@@ -33,6 +35,7 @@ import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { useAgent } from "../../agents/api/queries.js";
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { onboardingBadge } from "../../agents/utils/agent-kind.js";
 import { SessionRepositoryBadges } from "../../changes/components/session-repository-badges.js";
 import { badgeRepositories } from "../../changes/lib/pull-request-links.js";
@@ -60,6 +63,7 @@ const NO_WORK: readonly BackgroundWorkItemView[] = Object.freeze([]);
 
 interface Props {
   session: SessionView;
+  agent?: { name: string; avatar: string | null };
   active: boolean;
   working: boolean;
   needsApproval: boolean;
@@ -74,11 +78,14 @@ interface Props {
   onRename: () => void;
   onDelete: () => void;
   onExportTimeline?: () => void;
+  pinned?: boolean;
+  onTogglePin?: () => void;
   className?: string;
 }
 
 export function SessionRow({
   session: s,
+  agent: listedAgent,
   active,
   working,
   needsApproval,
@@ -93,6 +100,8 @@ export function SessionRow({
   onRename,
   onDelete,
   onExportTimeline,
+  pinned = false,
+  onTogglePin,
   className,
 }: Props) {
   const mainRef = useRef<HTMLButtonElement>(null);
@@ -137,6 +146,7 @@ export function SessionRow({
         : null;
 
   const menuProps = {
+    ...(onTogglePin && { pinned, onTogglePin }),
     ...(onExportTimeline && { onExportTimeline }),
     onRename: () => {
       afterMenu.current = onRename;
@@ -249,6 +259,18 @@ export function SessionRow({
               id={metaId}
               className="text-2xs text-muted-foreground truncate"
             >
+              {listedAgent && (
+                <span data-testid="session-agent">
+                  <AgentAvatar
+                    name={listedAgent.name}
+                    avatar={listedAgent.avatar}
+                    size={12}
+                    className="mr-1 inline-block align-[-2px]"
+                  />
+                  {listedAgent.name}
+                  {" · "}
+                </span>
+              )}
               <span title={formatTimestamp(s.updatedAt ?? s.createdAt)}>
                 {timeAgo(s.updatedAt ?? s.createdAt)}
               </span>
@@ -305,11 +327,15 @@ export function SessionRow({
 
 function SessionMenuItems({
   menu,
+  pinned = false,
+  onTogglePin,
   onExportTimeline,
   onRename,
   onDelete,
 }: {
   menu: keyof typeof MENU_PARTS;
+  pinned?: boolean;
+  onTogglePin?: (() => void) | undefined;
   onExportTimeline?: (() => void) | undefined;
   onRename: () => void;
   onDelete: () => void;
@@ -317,6 +343,15 @@ function SessionMenuItems({
   const { Item } = MENU_PARTS[menu];
   return (
     <>
+      {onTogglePin && (
+        <Item data-testid="session-pin-button" onSelect={onTogglePin}>
+          {pinned ? <PinFilled size={14} /> : <Pin size={14} />}
+          {pinned ? "Unpin session" : "Pin session"}
+        </Item>
+      )}
+      <Item data-testid="session-rename-button" onSelect={onRename}>
+        <Edit size={14} /> Rename session
+      </Item>
       {onExportTimeline && (
         <Item
           data-testid="session-export-timeline-button"
@@ -325,9 +360,6 @@ function SessionMenuItems({
           <Download size={14} /> Export telemetry
         </Item>
       )}
-      <Item data-testid="session-rename-button" onSelect={onRename}>
-        <Edit size={14} /> Rename session
-      </Item>
       <Item
         data-testid="session-delete-button"
         tone="danger"

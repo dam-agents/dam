@@ -428,6 +428,9 @@ export type {
   StarterKitApplyInput,
   ResolvedSkill,
   StarterKitApplyResult,
+  StarterKitApplyToAgentInput,
+  StarterKitApplyToAgentResult,
+  StarterKitPartKept,
   StarterKitCatalogEntry,
   StarterKitConnectionRequirement,
   StarterKitEgressRule,
@@ -449,6 +452,7 @@ export {
   LINKED_KIT_CATALOG,
   onboardingStepSchema,
   starterKitApplyInputSchema,
+  starterKitApplyToAgentInputSchema,
   starterKitCatalogEntrySchema,
   starterKitCatalogSchema,
   starterKitScheduleOverrideSchema,
@@ -598,6 +602,13 @@ export type {
   SidebarOrderService,
 } from "./modules/sidebar-order/types.js";
 export { SIDEBAR_ORDER_MAX } from "./modules/sidebar-order/schemas.js";
+export type {
+  SessionPin,
+  SessionPinKey,
+  SessionPinList,
+  SessionPinsService,
+} from "./modules/session-pins/types.js";
+export { SESSION_PINS_MAX } from "./modules/session-pins/schemas.js";
 export { quietWindowSchema } from "./modules/schedules/schemas.js";
 export {
   ONCE_DELIVERY_WINDOW_MS,

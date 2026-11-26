@@ -1,10 +1,10 @@
 # Starter Kits
 
-Last verified: 2026-11-18
+Last verified: 2026-11-23
 
 ## Overview
 
-A **Starter Kit** is a proven way of working applied to a *new* Agent: the connections, channels and schedules a job needs, optionally its own agent image, and an onboarding step that asks only for what the user alone can supply.
+A **Starter Kit** is a proven way of working applied to an Agent: the connections, channels and schedules a job needs, optionally its own agent image, and an onboarding step that asks only for what the user alone can supply.
 It is not an Agent and not a Template ([ubiquitous language](../ubiquitous-language.md#starter-kits-bounded-context--in-design-3576-3638)).
 Templates are the platform's **harness catalog** — the images the platform itself delivers — and a kit is self-sufficient: it either runs on the default Template, whose sessions each pick a harness from that catalog, or brings its own image.
 
@@ -202,7 +202,7 @@ flowchart LR
 
 ## Apply
 
-Apply — the `create` procedure of the starter-kits router, since tRPC reserves `apply` — is **create-only** and a composition of existing rails, compensated rather than transactional:
+Apply — the `create` procedure of the starter-kits router, since tRPC reserves `apply` — creates the Agent, a composition of existing rails, compensated rather than transactional:
 
 1. Resolve the kit at the catalog's pin.
    Use the kit's own image when it brings one, otherwise the Template the caller names, else the plain create's default Template.
@@ -216,6 +216,12 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
 6. Install the declared external skills.
    This step waits for the Agent to be reachable, like every skill install, so a kit with external skills returns once the Agent is up; its verdicts ride back on the apply result, and a failure here is reported, never compensated by deleting the Agent — the requirements that justify a refusal were all checked before create.
    The apply is recorded in the security log last, once the outcome including the skill verdicts is known, and recorded once more as usage activity naming the kit it applied, so which kits people take up and what they do with the Agent afterwards are answerable from one log ([usage tracking](usage-tracking.md)).
+
+**Apply to an existing Agent** runs these steps on it.
+It claims the Kit Version atomically, freeing it on a failure before the kit is recorded.
+Refusals — a kit image, a missing required connection, a clashing schedule or env, a declined seed, answered first — leave the Agent as it was.
+That `kit-seed` never overwrites: it adopts a checkout of the kit's repository, stamping the commit shared with the kit's branch, and declines another checkout, a home holding one of its files, or a non-empty work directory.
+Storage, harness, egress preset and default model are create-only: they stay, named; its schedules await onboarding.
 
 The catalog is one view shown in two places: the **Starter kits** page at `/starter-kits`, which the sidebar's Starter kits entry opens, and the **Browse Kits modal**, which Home's browse button opens.
 Its first card, **The Generalist**, is no kit: it creates a plain agent at once.
@@ -295,7 +301,7 @@ An abandoned update stays pending; the button then reopens its session or starts
 ## Invariants
 
 - **Kits are catalog or link inputs, never workspace ones.** A kit reaches the platform from a catalog or from a link the user pastes; the platform never reads configuration back out of an Agent's own repository or workspace, so an agent committing to either can widen nothing the platform enforces — connections, egress, channels and the Template stay owner-managed platform state.
-- **Requirements are checked before create.** A missing required connection is refused with nothing to clean up.
+- **Requirements are checked before any change.** A missing required connection is refused with nothing to clean up.
 - **Kits are defined in git; the platform stores only their resolution.** The catalog locators are the only configuration, the resolved rows are a cache the refresh job rebuilds from the catalogs, a Linked Kit is resolved on each read and never stored, and the Kit Version is provenance, not a source the platform re-reads; the Seed Stamp is read only to detect updates.
 
 ## Where the code lives

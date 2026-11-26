@@ -1,4 +1,5 @@
 import type {
+  AttentionItem,
   AttentionService,
   CostReviewOffer,
   DefaultModelNotice,
@@ -14,7 +15,10 @@ import type { InfraAgent } from "../agents/infrastructure/agent-mappers.js";
 import { ATTENTION_RETENTION_DAYS } from "./domain/types.js";
 import { createAttentionRepository } from "./infrastructure/attention-repository.js";
 import { createSessionWatchClient } from "./infrastructure/session-watch-client.js";
-import { createAttentionService } from "./services/attention-service.js";
+import {
+  createAttentionService,
+  toItem,
+} from "./services/attention-service.js";
 import {
   createSessionWatcher,
   type SessionWatcher,
@@ -45,13 +49,19 @@ export function composeAttentionService(deps: {
   });
 }
 
-export function composeAttentionRetention(db: Db): {
+export function composeAttentionRetention(deps: {
+  db: Db;
+  keptSessions: () => Promise<ReadonlySet<string>>;
+}): {
   retentionTick: () => Promise<void>;
 } {
-  const repo = createAttentionRepository(db);
+  const repo = createAttentionRepository(deps.db);
   return {
     retentionTick: async () => {
-      const n = await repo.deleteOlderThan(ATTENTION_RETENTION_DAYS);
+      const n = await repo.deleteOlderThan(
+        ATTENTION_RETENTION_DAYS,
+        await deps.keptSessions(),
+      );
       if (n > 0) {
         process.stderr.write(
           `[attention/retention] deleted ${n} attention_records older than ${ATTENTION_RETENTION_DAYS}d\n`,
@@ -59,6 +69,17 @@ export function composeAttentionRetention(db: Db): {
       }
     },
   };
+}
+
+export type AttentionItemsOf = (
+  ownerSub: string,
+  keys: readonly { agentId: string; sessionId: string }[],
+) => Promise<AttentionItem[]>;
+
+export function composeAttentionItemsOf(db: Db): AttentionItemsOf {
+  const repo = createAttentionRepository(db);
+  return async (ownerSub, keys) =>
+    (await repo.listForOwnerSessions(ownerSub, keys)).map(toItem);
 }
 
 export function createAttentionCleanupHook(
@@ -80,11 +101,13 @@ export function composeSessionWatcher(deps: {
     agentIds: string[],
   ) => Promise<Map<string, RuntimeFeatures>>;
   onTurnEnded: (agentId: string, sessionId: string) => void;
+  onSessionsGone: (agentId: string, sessionIds: readonly string[]) => void;
   log: (message: string) => void;
 }): SessionWatcher {
   return createSessionWatcher({
     listAgents: deps.listAgents,
     onTurnEnded: deps.onTurnEnded,
+    onSessionsGone: deps.onSessionsGone,
     runtimeFeaturesFor: deps.runtimeFeaturesFor,
     sessions: createSessionWatchClient(deps.namespace, deps.log),
     repo: createAttentionRepository(deps.db),

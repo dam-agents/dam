@@ -135,6 +135,9 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **attention record** — the per-owner account of which sessions have asked for a user's attention, plus that user's own dismissal watermarks.
   A snapshot of agent-owned state, written by a lease-elected watcher so Home, and a sleeping Agent's session list, can answer for it; it never decides which sessions exist, and unlike the session directory it may be discarded — a fresh capture refills it.
   Owned by [home-feed](home-feed.md).
+- **session pins** — the Sessions each user pinned in the sidebar (`session_pins`), one row per user, Agent and Session.
+  A user's choice that nothing else records, so it is not rebuildable; it never decides that a Session exists, and it follows its Agent and its Session away.
+  Owned by [home-feed](home-feed.md#pinned-sessions).
 - **knowledge-base shares** — one row per shared knowledge base (`kb_shares`): the durable share secret, owner-controlled public name, the published-snapshot pointer and stats, and the publish/auto-refresh lifecycle bookkeeping.
   The snapshot bytes live in the object store; this row is the queryable index and access record, and answering a consumer's request must not require the owning agent to be running.
   Owned by [knowledge-bases](knowledge-bases.md#sharing).

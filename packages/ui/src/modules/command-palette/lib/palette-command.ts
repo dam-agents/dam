@@ -52,7 +52,6 @@ export interface PaletteInput {
   browserOpen: boolean | null;
   changesOpen: boolean | null;
   theme: Theme;
-  showSleeping: boolean;
   approvalsOpen: boolean;
   checklist: "open" | "closed" | null;
   pendingApprovals: readonly ApprovalView[];
@@ -67,7 +66,6 @@ export interface PaletteActions {
   browseKits: () => void;
   openKit: (catalog: string, id: string) => void;
   bind: (messenger: BindMessenger) => void;
-  setShowSleeping: (show: boolean) => void;
   openSettings: (tab: SettingsTab) => void;
   setTheme: (theme: Theme) => void;
   logOut: () => void;

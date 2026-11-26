@@ -25,7 +25,7 @@ import type { AttentionRepository } from "../infrastructure/attention-repository
 
 const AGENT_SESSIONS_LIMIT = 50;
 
-function toItem(row: AttentionRecordRow): AttentionItem {
+export function toItem(row: AttentionRecordRow): AttentionItem {
   return {
     agentId: row.agentId,
     sessionId: row.sessionId,

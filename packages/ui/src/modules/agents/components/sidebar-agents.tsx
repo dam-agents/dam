@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { ArrowLeft } from "@carbon/icons-react";
+import { useEffect, useState } from "react";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -6,22 +7,15 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { ActivityFilterMenu } from "../../home/components/activity-filter-menu.js";
-import { useActivityConversations } from "../../home/hooks/use-activity-conversations.js";
 import { useActivitySessions } from "../../home/hooks/use-activity-sessions.js";
-import { defaultActivityFilters } from "../../home/lib/activity-filter.js";
 import { MessengerBindDialog } from "../../sandboxes/components/channels/messenger-bind-dialog.js";
 import type { BindMessenger } from "../../sandboxes/components/channels/messenger-instructions.js";
 import { useAgentsWithUnreadListedSessions } from "../../sessions/api/queries.js";
-import { SidebarAgentSessions } from "../../sessions/components/sidebar-agent-sessions.js";
 import { useStartSession } from "../../sessions/hooks/use-start-session.js";
-import {
-  setAgentSessionFilter,
-  useAgentSessionFilters,
-} from "../../sessions/lib/agent-session-filters.js";
+import { useAgentSessionFilters } from "../../sessions/lib/agent-session-filters.js";
 import { shownSessionId } from "../../sessions/lib/shown-session.js";
 import { useStoppedAgents } from "../../spend/hooks/use-stopped-agents.js";
-import { useAgents, useAgentsList } from "../api/queries.js";
+import { findAgent, useAgents } from "../api/queries.js";
 import { useSidebarAgents } from "../hooks/use-sidebar-agents.js";
 import { useSidebarOrderActions } from "../hooks/use-sidebar-order-actions.js";
 import { CreateAgentMenu } from "./create-agent-menu.js";
@@ -31,6 +25,13 @@ import {
 } from "./sidebar-agent-actions.js";
 import { SidebarAgentRow } from "./sidebar-agent-row.js";
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the sidebar's Agents section. In All agents it
+ * lists every one of the person's own Agents in their manual order; a click on one narrows the sidebar to that Agent and
+ * opens its new chat. In an agent view it shows "All agents", which goes
+ * back, and the selected Agent alone; a click on it opens its new chat
+ * again. Sessions are never listed here: the Sessions section lists them.
+ */
 export function SidebarAgents({
   stickyHeaderClassName,
   onNavigate,
@@ -38,132 +39,100 @@ export function SidebarAgents({
   stickyHeaderClassName: string;
   onNavigate?: () => void;
 }) {
-  const {
-    agents,
-    active,
-    folded,
-    openAgentId,
-    isOpen,
-    sessionOpen,
-    unreadAgentIds,
-    sessionsOf,
-    previewComplete,
-  } = useSidebarAgents();
+  const { agents, openAgentId, sidebarAgent, unreadAgentIds } =
+    useSidebarAgents();
   const orderActions = useSidebarOrderActions();
   const activity = useActivitySessions();
-  const allAgents = useAgentsList();
-  const attention = useMemo(
-    () => activity.items.map((item) => item.session),
-    [activity.items],
-  );
-  const conversationOf = useActivityConversations(attention, allAgents);
-  const available = useAgents().data?.availableChannels ?? {};
+  const agentsData = useAgents().data;
+  const available = agentsData?.availableChannels ?? {};
   const openAgentSettings = useStore((s) => s.openAgentSettings);
-  const setAgentOpen = useStore((s) => s.setSidebarAgentOpen);
-  const showFolded = useStore((s) => s.sidebarShowHibernating);
-  const setShowFolded = useStore((s) => s.setSidebarShowHibernating);
+  const setSidebarAgent = useStore((s) => s.setSidebarAgent);
+  const setSidebarBackFrom = useStore((s) => s.setSidebarBackFrom);
+  const sessionOpen = useStore((s) => s.view === "chat" && !!shownSessionId(s));
   const startSession = useStartSession();
   const listedUnread = useAgentsWithUnreadListedSessions(
     useStore(shownSessionId),
   );
   const [binding, setBinding] = useState<BindMessenger | null>(null);
   const agentFilters = useAgentSessionFilters();
+  const stopped = useStoppedAgents();
+
+  const viewGone =
+    sidebarAgent !== null &&
+    agentsData !== undefined &&
+    !findAgent(agentsData, sidebarAgent);
+  useEffect(() => {
+    if (viewGone) setSidebarAgent(null);
+  }, [viewGone, setSidebarAgent]);
 
   const navigate = (go: () => void) => () => {
     go();
     onNavigate?.();
   };
 
-  const shownAgents = showFolded ? agents : active;
+  const viewed =
+    sidebarAgent === null
+      ? undefined
+      : agents.find((agent) => agent.id === sidebarAgent);
+  const shownAgents = sidebarAgent === null ? agents : viewed ? [viewed] : [];
   const shownAgentIds = shownAgents.map((agent) => agent.id);
-  const stopped = useStoppedAgents();
-  const row = (agent: AgentView) => {
-    const current = agent.id === openAgentId;
-    const open = isOpen(agent.id);
-    return (
-      <SidebarAgentRow
-        key={agent.id}
-        agent={agent}
-        open={open}
-        selected={current && open}
-        current={current && !sessionOpen}
-        unread={unreadAgentIds.has(agent.id) || listedUnread.has(agent.id)}
-        stopped={stopped.get(agent.id) ?? null}
-        orderReady={orderActions.ready}
-        onMove={(id, drop) => orderActions.moveAgent(shownAgentIds, id, drop)}
-        onStep={(id, step) => orderActions.stepAgent(shownAgentIds, id, step)}
-        onSelect={
-          open
-            ? () => setAgentOpen(agent.id, false)
-            : navigate(() => {
-                setAgentOpen(agent.id, true);
-                startSession(agent.id);
-              })
-        }
-        onOpenPeople={navigate(() => openAgentSettings(agent.id, "people"))}
-        filtered={agentFilters.has(agent.id)}
-        filter={
-          <ActivityFilterMenu
-            filters={agentFilters.get(agent.id) ?? defaultActivityFilters()}
-            onChange={(next) => setAgentSessionFilter(agent.id, next)}
-            name={`Filter sessions of ${agent.name}`}
-            testId="sidebar-agent-session-filter"
-            className={cn("hover:bg-background", FOCUS_RING)}
-            stopPropagation
-          />
-        }
-        actionCount={hasChannelActions(available) ? 4 : 3}
-        actions={
-          <SidebarAgentActions
-            channels={available}
-            onNewSession={navigate(() => startSession(agent.id))}
-            onConfigure={navigate(() => openAgentSettings(agent.id))}
-            onBind={setBinding}
-          />
-        }
-      >
-        {open && (
-          <SidebarAgentSessions
-            agentId={agent.id}
-            open={current}
-            preview={sessionsOf(agent.id)}
-            previewComplete={previewComplete}
-            conversationOf={conversationOf}
-            onNavigate={onNavigate}
-          />
-        )}
-      </SidebarAgentRow>
-    );
-  };
+  const row = (agent: AgentView) => (
+    <SidebarAgentRow
+      key={agent.id}
+      agent={agent}
+      viewing={agent.id === sidebarAgent}
+      selected={agent.id === sidebarAgent}
+      current={agent.id === openAgentId && !sessionOpen}
+      unread={unreadAgentIds.has(agent.id) || listedUnread.has(agent.id)}
+      stopped={stopped.get(agent.id) ?? null}
+      filtered={agentFilters.has(agent.id)}
+      orderReady={orderActions.ready && !viewed}
+      onMove={(id, drop) => orderActions.moveAgent(shownAgentIds, id, drop)}
+      onStep={(id, step) => orderActions.stepAgent(shownAgentIds, id, step)}
+      onSelect={navigate(() => {
+        setSidebarAgent(agent.id);
+        startSession(agent.id);
+      })}
+      onOpenPeople={navigate(() => openAgentSettings(agent.id, "people"))}
+      actionCount={hasChannelActions(available) ? 3 : 2}
+      actions={
+        <SidebarAgentActions
+          channels={available}
+          onNewSession={navigate(() => startSession(agent.id))}
+          onConfigure={navigate(() => openAgentSettings(agent.id))}
+          onBind={setBinding}
+        />
+      }
+    />
+  );
 
   return (
     <section aria-label="Agents" data-testid="sidebar-agents">
-      <div
-        className={cn(
-          "sticky top-0 z-raised mb-1.5 flex items-center justify-between pt-3 pr-1 pb-1 pl-3",
-          stickyHeaderClassName,
-        )}
-      >
-        <SectionLabel>Agents</SectionLabel>
-        <CreateAgentMenu onChoose={onNavigate} />
-      </div>
-      {activity.unreadable && (
+      {sidebarAgent === null ? (
+        <div
+          className={cn(
+            "sticky top-0 z-raised mb-1.5 flex items-center justify-between pt-3 pr-1 pb-1 pl-3",
+            stickyHeaderClassName,
+          )}
+        >
+          <SectionLabel>Agents</SectionLabel>
+          <CreateAgentMenu onChoose={onNavigate} />
+        </div>
+      ) : (
+        <AllAgentsButton
+          onClick={() => {
+            setSidebarBackFrom(sidebarAgent);
+            setSidebarAgent(null);
+            requestAnimationFrame(() => setSidebarBackFrom(null));
+          }}
+        />
+      )}
+      {sidebarAgent === null && activity.unreadable && (
         <p className="px-2.5 py-1.5 text-xs text-muted-foreground">
           Recent sessions can't be loaded right now.
         </p>
       )}
       <ul className="flex flex-col gap-px">{shownAgents.map(row)}</ul>
-      {folded.length > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowFolded(!showFolded)}
-          aria-expanded={showFolded}
-          data-testid="sidebar-agents-hibernating"
-          className="mt-px flex h-[30px] w-full items-center rounded-lg px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          {showFolded ? "Show less" : `See all (${folded.length} more)`}
-        </button>
-      )}
       {binding && (
         <MessengerBindDialog
           messenger={binding}
@@ -171,5 +140,22 @@ export function SidebarAgents({
         />
       )}
     </section>
+  );
+}
+
+function AllAgentsButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-testid="sidebar-all-agents"
+      className={cn(
+        "mt-3 mb-1 flex h-[30px] w-full items-center gap-2 rounded-lg px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+        FOCUS_RING,
+      )}
+    >
+      <ArrowLeft size={16} aria-hidden />
+      All agents
+    </button>
   );
 }

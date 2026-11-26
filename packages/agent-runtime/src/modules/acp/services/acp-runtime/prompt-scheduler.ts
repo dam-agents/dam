@@ -117,7 +117,7 @@ export interface PromptScheduler {
   onEngaged(sessionId: string): void;
   onSessionReady(sessionId: string): void;
   onDetached(sessionId: string): void;
-  refuseQueue(sessionId: string, message: string): void;
+  refuseQueue(sessionId: string, message: string, data?: unknown): void;
   snapshot(sessionId: string): QueuedPrompt[];
   update(
     sessionId: string,
@@ -221,9 +221,10 @@ export interface PromptSchedulerDeps {
  * discarded anywhere without its prompts being written down first. Nothing
  * outside this module ever removes a queue itself. refuseQueue answers each
  * sender with an error too, so the reason reaches the client that is still
- * there to hear it, and writes the prompts down all the same: the session a
- * refused prompt started in is often removed as never stored, and the record
- * is what brings the text back.
+ * there to hear it, with the machine-readable data the caller gives, and
+ * writes the prompts down all the same: the session a refused prompt started
+ * in is often removed as never stored, and the record is what brings the text
+ * back.
  * A setting change for a session (its model or mode) waits in the same place
  * but is not a turn: it applies to the session's next turn, so it waits for
  * the turn in flight to end and for the session to be loaded back into the
@@ -327,10 +328,14 @@ export function createPromptScheduler(
     answerSteerOnly(stranded, strandedAnswer(sessionId));
   }
 
-  function refuseSettings(sessionId: string, message: string): void {
+  function refuseSettings(
+    sessionId: string,
+    message: string,
+    data?: unknown,
+  ): void {
     const settings = pendingSettings.get(sessionId);
     pendingSettings.delete(sessionId);
-    for (const entry of settings ?? []) refuse(entry, message);
+    for (const entry of settings ?? []) refuse(entry, message, data);
   }
 
   const sessionLoaded = (entry: PromptSubmission): boolean =>
@@ -638,7 +643,11 @@ export function createPromptScheduler(
     return "queued";
   }
 
-  function refuse(entry: PromptSubmission, message?: string): void {
+  function refuse(
+    entry: PromptSubmission,
+    message?: string,
+    data?: unknown,
+  ): void {
     if (entry.originalId === null) return;
     sendToChannel(
       entry.channel,
@@ -652,7 +661,7 @@ export function createPromptScheduler(
                 message: `${PROMPT_QUEUE_FULL_MESSAGE} for session ${entry.sessionId}`,
                 data: { code: PROMPT_QUEUE_FULL_CODE },
               }
-            : { code: -32000, message },
+            : { code: -32000, message, ...(data !== undefined && { data }) },
       }),
     );
   }
@@ -836,16 +845,16 @@ export function createPromptScheduler(
       maybeStartNext(sessionId);
     },
 
-    refuseQueue(sessionId, message) {
+    refuseQueue(sessionId, message, data) {
       clearSteerTimer(sessionId);
-      refuseSettings(sessionId, message);
+      refuseSettings(sessionId, message, data);
       const queue = queues.get(sessionId);
       if (queue === undefined) return;
       queues.delete(sessionId);
       deps.onQueueChanged?.(sessionId);
       const dropped = answerSteerOnly(queue, "noRunningTurn");
       if (dropped.length === 0) return;
-      for (const entry of dropped) refuse(entry, message);
+      for (const entry of dropped) refuse(entry, message, data);
       deps.onQueueDropped(sessionId, dropped, "harness-refused");
     },
 

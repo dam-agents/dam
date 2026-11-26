@@ -56,7 +56,7 @@ This is taste, not a spec: read the real components for shapes and values.
 Build every screen inside the app's real frame.
 The imports from `packages/ui/src/app.tsx` are the map; these paths are hints that may move.
 
-- The sidebar: its width when expanded is `SIDEBAR_DEFAULT_W` in `modules/platform/lib/sidebar-layout.ts`; its destinations, in order, come from `modules/platform/hooks/use-sidebar-destinations.ts`, with the agents and activity under them.
+- The sidebar: its width when expanded is `SIDEBAR_DEFAULT_W` in `modules/platform/lib/sidebar-layout.ts`; its destinations, in order, come from `modules/platform/hooks/use-sidebar-destinations.ts`, with the agents, then Pinned and Sessions, under them; a click on an agent narrows the sidebar to that agent (`sidebarAgent` in `modules/platform/store/sidebar.ts`).
 - The page column: its padding and the maximum width of the view you change.
 - The right side: `modules/sessions/components/side-panel-bar.tsx`, and which tabs a view hides (`hiddenSidePanelTabs()` in `modules/sessions/lib/side-panel.ts`).
 - An agent's settings: `modules/sandboxes/components/agent-configuration.tsx`, which the settings modal (`components/configure-agent-modal.tsx`, mounted by `components/agent-settings-host.tsx`) shows, its sections in `components/sandbox-section-nav.tsx`, and their derived counts in `hooks/use-section-summaries.ts`.
@@ -111,5 +111,5 @@ The install takes many minutes the first time; a later design change rebuilds on
 ## The design-only boundary here
 
 A design change may touch the components and views of `packages/ui/src`, its shared components, its styles and its public assets.
-It may not touch `api/`, `hooks/`, `store/`, `lib/`, `utils/` or `forms/` folders, the files at the root of `packages/ui/src`, the tests, or anything outside `packages/ui`.
+It may not touch `api/`, `hooks/`, `store/`, `lib/`, `utils/` or `forms/` folders, the files at the root of `packages/ui/src`, the tests, or anything outside `packages/ui`, except the Desk's own hand-off folders under `.design-desk/handoff/`: a spec, a mockup and its pictures, which a comment links to.
 The full lists are in `profile.json` → `boundary`.

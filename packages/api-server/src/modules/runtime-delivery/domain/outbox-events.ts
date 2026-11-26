@@ -1,3 +1,4 @@
+import type { KitSeedEventPayload } from "agent-runtime-api";
 import type {
   AgentCreateInput,
   SessionPair,
@@ -31,6 +32,12 @@ export const workspaceSeedEvent = (
   seed: NonNullable<AgentCreateInput["gitRepo"]>,
   at: Date,
 ): OutboxEvent => workspaceEvent("workspace-seed", idPrefix, agentId, seed, at);
+
+export const kitSeedEvent = (
+  agentId: string,
+  seed: KitSeedEventPayload,
+  at: Date,
+): OutboxEvent => workspaceEvent("kit-seed", "kit-seed", agentId, seed, at);
 
 export const workspaceCommandEvent = (
   idPrefix: string,
