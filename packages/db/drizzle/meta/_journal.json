@@ -1156,6 +1156,13 @@
       "when": 1795513280381,
       "tag": "0164_grant_tool_access",
       "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1795626112802,
+      "tag": "0165_session_pins",
+      "breakpoints": true
     }
   ]
 }

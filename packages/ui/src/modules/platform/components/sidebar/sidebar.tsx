@@ -7,8 +7,8 @@ import { useStore } from "../../../../store.js";
 import { SidebarAgents } from "../../../agents/components/sidebar-agents.js";
 import { SidebarSharedAgents } from "../../../agents/components/sidebar-shared-agents.js";
 import { GettingStartedNavItem } from "../../../getting-started/components/getting-started-nav-item.js";
-import { SidebarActivity } from "../../../home/components/sidebar-activity.js";
 import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
+import { SidebarSessions } from "../../../sessions/components/sidebar-sessions.js";
 import { useSidebarDestinations } from "../../hooks/use-sidebar-destinations.js";
 import { useSidebarWidth } from "../../hooks/use-sidebar-layout.js";
 import { SIDEBAR_COLLAPSED_W } from "../../lib/sidebar-layout.js";
@@ -90,9 +90,9 @@ function CollapsedRail() {
             </>
           )}
         </SidebarFlyout>
-        <SidebarFlyout label="Activity" icon={Activity} badge={hasUnread}>
+        <SidebarFlyout label="Sessions" icon={Activity} badge={hasUnread}>
           {(close) => (
-            <SidebarActivity
+            <SidebarSessions
               stickyHeaderClassName="bg-popover"
               onNavigate={close}
             />

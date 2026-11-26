@@ -99,7 +99,7 @@ A divider that falls on a day divider joins it into one line, and messages the A
 While a turn runs, "Working for" names its Sender beside the working indicator, unless the turn is the viewer's own or has no Sender.
 A queued prompt names its Sender when it is not the viewer, and editing it makes the editor its Sender.
 The line under a tool call names who allowed or denied it when that is someone else, and the line now outlives a reload for everyone.
-Session lists name the Session Starter after the time when it is not the viewer: Activity and All sessions read it from the attention record ([home feed](home-feed.md)), an Agent's own list from the Agent.
+Session lists name the Session Starter after the time when it is not the viewer: the sidebar's Sessions in All agents and All sessions read it from the attention record ([home feed](home-feed.md)), an agent view's list from the Agent.
 The Egress Rules list names who wrote a rule by email, or "you".
 
 Each replica remembers the sockets editors hold open, per Agent.
@@ -122,7 +122,7 @@ Their page is the owner's page with every control they lack permission for hidde
 A section where they hold none of its permissions carries a lock in the section list: People, Connections and Channels.
 Each such page opens with a notice that says what only the owner does, why, and names the owner to ask; Providers has one too, with its switches disabled.
 Where the owner would delete the Agent, a line says only the owner can.
-Under Shared with me, a Shared Agent lists its sessions as the owner's own Agents do, and its row and chevron act as theirs do: a click on its closed row opens its new-session page and its list, a click on its open row closes the list; its sessions are not in an editor's Activity, All sessions or Pinned.
+Under Shared with me, a click on a Shared Agent the editor may use sessions on opens its agent view, as an own Agent's does: its new-session page opens and the sidebar lists its sessions and pins, from the Agent's own list; its sessions are not in an editor's All agents Sessions or Pinned, nor in All sessions.
 A session of a Shared Agent carries the Shared badge in its top bar for the owner and the editors alike.
 An editor's approval prompts in the chat add one line naming the owner and the Agent's connections other than its model providers, each with the account it acts as when that is known ("GitHub as tomkis"), since the platform cannot know which one a tool call will use; the owner's prompts do not.
 Wherever the owner gives a Shared Agent a connection, they are reminded that its editors can use it with the owner's access.

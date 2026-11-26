@@ -45,7 +45,6 @@ export function usePaletteInput(): PaletteInput {
   const sessionId = useStore((s) => (s.view === "chat" ? s.sessionId : null));
   const settingsTab = useStore((s) => s.settingsTab);
   const theme = useStore((s) => s.theme);
-  const showSleeping = useStore((s) => s.sidebarShowHibernating);
   const approvalsOpen = useStore((s) => s.sidePanelTab === "approvals");
   const dock = useStore((s) => s.dock);
   const restarting = useStore((s) => s.restartingAgents);
@@ -134,7 +133,6 @@ export function usePaletteInput(): PaletteInput {
         ? dock?.kind === "changes" && dock.agentId === chatAgent.id
         : null,
     theme,
-    showSleeping,
     approvalsOpen,
     checklist:
       checklist === null || checklist.complete
