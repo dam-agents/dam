@@ -38,6 +38,7 @@ import {
 import {
   createExtAuthzGate,
   type EgressAttendance,
+  type OwnerCardReach,
   type EgressRuleMatcher,
   type ProviderScopes,
   type ExtAuthzDecision,
@@ -68,6 +69,8 @@ import {
 } from "./services/egress-proposals.js";
 import type { Subscription } from "rxjs";
 import type { RedisBus } from "../../core/redis-bus.js";
+import type { Redis } from "ioredis";
+import { createHoldWaiters } from "./infrastructure/hold-waiters.js";
 
 interface ComposeApprovalsServiceDeps {
   db: Db;
@@ -114,6 +117,8 @@ interface ComposeApprovalsSystemDeps {
   toolAccessConnections: ToolAccessConnections;
   toolCallLabels: ToolCallLabels;
   attendance: EgressAttendance;
+  cardReach: OwnerCardReach;
+  redis: Redis;
   spend: SpendCheck;
   webSearch: {
     control: WebSearchControl;
@@ -133,6 +138,7 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
   wakeSaga: Subscription;
 } {
   const repo = createApprovalsRepository(deps.db);
+  const waiters = createHoldWaiters(deps.redis);
   const wakeSaga = startWakeHeldCallsSaga(deps.bus);
   const relay = createApprovalsRelayService({ repo, bus: deps.bus });
   const gate = createExtAuthzGate({
@@ -142,12 +148,16 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     ruleMatcher: deps.ruleMatcher,
     providerScopes: deps.providerScopes,
     attendance: deps.attendance,
+    cardReach: deps.cardReach,
+    waiters,
     spend: deps.spend,
     questions: createSpendLimitQuestions({ repo }),
     webSearch: createWebSearchGate({
       repo,
       bus: deps.bus,
       attendance: deps.attendance,
+      cardReach: deps.cardReach,
+      waiters,
       holdSeconds: deps.holdSeconds,
       ...deps.webSearch,
     }),

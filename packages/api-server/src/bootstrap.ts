@@ -191,6 +191,7 @@ import {
 } from "./modules/channels/infrastructure/slack-installs-repository.js";
 import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
+import { createOwnerCardReach } from "./modules/channels/services/owner-card-reach.js";
 import { createSlackAppTokenService } from "./modules/channels/services/slack-app-token-service.js";
 import { slackAppTokenSource } from "./modules/channels/services/slack-app-token-source.js";
 import { createRedisSpentRefreshTokens } from "./modules/channels/infrastructure/slack-spent-refresh-tokens.js";
@@ -1721,6 +1722,13 @@ export async function bootstrap() {
     delete: deleteIdentityLink(db),
   });
 
+  const ownerCardReach = createOwnerCardReach({
+    enabled: config.slackOwnerRequests,
+    slackLinksOf: (ownerSub) =>
+      identityLinkService.externalLinksOf("slack", ownerSub),
+    installs: listSlackInstalls(db),
+  });
+
   const pendingSlackOAuthFlows = createRedisTtlStore<SlackOAuthPending>(
     sharedRedis,
     "oauth:slack",
@@ -2137,6 +2145,10 @@ export async function bootstrap() {
         },
         pendingOAuthFlows: pendingSlackOAuthFlows,
         getInstanceOwner: (agentId) => agentsRepo.getOwner(agentId),
+        ownerRequestReach: async (agentId) => {
+          const owner = await agentsRepo.getOwner(agentId);
+          return owner ? ownerCardReach.reachOf(owner) : "unlinked";
+        },
         ownerDisplayName: (sub) => userDirectory.resolveDisplayNameBySub(sub),
         templateDescription: async (id) =>
           (await templatesRepo.readSpec(id))?.spec.description ?? null,
@@ -2353,6 +2365,8 @@ export async function bootstrap() {
     ),
     toolCallLabels: createToolCallLabels({ db, secretStore }),
     attendance: turnAttendance,
+    cardReach: ownerCardReach,
+    redis: sharedRedis,
     spend: spend.check,
     webSearch: {
       ...createWebSearchGatePorts(

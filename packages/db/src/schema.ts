@@ -360,6 +360,7 @@ export const pendingApprovals = pgTable(
     decidedBy: text("decided_by"),
     status: text("status").notNull().default("pending"),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    ownerRoute: text("owner_route"),
   },
   (table) => [
     index("pending_approvals_owner_status_idx").on(

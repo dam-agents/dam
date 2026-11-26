@@ -181,6 +181,9 @@ Slack refuses a manifest that declares both, so an app created from an earlier m
 The switch is one-way, people in the workspace see it only after a hard refresh of Slack, and a distributed app may need Marketplace review again.
 Until the app is moved, the working status still shows through the older assistant API, without a Stop button.
 
+`apiServer.slackOwnerRequests.enabled` (default on) lets a request of an addressed Slack turn that needs the owner's approval wait for an owner who has linked Slack, instead of being refused at once ([owner requests in Slack](architecture/slack-owner-requests.md)).
+Off gives every owner the behavior from before: such a request is refused at once and waits for the owner in the app.
+
 ### Connecting a workspace
 
 1. Open **Settings → Slack workspaces** and press *Connect a workspace*.

@@ -20,11 +20,13 @@ import {
   type HeldToolCallEnd,
   type ToolAccessRefusal,
 } from "../domain/tool-access-refusal.js";
-import { waitForVerdict } from "./held-verdict.js";
-import type {
-  AgentIdentityResolver,
-  EgressAttendance,
-} from "./ext-authz-gate.js";
+import { type HoldWaiters, waitForVerdict } from "./held-verdict.js";
+import type { AgentIdentityResolver } from "./ext-authz-gate.js";
+import {
+  type EgressAttendance,
+  type OwnerCardReach,
+  routeHold,
+} from "./hold-route.js";
 import type { HeldToolCall } from "./tool-access-gate.js";
 
 type EgressIdentity = NonNullable<
@@ -103,7 +105,7 @@ async function targetLabelOf(
   }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the hold of one `tools/call` of an MCP Connection in needs approval, as a tool-call approval. The same call sent again while one waits (same Connection, tool and arguments, told by the payload's key) joins that approval and waits only until its hold window ends; any other call, or one sent after that window, files its own. A channel turn nobody attends cannot get an answer, so the call is refused at once and the approval stays for the owner. Otherwise the in-session prompt goes to attached clients and the request waits up to the hold window: approve once sends it, and deny once or the end of the window answers it with a JSON-RPC error. A sub-agent with network access of its own cannot ask the owner, so its call is refused without an approval. An approve once outlives the client's own tool timeout until the hold window ends: a client that gives up closes its request, which stops the wait and leaves the approval pending, and the same call sent again after approve once is made, once. Each approve once makes exactly one call: the request that makes it uses the approval up first, so a held request that a retry beat to it is refused. A new approval also gets a name for the call's target when the Template can look one up within two seconds; a lookup that fails or is slow files the approval without one, and a call that joins reuses the approval as it is. The security log names the Connection and the tool, never the arguments or the target's name.
+// UNIT_BOUNDARY_DESCRIPTION: the hold of one `tools/call` of an MCP Connection in needs approval, as a tool-call approval. The same call sent again while one waits (same Connection, tool and arguments, told by the payload's key) joins that approval and waits only until its hold window ends; any other call, or one sent after that window, files its own. The shared hold decision refuses the call at once where nobody can answer it (a channel turn nobody attends, or a Slack turn whose person chose not to wait) and the approval stays for the owner. Otherwise the in-session prompt goes to attached clients and the request waits up to the approval's expiry, which a request of an addressed Slack turn that joins it moves to a full hold window: approve once sends it, and deny once or the end of the window answers it with a JSON-RPC error. A sub-agent with network access of its own cannot ask the owner, so its call is refused without an approval. An approve once outlives the client's own tool timeout for a hold window after it was given: a client that gives up closes its request, which stops the wait and leaves the approval pending, and the same call sent again after approve once is made, once. Each approve once makes exactly one call: the request that makes it uses the approval up first, so a held request that a retry beat to it is refused. A new approval also gets a name for the call's target when the Template can look one up within two seconds; a lookup that fails or is slow files the approval without one, and a call that joins reuses the approval as it is. The security log names the Connection and the tool, never the arguments or the target's name.
 export function createToolCallHold(deps: {
   repo: Pick<
     ApprovalsRepository,
@@ -112,9 +114,12 @@ export function createToolCallHold(deps: {
     | "insertPending"
     | "getPending"
     | "expirePending"
+    | "raiseRoute"
   >;
   bus: RedisBus;
   attendance: EgressAttendance;
+  cardReach: OwnerCardReach;
+  waiters?: HoldWaiters;
   toolCallLabels: ToolCallLabels;
   holdSeconds: number;
 }): ToolCallHold {
@@ -179,9 +184,11 @@ export function createToolCallHold(deps: {
         tool,
         toolCall.arguments,
       );
+      const holdMs = deps.holdSeconds * 1000;
       const approved = await deps.repo.consumeAllowOnce({
         agentId: identity.agentId,
-        key,
+        shape: { type: "mcp_tool_call", key },
+        answeredSince: new Date(Date.now() - holdMs),
       });
       if (approved) {
         log("info", "egress.decision", {
@@ -193,16 +200,21 @@ export function createToolCallHold(deps: {
       }
 
       const attendee = identity.own?.parentAgentId ?? identity.agentId;
-      const unattended =
-        (await deps.attendance.hasOpenChannelTurn(attendee)) &&
-        !(await deps.attendance.hasInteractiveSession(attendee));
+      const routed = await routeHold(deps, {
+        attendee,
+        ownerSub: identity.ownerSub,
+      });
+      const routeDetail = {
+        route: routed.route,
+        decidedBy: routed.basis,
+        addressed: routed.addressedTurnOpen,
+      };
       const existing = await deps.repo.findActivePendingMcpToolCall({
         agentId: identity.agentId,
         key,
       });
       const pendingId = existing?.id ?? randomUUID();
-      const expiresAt =
-        existing?.expiresAt ?? new Date(Date.now() + deps.holdSeconds * 1000);
+      let expiresAt = existing?.expiresAt ?? new Date(Date.now() + holdMs);
       if (!existing) {
         const label = await targetLabelOf(deps.toolCallLabels, toolCall);
         await deps.repo.insertPending({
@@ -228,8 +240,10 @@ export function createToolCallHold(deps: {
               ? { viaEnvironment: identity.environment }
               : {}),
             ...(identity.own ? { forAgentId: identity.own.parentAgentId } : {}),
+            ...(routed.refusedIn ? { refusedIn: routed.refusedIn } : {}),
           },
           expiresAt,
+          ownerRoute: routed.route,
         });
         emit({
           type: EventType.ApprovalRequested,
@@ -237,16 +251,37 @@ export function createToolCallHold(deps: {
           agentId: identity.agentId,
           ownerSub: identity.ownerSub,
           ...(identity.own ? { forAgentId: identity.own.parentAgentId } : {}),
+          ownerRoute: routed.route,
         });
+      } else if (routed.route === "turn" && existing.ownerRoute !== "turn") {
+        const raisedUntil = new Date(Date.now() + holdMs);
+        if (await deps.repo.raiseRoute(pendingId, raisedUntil)) {
+          expiresAt = raisedUntil;
+          emit({
+            type: EventType.ApprovalRouteRaised,
+            approvalId: pendingId,
+            agentId: identity.agentId,
+            ownerSub: identity.ownerSub,
+          });
+          log("info", "egress.hold", {
+            decision: "hold",
+            reason: "route-raised",
+            correlationId: pendingId,
+            detail: { expiresAt: raisedUntil.toISOString() },
+          });
+        }
       }
 
-      if (unattended) {
+      if (routed.verdict === "refuse") {
         log("warn", "egress.decision", {
           decision: "deny",
-          reason: "unattended-channel-turn",
+          reason: routed.basis,
           correlationId: pendingId,
+          detail: routeDetail,
         });
-        return refuse("unattended");
+        return refuse(
+          routed.basis === "released-turn" ? "released" : "unattended",
+        );
       }
 
       void deps.bus.publish(
@@ -261,13 +296,28 @@ export function createToolCallHold(deps: {
       log("warn", "egress.hold", {
         decision: "hold",
         correlationId: pendingId,
-        detail: { joined: existing !== null },
+        detail: { joined: existing !== null, ...routeDetail },
       });
 
       const settled = await waitForVerdict(deps, pendingId, {
         signal,
         expiresAt,
+        ...(routed.route === "turn" ? { release: { agentId: attendee } } : {}),
+        tracked: {
+          agentId: identity.agentId,
+          ownerSub: identity.ownerSub,
+          route: routed.route,
+        },
       });
+      if (settled.reason === "hold-released") {
+        log("warn", "egress.decision", {
+          decision: "deny",
+          reason: settled.reason,
+          correlationId: pendingId,
+          detail: routeDetail,
+        });
+        return refuse("released");
+      }
       if (settled.reason === "hold-abandoned") {
         log("warn", "egress.decision", {
           decision: "deny",
@@ -283,6 +333,7 @@ export function createToolCallHold(deps: {
           agentId: identity.agentId,
           ownerSub: identity.ownerSub,
           resolution: "expired",
+          ownerRoute: routed.route,
         });
       }
       const expired = settled.reason === "hold-expired";

@@ -146,6 +146,7 @@ function toView(row: PendingApprovalRow): ApprovalView {
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
     verdict: row.verdict,
     status: row.status,
+    ownerRoute: row.ownerRoute ?? null,
   };
 }
 

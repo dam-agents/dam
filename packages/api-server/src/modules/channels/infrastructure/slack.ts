@@ -8,6 +8,7 @@ import {
   inBackgroundSpan,
 } from "../../../core/background-span.js";
 import type { ChannelTurnAttendance } from "../../../core/turn-attendance.js";
+import type { OwnerRequestReach } from "./network-access-copy.js";
 import {
   addressedGuidance,
   ambientGuidance,
@@ -1655,6 +1656,7 @@ export type SlackWorkerDeps = {
   linkArtifacts: LinkOutboundArtifacts;
   uiBaseUrl: string;
   attendance: ChannelTurnAttendance;
+  ownerRequestReach?: (agentId: string) => Promise<OwnerRequestReach>;
   workspaceFiles: AgentWorkspaceFilesFactory;
   listWorkspaces: () => Promise<SlackWorkspace[]>;
   emit?: (event: DomainEvent) => void;
@@ -1922,6 +1924,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     whisper?: SlackTurnWhisper;
     steered?: boolean;
     speaker?: string;
+    addressed?: boolean;
   };
 
   type AddressedMessage = {
@@ -2276,7 +2279,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
   function beginTurn(instanceName: string, ref: TurnRef) {
     addTo(inFlightTurns, instanceName, ref);
-    ref.releaseAttendance ??= attendance.openChannelTurn(instanceName);
+    ref.releaseAttendance ??= attendance.openChannelTurn(instanceName, {
+      channel: "slack",
+      addressed: ref.addressed === true,
+    });
     if (!ref.whisper) noteAgentThread(instanceName, ref.channel, ref.threadTs);
   }
 
@@ -4056,6 +4062,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       hasThread: m.inThread,
       hadAttachments: ctx.images.length > 0 || ctx.files.length > 0,
       ...(ctx.whisper ? { whisper: ctx.whisper } : {}),
+      addressed: !ctx.ambient && !privateReply && m.sender?.kind === "person",
     }));
     const replyThreadTs = turnRefs.at(-1)!.threadTs;
     const hasThread = ctx.messages[0]!.inThread;
@@ -4118,6 +4125,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       readsChannelHistoryIn(instanceName, ctx.channel, ctx.roster),
     ]);
     const { botUserId, ...contractContext } = turnContext;
+    const ownerRequests =
+      deps.ownerRequestReach && turnRefs.some((ref) => ref.addressed)
+        ? await deps
+            .ownerRequestReach(instanceName)
+            .catch((): OwnerRequestReach => "unlinked")
+        : null;
     const contract = slackTurnContract({
       replyThreadTs,
       eventTs,
@@ -4135,6 +4148,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       roster: rosterCopy(ctx.roster, instanceName),
       ...(ctx.whisper ? { whisper: ctx.whisper } : {}),
       owner,
+      ownerRequests,
       ...contractContext,
     });
     const earlierTurn =
@@ -7834,6 +7848,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
                 : {}),
               steered: true,
               speaker: msg.speaker,
+              addressed:
+                !msg.turn.ambient &&
+                conversation.whisper?.privateReply !== true &&
+                msg.sender.kind === "person",
             };
             beginTurn(conversation.instanceName, ref);
             steeredRefs.push(ref);

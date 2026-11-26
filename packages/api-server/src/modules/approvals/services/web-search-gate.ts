@@ -20,11 +20,13 @@ import {
   type WebSearchRefusalReason,
 } from "../domain/web-search-refusal.js";
 import { decodedUtf8 } from "../domain/check-body.js";
-import { waitForVerdict } from "./held-verdict.js";
-import type {
-  AgentIdentityResolver,
-  EgressAttendance,
-} from "./ext-authz-gate.js";
+import { type HoldWaiters, waitForVerdict } from "./held-verdict.js";
+import type { AgentIdentityResolver } from "./ext-authz-gate.js";
+import {
+  type EgressAttendance,
+  type OwnerCardReach,
+  routeHold,
+} from "./hold-route.js";
 
 export interface WebSearchControl {
   isOn(agentId: string): Promise<boolean>;
@@ -60,6 +62,7 @@ export interface WebSearchGateInput {
   path: string;
   body: ModelCallBody | undefined;
   sessionId: string | null | undefined;
+  signal?: AbortSignal;
 }
 
 export type WebSearchGateOutcome =
@@ -74,6 +77,8 @@ export interface CreateWebSearchGateDeps {
   repo: ApprovalsRepository;
   bus: RedisBus;
   attendance: EgressAttendance;
+  cardReach: OwnerCardReach;
+  waiters?: HoldWaiters;
   control: WebSearchControl;
   rules: WebSearchRules;
   sessions: ScheduledSessions;
@@ -86,7 +91,7 @@ function sha256(data: string | Uint8Array): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the step of the ext_authz gate that holds web searches for an agent with web search control on. It reads the whole body of each model call and finds a Messages call that declares a native web search tool; the agent's web search rule answers it, a scheduled or channel run nobody attends refuses it, and otherwise it waits as a web search approval, which a retry of the same search joins. A refused search is answered as a failed search, so the agent keeps working. Every other call passes on to the gate's other checks.
+// UNIT_BOUNDARY_DESCRIPTION: the step of the ext_authz gate that holds web searches for an agent with web search control on. It reads the whole body of each model call and finds a Messages call that declares a native web search tool; the agent's web search rule answers it; otherwise the shared hold decision refuses it at once (a channel turn nobody attends, a released Slack turn, or a scheduled run whose owner cannot get cards) or holds it as a web search approval, which a retry of the same search joins and an approve once given after its client left still lets through once. A refused search is answered as a failed search, so the agent keeps working. Every other call passes on to the gate's other checks.
 export function createWebSearchGate(
   deps: CreateWebSearchGateDeps,
 ): WebSearchGate {
@@ -180,22 +185,49 @@ export function createWebSearchGate(
       }
 
       const attendee = identity.own?.parentAgentId ?? identity.agentId;
-      const unattended =
-        ((await deps.attendance.hasOpenChannelTurn(attendee)) &&
-          !(await deps.attendance.hasInteractiveSession(attendee))) ||
-        (input.sessionId
-          ? await deps.sessions.isScheduled(input.agentId, input.sessionId)
-          : false);
-
+      const holdMs = deps.holdSeconds * 1000;
       const key =
         request.query !== null
           ? `query:${sha256(request.query)}`
           : `body:${sha256(body.bytes)}`;
+      const usedOnce = await deps.repo.consumeAllowOnce({
+        agentId: identity.agentId,
+        shape: { type: "web_search", key },
+        answeredSince: new Date(Date.now() - holdMs),
+      });
+      if (usedOnce) {
+        log("info", input, {
+          decision: "allow",
+          reason: "allow-once-used",
+          correlationId: usedOnce,
+          detail: { basis: "hold", queryKnown },
+        });
+        return PASS;
+      }
+
+      const sessionId = input.sessionId;
+      const routed = await routeHold(deps, {
+        attendee,
+        ownerSub: identity.ownerSub,
+        ...(sessionId
+          ? {
+              scheduledWebSearch: () =>
+                deps.sessions.isScheduled(input.agentId, sessionId),
+            }
+          : {}),
+      });
+      const routeDetail = {
+        route: routed.route,
+        decidedBy: routed.basis,
+        addressed: routed.addressedTurnOpen,
+      };
+
       const existing = await deps.repo.findActivePendingWebSearch({
         agentId: identity.agentId,
         key,
       });
       const pendingId = existing?.id ?? randomUUID();
+      let expiresAt = existing?.expiresAt ?? new Date(Date.now() + holdMs);
       if (!existing) {
         await deps.repo.insertPending({
           id: pendingId,
@@ -212,8 +244,10 @@ export function createWebSearchGate(
               ? { viaEnvironment: identity.environment }
               : {}),
             ...(identity.own ? { forAgentId: identity.own.parentAgentId } : {}),
+            ...(routed.refusedIn ? { refusedIn: routed.refusedIn } : {}),
           },
-          expiresAt: new Date(Date.now() + deps.holdSeconds * 1000),
+          expiresAt,
+          ownerRoute: routed.route,
         });
         emit({
           type: EventType.ApprovalRequested,
@@ -221,17 +255,37 @@ export function createWebSearchGate(
           agentId: identity.agentId,
           ownerSub: identity.ownerSub,
           ...(identity.own ? { forAgentId: identity.own.parentAgentId } : {}),
+          ownerRoute: routed.route,
         });
+      } else if (routed.route === "turn" && existing.ownerRoute !== "turn") {
+        const raisedUntil = new Date(Date.now() + holdMs);
+        if (await deps.repo.raiseRoute(pendingId, raisedUntil)) {
+          expiresAt = raisedUntil;
+          emit({
+            type: EventType.ApprovalRouteRaised,
+            approvalId: pendingId,
+            agentId: identity.agentId,
+            ownerSub: identity.ownerSub,
+          });
+          log("info", input, {
+            decision: "hold",
+            reason: "route-raised",
+            correlationId: pendingId,
+            detail: { expiresAt: raisedUntil.toISOString(), queryKnown },
+          });
+        }
       }
 
-      if (unattended) {
+      if (routed.verdict === "refuse") {
         log("warn", input, {
           decision: "deny",
-          reason: "unattended",
+          reason: routed.basis,
           correlationId: pendingId,
-          detail: { basis: "unattended", queryKnown },
+          detail: { basis: "unattended", queryKnown, ...routeDetail },
         });
-        return refuse("unattended");
+        return refuse(
+          routed.basis === "released-turn" ? "released" : "unattended",
+        );
       }
 
       void deps.bus.publish(
@@ -244,10 +298,21 @@ export function createWebSearchGate(
       log("warn", input, {
         decision: "hold",
         correlationId: pendingId,
-        detail: { joined: existing !== null, queryKnown },
+        detail: { joined: existing !== null, queryKnown, ...routeDetail },
       });
 
-      const settled = await waitForVerdict(deps, pendingId);
+      const settled = await waitForVerdict(deps, pendingId, {
+        signal: input.signal,
+        expiresAt,
+        ...(routed.route === "turn"
+          ? { release: { agentId: attendee, sessionId: input.sessionId } }
+          : {}),
+        tracked: {
+          agentId: identity.agentId,
+          ownerSub: identity.ownerSub,
+          route: routed.route,
+        },
+      });
       if (settled.reason === "hold-expired" && settled.flipped) {
         emit({
           type: EventType.ApprovalResolved,
@@ -255,6 +320,7 @@ export function createWebSearchGate(
           agentId: identity.agentId,
           ownerSub: identity.ownerSub,
           resolution: "expired",
+          ownerRoute: routed.route,
         });
       }
       const expired = settled.reason === "hold-expired";
@@ -262,9 +328,13 @@ export function createWebSearchGate(
         decision: expired ? "expired" : settled.verdict,
         reason: settled.reason,
         correlationId: pendingId,
-        detail: { basis: "hold", queryKnown },
+        detail: { basis: "hold", queryKnown, ...routeDetail },
       });
-      if (settled.verdict === "allow") return PASS;
+      if (settled.verdict === "allow") {
+        await deps.repo.consumeAllowOnce({ id: pendingId }).catch(() => null);
+        return PASS;
+      }
+      if (settled.reason === "hold-released") return refuse("released");
       return refuse(expired ? "expired" : "denied");
     },
   };

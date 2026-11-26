@@ -6,6 +6,7 @@ import {
   inArray,
   isNull,
   lt,
+  lte,
   ne,
   or,
   sql,
@@ -17,6 +18,7 @@ import type {
   ApprovalStatus,
   ApprovalType,
   ApprovalVerdict,
+  OwnerRoute,
 } from "api-server-api";
 import type { PendingApprovalRow } from "../domain/types.js";
 
@@ -68,10 +70,14 @@ export interface ApprovalsRepository {
     agentId: string;
     key: string;
   }): Promise<PendingApprovalRow | null>;
-  /* UNIT_BOUNDARY_DESCRIPTION: uses up one approve once of a tool call, so exactly one request makes the call. By key, it takes the oldest unused approve once of that call whose hold window has not ended, for a call sent again after the client gave up; by id, it takes that approval, for the held request it released. It returns the id it used, or null when there was none to use, such as when another request got there first. */
+  /* UNIT_BOUNDARY_DESCRIPTION: uses up one approve once, so a request the client sent again after it gave up can pass once. By shape, it takes the oldest unused approve once of that request (a network request by host, port, method and path; a web search or a tool call by its key) answered after `answeredSince`, so an answer stays usable for a hold window after it was given; by id, it takes that approval, for the held request it released. It returns the id it used, or null when there was none to use, such as when another request got there first. */
   consumeAllowOnce(
-    target: { agentId: string; key: string } | { id: string },
+    target:
+      | { agentId: string; shape: AllowOnceShape; answeredSince: Date }
+      | { id: string },
   ): Promise<string | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: moves a waiting request to the `turn` route and gives it a new expiry, when a request of an addressed Slack turn joins it. A route is never lowered, so a row already on `turn` is left as it is; it returns whether the row changed. */
+  raiseRoute(id: string, expiresAt: Date): Promise<boolean>;
   listPendingForOwner(
     ownerSub: string,
     opts?: ListApprovalsRepoOpts,
@@ -109,7 +115,7 @@ export interface ApprovalsRepository {
     staleMs: number;
     limit: number;
   }): Promise<PendingApprovalRow[]>;
-  expirePending(id: string): Promise<boolean>;
+  expirePending(id: string, opts?: { onlyIfDue?: boolean }): Promise<boolean>;
   expireOverdue(
     now: Date,
   ): Promise<Array<{ id: string; agentId: string; ownerSub: string }>>;
@@ -125,7 +131,18 @@ export interface NewPendingApproval {
   sessionId: string | null;
   payload: ApprovalPayload;
   expiresAt: Date;
+  ownerRoute?: OwnerRoute | null;
 }
+
+export type AllowOnceShape =
+  | {
+      type: "ext_authz";
+      host: string;
+      port: number | undefined;
+      method: string;
+      path: string;
+    }
+  | { type: "web_search" | "mcp_tool_call"; key: string };
 
 interface RawPending {
   id: string;
@@ -141,6 +158,7 @@ interface RawPending {
   decidedBy: string | null;
   status: string;
   deliveredAt: Date | string | null;
+  ownerRoute: string | null;
 }
 
 const DEFAULT_LIST_LIMIT = 100;
@@ -170,12 +188,28 @@ function toPendingRow(r: RawPending): PendingApprovalRow {
     decidedBy: r.decidedBy,
     status: r.status as ApprovalStatus,
     deliveredAt: r.deliveredAt === null ? null : toDate(r.deliveredAt),
+    ownerRoute: (r.ownerRoute ?? null) as OwnerRoute | null,
   };
 }
 
 const payloadLeavingPending = sql`CASE WHEN ${pendingApprovals.type} = 'mcp_tool_call' THEN ${pendingApprovals.payload} - 'arguments' ELSE ${pendingApprovals.payload} END`;
 
-// UNIT_BOUNDARY_DESCRIPTION: the approvals store. A tool-call approval keeps the call's arguments only while it waits: every update that moves a row out of `pending` (a verdict or an expiry) drops `arguments` from its payload in the same statement. For a tool-call approval, `delivered_at` marks an approve once that a request has used up; no frame is ever delivered for one, so nothing else reads or sets it on such a row.
+function sameShape(shape: AllowOnceShape) {
+  if (shape.type !== "ext_authz")
+    return and(
+      eq(pendingApprovals.type, shape.type),
+      sql`${pendingApprovals.payload}->>'key' = ${shape.key}`,
+    );
+  return and(
+    eq(pendingApprovals.type, "ext_authz"),
+    sql`${pendingApprovals.payload}->>'host' = ${shape.host}`,
+    sql`${pendingApprovals.payload}->>'port' IS NOT DISTINCT FROM ${shape.port === undefined ? null : String(shape.port)}`,
+    sql`${pendingApprovals.payload}->>'method' = ${shape.method}`,
+    sql`${pendingApprovals.payload}->>'path' = ${shape.path}`,
+  );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the approvals store. A tool-call approval keeps the call's arguments only while it waits: every update that moves a row out of `pending` (a verdict or an expiry) drops `arguments` from its payload in the same statement. For a network, web-search or tool-call approval, `delivered_at` marks an approve once that a request has used up; no frame is ever delivered for one, so nothing else reads or sets it on such a row.
 export function createApprovalsRepository(db: Db): ApprovalsRepository {
   return {
     async insertPending(row) {
@@ -189,6 +223,7 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
           sessionId: row.sessionId,
           payload: row.payload,
           expiresAt: row.expiresAt,
+          ownerRoute: row.ownerRoute ?? null,
         })
         .onConflictDoUpdate({
           target: pendingApprovals.id,
@@ -199,6 +234,7 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
             sessionId: row.sessionId,
             payload: row.payload,
             expiresAt: row.expiresAt,
+            ownerRoute: row.ownerRoute ?? null,
             createdAt: new Date(),
             status: "pending",
             resolvedAt: null,
@@ -223,6 +259,7 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
           sessionId: row.sessionId,
           payload: row.payload,
           expiresAt: row.expiresAt,
+          ownerRoute: row.ownerRoute ?? null,
         })
         .onConflictDoNothing({ target: pendingApprovals.id })
         .returning({ id: pendingApprovals.id });
@@ -266,7 +303,8 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
                owner_sub AS "ownerSub", session_id AS "sessionId", payload,
                created_at AS "createdAt", expires_at AS "expiresAt",
                resolved_at AS "resolvedAt", verdict, decided_by AS "decidedBy",
-               status, delivered_at AS "deliveredAt"
+               status, delivered_at AS "deliveredAt",
+               owner_route AS "ownerRoute"
         FROM ${pendingApprovals}
         WHERE agent_id = ${agentId}
           AND status = 'pending'
@@ -319,7 +357,6 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
 
     async consumeAllowOnce(target) {
       const unused = and(
-        eq(pendingApprovals.type, "mcp_tool_call"),
         eq(pendingApprovals.status, "resolved"),
         eq(pendingApprovals.verdict, "allow_once"),
         isNull(pendingApprovals.deliveredAt),
@@ -336,8 +373,8 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
                   and(
                     unused,
                     eq(pendingApprovals.agentId, target.agentId),
-                    sql`${pendingApprovals.payload}->>'key' = ${target.key}`,
-                    sql`${pendingApprovals.expiresAt} > now()`,
+                    sameShape(target.shape),
+                    sql`${pendingApprovals.resolvedAt} > ${target.answeredSince.toISOString()}::timestamptz`,
                   ),
                 )
                 .orderBy(asc(pendingApprovals.createdAt))
@@ -350,6 +387,21 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
         .where(and(which, unused))
         .returning({ id: pendingApprovals.id });
       return rows[0]?.id ?? null;
+    },
+
+    async raiseRoute(id, expiresAt) {
+      const rows = await db
+        .update(pendingApprovals)
+        .set({ ownerRoute: "turn", expiresAt })
+        .where(
+          and(
+            eq(pendingApprovals.id, id),
+            eq(pendingApprovals.status, "pending"),
+            sql`${pendingApprovals.ownerRoute} IS DISTINCT FROM 'turn'`,
+          ),
+        )
+        .returning({ id: pendingApprovals.id });
+      return rows.length > 0;
     },
 
     async listPendingForOwner(ownerSub, opts) {
@@ -520,18 +572,20 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
       return rows.map((r) => toPendingRow(r as RawPending));
     },
 
-    async expirePending(id) {
+    async expirePending(id, opts) {
+      const now = new Date();
       const rows = await db
         .update(pendingApprovals)
         .set({
           status: "expired",
-          resolvedAt: new Date(),
+          resolvedAt: now,
           payload: payloadLeavingPending,
         })
         .where(
           and(
             eq(pendingApprovals.id, id),
             eq(pendingApprovals.status, "pending"),
+            opts?.onlyIfDue ? lte(pendingApprovals.expiresAt, now) : undefined,
           ),
         )
         .returning({ id: pendingApprovals.id });

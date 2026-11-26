@@ -969,6 +969,8 @@ export type {
   ApprovalStatus,
   ApprovalVerdict,
   ApprovalPayload,
+  OwnerRoute,
+  RefusedIn,
   SpendLimitPayload,
   EgressProposalPayload,
   WebSearchPayload,

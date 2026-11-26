@@ -102,7 +102,7 @@ export function unnamedToolCall(
 }
 
 export type HeldToolCallEnd =
-  "unattended" | "denied" | "expired" | "child" | "used-up";
+  "unattended" | "denied" | "expired" | "child" | "used-up" | "released";
 
 function holdWindow(seconds: number): string {
   if (seconds % 60 !== 0) return `${seconds} seconds`;
@@ -110,7 +110,7 @@ function holdWindow(seconds: number): string {
   return minutes === 1 ? "1 minute" : `${minutes} minutes`;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the answer to a held tool call that will not be made: nobody attends the run to approve it now, the owner denied it, nobody answered within the hold window, it came from a sub-agent with network access of its own, which cannot ask the owner, or the owner approved it once and the same call, sent again, used that approval first. It is a JSON-RPC error for the call's id on a successful HTTP reply, so the agent reads why and its session goes on.
+// UNIT_BOUNDARY_DESCRIPTION: the answer to a held tool call that will not be made: nobody attends the run to approve it now, the owner denied it, nobody answered within the hold window, it came from a sub-agent with network access of its own, which cannot ask the owner, the owner approved it once and the same call, sent again, used that approval first, or the person who asked in Slack chose not to wait. It is a JSON-RPC error for the call's id on a successful HTTP reply, so the agent reads why and its session goes on.
 export function heldToolCallRefusal(
   limit: ToolAccessLimit,
   call: { tool: string; id: JsonRpcId | undefined },
@@ -125,6 +125,7 @@ export function heldToolCallRefusal(
     expired: `${gateway} a call of ${tool} on the Connection "${limit.connectionName}" needs approval for this agent, and nobody answered within ${holdWindow(holdSeconds)}, so the call was not made.`,
     child: `${gateway} a call of ${tool} on the Connection "${limit.connectionName}" needs approval for this agent, and an agent with network access of its own cannot ask the owner for one, so the call was not made.`,
     "used-up": `${gateway} the owner approved one call of ${tool} on the Connection "${limit.connectionName}", and the same call, sent again, was made with that approval, so this one was not made.`,
+    released: `${gateway} the person who asked chose in Slack not to wait for the owner's answer about a call of ${tool} on the Connection "${limit.connectionName}", so it was not made. It was not denied: it still waits for the agent's owner, and the person who asked can ask again once the owner allows it.`,
   }[end];
   return jsonRpcErrors(message, call.id === undefined ? [] : [call.id], false);
 }

@@ -873,7 +873,10 @@ export function createTelegramWorker(deps: {
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
     let failureTemplateId: string | undefined;
-    const releaseAttendance = attendance.openChannelTurn(agentId);
+    const releaseAttendance = attendance.openChannelTurn(agentId, {
+      channel: "telegram",
+      addressed: false,
+    });
     try {
       await agents().ensureReady(agentId);
       const acp = makeAcpClient(agentId);

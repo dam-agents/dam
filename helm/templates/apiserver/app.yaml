@@ -578,6 +578,8 @@ spec:
             {{- end }}
             - name: APPROVAL_HOLD_SECONDS
               value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
+            - name: SLACK_OWNER_REQUESTS
+              value: {{ .Values.apiServer.slackOwnerRequests.enabled | quote }}
             - name: OUTAGE_ALERT_DELAY
               value: {{ .Values.apiServer.outageAlertDelay | quote }}
             - name: ACP_TURN_STALL_PROBE_SECONDS

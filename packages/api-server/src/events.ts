@@ -4,6 +4,7 @@ import type {
   EntryPointChoice,
   FirstResultKind,
   GettingStartedTask,
+  OwnerRoute,
   ProviderOutageReason,
   SpendLimitScope,
   SpendUnit,
@@ -45,6 +46,8 @@ export enum EventType {
   ContributionGapChanged = "ContributionGapChanged",
   ApprovalRequested = "ApprovalRequested",
   ApprovalResolved = "ApprovalResolved",
+  ApprovalRouteRaised = "ApprovalRouteRaised",
+  ApprovalWaitChanged = "ApprovalWaitChanged",
   SpendLimitsChanged = "SpendLimitsChanged",
   SpendWorkStopped = "SpendWorkStopped",
   GatewayCallEnded = "GatewayCallEnded",
@@ -267,6 +270,25 @@ export type ApprovalRequested = {
   ownerSub: string;
   // UNIT_BOUNDARY_DESCRIPTION: the parent a scoped child's prompt surfaces on, when the request came from such a child.
   forAgentId?: string;
+  ownerRoute?: OwnerRoute;
+};
+
+// UNIT_BOUNDARY_DESCRIPTION: a request of an addressed Slack turn joined a waiting request that was on the `background` route, which moved it to the `turn` route and gave it a new expiry.
+export type ApprovalRouteRaised = {
+  type: EventType.ApprovalRouteRaised;
+  approvalId: string;
+  agentId: string;
+  ownerSub: string;
+};
+
+// UNIT_BOUNDARY_DESCRIPTION: whether any held request still waits for a routed approval's answer. `waiting: false` comes when the last wait ended without a verdict (its client went away, or a "Don't wait" release); `waiting: true` when a request waits on it again. A verdict or an expiry sends `ApprovalResolved` instead.
+export type ApprovalWaitChanged = {
+  type: EventType.ApprovalWaitChanged;
+  approvalId: string;
+  agentId: string;
+  ownerSub: string;
+  ownerRoute: OwnerRoute;
+  waiting: boolean;
 };
 
 export type ApprovalResolved = {
@@ -276,6 +298,7 @@ export type ApprovalResolved = {
   ownerSub: string;
   resolution: ApprovalResolution;
   forAgentId?: string;
+  ownerRoute?: OwnerRoute;
 };
 
 export type SpendLimitsChanged = {
@@ -652,6 +675,8 @@ export type DomainEvent =
   | ContributionGapChanged
   | ApprovalRequested
   | ApprovalResolved
+  | ApprovalRouteRaised
+  | ApprovalWaitChanged
   | SpendLimitsChanged
   | SpendWorkStopped
   | GatewayCallEnded

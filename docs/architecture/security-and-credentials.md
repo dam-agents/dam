@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-11-24
+Last verified: 2026-11-26
 
 ## Overview
 
@@ -326,13 +326,8 @@ It may also open in-cluster peers, such as a self-hosted model server: each peer
 A peer marked as in the ambient mesh also gets HBONE (15008), and over HBONE ztunnel carries any inner port, so the port list binds only a peer outside the mesh.
 A connection to a private upstream (an in-house API, a cluster's API server) needs its range listed there.
 
-**Unattended requests are refused, not held.** Holding is only worth doing where a verdict can be made.
-A turn driven from a messenger ([channels](channels.md)) cannot produce one — the owner may be absent, and the conversation's other members are not the owner — so its hold would fill the window and deny anyway, the turn silent throughout.
-So when the gate sees a channel turn open on the agent and no interactive session attached to answer for it, it records the request and denies at once.
-The record is the point: it stays actionable on Home, a permanent verdict there writes the rule the agent's next attempt meets, and retries reuse that one row.
-No in-session prompt is published on this path: the relay clients that would read it are absent by definition.
-Both signals are read across api-server replicas (the replica relaying a turn is rarely the one a Check lands on) and fail toward *attended*, so losing them degrades to the ordinary hold rather than to silent denial.
-An attached browser or CLI session means someone can decide, so a channel turn running alongside one holds as usual; and an agent whose rules allow everything never reaches this path, because nothing it requests is unmatched.
+**Unattended requests are refused, not held.** Holding is only worth doing where a verdict can be made, so a channel turn with nobody attached records the request and denies at once; the record stays actionable on Home, and a permanent verdict there writes the rule the agent's next attempt meets.
+An addressed Slack turn of an owner who can get cards holds instead, and an approve once outlives the client that asked: [owner requests in Slack](slack-owner-requests.md) owns this decision, its routes and how long a hold waits.
 
 **Egress Aliasing.** An Invocation target without detached egress has no egress identity: before any decision, the gate resolves the calling agent to its driver — recursively for chained Invocations, up to the root non-target agent — and runs rule match, hold, and approval against the driver.
 **Detached egress.** A driver may instead launch a child with egress of its own, open or scoped ([invocations](invocations.md#spawning)); the gate decides under the nearest such child up the chain, the caller first; only the owner widens a child past what its driver may give it.
@@ -347,7 +342,7 @@ A target that outlives its driver's [cascade](invocations.md#outcomes) fails clo
 Binding a conversation surface — a Slack channel/DM or a Telegram chat — lends the Agent, credentials included, to everyone the messenger admits there ([channels](channels.md)).
 Every channel turn relays to the main agent ([channel-turns](channel-turns.md)) and runs under the Agent's own credential set, gated by the owner's egress rules like any other turn; no per-speaker credential selection happens.
 Such a turn can also place a file in the Agent's workspace: an attachment sent in the conversation is written there for the agent to open, so a speaker with no platform identity is a writer to persistent state ([persistence](persistence.md)).
-What such a turn cannot do is raise a *hold* — the decision has nowhere to be made from a messenger, so an unmatched request is refused rather than waited on (above).
+What such a turn cannot do is raise a *hold* — the decision has nowhere to be made from a messenger, so an unmatched request is refused rather than waited on (above) — except an addressed Slack turn of an owner who can get cards ([owner requests in Slack](slack-owner-requests.md)).
 The binding owner's Terms-of-Use acceptance gates each turn — the terms bind the party whose credentials run it — and the security log attributes the allow to the messenger-native sender id with basis *place*.
 
 ## `dam-run`

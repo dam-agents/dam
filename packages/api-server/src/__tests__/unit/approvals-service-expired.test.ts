@@ -66,6 +66,7 @@ function makeService(seed: PendingApprovalRow) {
     markDelivered: async () => {},
     correctResolvedVerdict: async () => false,
     listResolvedUndelivered: async () => [],
+    raiseRoute: async () => false,
     expirePending: async () => false,
     expireOverdue: async () => [],
     deleteForAgent: async () => {},
