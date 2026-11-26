@@ -599,6 +599,13 @@ export function createBoltSlackGateway(
                 : { delete_original: true }) as Parameters<typeof respond>[0],
             );
           },
+          async (text) => {
+            await respond({
+              response_type: "ephemeral",
+              replace_original: false,
+              text,
+            });
+          },
         );
       });
 

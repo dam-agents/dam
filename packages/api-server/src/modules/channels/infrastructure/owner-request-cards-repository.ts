@@ -50,6 +50,13 @@ export interface OwnerRequestCardsRepository {
     item: Omit<OwnerCardItem, "cardId" | "state">,
   ): Promise<boolean>;
   removeItem(cardId: string, requestId: string): Promise<boolean>;
+  createCard(input: {
+    ownerSub: string;
+    agentId: string;
+    teamId: string;
+    kind: OwnerCardKind;
+  }): Promise<OwnerCard>;
+  cardsOfRequest(requestId: string): Promise<OwnerCard[]>;
   items(cardId: string): Promise<OwnerCardItem[]>;
   setPosted(
     cardId: string,
@@ -137,6 +144,33 @@ export function createOwnerRequestCardsRepository(
         .onConflictDoNothing()
         .returning({ requestId: ownerRequestCardItems.requestId });
       return written.length > 0;
+    },
+
+    async createCard(input) {
+      const id = randomUUID();
+      await db.insert(ownerRequestCards).values({ id, ...input, threads: [] });
+      const rows = await db
+        .select()
+        .from(ownerRequestCards)
+        .where(eq(ownerRequestCards.id, id));
+      return toCard(rows[0]!);
+    },
+
+    async cardsOfRequest(requestId) {
+      const rows = await db
+        .select({ card: ownerRequestCards })
+        .from(ownerRequestCardItems)
+        .innerJoin(
+          ownerRequestCards,
+          eq(ownerRequestCardItems.cardId, ownerRequestCards.id),
+        )
+        .where(
+          and(
+            eq(ownerRequestCardItems.requestId, requestId),
+            isNull(ownerRequestCards.closedAt),
+          ),
+        );
+      return rows.map((row) => toCard(row.card));
     },
 
     async removeItem(cardId, requestId) {

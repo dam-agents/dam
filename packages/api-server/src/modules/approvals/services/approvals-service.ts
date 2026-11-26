@@ -85,6 +85,8 @@ interface CreateApprovalsServiceDeps {
   actor: string;
   actorEmail: string | null;
   agentBinding: readonly string[] | "*";
+  // UNIT_BOUNDARY_DESCRIPTION: where the verdicts come from when they do not come from the web or the CLI: a click on an owner request card in Slack, by that Slack user in that workspace. The audit line of each verdict names them.
+  via?: { surface: "slack"; slackUserId: string; teamId: string };
   // UNIT_BOUNDARY_DESCRIPTION: the owner's switch that lets the sub-agents and Environments of a driver's launch root have network access of their own. A verdict on one request never turns it on; only the owner's explicit choice does, on the request (approveForChildren) or on the Agent's Network access page. Turning it on also writes every rule of that root's children that waits for it.
   // UNIT_BOUNDARY_DESCRIPTION: told each answer the owner gives to a rule a driver set on its child, so the answer can be kept where the driver reads it after a one-off child is removed.
   childEgressAnswered?: ChildEgressAnswered;
@@ -223,17 +225,25 @@ function auditVerdict(
   decision: "allow" | "deny",
   detail: Record<string, unknown>,
 ): void {
+  const via = deps.via
+    ? {
+        basis: deps.via.surface,
+        slackUserId: deps.via.slackUserId,
+        teamId: deps.via.teamId,
+      }
+    : {};
   securityLog("info", "approval.verdict", {
     category: "approval",
     actor: deps.actor,
     actorKind: "user",
+    ...(deps.via ? { surface: deps.via.surface } : {}),
     agentId: row.agentId,
     decision,
     correlationId: row.id,
     detail:
       deps.actor === deps.ownerSub
-        ? detail
-        : { ...detail, ownerSub: deps.ownerSub },
+        ? { ...detail, ...via }
+        : { ...detail, ...via, ownerSub: deps.ownerSub },
   });
 }
 

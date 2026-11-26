@@ -124,6 +124,13 @@ export type SlackReplaceMessage = (
   message: SlackMessageReplacement | null,
 ) => Promise<void>;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Answers the person who clicked a button with a
+ * message only they see, through the response URL Slack sends with the
+ * click, and leaves the clicked message as it is.
+ */
+export type SlackPrivateReply = (text: string) => Promise<void>;
+
 export type SlackTokenResolver = (
   teamId: SlackWorkspace,
 ) => Promise<string | null>;
@@ -157,6 +164,7 @@ export interface SlackGatewayHandlers {
   onMessageAction: (
     event: SlackMessageAction,
     replace: SlackReplaceMessage,
+    reply: SlackPrivateReply,
   ) => Promise<void>;
   onSessionStopped: (event: SlackSessionStoppedEvent) => Promise<void>;
 }

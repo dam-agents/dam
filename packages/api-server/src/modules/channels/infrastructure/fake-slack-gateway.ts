@@ -547,14 +547,24 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async fireMessageAction(input) {
+      const teamId = input.teamId ?? FAKE_WORKSPACE;
       await requireHandlers().onMessageAction(
         {
           ...input,
           ephemeral: input.ephemeral ?? true,
-          teamId: input.teamId ?? FAKE_WORKSPACE,
+          teamId,
         },
         async (message) => {
           commandMessage = message;
+        },
+        async (text) => {
+          outbound.push({
+            kind: "ephemeral",
+            teamId,
+            channel: input.channelId,
+            user: input.userId,
+            text,
+          });
         },
       );
     },

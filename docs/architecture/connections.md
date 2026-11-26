@@ -192,6 +192,7 @@ Deny once, and the end of the hold window, answer the call with an error the Age
 The arguments are kept only while the approval waits, and are dropped when it resolves or expires.
 The same shared decision as for a network request holds or refuses the call ([owner requests in Slack](slack-owner-requests.md)): an unattended channel turn refuses it at once and files the approval, and an addressed Slack turn of an owner who can get cards holds it; a sub-agent with network access of its own cannot ask, so its call is refused without one.
 MCP clients give up on a tool call after a timeout of their own, so where a harness lets the platform set it, each Connection's MCP entry carries the hold window as that timeout.
+A held tool call can also reach the owner in Slack, as a row or a card with Approve once and Deny once ([owner requests in Slack](slack-owner-requests.md#answering-in-slack)).
 A client that gives up first leaves the approval pending: the owner still sees it, and the same call sent again within the window joins it and waits only until the window ends.
 An approve once given while no call waits is used up by the next identical call within the window, which is made at once; the call after it files a new approval.
 Each approve once makes exactly one call, even when identical calls race for it, and a held call that lost the race gets an error that says so.

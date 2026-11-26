@@ -82,6 +82,7 @@ interface ComposeApprovalsServiceDeps {
   actor: string;
   actorEmail: string | null;
   agentBinding: readonly string[] | "*";
+  via?: { surface: "slack"; slackUserId: string; teamId: string };
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   egressRuleWriter: EgressRuleWriter;
   webSearchRuleWriter: WebSearchRuleWriter;
@@ -103,6 +104,7 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
     wrapperFrameSender: deps.wrapperFrameSender,
     isAgentOwnedBy: deps.isAgentOwnedBy,
     ownerSub: deps.ownerSub,
+    ...(deps.via ? { via: deps.via } : {}),
     actor: deps.actor,
     actorEmail: deps.actorEmail,
     agentBinding: deps.agentBinding,

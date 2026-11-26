@@ -1,6 +1,7 @@
 import {
   describeApprovalPayload,
   type ApprovalStatus,
+  type ApprovalVerdict,
   type OwnerRoute,
 } from "api-server-api";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
@@ -19,6 +20,14 @@ export interface OwnerRequestViewData {
   summary: string;
   host: string | null;
   expiresAt: string;
+  verdict: ApprovalVerdict | null;
+  decidedBy: string | null;
+  call: {
+    tool: string;
+    connectionName: string;
+    targetLabel: string | null;
+    arguments: string | null;
+  } | null;
 }
 
 const UNREACHABLE_DECIDER = "system:owner-unreachable";
@@ -35,6 +44,23 @@ function summaryOf(row: PendingApprovalRow): string {
   return described.subtitle
     ? `${described.title}: ${described.subtitle}`
     : described.title;
+}
+
+function callOf(row: PendingApprovalRow): OwnerRequestViewData["call"] {
+  const { payload } = row;
+  if (payload.kind !== "mcp_tool_call") return null;
+  const args = payload.arguments;
+  return {
+    tool: payload.tool,
+    connectionName: payload.connectionName,
+    targetLabel: payload.targetLabel ?? null,
+    arguments:
+      args === undefined
+        ? null
+        : typeof args === "string"
+          ? args
+          : JSON.stringify(args, null, 2),
+  };
 }
 
 function hostOf(row: PendingApprovalRow): string | null {
@@ -60,6 +86,9 @@ export function createOwnerRequestPorts(deps: {
         summary: summaryOf(row),
         host: hostOf(row),
         expiresAt: row.expiresAt.toISOString(),
+        verdict: row.verdict,
+        decidedBy: row.decidedBy,
+        call: callOf(row),
       };
     },
 

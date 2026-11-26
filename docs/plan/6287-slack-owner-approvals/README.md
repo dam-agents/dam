@@ -253,7 +253,7 @@ Names are illustrative where marked.
 | 00  | ✅ Measure before building                             | How long common clients and harness model clients wait on a held request; whether Stop and a closed client cancel the gateway's check; results in this README                                                                     | —          |
 | 01  | ✅ One hold-or-refuse decision for the three gates     | Addressed turns, the shared decision, the route on the row, the raise, expiry that follows the row, `canCard`, holds that end with their client, the release of turn waits, approve once, turn-contract copy, the operator switch | 00         |
 | 02  | ✅ The card base                                       | Card tables, placing on the leader, the turn card with fallback rows, fallback cards, card metadata kept out of agent input, the repost, refusal on a lasting failure, the thread line with "Don't wait", the measures            | 01         |
-| 03  | MCP tool-call rows and cards                           | MCP rows and call cards with buttons, the click route and the owner check, audit                                                                                                                                                  | 02         |
+| 03  | ✅ MCP tool-call rows and cards                        | MCP rows and call cards with buttons, the click route and the owner check, audit                                                                                                                                                  | 02         |
 | 04  | Network and web-search cards                           | Rows on turn and background cards with the web's verdicts, "Allow all once" for one thread, query strings, rule rows with "Always deny…" and confirm steps, Dismiss for 7 days, refused rows, a raised row moves to the turn card | 03         |
 | 05  | Cards follow their request to the end                  | Every settle edits every card, who decided, rule state after expiry, the thread line after a late answer, several workspaces, the repair sweep, the 24-hour close, unlinking, Slack errors                                        | 04         |
 | 06  | When background cards go out                           | Owner activity from the web UI, the 60-second escalation, the hint for an agent blocked on many hosts                                                                                                                             | 05         |
@@ -349,6 +349,15 @@ Petr has not confirmed these choices; a reviewer may challenge them.
 - A press of "Don't wait" moves the turn to a released count, and the decision refuses at once while a released Slack turn is open, so a retry does not wait 30 minutes when someone has the agent open in the web.
 - A message that joins a released turn does not make it addressed again.
 - An unused approve once stays usable for a hold window after the owner's answer, not until the row's own expiry, so a late answer leaves the member time to ask again.
+
+## Choices made in implementation
+
+Petr accepted these while the slices were built.
+
+- [02](./02-card-base.md): a turn card names a thread's starter by a Slack mention, not by a display name it looks up.
+- [02](./02-card-base.md): an editor who starts a thread gets no private note; only the owner gets one.
+- [02](./02-card-base.md): `docs/architecture/channel-turns.md` does not mention "Don't wait", because the page is at its size cap; `slack-guarantees.md` and `slack-owner-requests.md` describe it.
+- [03](./03-mcp-tool-call-cards.md): a click on a request that is already settled redraws the card with the request's real outcome, because Slack shows no private note in the app's DM; the note "Already answered" is still sent through the click's response URL.
 
 ## Open items
 

@@ -31,6 +31,7 @@ import {
 import { createControlAgentStateCache } from "./modules/agent-store/cache.js";
 import { createControlAgentsRepository } from "./modules/agent-store/agents-repository.js";
 import { createL7HostsPortFor } from "./modules/agent-store/l7-hosts.js";
+import { match } from "ts-pattern";
 import {
   readAgentRows,
   readOneAgent,
@@ -353,6 +354,7 @@ import {
   HARNESS_CONFIG_STEP,
   composeInvocationPinReconciler,
   listInvocationAgentIds,
+  recordEgressAnswerAdapter,
 } from "./modules/invocations/index.js";
 import {
   composeEnvironmentGate,
@@ -376,6 +378,7 @@ import {
   listPendingApprovalAgentIds,
   turnReleaseChannelOf,
   type OwnerRequestPorts,
+  composeApprovalsService,
 } from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
 import { createChatFormPreferencesCleanup } from "./modules/chat-forms/index.js";
@@ -401,11 +404,13 @@ import {
   createChildEgressSeederAdapter,
   listEgressRuleAgentIds,
   markTrustedRowsTakenOverAdapter,
+  createEgressRuleWriterAdapter,
 } from "./modules/egress-rules/compose.js";
 import {
   createWebSearchCleanupHook,
   createWebSearchGatePorts,
   listWebSearchRuleAgentIds,
+  createWebSearchRuleWriter,
 } from "./modules/web-search/compose.js";
 import {
   composeConnectionsAtBoot,
@@ -2143,6 +2148,35 @@ export async function bootstrap() {
       ownerRequestPorts ? ownerRequestPorts.anyoneWaits(id) : false,
     releaseTurnWaits: (agentId, release) =>
       redisBus.publish(turnReleaseChannelOf(agentId), JSON.stringify(release)),
+    decide: async ({ requestId, answer, ownerSub, slackUserId, teamId }) => {
+      const { service } = composeApprovalsService({
+        db,
+        ownerSub,
+        actor: ownerSub,
+        actorEmail: null,
+        agentBinding: "*",
+        via: { surface: "slack", slackUserId, teamId },
+        isAgentOwnedBy: (agentId, sub) => agentsRepo.isOwnedBy(agentId, sub),
+        egressRuleWriter: createEgressRuleWriterAdapter(
+          db,
+          createL7HostsPortFor({
+            authority: config.agentStore,
+            k8s: k8sClient,
+            db,
+          }),
+        ),
+        webSearchRuleWriter: createWebSearchRuleWriter(db),
+        wrapperFrameSender,
+        childEgressAnswered: recordEgressAnswerAdapter(db),
+      });
+      const outcome = await match(answer)
+        .with("approve-once", () => service.approveOnce(requestId))
+        .with("deny-once", () => service.dismiss(requestId))
+        .exhaustive();
+      return outcome.outcome === "not_actionable"
+        ? "not-actionable"
+        : "applied";
+    },
     cards: createOwnerRequestCardsRepository(db),
   };
 

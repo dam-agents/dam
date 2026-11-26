@@ -15,6 +15,7 @@ import {
   type OwnerRequestPortsForSlack,
 } from "./slack-owner-requests.js";
 import {
+  answerOfAction,
   OWNER_REQUEST_OPEN_ACTION,
   OWNER_REQUEST_RELEASE_ACTION,
 } from "../domain/owner-request-cards.js";
@@ -197,6 +198,7 @@ import type {
   SlackClickedPost,
   SlackMessageAction,
   SlackMessageReplacement,
+  SlackPrivateReply,
   SlackReplaceMessage,
   SlackViewSubmission,
 } from "./slack-gateway.js";
@@ -5577,10 +5579,29 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   async function handleMessageAction(
     event: SlackMessageAction,
     replace: SlackReplaceMessage,
+    reply: SlackPrivateReply,
   ): Promise<void> {
     if (event.actionId === OWNER_REQUEST_OPEN_ACTION) return;
     if (event.actionId === OWNER_REQUEST_RELEASE_ACTION) {
       if (!event.ephemeral) await handleDontWait(event);
+      return;
+    }
+    const ownerAnswer = answerOfAction(event.actionId);
+    if (ownerAnswer !== null) {
+      let requestId: unknown;
+      try {
+        requestId = (JSON.parse(event.value) as { request?: unknown }).request;
+      } catch {
+        return;
+      }
+      if (typeof requestId === "string" && !event.ephemeral)
+        await ownerRequestCards?.answer({
+          requestId,
+          answer: ownerAnswer,
+          slackUserId: event.userId,
+          teamId: event.teamId,
+          reply,
+        });
       return;
     }
     const agentAction = agentActionOf(event.actionId);
@@ -9171,6 +9192,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         addressedTurns: addressedTurnsOf,
         ownerSentBy: async (slackUserId, ownerSub) =>
           (await identityLinks.resolve("slack", slackUserId)) === ownerSub,
+        subOf: (slackUserId) => identityLinks.resolve("slack", slackUserId),
         ephemeral: (channel, user, threadTs, text, teamId) =>
           ephemeral(channel, user, threadTs, text, teamId),
         appUrl: `${uiBaseUrl}/`,

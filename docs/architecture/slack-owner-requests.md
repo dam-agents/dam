@@ -90,3 +90,15 @@ An owner who sent the turn also gets a private note with a link to the card; in 
 
 Only the person who started the turn, a person whose message joined it, or the agent's owner may press "Don't wait", as with Stop; anyone else gets a private note.
 A press first takes the turn out of the addressed count, so its later requests are refused at once, then sends the release.
+
+## Answering in Slack
+
+Only the owner answers in Slack: a click counts only when the clicking Slack user's identity link resolves to the request's owner, and anyone else gets a private note that only the owner can answer.
+Editors answer in the web, and their answer shows on the card.
+A click goes through the same approvals service as an answer in the web, run as the owner, so the first answer counts wherever it comes from; a click on a request that is already settled gets a private "Already answered".
+The verdict records the owner as who decided, and its audit line names the Slack user and workspace that clicked.
+A click never posts a message, so a direct message bound to an Agent through the DM Bridge starts no turn from it.
+
+A held MCP tool call shows as a row of the turn card, or as a **call card** of its own when it is a `background` request, so a call never waits behind blocked hosts: the agent, the tool and the Connection, the target the Template named, the arguments as a code block cut at about 2,500 characters, the expiry, and Approve once and Deny once.
+Approve once runs exactly one call; Deny once refuses it.
+Once settled, the row shows its outcome instead of its buttons.

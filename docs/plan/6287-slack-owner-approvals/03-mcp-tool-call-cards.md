@@ -25,7 +25,8 @@ Apply the `/typescript-engineering` skill.
    - resolve the clicker with `identityLinks.resolve("slack", userId)` in the click's team; when it is not the request's owner, answer privately "Only <owner> can answer this" and change nothing;
    - apply the choice through a new `ownerRequests.decide` port, run as the owner;
    - a request that is already settled answers privately "Already answered" (the service's compare-and-set decides);
-   - on success, edit the row or the card to its outcome line (the `replace` callback passed to `onMessageAction`).
+   - both private notes go through the response URL of the click; Slack accepts them, but its client shows no private note in the app's DM;
+   - after every click, applied or not, redraw each card of the request from the request, so a late click shows the real outcome line in place of the buttons.
    - a `confirm` object on a button (used by [04](./04-network-and-web-search-cards.md)) is Slack's own dialog, so the click arrives only after the owner confirmed.
      A click never posts a message, so a DM bound to an agent through the DM Bridge starts no turn from it.
 4. **Audit.** The verdict's `decidedBy` is the owner; the security log line of the decision names the Slack user id and team with basis `slack`.

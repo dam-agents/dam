@@ -6,6 +6,7 @@ import {
   threadLine,
   type CardRow,
   type OwnerCardKind,
+  type OwnerAnswer,
   type OwnerCardThread,
   type OwnerRequestView,
   type ThreadLineState,
@@ -14,7 +15,11 @@ import type {
   OwnerCard,
   OwnerRequestCardsRepository,
 } from "./owner-request-cards-repository.js";
-import type { SlackGateway, SlackWorkspace } from "./slack-gateway.js";
+import type {
+  SlackGateway,
+  SlackPrivateReply,
+  SlackWorkspace,
+} from "./slack-gateway.js";
 
 export interface OwnerRequestPortsForSlack {
   view(id: string): Promise<Omit<OwnerRequestView, "agentName"> | null>;
@@ -24,6 +29,13 @@ export interface OwnerRequestPortsForSlack {
     agentId: string,
     release: { turnStartedAt: number; sessionIds: string[] },
   ): Promise<void>;
+  decide(input: {
+    requestId: string;
+    answer: OwnerAnswer;
+    ownerSub: string;
+    slackUserId: string;
+    teamId: string;
+  }): Promise<"applied" | "not-actionable">;
   cards: OwnerRequestCardsRepository;
 }
 
@@ -74,10 +86,11 @@ export function createSlackOwnerRequests(deps: {
   ownerName: (agentId: string, teamId: SlackWorkspace) => Promise<string>;
   addressedTurns: (agentId: string) => AddressedTurnThread[];
   ownerSentBy: (slackUserId: string, ownerSub: string) => Promise<boolean>;
+  subOf: (slackUserId: string) => Promise<string | null>;
   ephemeral: (
     channel: string,
     user: string,
-    threadTs: string,
+    threadTs: string | undefined,
     text: string,
     teamId: SlackWorkspace,
   ) => Promise<void>;
@@ -106,8 +119,11 @@ export function createSlackOwnerRequests(deps: {
     for (const item of await cards.items(card.id)) {
       if (item.requestKind !== "approval") continue;
       const view = await deps.ports.view(item.requestId);
-      if (!view || view.status !== "pending") continue;
-      const waits = await deps.ports.anyoneWaits(view.id).catch(() => true);
+      if (!view) continue;
+      const waits =
+        view.status === "pending"
+          ? await deps.ports.anyoneWaits(view.id).catch(() => true)
+          : false;
       rows.push({
         view: { ...view, agentName: await deps.agentName(view.agentId) },
         nobodyWaits: !waits,
@@ -235,7 +251,9 @@ export function createSlackOwnerRequests(deps: {
   }
 
   async function lineStateOf(card: OwnerCard): Promise<ThreadLineState> {
-    const rows = await rowsOf(card);
+    const rows = (await rowsOf(card)).filter(
+      (row) => row.view.status === "pending",
+    );
     if (rows.length === 0) return { kind: "ended" };
     if (rows.some((row) => !row.nobodyWaits)) return { kind: "asked" };
     const until = rows
@@ -366,12 +384,23 @@ export function createSlackOwnerRequests(deps: {
       if (background && (await cards.removeItem(background.id, view.id)))
         await show(background, link, false);
     }
-    const card = await cards.openCard({
-      ownerSub: view.ownerSub,
-      agentId: view.agentId,
-      teamId: link.teamId,
-      kind,
-    });
+    const card =
+      kind === "call"
+        ? ((await cards.cardsOfRequest(view.id)).find(
+            (held) => held.kind === "call" && held.teamId === link.teamId,
+          ) ??
+          (await cards.createCard({
+            ownerSub: view.ownerSub,
+            agentId: view.agentId,
+            teamId: link.teamId,
+            kind,
+          })))
+        : await cards.openCard({
+            ownerSub: view.ownerSub,
+            agentId: view.agentId,
+            teamId: link.teamId,
+            kind,
+          });
     const isNewRow = await cards.addItem(card.id, {
       requestKind: "approval",
       requestId: view.id,
@@ -407,7 +436,10 @@ export function createSlackOwnerRequests(deps: {
       const view = await deps.ports.view(approvalId);
       if (!view || view.status !== "pending" || !view.route)
         return { placed: 0 };
-      const route = view.route;
+      const route: OwnerCardKind =
+        view.route === "background" && view.kind === "mcp_tool_call"
+          ? "call"
+          : view.route;
       if ((await deps.reachOf(view.agentId).catch(() => "unlinked")) !== "ok")
         return { placed: 0 };
       const links = await workspaceLinks(view.ownerSub);
@@ -440,7 +472,7 @@ export function createSlackOwnerRequests(deps: {
             placeOn(view, "turn", link),
           ).catch(() => false);
       await withOwnerLock(view.ownerSub, async () => {
-        for (const kind of ["turn", "background"] as const) {
+        for (const kind of ["turn", "background", "call"] as const) {
           for (const card of await cards.findOpenCards({
             ownerSub: view.ownerSub,
             agentId: view.agentId,
@@ -457,6 +489,57 @@ export function createSlackOwnerRequests(deps: {
           { approvalId, error: formatError(err) },
           "owner_request.wait_changed_failed",
         ),
+      );
+    },
+
+    async answer(input: {
+      requestId: string;
+      answer: OwnerAnswer;
+      slackUserId: string;
+      teamId: SlackWorkspace;
+      reply: SlackPrivateReply;
+    }): Promise<void> {
+      const view = await deps.ports.view(input.requestId);
+      if (!view) return;
+      const note = (text: string) =>
+        input
+          .reply(text)
+          .catch((err: unknown) =>
+            getLogger().warn(
+              { approvalId: input.requestId, error: formatError(err) },
+              "owner_request.reply_failed",
+            ),
+          );
+      const clicker = await deps.subOf(input.slackUserId).catch(() => null);
+      if (clicker !== view.ownerSub) {
+        const owner = await deps.ownerName(view.agentId, input.teamId);
+        await note(`Only ${owner} can answer this.`);
+        return;
+      }
+      const result = await deps.ports.decide({
+        requestId: input.requestId,
+        answer: input.answer,
+        ownerSub: view.ownerSub,
+        slackUserId: input.slackUserId,
+        teamId: input.teamId,
+      });
+      if (result === "not-actionable") await note("Already answered.");
+      await withOwnerLock(view.ownerSub, async () => {
+        const links = await workspaceLinks(view.ownerSub);
+        for (const card of await cards.cardsOfRequest(input.requestId)) {
+          const link = links.find((l) => l.teamId === card.teamId);
+          if (link && card.messageTs) await show(card, link, false);
+          if (card.kind === "turn") await refreshLines(card);
+        }
+      });
+      getLogger().info(
+        {
+          approvalId: input.requestId,
+          answer: input.answer,
+          result,
+          teamId: input.teamId,
+        },
+        "owner_request.answered",
       );
     },
 
