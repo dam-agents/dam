@@ -192,6 +192,9 @@ import {
 import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
 import { createOwnerCardReach } from "./modules/channels/services/owner-card-reach.js";
+import { createOwnerRequestCardsRepository } from "./modules/channels/infrastructure/owner-request-cards-repository.js";
+import type { OwnerRequestPortsForSlack } from "./modules/channels/infrastructure/slack-owner-requests.js";
+import { startOwnerRequestCardsSaga } from "./modules/channels/sagas/owner-request-cards.js";
 import { createSlackAppTokenService } from "./modules/channels/services/slack-app-token-service.js";
 import { slackAppTokenSource } from "./modules/channels/services/slack-app-token-source.js";
 import { createRedisSpentRefreshTokens } from "./modules/channels/infrastructure/slack-spent-refresh-tokens.js";
@@ -371,6 +374,8 @@ import {
   createApprovalsCleanupHook,
   createSpendQuestionStore,
   listPendingApprovalAgentIds,
+  turnReleaseChannelOf,
+  type OwnerRequestPorts,
 } from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
 import { createChatFormPreferencesCleanup } from "./modules/chat-forms/index.js";
@@ -2129,8 +2134,21 @@ export async function bootstrap() {
       slackDmBridges.closedFor(agentId, slackChannelId),
   };
 
+  let ownerRequestPorts: OwnerRequestPorts | null = null;
+  const slackOwnerRequestPorts: OwnerRequestPortsForSlack = {
+    view: async (id) => (ownerRequestPorts ? ownerRequestPorts.view(id) : null),
+    refuseUnreachable: async (id) =>
+      ownerRequestPorts ? ownerRequestPorts.refuseUnreachable(id) : false,
+    anyoneWaits: async (id) =>
+      ownerRequestPorts ? ownerRequestPorts.anyoneWaits(id) : false,
+    releaseTurnWaits: (agentId, release) =>
+      redisBus.publish(turnReleaseChannelOf(agentId), JSON.stringify(release)),
+    cards: createOwnerRequestCardsRepository(db),
+  };
+
   const slackWorker = slackGatewayFactory
     ? createSlackWorker({
+        ownerRequests: slackOwnerRequestPorts,
         makeAcpClient,
         channelPair,
         createGateway: slackGatewayFactory,
@@ -2347,6 +2365,7 @@ export async function bootstrap() {
     gate: extAuthzGate,
     sweeper: deliverySweeper,
     wakeSaga: approvalsWakeSaga,
+    ownerRequests: approvalsOwnerRequests,
   } = composeApprovalsSystem({
     db,
     bus: redisBus,
@@ -2388,6 +2407,12 @@ export async function bootstrap() {
           `${objectStoreAgentUrl.hostname}:${objectStoreAgentUrl.port || (objectStoreAgentUrl.protocol === "https:" ? 443 : 80)}`,
         ]
       : [],
+  });
+  ownerRequestPorts = approvalsOwnerRequests;
+  const ownerRequestCardsSaga = startOwnerRequestCardsSaga({
+    place: (approvalId) => channelManager.placeOwnerRequest(approvalId),
+    waitChanged: (approvalId) =>
+      channelManager.ownerRequestWaitChanged(approvalId),
   });
   if (slackAppTokens) {
     const renewAppToken = slackAppTokens.renew;
@@ -3215,6 +3240,7 @@ export async function bootstrap() {
     usageMetrics.stop();
     kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();
+    ownerRequestCardsSaga.unsubscribe();
     spend.extendSaga.unsubscribe();
     spend.lastKnownNameSaga.unsubscribe();
     spend.connectionLimitsSaga.unsubscribe();

@@ -1,9 +1,11 @@
 # The Slack DM Bridge
 
-Last verified: 2026-11-10
+Last verified: 2026-11-26
 
 How the platform pairs an owner's Slack account with their own DAM account so that one of their Agents can reach them in a 1:1 DM with the bot, and can be asked to act from there.
 Bindings, DMs and turns are [channels](channels.md); what is guaranteed in Slack is [slack-guarantees](slack-guarantees.md); threads a Session owns are [slack-threads](slack-threads.md).
+
+Owner request cards land in the same conversation, and an Agent bound there never reads them ([owner requests in Slack](slack-owner-requests.md#cards)).
 
 ## Why it exists
 

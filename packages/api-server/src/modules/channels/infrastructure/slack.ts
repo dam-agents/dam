@@ -10,6 +10,15 @@ import {
 import type { ChannelTurnAttendance } from "../../../core/turn-attendance.js";
 import type { OwnerRequestReach } from "./network-access-copy.js";
 import {
+  createSlackOwnerRequests,
+  type AddressedTurnThread,
+  type OwnerRequestPortsForSlack,
+} from "./slack-owner-requests.js";
+import {
+  OWNER_REQUEST_OPEN_ACTION,
+  OWNER_REQUEST_RELEASE_ACTION,
+} from "../domain/owner-request-cards.js";
+import {
   addressedGuidance,
   ambientGuidance,
   botHistoryLabel,
@@ -1144,6 +1153,8 @@ export interface ChannelRegistry {
 export interface SlackWorker extends ChannelWorker, AddressedWorker {
   type: ChannelType.Slack;
   connect(): Promise<void>;
+  placeOwnerRequest(approvalId: string): Promise<{ placed: number }>;
+  ownerRequestWaitChanged(approvalId: string): Promise<void>;
   conversationStanding(
     slackChannelId: string,
     teamId: SlackWorkspace,
@@ -1657,6 +1668,7 @@ export type SlackWorkerDeps = {
   uiBaseUrl: string;
   attendance: ChannelTurnAttendance;
   ownerRequestReach?: (agentId: string) => Promise<OwnerRequestReach>;
+  ownerRequests?: OwnerRequestPortsForSlack;
   workspaceFiles: AgentWorkspaceFilesFactory;
   listWorkspaces: () => Promise<SlackWorkspace[]>;
   emit?: (event: DomainEvent) => void;
@@ -2309,6 +2321,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     startedBy: (slackUserId: string) => boolean;
     sessionIds: Set<string>;
     stop: () => Promise<void>;
+    release?: () => Promise<{
+      turnStartedAt: number;
+      sessionIds: string[];
+      askers: string[];
+    } | null>;
   };
 
   const stoppableTurns = new Map<string, Set<StoppableTurn>>();
@@ -4050,6 +4067,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         ? ctx.messages.map((m) => `[ts ${m.eventTs}] ${m.text}`).join("\n")
         : lastMessage.text) + droppedNote;
 
+    const turnStartedAt = Date.now();
     const seenSessionIds = new Set<string>();
     const turnRefs: TurnRef[] = ctx.messages.map((m) => ({
       channel: ctx.channel,
@@ -4333,6 +4351,24 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       stop: async () => {
         stopper.abort();
         await presenter.clearStatus();
+      },
+      release: async () => {
+        const refs = verdictRefs().filter((ref) => ref.addressed === true);
+        if (refs.length === 0) return null;
+        for (const ref of refs) {
+          ref.addressed = false;
+          if (ref.releaseAttendance)
+            await attendance.releaseAddressed(ref.releaseAttendance);
+        }
+        return {
+          turnStartedAt,
+          sessionIds: [...seenSessionIds],
+          askers: [
+            ...new Set(
+              refs.flatMap((ref) => (ref.slackUserId ? [ref.slackUserId] : [])),
+            ),
+          ],
+        };
       },
     });
     let superseded = false;
@@ -4804,6 +4840,84 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       `I can't be added to this group DM: Slack only lets an app into a group DM that was started with it. ` +
       `Start a new group DM that includes @${brand.name}, or move this conversation to a private channel and invite me there, then run \`/${brandShort} bind\` again.`
     );
+  }
+
+  async function handleDontWait(event: SlackMessageAction) {
+    let target: { channelId?: unknown; threadTs?: unknown };
+    try {
+      target = JSON.parse(event.value) as typeof target;
+    } catch {
+      return;
+    }
+    if (
+      typeof target.channelId !== "string" ||
+      typeof target.threadTs !== "string"
+    )
+      return;
+    const channel = target.channelId;
+    const threadTs = target.threadTs;
+    const running = [...(stoppableTurns.get(`${channel} ${threadTs}`) ?? [])];
+    if (running.length === 0) return;
+    const invoker = await identityLinks
+      .resolve("slack", event.userId)
+      .catch(() => null);
+    const owners = new Map<string, string | null>();
+    const ownerOf = async (agentId: string) => {
+      if (!owners.has(agentId))
+        owners.set(agentId, await getInstanceOwner(agentId).catch(() => null));
+      return owners.get(agentId) ?? null;
+    };
+    const allowed: StoppableTurn[] = [];
+    for (const turn of running)
+      if (
+        turn.startedBy(event.userId) ||
+        (invoker !== null && invoker === (await ownerOf(turn.instanceName)))
+      )
+        allowed.push(turn);
+    if (allowed.length === 0) {
+      await ephemeral(
+        event.channelId,
+        event.userId,
+        threadTs,
+        "Only the person who asked can choose not to wait.",
+        event.teamId,
+      );
+      return;
+    }
+    for (const turn of allowed) {
+      const released = await turn.release?.();
+      if (!released) continue;
+      await deps.ownerRequests
+        ?.releaseTurnWaits(turn.instanceName, {
+          turnStartedAt: released.turnStartedAt,
+          sessionIds: released.sessionIds,
+        })
+        .catch((err: unknown) =>
+          getLogger().warn(
+            { agentId: turn.instanceName, error: formatError(err) },
+            "owner_request.release_failed",
+          ),
+        );
+      const owner = await ownerOf(turn.instanceName);
+      if (owner)
+        await ownerRequestCards
+          ?.released({
+            agentId: turn.instanceName,
+            ownerSub: owner,
+            channelId: channel,
+            threadTs,
+            askers: released.askers,
+          })
+          .catch(() => {});
+      getLogger().info(
+        {
+          agentId: turn.instanceName,
+          channelId: channel,
+          pressedBy: turn.startedBy(event.userId) ? "starter" : "owner",
+        },
+        "owner_request.released",
+      );
+    }
   }
 
   async function handleSessionStopped(event: SlackSessionStoppedEvent) {
@@ -5464,6 +5578,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     event: SlackMessageAction,
     replace: SlackReplaceMessage,
   ): Promise<void> {
+    if (event.actionId === OWNER_REQUEST_OPEN_ACTION) return;
+    if (event.actionId === OWNER_REQUEST_RELEASE_ACTION) {
+      if (!event.ephemeral) await handleDontWait(event);
+      return;
+    }
     const agentAction = agentActionOf(event.actionId);
     if (agentAction !== null) {
       if (!event.ephemeral) await handleAgentInteraction(event, agentAction);
@@ -9010,7 +9129,65 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
   }
 
+  function addressedTurnsOf(agentId: string): AddressedTurnThread[] {
+    const byThread = new Map<string, AddressedTurnThread>();
+    for (const ref of inFlightTurns.get(agentId) ?? []) {
+      if (ref.addressed !== true) continue;
+      const key = `${ref.channel} ${ref.threadTs}`;
+      const known = byThread.get(key);
+      if (known) {
+        if (ref.slackUserId && !known.askers.includes(ref.slackUserId))
+          known.askers.push(ref.slackUserId);
+        continue;
+      }
+      byThread.set(key, {
+        turnKey: `${key} ${ref.eventTs}`,
+        channelId: ref.channel,
+        threadTs: ref.threadTs,
+        teamId: ref.teamId,
+        startedBy: ref.slackUserId ?? null,
+        askers: ref.slackUserId ? [ref.slackUserId] : [],
+      });
+    }
+    return [...byThread.values()];
+  }
+
+  const ownerRequestCards = deps.ownerRequests
+    ? createSlackOwnerRequests({
+        ports: deps.ownerRequests,
+        gateway: ensureGateway,
+        slackLinksOf: (ownerSub) =>
+          identityLinks.externalLinksOf("slack", ownerSub),
+        workspaces: listWorkspaces,
+        hasScope,
+        reachOf: (agentId) =>
+          deps.ownerRequestReach
+            ? deps.ownerRequestReach(agentId)
+            : Promise.resolve("unlinked" as const),
+        agentName: resolveAgentName,
+        ownerName: async (agentId, teamId) =>
+          (await resolveChannelOwner(agentId, teamId).catch(() => null))
+            ?.name ?? "its owner",
+        addressedTurns: addressedTurnsOf,
+        ownerSentBy: async (slackUserId, ownerSub) =>
+          (await identityLinks.resolve("slack", slackUserId)) === ownerSub,
+        ephemeral: (channel, user, threadTs, text, teamId) =>
+          ephemeral(channel, user, threadTs, text, teamId),
+        appUrl: `${uiBaseUrl}/`,
+      })
+    : null;
+
   const worker: SlackWorker = {
+    async placeOwnerRequest(approvalId) {
+      return ownerRequestCards
+        ? ownerRequestCards.place(approvalId)
+        : { placed: 0 };
+    },
+
+    async ownerRequestWaitChanged(approvalId) {
+      await ownerRequestCards?.waitChanged(approvalId);
+    },
+
     type: ChannelType.Slack,
 
     async connect() {

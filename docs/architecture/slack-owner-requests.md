@@ -65,3 +65,28 @@ An MCP approve once serves exactly one call, as before.
 
 On an addressed Slack turn of an owner who can get cards, the turn's instructions say that such a request goes to the owner in Slack and waits while the tool waits, and that a request that ends without an answer was not denied: the agent finishes without the step and tells the person who asked that the thread will say when the owner allows it.
 For an owner without a Slack link, the agent also says that the owner can answer such requests from Slack after linking with the login command.
+
+## Cards
+
+A routed request reaches its owner as a row of a **card** in the owner's direct message with the app, in every workspace where the owner can get cards; the card comes from the app with no agent persona, like the platform's other notices.
+Each agent has at most one open **turn card** for its `turn` requests and one open **background card** for the rest, per workspace; a raise moves a request from the background card to the turn card.
+A turn card names each thread it holds requests from and who started it, because it cannot tell which thread sent which request.
+Rows that still wait come first, at most ten, then a count with "Open in app"; a row whose request nobody waits for any more says that the answer counts for the next try.
+Agent-written text never reaches Slack as markup, and host, Connection and agent names come from the platform's own records.
+
+Placing runs on the channels leader, one owner at a time, so requests that arrive together join one card.
+The card is recorded before it is posted, so a post that failed can be posted later.
+A join from a thread the turn card does not name yet, or a new row of a background card, posts the card again when the old post is more than five minutes old, so Slack notifies the owner once more; any other join edits the card silently.
+A turn card that cannot be posted for a lasting reason, such as a missing scope or a direct message that cannot open, denies its waiting requests at once, so no thread waits for a card that never comes.
+Every card post carries message metadata that marks it as a card: history reads drop such posts, and the app's own posts are never turns, so an agent bound to the owner's direct message never reads or answers a card.
+
+## The thread line
+
+While an addressed Slack turn waits on a request, the app posts one line in its thread: the agent asked its owner, by display name and without a mention, to approve a step, with a "Don't wait" button.
+It gives no time, and names no host, path or command.
+When nobody waits on the agent's `turn` requests any more and one is still pending, the line says that the agent went on without the step and until when the owner can still approve it; a request that waits again turns it back.
+Once every request it covered has settled, the line says that the wait ended.
+An owner who sent the turn also gets a private note with a link to the card; in the owner's own direct message with the app, no line goes out.
+
+Only the person who started the turn, a person whose message joined it, or the agent's owner may press "Don't wait", as with Stop; anyone else gets a private note.
+A press first takes the turn out of the addressed count, so its later requests are refused at once, then sends the release.

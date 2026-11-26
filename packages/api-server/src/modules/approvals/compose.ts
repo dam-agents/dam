@@ -71,6 +71,10 @@ import type { Subscription } from "rxjs";
 import type { RedisBus } from "../../core/redis-bus.js";
 import type { Redis } from "ioredis";
 import { createHoldWaiters } from "./infrastructure/hold-waiters.js";
+import {
+  createOwnerRequestPorts,
+  type OwnerRequestPorts,
+} from "./services/owner-request-ports.js";
 
 interface ComposeApprovalsServiceDeps {
   db: Db;
@@ -131,11 +135,15 @@ interface ComposeApprovalsSystemDeps {
   waitingRuleSpeaksFor: WaitingRuleSpeaksFor;
 }
 
+export { turnReleaseChannelOf } from "./services/held-verdict.js";
+export type { OwnerRequestPorts } from "./services/owner-request-ports.js";
+
 export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
   relay: ApprovalsRelayService;
   gate: ExtAuthzGate;
   sweeper: DeliverySweeper;
   wakeSaga: Subscription;
+  ownerRequests: OwnerRequestPorts;
 } {
   const repo = createApprovalsRepository(deps.db);
   const waiters = createHoldWaiters(deps.redis);
@@ -175,7 +183,8 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     staleMs: 30_000,
     batchSize: 50,
   });
-  return { relay, gate, sweeper, wakeSaga };
+  const ownerRequests = createOwnerRequestPorts({ repo, waiters });
+  return { relay, gate, sweeper, wakeSaga, ownerRequests };
 }
 
 export function composeToolApprovalReports(
