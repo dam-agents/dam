@@ -13,8 +13,6 @@ import {
   Screen,
   Settings,
   Task,
-  View as ViewIcon,
-  ViewOff,
 } from "@carbon/icons-react";
 
 import { TelegramIcon } from "@/components/brand-icons";
@@ -125,15 +123,6 @@ function globalCommands(
         run: () => act.openKit(kit.catalog, kit.id),
       }),
     ),
-    command({
-      id: "sidebar:sleeping",
-      prefix: "sidebar: ",
-      label: input.showSleeping ? "show recent agents only" : "show all agents",
-      keywords: ["hibernating"],
-      icon: input.showSleeping ? ViewOff : ViewIcon,
-      prior: PRIOR.rare,
-      run: () => act.setShowSleeping(!input.showSleeping),
-    }),
     ...(["slack", "telegram"] as const)
       .filter((messenger) => input.channels[messenger])
       .map((messenger) =>

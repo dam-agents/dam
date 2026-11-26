@@ -29,12 +29,9 @@ export function SidebarSharedAgents({
   stickyHeaderClassName: string;
   onNavigate?: () => void;
 }) {
-  const { shared, active, folded, openAgentId, sidebarAgent } =
-    useSidebarSharedAgents();
+  const { shared, openAgentId, sidebarAgent } = useSidebarSharedAgents();
   const openAgentSettings = useStore((s) => s.openAgentSettings);
   const setSidebarAgent = useStore((s) => s.setSidebarAgent);
-  const showFolded = useStore((s) => s.sidebarShowHibernating);
-  const setShowFolded = useStore((s) => s.setSidebarShowHibernating);
   const sessionOpen = useStore((s) => s.view === "chat" && !!shownSessionId(s));
   const startSession = useStartSession();
   const navigate = (go: () => void) => () => {
@@ -83,7 +80,6 @@ export function SidebarSharedAgents({
     ) : null;
   }
   if (shared.length === 0) return null;
-  const shown = showFolded ? shared : active;
 
   return (
     <section
@@ -99,17 +95,7 @@ export function SidebarSharedAgents({
       >
         <SectionLabel>Shared with me</SectionLabel>
       </div>
-      <ul className="flex flex-col gap-px">{shown.map(row)}</ul>
-      {folded.length > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowFolded(!showFolded)}
-          aria-expanded={showFolded}
-          className="mt-px flex h-[30px] w-full items-center rounded-lg px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          {showFolded ? "Show less" : `See all (${folded.length} more)`}
-        </button>
-      )}
+      <ul className="flex flex-col gap-px">{shared.map(row)}</ul>
     </section>
   );
 }

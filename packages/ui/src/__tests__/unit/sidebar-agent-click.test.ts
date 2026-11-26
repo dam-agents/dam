@@ -1,15 +1,11 @@
-// TEST_OVERVIEW: A click on an Agent row narrows the sidebar to that Agent, and the Sessions section lists the Agent's own list, so it always shows something true: its loading placeholder while a hibernated Agent wakes, a Retry when the read fails, and "No sessions yet." only when the Agent answered with none. A hibernated Agent the sidebar was narrowed to stays out of See all after the user goes back to All agents, so neither it nor the See all control moves.
+// TEST_OVERVIEW: A click on an Agent row narrows the sidebar to that Agent, and the Sessions section lists the Agent's own list, so it always shows something true: its loading placeholder while a hibernated Agent wakes, a Retry when the read fails, and "No sessions yet." only when the Agent answered with none.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { create } from "zustand";
 
-import { sidebarAgentFolded } from "../../modules/agents/lib/sidebar-agent-order.js";
 import { useActivitySessions } from "../../modules/home/hooks/use-activity-sessions.js";
-import { createSidebarSlice } from "../../modules/platform/store/sidebar.js";
 import { SidebarAgentSessions } from "../../modules/sessions/components/sidebar-agent-sessions.js";
-import type { PlatformStore } from "../../store.js";
 
 const fake = vi.hoisted(() => {
   vi.stubGlobal("window", new EventTarget());
@@ -158,55 +154,5 @@ describe("a click on an Agent", () => {
     expect(out).toContain("animate-pulse");
     expect(out).toContain('aria-busy="true"');
     expect(out).not.toContain("No sessions yet.");
-  });
-});
-
-describe("a hibernated Agent the user clicked", () => {
-  const sleeping = { id: "a-1", state: "hibernated" } as const;
-
-  // TEST_SCENARIO: the user narrows the sidebar to a hibernated Agent from See all; it stays out of See all while the sidebar is narrowed to it or its chat is shown.
-  it("stays out of See all while it is the agent view or the shown chat", () => {
-    expect(sidebarAgentFolded(sleeping, null, null)).toBe(true);
-    expect(sidebarAgentFolded(sleeping, null, "a-1")).toBe(false);
-    expect(sidebarAgentFolded(sleeping, "a-1", null)).toBe(false);
-  });
-
-  // TEST_SCENARIO: with awake and asleep Agents mixed, the user opens See all, narrows the sidebar to one asleep Agent, goes back to All agents from a page that is not its chat, then clicks Show less; that Agent stays in its place and only the other asleep Agents fold, counted right.
-  it("keeps the clicked Agent in place through See all, a click, going back and Show less", () => {
-    const agents = [
-      { id: "awake-1", state: "running" },
-      { id: "sleep-1", state: "hibernated" },
-      { id: "awake-2", state: "running" },
-      { id: "sleep-2", state: "hibernating" },
-      { id: "sleep-3", state: "hibernated" },
-    ] as const;
-    const store = create<PlatformStore>()(
-      (...a) => createSidebarSlice(...a) as PlatformStore,
-    );
-    let shownChat: string | null = null;
-    const shown = () => {
-      const { sidebarLastAgent, sidebarShowHibernating } = store.getState();
-      const folded = agents.filter((agent) =>
-        sidebarAgentFolded(agent, shownChat, sidebarLastAgent),
-      );
-      const listed = sidebarShowHibernating
-        ? agents
-        : agents.filter((agent) => !folded.includes(agent));
-      return { ids: listed.map((agent) => agent.id), folded: folded.length };
-    };
-    const { setSidebarShowHibernating, setSidebarAgent } = store.getState();
-
-    setSidebarShowHibernating(true);
-    setSidebarAgent("sleep-2");
-    shownChat = "sleep-2";
-    expect(shown().folded).toBe(2);
-    setSidebarAgent(null);
-    shownChat = null;
-    expect(shown().folded).toBe(2);
-    setSidebarShowHibernating(false);
-    expect(shown()).toEqual({
-      ids: ["awake-1", "awake-2", "sleep-2"],
-      folded: 2,
-    });
   });
 });

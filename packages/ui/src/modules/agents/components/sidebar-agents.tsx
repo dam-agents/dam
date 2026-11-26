@@ -26,8 +26,7 @@ import { SidebarAgentRow } from "./sidebar-agent-row.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the sidebar's Agents section. In All agents it
- * lists the person's own Agents in their manual order, with hibernated ones
- * folded under See all; a click on one narrows the sidebar to that Agent and
+ * lists every one of the person's own Agents in their manual order; a click on one narrows the sidebar to that Agent and
  * opens its new chat. In an agent view it shows "All agents", which goes
  * back, and the selected Agent alone; a click on it opens its new chat
  * again. Sessions are never listed here: the Sessions section lists them.
@@ -39,7 +38,7 @@ export function SidebarAgents({
   stickyHeaderClassName: string;
   onNavigate?: () => void;
 }) {
-  const { agents, active, folded, openAgentId, sidebarAgent, unreadAgentIds } =
+  const { agents, openAgentId, sidebarAgent, unreadAgentIds } =
     useSidebarAgents();
   const orderActions = useSidebarOrderActions();
   const activity = useActivitySessions();
@@ -48,8 +47,6 @@ export function SidebarAgents({
   const openAgentSettings = useStore((s) => s.openAgentSettings);
   const setSidebarAgent = useStore((s) => s.setSidebarAgent);
   const setSidebarBackFrom = useStore((s) => s.setSidebarBackFrom);
-  const showFolded = useStore((s) => s.sidebarShowHibernating);
-  const setShowFolded = useStore((s) => s.setSidebarShowHibernating);
   const sessionOpen = useStore((s) => s.view === "chat" && !!shownSessionId(s));
   const startSession = useStartSession();
   const listedUnread = useAgentsWithUnreadListedSessions(
@@ -75,14 +72,7 @@ export function SidebarAgents({
     sidebarAgent === null
       ? undefined
       : agents.find((agent) => agent.id === sidebarAgent);
-  const shownAgents =
-    sidebarAgent !== null
-      ? viewed
-        ? [viewed]
-        : []
-      : showFolded
-        ? agents
-        : active;
+  const shownAgents = sidebarAgent === null ? agents : viewed ? [viewed] : [];
   const shownAgentIds = shownAgents.map((agent) => agent.id);
   const row = (agent: AgentView) => (
     <SidebarAgentRow
@@ -140,17 +130,6 @@ export function SidebarAgents({
         </p>
       )}
       <ul className="flex flex-col gap-px">{shownAgents.map(row)}</ul>
-      {sidebarAgent === null && folded.length > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowFolded(!showFolded)}
-          aria-expanded={showFolded}
-          data-testid="sidebar-agents-hibernating"
-          className="mt-px flex h-[30px] w-full items-center rounded-lg px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          {showFolded ? "Show less" : `See all (${folded.length} more)`}
-        </button>
-      )}
       {binding && (
         <MessengerBindDialog
           messenger={binding}

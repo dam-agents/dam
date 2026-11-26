@@ -85,7 +85,6 @@ function input(over: Partial<PaletteInput> = {}): PaletteInput {
     browserOpen: null,
     changesOpen: null,
     theme: "system",
-    showSleeping: false,
     approvalsOpen: false,
     checklist: null,
     pendingApprovals: [],

@@ -1,7 +1,6 @@
 import { SessionMode, SessionType } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
-import { sidebarAgentFolded } from "../../modules/agents/lib/sidebar-agent-order.js";
 import {
   activityFilterSummary,
   defaultActivityFilters,
@@ -16,7 +15,7 @@ import {
   viewMore,
 } from "../../modules/sessions/lib/sidebar-session-window.js";
 
-// TEST_OVERVIEW: The sidebar's agent view lists the Agent's Sessions newest activity first, and no Session twice. It shows the first five Sessions, and each click on View more shows five more, loading further pages until the rows fill the window or the list ends. Paging stops when the Agent's cursor does not move or a page brings no new Session. The Agent's session filter applies to the attention record and to the Agent's own session list alike. A hibernated Agent folds under See all unless the sidebar is narrowed to it or its chat is shown.
+// TEST_OVERVIEW: The sidebar's agent view lists the Agent's Sessions newest activity first, and no Session twice. It shows the first five Sessions, and each click on View more shows five more, loading further pages until the rows fill the window or the list ends. Paging stops when the Agent's cursor does not move or a page brings no new Session. The Agent's session filter applies to the attention record and to the Agent's own session list alike.
 
 describe("the order of an agent's sessions", () => {
   const session = (id: string, at: string | null) => ({ id, at });
@@ -222,19 +221,6 @@ describe("the sidebar session filter", () => {
         { ...slack, needsApproval: false },
         { ...base, state: "needs-attention" },
       ),
-    ).toBe(false);
-  });
-});
-
-describe("hibernated Agents fold under See all", () => {
-  const sleeping = { id: "a-1", state: "hibernated" } as const;
-  it("TEST_SCENARIO: a hibernated Agent folds unless the sidebar is narrowed to it or its chat is shown; an awake Agent never folds", () => {
-    expect(sidebarAgentFolded(sleeping, null, null)).toBe(true);
-    expect(sidebarAgentFolded(sleeping, null, "a-1")).toBe(false);
-    expect(sidebarAgentFolded(sleeping, "a-1", null)).toBe(false);
-    expect(sidebarAgentFolded(sleeping, "a-2", "a-3")).toBe(true);
-    expect(
-      sidebarAgentFolded({ id: "a-1", state: "running" }, null, null),
     ).toBe(false);
   });
 });

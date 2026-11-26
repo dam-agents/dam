@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The sidebar lists Agents newest created first, in one manual order per user that the user changes by drag and drop, in a real browser against a real api-server, and lists the Sessions of each Agent by last activity, newest first. A drop on an Agent row puts the dragged Agent before or after it, by the half of the row the pointer is in. A new Agent joins the foot of the list, and a click or activity never moves an Agent: a click opens and closes the Agent's Sessions in place. Hibernated Agents show after See all. The Agent order survives a reload and is the same in another browser. A new Session, or a turn in an old one, puts that Session at the top of its Agent's list, and a Session row does not drag. The "⋯" button of a Session row takes a click anywhere on its visible area, also on a working row, where a hidden indicator sits in the same place. The spec creates its own Agents, so the Agents and Sessions of the other specs never move.
+// TEST_OVERVIEW: The sidebar lists every Agent, newest created first, in one manual order per user that the user changes by drag and drop, in a real browser against a real api-server, and lists an Agent's Sessions by last activity, newest first. A drop on an Agent row puts the dragged Agent before or after it, by the half of the row the pointer is in. A new Agent joins the foot of the list, and a click or activity never moves an Agent: a click narrows the sidebar to that Agent, and All agents brings every Agent back in place. The Agent order survives a reload and is the same in another browser. A new Session, or a turn in an old one, puts that Session at the top of the Agent's list, and a Session row does not drag. The "⋯" button of a Session row takes a click anywhere on its visible area, also on a working row, where a hidden indicator sits in the same place. The spec creates its own Agents, so the Agents and Sessions of the other specs never move.
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
@@ -42,13 +42,6 @@ async function reload(page: Page): Promise<void> {
   await expect(page.getByTestId("app-sidebar")).toBeVisible();
 }
 
-async function showHibernating(page: Page): Promise<void> {
-  const seeAll = page
-    .getByTestId("sidebar-agents-hibernating")
-    .filter({ hasText: "See all" });
-  if (await seeAll.isVisible()) await seeAll.click();
-}
-
 async function openSidebar(page: Page): Promise<void> {
   await page.goto(baseUrl);
   await expect(page.getByTestId("app-sidebar")).toBeVisible();
@@ -56,7 +49,6 @@ async function openSidebar(page: Page): Promise<void> {
   await expect(
     page.getByTestId("sidebar-agents").getByTestId("sidebar-agent-row").first(),
   ).toBeVisible();
-  await showHibernating(page);
 }
 
 async function shownAgents(page: Page): Promise<string[]> {
@@ -74,7 +66,7 @@ function agentRow(page: Page, name: string): Locator {
 }
 
 function sessionRows(page: Page): Locator {
-  return sidebarAgentRow(page, AGENTS[0]).getByTestId("session-row");
+  return page.getByTestId("sidebar-agent-sessions").getByTestId("session-row");
 }
 
 async function shownSessions(page: Page): Promise<string[]> {
@@ -171,7 +163,7 @@ test.afterAll(async () => {
   for (const id of agentIds.values()) await api.agents.delete.mutate({ id });
 });
 
-// TEST_SCENARIO: a drag moves an Agent to any place in the list: after the row it is dropped on in its lower half, before it in its upper half. The order is the same after a reload and in a second browser, and an Agent created after that joins the foot of the list, under the Agents the user has arranged. A click on a closed Agent opens its Sessions and its new-session page, a second click only closes the Sessions and stays on that page, and neither moves an Agent.
+// TEST_SCENARIO: a drag moves an Agent to any place in the list: after the row it is dropped on in its lower half, before it in its upper half. The order is the same after a reload and in a second browser, and an Agent created after that joins the foot of the list, under the Agents the user has arranged. A click on an Agent narrows the sidebar to it and opens its new-session page, and All agents brings back every Agent in the same order and stays on that page.
 test("drag reorders Agents, and a new Agent joins the foot", async ({
   page,
   browser,
@@ -230,20 +222,18 @@ test("drag reorders Agents, and a new Agent joins the foot", async ({
       .toEqual([third, second, first, LATE_AGENT]);
   });
 
-  await test.step("a click opens an Agent's page and Sessions, a second only closes them", async () => {
-    const row = agentRow(page, AGENTS[0]);
+  await test.step("a click narrows the sidebar to the Agent and opens its page; All agents brings every Agent back in place", async () => {
     const before = await shownAgents(page);
-    await expect(row).toHaveAttribute("aria-expanded", "false");
-    await row.click();
-    await expect(row).toHaveAttribute("aria-expanded", "true");
+    await agentRow(page, AGENTS[0]).click();
+    await expect(page.getByTestId("sidebar-all-agents")).toBeVisible();
+    await expect.poll(() => shownAgents(page)).toEqual([AGENTS[0]]);
     const chat = new RegExp(
       `/chat/${encodeURIComponent(agentIds.get(AGENTS[0])!)}$`,
     );
     await expect(page).toHaveURL(chat);
-    await row.click();
-    await expect(row).toHaveAttribute("aria-expanded", "false");
+    await page.getByTestId("sidebar-all-agents").click();
+    await expect.poll(() => shownAgents(page)).toEqual(before);
     await expect(page).toHaveURL(chat);
-    expect(await shownAgents(page)).toEqual(before);
   });
 });
 

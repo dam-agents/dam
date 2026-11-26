@@ -45,7 +45,6 @@ export function usePaletteActions({
   const openAgentSettings = useStore((s) => s.openAgentSettings);
   const navigateToStarterKit = useStore((s) => s.navigateToStarterKit);
   const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
-  const setShowSleeping = useStore((s) => s.setSidebarShowHibernating);
   const setTheme = useStore((s) => s.setTheme);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const setChecklistExpanded = useStore((s) => s.setChecklistExpanded);
@@ -81,7 +80,6 @@ export function usePaletteActions({
     browseKits: () => setKitBrowserOpen(true),
     openKit: navigateToStarterKit,
     bind: onBind,
-    setShowSleeping,
     openSettings: navigateToSettings,
     setTheme,
     logOut: () => void logout(),

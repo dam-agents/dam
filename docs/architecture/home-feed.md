@@ -72,7 +72,7 @@ One click asks for at most five pages, while the button says it is looking; then
 
 The sidebar lists Agents in one **manual order** the user changes, in All agents, by drag and drop or with Alt+Up and Alt+Down, oldest created first until they do.
 An Agent the order does not name yet, a new Agent, joins the foot of the list, and neither a click nor activity moves an Agent.
-Hibernated Agents fold under **See all (N more)**, unless the sidebar is narrowed to it or its chat is shown, so going back to All agents keeps the row the user clicked in place.
+Every Agent is listed, awake or asleep; nothing folds away.
 An Agent's row shows a blue dot when one of its Sessions is unread in the record or in its own list already loaded, and a filter mark while its session filter is on; its hover actions are **New session**, **Agent settings**, which opens the Agent's settings in a modal over the current view, and a ⋮ menu with Add to Slack channel or Telegram chat only where the installation has them.
 A move stores the whole list as the user sees it, so the Agents the user did not touch keep their places too.
 The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entry when the Agent is deleted.

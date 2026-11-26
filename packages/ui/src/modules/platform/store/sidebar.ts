@@ -23,7 +23,6 @@ import { keepFirstSessionPages } from "../../sessions/api/queries.js";
 // UNIT_BOUNDARY_DESCRIPTION: the version in the key is a one-time reset: the collapsed rail changed, so every browser opens expanded once and stores its own choice from then on, while the old key is removed rather than read.
 const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded-v2";
 const OLD_SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
-const SIDEBAR_HIBERNATING_STORAGE_KEY = "platform-sidebar-show-hibernating";
 const SIDEBAR_SESSION_FILTER_STORAGE_KEY = "platform-session-filter";
 
 export interface SidebarSlice {
@@ -31,10 +30,7 @@ export interface SidebarSlice {
   setSidebarExpanded: (expanded: boolean) => void;
   sidebarActivityFilters: ActivityFilters;
   setSidebarActivityFilters: (filters: ActivityFilters) => void;
-  sidebarShowHibernating: boolean;
-  setSidebarShowHibernating: (show: boolean) => void;
   sidebarAgent: string | null;
-  sidebarLastAgent: string | null;
   setSidebarAgent: (agentId: string | null) => void;
   sidebarBackFrom: string | null;
   setSidebarBackFrom: (agentId: string | null) => void;
@@ -86,22 +82,8 @@ export const createSidebarSlice: StateCreator<
     writeStoredSessionFilter(filters);
     set({ sidebarActivityFilters: filters });
   },
-  sidebarShowHibernating: readPersistedFlag(
-    SIDEBAR_HIBERNATING_STORAGE_KEY,
-    false,
-  ),
-  setSidebarShowHibernating: (show) => {
-    writePersistedFlag(SIDEBAR_HIBERNATING_STORAGE_KEY, show);
-    set({ sidebarShowHibernating: show });
-  },
   sidebarAgent: null,
-  sidebarLastAgent: null,
-  setSidebarAgent: (agentId) =>
-    set(
-      agentId === null
-        ? { sidebarAgent: null }
-        : { sidebarAgent: agentId, sidebarLastAgent: agentId },
-    ),
+  setSidebarAgent: (agentId) => set({ sidebarAgent: agentId }),
   sidebarBackFrom: null,
   setSidebarBackFrom: (agentId) => set({ sidebarBackFrom: agentId }),
   sidebarWakeDecided: new Set(),
