@@ -6,6 +6,12 @@ export {
   resolveKitOrExit,
 } from "./commands/resolve-kit.js";
 export {
+  checkKitFlagsOrExit,
+  kitGrantsOrExit,
+  type KitFlags,
+} from "./commands/kit-flags.js";
+export { renderSteps } from "./domain/render-steps.js";
+export {
   preselectedGrants,
   remainingSteps,
   templateIndex,

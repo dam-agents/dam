@@ -65,6 +65,7 @@ import {
 import { composeResourceAlerts } from "./modules/resource-alerts/index.js";
 import { parseInfraAgent } from "./modules/agents/infrastructure/agent-mappers.js";
 import { createKitUpdateMarks } from "./modules/agents/infrastructure/kit-update-marks.js";
+import { createSeedStamp } from "./modules/agents/infrastructure/kit-stamp.js";
 import {
   AGENTS_PLURAL,
   ANN_STARTER_KIT,
@@ -327,6 +328,7 @@ import {
   createTurnReplyReader,
   createKitUpdateReporter,
   createLinkedKits,
+  createKitSeedOutcome,
   createResolvedCatalogRepository,
   parseCatalogSeeds,
   parseKitRef,
@@ -2864,6 +2866,10 @@ export async function bootstrap() {
         input.detail ?? input.outcome,
       );
     });
+  runtimeDelivery.registerEventOutcomeHandler(
+    "kit-seed",
+    createKitSeedOutcome({ stampSeed: createSeedStamp(agentsRepo) }),
+  );
   runtimeDelivery.registerEventOutcomeHandler(
     "harness-config",
     async (event, input) => {

@@ -24,7 +24,9 @@ export function kitErrorDescription(
   return {
     stderr: `error: ${error.reason}\n`,
     exitCode:
-      error.code === "BAD_REQUEST" || error.code === "NOT_FOUND"
+      error.code === "BAD_REQUEST" ||
+      error.code === "NOT_FOUND" ||
+      error.code === "CONFLICT"
         ? EXIT_INVALID_INPUT
         : EXIT_RUNTIME_FAILURE,
   };

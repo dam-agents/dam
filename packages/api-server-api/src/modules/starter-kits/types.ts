@@ -4,6 +4,7 @@ import type { Agent } from "../agents/types.js";
 import type { SkillSetApplyResult } from "../skills/types.js";
 import type {
   starterKitApplyInputSchema,
+  starterKitApplyToAgentInputSchema,
   resolvedSkillSchema,
   starterKitCatalogEntrySchema,
   starterKitConnectionRequirementSchema,
@@ -39,6 +40,9 @@ export type StarterKitCatalogEntry = z.infer<
   typeof starterKitCatalogEntrySchema
 >;
 export type StarterKitApplyInput = z.infer<typeof starterKitApplyInputSchema>;
+export type StarterKitApplyToAgentInput = z.infer<
+  typeof starterKitApplyToAgentInputSchema
+>;
 export type StarterKitEntryPublisher = z.infer<
   typeof starterKitEntryPublisherSchema
 >;
@@ -59,6 +63,21 @@ export interface StarterKitApplyResult {
   agent: Agent;
   skills: SkillSetApplyResult | null;
   skillsError: string | null;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a part of a kit that only a create sets, which
+ * an apply to an existing Agent leaves as the Agent has it, with what the kit
+ * asks for: `storage` its workspace size, `harness` the harnesses it runs on,
+ * `egress-preset` its egress preset, `default-model` the model it starts on.
+ */
+export interface StarterKitPartKept {
+  part: "storage" | "harness" | "egress-preset" | "default-model";
+  kit: string;
+}
+
+export interface StarterKitApplyToAgentResult extends StarterKitApplyResult {
+  kept: StarterKitPartKept[];
 }
 
 export type SeedStamp = z.infer<typeof seedStampSchema>;
@@ -101,6 +120,9 @@ export interface StarterKitsService {
   get: (catalog: string, id: string) => Promise<StarterKitView | null>;
   inspect: (url: string) => Promise<StarterKitView>;
   apply: (input: StarterKitApplyInput) => Promise<StarterKitApplyResult>;
+  applyToAgent: (
+    input: StarterKitApplyToAgentInput,
+  ) => Promise<StarterKitApplyToAgentResult>;
   markOnboarded: (agentId: string) => Promise<void>;
   updates: () => Promise<KitUpdateStatus[]>;
   updateChanges: (agentId: string) => Promise<KitUpdateChanges | null>;

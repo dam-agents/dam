@@ -123,7 +123,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 - **`auth`** — login, logout, status, and API-key management ([Authentication](#authentication)).
 - **`update`** (`upgrade` alias) — update the documented global npm installation to the latest stable CLI release, or report that it is current.
 - **`agent`** — list, get, create, interactive create, update, models, avatars, delete, restart, `kept` (the tree of kept sub-agents under an agent), plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
-- **`kit`** — list the starter kits, show what one sets up and what it needs from the user, and see, take or skip a kit's update on an agent; `agent create --kit` applies one and lists the setup left, and `agent get` names the kit an agent came from with its update state, owned by [starter-kits.md](starter-kits.md).
+- **`kit`** — list the starter kits, show what one sets up and what it needs from the user, apply one to an agent that already exists, and see, take or skip a kit's update on an agent; `agent create --kit` and `kit apply` apply one and list the setup left, and `agent get` names the kit an agent came from with its update state, owned by [starter-kits.md](starter-kits.md).
   A kit is a separate group from the template listing because a kit is not a Template: an agent that only knows templates answers a question about kits with images.
 - **`chat`** / **`session`** — attach a local terminal to a running agent's TUI, and list an agent's sessions ([Terminal attach](#terminal-attach)).
 - **`telemetry`** — list a session's turns with the Metered Spend of each ([Spend limits](spend-limits.md#ledger)), and export its traces and log records as newline-delimited JSON ([Agent telemetry](agent-telemetry.md)).

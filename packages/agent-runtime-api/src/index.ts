@@ -276,6 +276,7 @@ export {
   workspaceCommandEventPayload,
   agentInstructionsEventPayload,
   workspaceSeedEventPayload,
+  kitSeedEventPayload,
   helloInput,
 } from "./modules/runtime/types.js";
 export type {
@@ -307,6 +308,7 @@ export type {
   ScheduleResetEventPayload,
   StartupItemsEventPayload,
   WorkspaceSeedEventPayload,
+  KitSeedEventPayload,
   HarnessConfigEventPayload,
   ApplyStateInput,
   ApplyStateResult,

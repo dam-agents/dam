@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import type { AgentService } from "../agent/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
+import { buildApplyCommand } from "./commands/apply.js";
 import { buildListCommand } from "./commands/list.js";
 import { buildShowCommand } from "./commands/show.js";
 import {
@@ -31,10 +32,11 @@ export function composeKitModule(opts: KitModuleOptions): {
   };
 
   const parent = new Command("kit").description(
-    "Discover starter kits — proven ways of working an agent is created from — and take their updates",
+    "Discover starter kits — proven ways of working an agent is created from or given later — and take their updates",
   );
   parent.addCommand(buildListCommand(shared), { isDefault: true });
   parent.addCommand(buildShowCommand(shared));
+  parent.addCommand(buildApplyCommand(agentScoped));
   parent.addCommand(buildChangesCommand(agentScoped));
   parent.addCommand(buildUpdateCommand(agentScoped));
   parent.addCommand(buildSkipCommand(agentScoped));
