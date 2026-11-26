@@ -105,6 +105,27 @@ export interface SpendStatus {
   binding: SpendBinding[];
 }
 
+export interface SpendStoppedLimit {
+  kind: SpendBindingKind;
+  limitId: string | null;
+  connectionId: string | null;
+  connectionName: string | null;
+  unit: SpendUnit;
+  amountMicros: number;
+  leftMicros: number;
+}
+
+export interface SpendStoppedAgent {
+  agentId: string;
+  sessionIds: string[];
+  limit: SpendStoppedLimit;
+}
+
+export interface SpendStopped {
+  resetsAt: string;
+  agents: SpendStoppedAgent[];
+}
+
 export interface SpendAmount {
   unit: SpendUnit;
   costMicros: number;
@@ -264,6 +285,7 @@ export interface SpendService {
   calls(input: SpendCallsInput): Promise<SpendCalls>;
   metering(): Promise<SpendMetering>;
   status(input: SpendStatusInput): Promise<SpendStatus>;
+  stopped(): Promise<SpendStopped>;
   setLimit(input: SpendSetLimitInput): Promise<void>;
 }
 

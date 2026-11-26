@@ -83,6 +83,8 @@ export const spendRouter = t.router({
       return ctx.spend.status(input);
     }),
 
+  stopped: readAgentProcedure.query(({ ctx }) => ctx.spend.stopped()),
+
   setLimit: manageAgentsProcedure
     .input(spendSetLimitInputSchema)
     .use(agentPermission("spendLimits", (input) => limitTarget(input.scope)))
