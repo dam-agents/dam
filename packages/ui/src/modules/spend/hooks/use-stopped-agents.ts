@@ -1,6 +1,7 @@
 import type { SpendStoppedLimit } from "api-server-api";
 import { useMemo } from "react";
 
+import { useAppConnections } from "../../connections/api/queries.js";
 import { useSpendStopped } from "../api/queries.js";
 import {
   allAgentsOn,
@@ -9,11 +10,11 @@ import {
   thisAgentOn,
 } from "../lib/copy.js";
 import { localResetTime, meterAmount } from "../lib/format.js";
+import { connectionDisplayName } from "../lib/level-labels.js";
 
 const NO_STOPPED: ReadonlyMap<string, string> = new Map();
 
-function limitName(limit: SpendStoppedLimit): string {
-  const provider = limit.connectionName ?? "";
+function limitName(limit: SpendStoppedLimit, provider: string): string {
   switch (limit.kind) {
     case "connection":
       return thisAgentOn(provider);
@@ -31,18 +32,26 @@ function limitName(limit: SpendStoppedLimit): string {
 /** UNIT_BOUNDARY_DESCRIPTION: the owner's agents that a limit stopped today, each with the words that name the limit, what is left and when calls start again. */
 export function useStoppedAgents(): ReadonlyMap<string, string> {
   const { data } = useSpendStopped();
+  const { data: connections } = useAppConnections();
   return useMemo(() => {
+    const providerOf = (limit: SpendStoppedLimit) => {
+      const found = connections?.find((c) => c.id === limit.connectionId);
+      return connectionDisplayName(
+        found?.name ?? limit.connectionName ?? "",
+        found?.templateId ?? "",
+      );
+    };
     if (!data || data.agents.length === 0) return NO_STOPPED;
     const until = localResetTime(data.resetsAt);
     return new Map(
       data.agents.map(({ agentId, limit }) => [
         agentId,
         stoppedByLimit(
-          limitName(limit),
+          limitName(limit, providerOf(limit)),
           meterAmount(limit.leftMicros, limit.unit),
           until,
         ),
       ]),
     );
-  }, [data]);
+  }, [data, connections]);
 }
