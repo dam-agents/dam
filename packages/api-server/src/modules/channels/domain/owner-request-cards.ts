@@ -12,11 +12,13 @@ export const OWNER_REQUEST_DENY_FOREVER_ACTION = `${OWNER_REQUEST_ACTION_PREFIX}
 export const OWNER_REQUEST_DISMISS_ACTION = `${OWNER_REQUEST_ACTION_PREFIX}dismiss`;
 
 export const MAX_CARD_ROWS = 10;
+export const SLACK_MAX_BLOCKS = 50;
 export const SUMMARY_MAX = 200;
 export const ARGUMENTS_MAX = 2500;
 export const QUERY_MAX = 200;
 export const HOST_ROW_PATHS = 5;
 export const DISMISS_DAYS = 7;
+export const MANY_HOSTS = 10;
 
 export type OwnerCardKind = "turn" | "background" | "call";
 
@@ -75,6 +77,7 @@ export interface OwnerRequestView {
   route: "turn" | "background" | null;
   summary: string;
   host: string | null;
+  createdAt: string;
   expiresAt: string;
   resolvedAt: string | null;
   verdict: "allow_once" | "allow" | "deny_once" | "deny" | null;
@@ -429,29 +432,32 @@ function ruleButtons(input: {
 }
 
 function contextOf(lines: readonly string[]): SlackBlock[] {
-  return lines.length === 0
-    ? []
-    : [{ type: "context", elements: lines.map((line) => plainText(line)) }];
+  return infoContext(lines, null);
 }
 
-function waitLine(rows: readonly CardRow[]): SlackBlock {
+// UNIT_BOUNDARY_DESCRIPTION: a row's quiet lines as one context block, plain text first and the expiry or the nobody-waits note last, so a row costs few of the 50 blocks a Slack message holds.
+function infoContext(
+  lines: readonly string[],
+  wait: string | null,
+): SlackBlock[] {
+  const elements = [
+    ...lines.map((line) => plainText(line)),
+    ...(wait ? [{ type: "mrkdwn", text: wait }] : []),
+  ];
+  return elements.length === 0
+    ? []
+    : [{ type: "context", elements: elements.slice(0, 10) }];
+}
+
+function waitText(rows: readonly CardRow[]): string {
   const waiting = rows.filter((row) => isWaiting(row.view));
   const until = waiting
     .map((row) => row.view.expiresAt)
     .sort()
     .at(-1);
-  return {
-    type: "context",
-    elements: [
-      {
-        type: "mrkdwn",
-        text:
-          waiting.every((row) => row.nobodyWaits) || !until
-            ? NOBODY_WAITS
-            : `Answer by ${slackDate(until)}`,
-      },
-    ],
-  };
+  return waiting.every((row) => row.nobodyWaits) || !until
+    ? NOBODY_WAITS
+    : `Answer by ${slackDate(until)}`;
 }
 
 function followUpLine(view: OwnerRequestView): string {
@@ -481,12 +487,14 @@ export function networkRow(row: CardRow, appUrl: string): SlackBlock[] {
   const from = fromLine(view);
   return [
     { type: "section", text: plainText(cut(title, 300)) },
-    ...contextOf([
-      ...(query ? [`Query: ${cut(query, QUERY_MAX)}`] : []),
-      ...(search ? [followUpLine(view)] : []),
-      ...(from ? [from] : []),
-    ]),
-    waitLine([row]),
+    ...infoContext(
+      [
+        ...(query ? [`Query: ${cut(query, QUERY_MAX)}`] : []),
+        ...(search ? [followUpLine(view)] : []),
+        ...(from ? [from] : []),
+      ],
+      waitText([row]),
+    ),
     {
       type: "actions",
       elements: [
@@ -543,33 +551,28 @@ export function hostRow(
     .refusedIn;
   const from = fromLine(first);
   const timesToday = Math.max(...views.map((view) => view.timesToday));
+  const listed =
+    shown.length > 0 && !(paths.length === 1 && paths[0] === "*")
+      ? [...shown, ...(more > 0 ? [`and ${String(more)} more`] : [])]
+      : [];
   return [
-    { type: "section", text: plainText(cut(title, SUMMARY_MAX)) },
-    ...(shown.length > 0 && !(paths.length === 1 && paths[0] === "*")
-      ? [
-          {
-            type: "section",
-            text: plainText(
-              cut(
-                [
-                  ...shown,
-                  ...(more > 0 ? [`and ${String(more)} more`] : []),
-                ].join("\n"),
-                2900,
-              ),
-            ),
-          },
-        ]
-      : []),
-    ...contextOf([
-      `${String(timesToday)} ${timesToday === 1 ? "time" : "times"} today`,
-      ...(search && waiting.length > 0 ? [followUpLine(first)] : []),
-      ...(from ? [from] : []),
-      ...(waiting.length === 0
-        ? [refused ? REFUSED_IN[refused] : outcomeLine(open.at(-1)!)]
-        : []),
-    ]),
-    ...(waiting.length > 0 ? [waitLine(waiting)] : []),
+    {
+      type: "section",
+      text: plainText(
+        cut([cut(title, SUMMARY_MAX), ...listed].join("\n"), 2900),
+      ),
+    },
+    ...infoContext(
+      [
+        `${String(timesToday)} ${timesToday === 1 ? "time" : "times"} today`,
+        ...(search && waiting.length > 0 ? [followUpLine(first)] : []),
+        ...(from ? [from] : []),
+        ...(waiting.length === 0
+          ? [refused ? REFUSED_IN[refused] : outcomeLine(open.at(-1)!)]
+          : []),
+      ],
+      waiting.length > 0 ? waitText(waiting) : null,
+    ),
     {
       type: "actions",
       elements: [
@@ -604,14 +607,6 @@ export function callRow(row: CardRow, appUrl: string): SlackBlock[] {
   const argsCut = args !== null && [...args].length > ARGUMENTS_MAX;
   return [
     { type: "section", text: plainText(cut(callTitle(view), 300)) },
-    ...(call?.targetLabel
-      ? [
-          {
-            type: "context",
-            elements: [plainText(`To: ${cut(call.targetLabel, 200)}`)],
-          },
-        ]
-      : []),
     ...(args !== null
       ? [
           {
@@ -620,17 +615,12 @@ export function callRow(row: CardRow, appUrl: string): SlackBlock[] {
           },
         ]
       : []),
-    {
-      type: "context",
-      elements: [
-        {
-          type: "mrkdwn",
-          text: row.nobodyWaits
-            ? NOBODY_WAITS
-            : `Answer by ${slackDate(view.expiresAt)}${argsCut ? ". The arguments are cut: open the request in the app to read them all." : ""}`,
-        },
-      ],
-    },
+    ...infoContext(
+      call?.targetLabel ? [`To: ${cut(call.targetLabel, 200)}`] : [],
+      row.nobodyWaits
+        ? NOBODY_WAITS
+        : `Answer by ${slackDate(view.expiresAt)}${argsCut ? ". The arguments are cut: open the request in the app to read them all." : ""}`,
+    ),
     {
       type: "actions",
       elements: [...answerButtons(view), openInAppButton(appUrl)],
@@ -751,25 +741,33 @@ function allButtons(units: readonly CardUnit[]): SlackBlock[] {
   ];
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the rows a card shows, most urgent first: at most ten, and never more than fit in the 50 blocks a Slack message holds beside the blocks above them, keeping one block for "Allow all once" and one for the count of rows that did not fit.
 function rowsOf(input: {
   kind: OwnerCardKind;
   threads: readonly OwnerCardThread[];
   rows: readonly CardRow[];
   appUrl: string;
+  blocksAbove: number;
 }): SlackBlock[] {
   const ordered = unitsOf(input.kind, input.rows).sort(
     (a, b) => rankOf(a) - rankOf(b),
   );
-  const shown = ordered.slice(0, MAX_CARD_ROWS);
+  const budget = SLACK_MAX_BLOCKS - input.blocksAbove - 2;
+  const shown: { unit: CardUnit; blocks: SlackBlock[] }[] = [];
+  let used = 0;
+  for (const unit of ordered) {
+    if (shown.length >= MAX_CARD_ROWS) break;
+    const blocks = [{ type: "divider" }, ...unitBlocks(unit, input.appUrl)];
+    if (used + blocks.length > budget) break;
+    shown.push({ unit, blocks });
+    used += blocks.length;
+  }
   const more = ordered.length - shown.length;
   return [
     ...(input.kind === "turn" && input.threads.length === 1
-      ? allButtons(shown)
+      ? allButtons(shown.map((entry) => entry.unit))
       : []),
-    ...shown.flatMap((unit) => [
-      { type: "divider" },
-      ...unitBlocks(unit, input.appUrl),
-    ]),
+    ...shown.flatMap((entry) => entry.blocks),
     ...(more > 0
       ? [
           {
@@ -786,6 +784,28 @@ function rowsOf(input: {
   ];
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the hint of a background card whose agent was blocked on many different hosts today: a rule for each host will not stop it, so the card links to the agent's network settings and never suggests a rule for every host. None below ten hosts.
+function manyHostsHint(
+  agentName: string,
+  hint: { hosts: number; settingsUrl: string },
+): SlackBlock[] {
+  if (hint.hosts < MANY_HOSTS) return [];
+  return [
+    {
+      type: "section",
+      text: plainText(
+        `${cut(agentName, 100)} was blocked on ${String(hint.hosts)} different hosts today. A rule for each host will not stop this.`,
+      ),
+      accessory: {
+        type: "button",
+        action_id: OWNER_REQUEST_OPEN_ACTION,
+        text: plainText("Open network settings"),
+        url: hint.settingsUrl,
+      },
+    },
+  ];
+}
+
 function requestCount(n: number): string {
   return n === 1 ? "1 request" : `${n} requests`;
 }
@@ -797,6 +817,7 @@ export function ownerCard(input: {
   threads: readonly OwnerCardThread[];
   rows: readonly CardRow[];
   appUrl: string;
+  manyHosts?: { hosts: number; settingsUrl: string } | null;
 }): { text: string; blocks: SlackBlock[] } {
   const waiting = input.rows.filter((row) => isWaiting(row.view));
   if (input.kind === "call") {
@@ -811,13 +832,16 @@ export function ownerCard(input: {
     input.kind === "turn"
       ? `${input.agentName} waits in Slack: ${requestCount(waiting.length)}`
       : `${input.agentName} needs you: ${requestCount(waiting.length)}`;
+  const above = [
+    { type: "header", text: plainText(cut(header, 150)) },
+    ...(input.kind === "turn" ? threadContext(input.threads) : []),
+    ...(input.kind === "background" && input.manyHosts
+      ? manyHostsHint(input.agentName, input.manyHosts)
+      : []),
+  ];
   return {
     text: header,
-    blocks: [
-      { type: "header", text: plainText(cut(header, 150)) },
-      ...(input.kind === "turn" ? threadContext(input.threads) : []),
-      ...rowsOf(input),
-    ],
+    blocks: [...above, ...rowsOf({ ...input, blocksAbove: above.length })],
   };
 }
 

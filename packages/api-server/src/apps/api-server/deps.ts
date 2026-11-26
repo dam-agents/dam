@@ -20,6 +20,7 @@ import type {
   RunBoundary,
 } from "../../modules/harness-config/index.js";
 import type { RedisBus } from "../../core/redis-bus.js";
+import type { OwnerActivity } from "../../core/owner-activity.js";
 import type { SpendHoldGate, SpendSystem } from "../../modules/spend/index.js";
 import type { UserBudgetsForOperator } from "../../modules/budgets/index.js";
 import type { OutageAlertNotices } from "../../modules/outage-alerts/index.js";
@@ -183,6 +184,7 @@ export interface ApiServerDeps {
   publicAgentPageService: PublicAgentPageService;
   gettingStarted: GettingStartedModule;
   sidebarOrder: SidebarOrderModule;
+  ownerActivity: OwnerActivity;
   sessionPresence: SessionPresence;
   wakeAgent: (agentId: string) => Promise<void>;
   artifactLibraryFor: ArtifactLibraryFor;

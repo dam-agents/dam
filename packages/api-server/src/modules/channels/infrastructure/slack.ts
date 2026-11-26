@@ -40,6 +40,7 @@ import {
   type SlackWorkspaceReach,
 } from "../domain/slack-channel-choices.js";
 import {
+  agentPageUrl,
   ambientThreadKey,
   isAmbientThreadKey,
   slackChannelIdFromThreadKey,
@@ -1675,6 +1676,7 @@ export type SlackWorkerDeps = {
   ownerRequestReach?: (agentId: string) => Promise<OwnerRequestReach>;
   ownerRequests?: OwnerRequestPortsForSlack;
   ownerRequestHoldMs?: number;
+  ownerActive?: (ownerSub: string) => Promise<boolean>;
   workspaceFiles: AgentWorkspaceFilesFactory;
   listWorkspaces: () => Promise<SlackWorkspace[]>;
   emit?: (event: DomainEvent) => void;
@@ -9204,6 +9206,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           ephemeral(channel, user, threadTs, text, teamId),
         userName: ownerDisplayName,
         holdWindowMs: deps.ownerRequestHoldMs ?? 30 * 60 * 1000,
+        ownerActive: deps.ownerActive ?? (async () => false),
+        networkSettingsUrl: (agentId) =>
+          agentPageUrl(uiBaseUrl, agentId, "network"),
         appUrl: `${uiBaseUrl}/`,
       })
     : null;

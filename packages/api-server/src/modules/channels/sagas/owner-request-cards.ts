@@ -12,7 +12,7 @@ import {
 import { getLogger } from "../../../core/logger.js";
 import { formatError } from "../../../core/format-error.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: puts each routed request on its owner's Slack card, on the channels leader through channel RPC: a new request with a route, and a request a Slack turn raised to the `turn` route. When the waits of a routed request change, the cards and the thread lines of its agent are drawn again; when a routed request settles, wherever and however, its items on every card settle. A failure is logged and the next event goes on; the sweep repairs what a lost event missed.
+// UNIT_BOUNDARY_DESCRIPTION: puts each Slack-turn request on its owner's Slack card at once, on the channels leader through channel RPC: a new `turn` request, and a request a Slack turn raised to the `turn` route; a `background` request waits for the sweep, which places it after a minute while the owner is not active in the web UI. When the waits of a routed request change, the cards and the thread lines of its agent are drawn again; when a routed request settles, wherever and however, its items on every card settle. A failure is logged and the next event goes on; the sweep repairs what a lost event missed.
 export function startOwnerRequestCardsSaga(deps: {
   place: (approvalId: string) => Promise<unknown>;
   waitChanged: (approvalId: string) => Promise<unknown>;
@@ -21,7 +21,7 @@ export function startOwnerRequestCardsSaga(deps: {
   const placements = merge(
     events$().pipe(
       ofType<ApprovalRequested>(EventType.ApprovalRequested),
-      filter((event) => event.ownerRoute !== undefined),
+      filter((event) => event.ownerRoute === "turn"),
     ),
     events$().pipe(ofType<ApprovalRouteRaised>(EventType.ApprovalRouteRaised)),
   ).pipe(

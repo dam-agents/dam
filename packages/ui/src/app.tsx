@@ -12,6 +12,7 @@ import { cn } from "./lib/utils.js";
 import { useAgent } from "./modules/agents/api/queries.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { useLandInAssistantChat } from "./modules/agents/hooks/use-land-in-assistant-chat.js";
+import { useOwnerActivity } from "./modules/agents/hooks/use-owner-activity.js";
 import { useSyncRestartingAgents } from "./modules/agents/hooks/use-restart-agent.js";
 import { useArtifact } from "./modules/artifacts/api/queries.js";
 import { ArtifactPageView } from "./modules/artifacts/views/artifact-page-view.js";
@@ -92,6 +93,7 @@ export default function App() {
   const theme = useStore((s) => s.theme);
 
   useBrowserHistory();
+  useOwnerActivity();
 
   useEffect(() => {
     if (

@@ -68,7 +68,7 @@ For an owner without a Slack link, the agent also says that the owner can answer
 
 ## Cards
 
-A routed request reaches its owner as a row of a **card** in the owner's direct message with the app, in every workspace where the owner can get cards; the card comes from the app with no agent persona, like the platform's other notices.
+A routed request reaches its owner as a row of a **card** in the owner's direct message with the app, at once for a `turn` request and after a minute for a `background` one ([when background cards go out](#when-background-cards-go-out)), in every workspace where the owner can get cards; the card comes from the app with no agent persona, like the platform's other notices.
 Each agent has at most one open **turn card** for its `turn` requests and one open **background card** for the rest, per workspace; a raise moves a request from the background card to the turn card.
 A turn card names each thread it holds requests from and who started it, because it cannot tell which thread sent which request.
 Rows that still wait come first, at most ten, then a count with "Open in app"; a row whose request nobody waits for any more says that the answer counts for the next try.
@@ -79,6 +79,20 @@ The card is recorded before it is posted, so a post that failed can be posted la
 A join from a thread the turn card does not name yet, or a background row that starts to wait, posts the card again when the old post is more than five minutes old, so Slack notifies the owner once more; any other join edits the card silently.
 A turn card that cannot be posted for a lasting reason, such as a missing scope or a direct message that cannot open, denies its waiting requests at once, so no thread waits for a card that never comes.
 Every card post carries message metadata that marks it as a card: history reads drop such posts, and the app's own posts are never turns, so an agent bound to the owner's direct message never reads or answers a card.
+
+## When background cards go out
+
+A `turn` request gets its row at once, because a person waits in the thread.
+A `background` request gets its row only when it still waits after 60 seconds and its owner is not active in the web UI: the sweep places it, so the row arrives one to one and a half minutes after the request, or at the first sweep after the owner stops using the web UI, while the request still waits.
+This keeps an owner who works in the web UI from a Slack ping for a request they will answer there.
+
+The server cannot tell who looks at an agent, because presence names the agent only, and a stale tab, an SSH session or an editor's browser write it too.
+So the web UI tells the server about its own user: while its tab is visible and the keyboard, the mouse or touch was used in the last two minutes, it calls a mutation every 60 seconds that sets a per-owner Redis key with a 120-second life.
+The owner counts as active for two to four minutes after the last input, and for up to two minutes after the tab is hidden; a read that fails counts as not active.
+The call sends nothing else and shows nothing, and only a browser session, never an API key, can make it.
+
+There is no cap on cards: an agent has at most one open background card, whose rows group by host, and each call card or question card needs its own answer.
+When an agent was blocked on ten or more different hosts today, counted from its card rows, its background card says so, says that a rule for each host will not stop it, and links to the agent's network settings; it never suggests a rule for every host.
 
 ## The thread line
 

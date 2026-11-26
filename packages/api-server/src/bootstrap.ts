@@ -451,6 +451,7 @@ import { createRedisBus } from "./core/redis-bus.js";
 import { createBusRpc } from "./core/bus-rpc.js";
 import { createRedisBlobHandoff } from "./core/blob-handoff.js";
 import { createLeaderLease, type LeaderRole } from "./core/leader-lease.js";
+import { createOwnerActivity } from "./core/owner-activity.js";
 import {
   startAgentStateCache,
   createLiveAgentStateCache,
@@ -716,6 +717,7 @@ export async function bootstrap() {
   ) as import("ioredis").Redis;
 
   const turnAttendance = createTurnAttendance(sharedRedis);
+  const ownerActivity = createOwnerActivity(sharedRedis);
   connectScanCacheBus(redisBus);
 
   const periodicJobs = createPeriodicJobs({
@@ -2200,6 +2202,7 @@ export async function bootstrap() {
     ? createSlackWorker({
         ownerRequests: slackOwnerRequestPorts,
         ownerRequestHoldMs: config.approvalHoldSeconds * 1000,
+        ownerActive: (ownerSub) => ownerActivity.isActive(ownerSub),
         makeAcpClient,
         channelPair,
         createGateway: slackGatewayFactory,
@@ -3181,6 +3184,7 @@ export async function bootstrap() {
     publicAgentPageService,
     gettingStarted,
     sidebarOrder,
+    ownerActivity,
     sessionPresence,
     wakeAgent: wakeAgentFor,
     artifactLibraryFor,

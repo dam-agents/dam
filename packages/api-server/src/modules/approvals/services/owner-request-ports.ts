@@ -23,6 +23,7 @@ export interface OwnerRequestViewData {
   route: OwnerRoute | null;
   summary: string;
   host: string | null;
+  createdAt: string;
   expiresAt: string;
   resolvedAt: string | null;
   verdict: ApprovalVerdict | null;
@@ -180,6 +181,7 @@ export function createOwnerRequestPorts(deps: {
         route: row.ownerRoute ?? null,
         summary: summaryOf(row),
         host: hostOf(row),
+        createdAt: row.createdAt.toISOString(),
         expiresAt: row.expiresAt.toISOString(),
         resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,
         verdict: row.verdict,

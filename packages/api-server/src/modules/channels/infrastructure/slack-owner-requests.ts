@@ -60,6 +60,14 @@ export interface AddressedTurnThread {
 }
 
 const REPOST_AFTER_MS = 5 * 60 * 1000;
+const BACKGROUND_DELAY_MS = 60 * 1000;
+
+function startOfUtcDay(): Date {
+  const now = new Date();
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+}
 const LASTING_POST_ERRORS = [
   "missing_scope",
   "not_allowed_token_type",
@@ -107,6 +115,8 @@ export function createSlackOwnerRequests(deps: {
   ) => Promise<void>;
   userName: (sub: string) => Promise<string | null>;
   holdWindowMs: number;
+  ownerActive: (ownerSub: string) => Promise<boolean>;
+  networkSettingsUrl: (agentId: string) => string;
   appUrl: string;
 }) {
   const { cards } = deps.ports;
@@ -185,6 +195,19 @@ export function createSlackOwnerRequests(deps: {
       threads: card.threads,
       rows,
       appUrl: deps.appUrl,
+      manyHosts:
+        card.kind === "background"
+          ? {
+              hosts: await cards
+                .hostsBlockedSince({
+                  ownerSub: card.ownerSub,
+                  agentId: card.agentId,
+                  since: startOfUtcDay(),
+                })
+                .catch(() => 0),
+              settingsUrl: deps.networkSettingsUrl(card.agentId),
+            }
+          : null,
     });
     const metadata = cardMetadata(card.id);
     try {
@@ -872,6 +895,14 @@ export function createSlackOwnerRequests(deps: {
         const since = new Date(Date.now() - deps.holdWindowMs - 60_000);
         for (const id of await deps.ports.waiting({ since, limit: 200 })) {
           if ((await cards.cardsOfRequest(id)).length > 0) continue;
+          const view = await deps.ports.view(id);
+          if (!view) continue;
+          if (
+            view.route === "background" &&
+            (Date.now() - Date.parse(view.createdAt) < BACKGROUND_DELAY_MS ||
+              (await deps.ownerActive(view.ownerSub).catch(() => false)))
+          )
+            continue;
           await api.place(id);
         }
       } finally {

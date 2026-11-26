@@ -89,6 +89,11 @@ export interface OwnerRequestCardsRepository {
   openCards(limit: number): Promise<OwnerCard[]>;
   openCardsInTeam(ownerSub: string, teamId: string): Promise<OwnerCard[]>;
   deleteEndedDismissals(): Promise<number>;
+  hostsBlockedSince(input: {
+    ownerSub: string;
+    agentId: string;
+    since: Date;
+  }): Promise<number>;
 }
 
 type CardRow = typeof ownerRequestCards.$inferSelect;
@@ -330,6 +335,28 @@ export function createOwnerRequestCardsRepository(
         .where(sql`${ownerRequestDismissals.until} <= now()`)
         .returning({ host: ownerRequestDismissals.host });
       return removed.length;
+    },
+
+    async hostsBlockedSince({ ownerSub, agentId, since }) {
+      const rows = await db
+        .select({
+          n: sql<number>`count(distinct ${ownerRequestCardItems.host})::int`,
+        })
+        .from(ownerRequestCardItems)
+        .innerJoin(
+          ownerRequestCards,
+          eq(ownerRequestCardItems.cardId, ownerRequestCards.id),
+        )
+        .where(
+          and(
+            eq(ownerRequestCards.ownerSub, ownerSub),
+            eq(ownerRequestCards.agentId, agentId),
+            sql`${ownerRequestCardItems.host} IS NOT NULL`,
+            sql`${ownerRequestCardItems.host} <> 'web search'`,
+            sql`${ownerRequestCardItems.createdAt} >= ${since.toISOString()}::timestamptz`,
+          ),
+        );
+      return rows[0]?.n ?? 0;
     },
 
     async dismissed({ ownerSub, agentId, host }) {

@@ -256,7 +256,7 @@ Names are illustrative where marked.
 | 03  | ✅ MCP tool-call rows and cards                        | MCP rows and call cards with buttons, the click route and the owner check, audit                                                                                                                                                  | 02         |
 | 04  | ✅ Network and web-search cards                        | Rows on turn and background cards with the web's verdicts, "Allow all once" for one thread, query strings, rule rows with "Always deny…" and confirm steps, Dismiss for 7 days, refused rows, a raised row moves to the turn card | 03         |
 | 05  | ✅ Cards follow their request to the end               | Every settle edits every card, who decided, rule state after expiry, the thread line after a late answer, several workspaces, the repair sweep, the 24-hour close, unlinking, Slack errors                                        | 04         |
-| 06  | When background cards go out                           | Owner activity from the web UI, the 60-second escalation, the hint for an agent blocked on many hosts                                                                                                                             | 05         |
+| 06  | ✅ When background cards go out                        | Owner activity from the web UI, the 60-second escalation, the hint for an agent blocked on many hosts                                                                                                                             | 05         |
 | 07  | Sub-agent questions and launch rules reach the owner   | Question events, radio + Other + Send, labels cut to Slack's limit, the answer through the invocations service, rows for a sub-agent's launch rules, the same timing rule, the Slack mobile check                                 | 06         |
 | 08  | `/dam approvals` lists everything, and turns cards off | Private list in the bell's set, fallback rows, Slack's block limit, refresh in place, `/dam approvals off` and `on`                                                                                                               | 07         |
 | 09  | Harness prompts on Slack turns                         | Data check first, real prompt shapes, the relay holds addressed-turn prompts, Stop and "Don't wait" settle the wait, prompt rows                                                                                                  | 05         |
@@ -366,6 +366,10 @@ Petr accepted these while the slices were built.
 - [05](./05-card-lifecycle.md): a turn card with no waiting row is sealed (a `sealed_at` column): it stays open for its rule rows but takes no new rows, and the unique index of open cards ignores it, so the next Slack-turn request opens a new card.
 - [05](./05-card-lifecycle.md): the late-allow reply goes out only for a request that still waited on the card, so a rule written later on an expired row posts no second reply.
 - [05](./05-card-lifecycle.md): the web has no Slack unlink today, so only `/dam logout` closes the owner's cards.
+- [06](./06-when-cards-go-out.md): a card stops adding rows before Slack's limit of 50 blocks a message, and each row keeps its quiet lines in one context block, because a background card with nine host rows was refused (`invalid_blocks`); rows that do not fit join the "<n> more: Open in app" count.
+- [06](./06-when-cards-go-out.md): opening the app counts as a use, and after a quiet spell the first activity call goes out at the next 60-second tick, so the owner counts as active up to a minute after they come back.
+- [06](./06-when-cards-go-out.md): the hint counts the different hosts of the agent's card rows since midnight UTC, turn and background rows alike.
+- [06](./06-when-cards-go-out.md): the activity call goes over the tRPC websocket, so the browser's network panel does not list it; the pull request shows the captured frame instead.
 
 ## Open items
 
