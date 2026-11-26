@@ -4,6 +4,7 @@ import { api } from "../../../api.js";
 import { getErrorMessage } from "../../../lib/errors.js";
 import { emitToast } from "../../../lib/toast.js";
 import { trpc } from "../../../trpc.js";
+import { withFlowSteps } from "../../usage/lib/ui-telemetry.js";
 import { runNowErrorText } from "../lib/schedule-format.js";
 
 const invalidatesScheduleList = {
@@ -28,13 +29,14 @@ interface CreateScheduleInput {
 
 export function useCreateSchedule() {
   return useMutation({
-    mutationFn: (input: CreateScheduleInput) =>
+    mutationFn: withFlowSteps("create_schedule", (input: CreateScheduleInput) =>
       api.schedules.createRRule.mutate({
         ...input,
         quietHours: input.quietHours.length > 0 ? input.quietHours : undefined,
         sessionMode:
           input.sessionMode === "fresh" ? undefined : input.sessionMode,
       }),
+    ),
     meta: {
       ...invalidatesScheduleList,
       errorToast: "Couldn't create schedule",

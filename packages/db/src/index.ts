@@ -82,6 +82,7 @@ export {
   spendCeilings,
   providerModelPrices,
   providerPriceReads,
+  uiEvents,
 } from "./schema.js";
 export {
   control,
