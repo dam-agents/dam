@@ -587,7 +587,7 @@ export const test = base.extend<
         world.undo.push(() =>
           owner.api.egressRules.revoke.mutate({ id: made.id }),
         );
-        const covered = `https://${host}${pathPattern === "*" ? "/status/204" : pathPattern.replace("*", "204")}`;
+        const covered = `https://${host}${pathPattern === "*" ? "/status/204" : pathPattern.replaceAll("*", "204")}`;
         await expect
           .poll(
             async () =>

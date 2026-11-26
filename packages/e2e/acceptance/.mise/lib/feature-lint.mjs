@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { AstBuilder, GherkinClassicTokenMatcher, Parser } from "@cucumber/gherkin";
 import { IdGenerator } from "@cucumber/messages";
 
-// @todo marks a Rule, or a whole capability, that has no examples yet.
+// UNIT_BOUNDARY_DESCRIPTION: @todo marks a Rule, or a whole capability, that has no examples yet.
 export const allowedTags = new Set(["@ui", "@cli", "@api", "@wip", "@real-model", "@journey", "@todo"]);
 export const surfaceTags = new Set(["@ui", "@cli", "@api"]);
 export const screenWords =
@@ -133,7 +133,7 @@ export function lintFeature(source, isJourney, names = new Map(), file = "featur
   return problems;
 }
 
-/** A feature file is one capability, in the folder of its area: features/<area>/<capability>.feature. */
+/** UNIT_BOUNDARY_DESCRIPTION: a feature file is one capability, in the folder of its area: features/<area>/<capability>.feature. */
 export function placement(parts) {
   if (parts.length !== 2) return "a feature file sits in one area folder, features/<area>/<capability>.feature";
   return null;

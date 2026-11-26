@@ -6,11 +6,11 @@ import { AstBuilder, GherkinClassicTokenMatcher, Parser } from "@cucumber/gherki
 import { IdGenerator } from "@cucumber/messages";
 
 
-/** How far past the median number of Rules a capability may grow before the report flags it. */
+/** UNIT_BOUNDARY_DESCRIPTION: how far past the median number of Rules a capability may grow before the report flags it. */
 export const skewFactor = 3;
 
 
-/** One capability's row: its area, its name, its Rules and Examples, and how many Rules still wait for examples. */
+/** UNIT_BOUNDARY_DESCRIPTION: one capability's row: its area, its name, its Rules and Examples, and how many Rules still wait for examples. */
 export function capabilityOf(area, capability, source) {
   const parser = new Parser(new AstBuilder(IdGenerator.uuid()), new GherkinClassicTokenMatcher());
   const feature = parser.parse(source).feature;
@@ -35,7 +35,7 @@ function median(values) {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-/** Each row with a note: a capability with no example yet, or one whose Rules outgrow the median of the capabilities that have examples by more than skewFactor. Journeys cross capabilities and are not counted as one. */
+/** UNIT_BOUNDARY_DESCRIPTION: each row with a note: a capability with no example yet, or one whose Rules outgrow the median of the capabilities that have examples by more than skewFactor. Journeys cross capabilities and are not counted as one. */
 export function report(rows) {
   const capabilities = rows.filter((r) => r.area !== "journeys");
   const typical = median(capabilities.filter((r) => r.examples > 0).map((r) => r.rules));
