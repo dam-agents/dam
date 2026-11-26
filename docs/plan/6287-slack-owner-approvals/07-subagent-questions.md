@@ -21,10 +21,10 @@ An agent's own rule proposal does not hold the agent, so it stays in the app and
 Apply the `/typescript-engineering` skill.
 
 1. **Events.** In `packages/api-server/src/events.ts`, add `OwnerQuestionAsked` and `OwnerQuestionClosed` (how it closed: `owner`, `default` or `stopped`), each with the run id, the invocation id and the owner.
-   Emit them from `owner-questions.ts` (ask and answer), `question-deadlines.ts` (the default) and the stop and reap paths of an asking run.
+   Emit them from `owner-questions.ts` (the ask, and every answer, including the default that `question-deadlines.ts` gives through it) and the stop paths of an asking run (`delegation-stop.ts`, `driver-cascade.ts`).
    Run `mise run //packages/api-server:check:events`.
-2. **Request view.** Extend `ownerRequests.view` with the question kind, by run id: the sub-agent's name, its Driver's name, the question, the options, the default, the deadline (`answerBy`), the status, and the answer with how it closed.
-   Extend `ownerRequests.waiting` with the open questions, so the sweep of [05](./05-card-lifecycle.md) places a question card by the timing rule of [06](./06-when-cards-go-out.md) and settles it when the question closes.
+2. **Question ports.** The invocations module gives the Slack worker its own question ports (`composeOwnerQuestionPorts`), because questions live there and not in the approvals module of `ownerRequests.view`: by run id, the sub-agent's label, its Driver's name, the question, the options, the default, the deadline (`answerBy`), the status, and the answer with how it closed.
+   The ports also list the open questions, so the sweep of [05](./05-card-lifecycle.md) places a question card by the timing rule of [06](./06-when-cards-go-out.md) and settles it when the question closes.
 3. **Renderer.** In `channels/domain/`, add the question card; the question and the options show as `plain_text`:
    - "<Driver>'s sub-agent <name> asks:" and the question;
    - an `input` block with `radio_buttons`: the options (at most 8) and "Other"; an option can have 80 characters (`MAX_OWNER_OPTION_CHARS`) but Slack shows at most 75, so cut the label at 75 with "…" and carry the option's index in its `value`;
@@ -38,7 +38,8 @@ Apply the `/typescript-engineering` skill.
    - an option picked → that option's full text, found by the index in its `value`; "Other" picked → the text, which must not be empty; nothing picked but text written → the text; nothing at all → a private "Pick an option or write an answer."
      and no change;
    - check the clicker is the owner, then answer through the same service path as `invocations.answer` (`delegation-control.ts` → `owner-questions.ts`), run as the owner; a closed question answers privately "Already answered".
-5. **Lifecycle.** A saga closes the card on `OwnerQuestionClosed`, with "Answered: <answer>" (by you, or in the app), "Took its default <option> after the deadline", or "The sub-agent was stopped".
+5. **Lifecycle.** A saga places the card one minute after `OwnerQuestionAsked`, and the sweep places any question the saga missed.
+   The saga closes the card on `OwnerQuestionClosed`, with "Answered: <answer>" (by you, or in the app), "Took its default <option> after the deadline", or "The sub-agent was stopped".
 6. **Launch rules.** When the approvals service files a Driver rule for a one-off sub-agent (`child-egress-requests.ts`), give the row the route `background`; it already emits `ApprovalRequested`.
    Extend `ownerRequests.view` with that kind: the sub-agent, its Driver, the rule (method, host and path, or the wildcard) as `plain_text`, whether it is wider than the Driver's own reach, and the spawn's deadline.
    The row on the Driver's background card offers the web's verdicts for that type (see `use-approval-actions.ts`), mapped in `decide` to the same service calls; a verdict the web offers only in the app stays behind "Open in app".
@@ -47,6 +48,7 @@ Apply the `/typescript-engineering` skill.
    An agent's own rule proposal (no `forAgentId`) gets no route and no row.
 7. **Slack mobile.** Check the card in the Slack mobile app.
    If the radio list renders poorly, keep the radio list on desktop and add an "Other…" button that opens a modal with the text field (`views.open`); tell Petr.
+   Not done in this slice: it needs a person with the Slack mobile app.
 8. **Docs.** In `docs/architecture/invocations.md` "Asking the owner": a question also goes to the owner as a Slack card when the owner is not active in the web UI; the one-day default is unchanged.
    In `docs/architecture/invocations.md`, where a Driver's launch rule waits for the owner: it also reaches the owner as a row in Slack.
    In `docs/architecture/home-feed.md` "Sub-agent questions": the bell still lists the question; a Slack answer clears it.

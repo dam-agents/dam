@@ -12,8 +12,13 @@ import type { OwnerRequestReach } from "./network-access-copy.js";
 import {
   createSlackOwnerRequests,
   type AddressedTurnThread,
+  type OwnerQuestionPortsForSlack,
   type OwnerRequestPortsForSlack,
 } from "./slack-owner-requests.js";
+import {
+  OWNER_QUESTION_SEND_ACTION,
+  questionOfValue,
+} from "../domain/owner-question-card.js";
 import {
   answerOfAction,
   requestsOfValue,
@@ -1161,6 +1166,8 @@ export interface SlackWorker extends ChannelWorker, AddressedWorker {
   ownerRequestWaitChanged(approvalId: string): Promise<void>;
   settleOwnerRequest(approvalId: string): Promise<void>;
   ownerRequestSweep(): Promise<void>;
+  placeOwnerQuestion(runId: string): Promise<{ placed: number }>;
+  settleOwnerQuestion(runId: string): Promise<void>;
   conversationStanding(
     slackChannelId: string,
     teamId: SlackWorkspace,
@@ -1677,6 +1684,7 @@ export type SlackWorkerDeps = {
   ownerRequests?: OwnerRequestPortsForSlack;
   ownerRequestHoldMs?: number;
   ownerActive?: (ownerSub: string) => Promise<boolean>;
+  ownerQuestions?: OwnerQuestionPortsForSlack;
   workspaceFiles: AgentWorkspaceFilesFactory;
   listWorkspaces: () => Promise<SlackWorkspace[]>;
   emit?: (event: DomainEvent) => void;
@@ -5600,6 +5608,18 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if (!event.ephemeral) await handleDontWait(event);
       return;
     }
+    if (event.actionId === OWNER_QUESTION_SEND_ACTION) {
+      const runId = questionOfValue(event.value);
+      if (runId && !event.ephemeral)
+        await ownerRequestCards?.answerQuestion({
+          runId,
+          fields: event.post?.fields,
+          slackUserId: event.userId,
+          teamId: event.teamId,
+          reply,
+        });
+      return;
+    }
     const ownerAnswer = answerOfAction(event.actionId);
     if (ownerAnswer !== null) {
       const requestIds = requestsOfValue(event.value);
@@ -9209,6 +9229,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         ownerActive: deps.ownerActive ?? (async () => false),
         networkSettingsUrl: (agentId) =>
           agentPageUrl(uiBaseUrl, agentId, "network"),
+        ...(deps.ownerQuestions ? { questions: deps.ownerQuestions } : {}),
         appUrl: `${uiBaseUrl}/`,
       })
     : null;
@@ -9226,6 +9247,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     async settleOwnerRequest(approvalId) {
       await ownerRequestCards?.settle(approvalId);
+    },
+
+    async placeOwnerQuestion(runId) {
+      return ownerRequestCards
+        ? ownerRequestCards.placeQuestion(runId)
+        : { placed: 0 };
+    },
+
+    async settleOwnerQuestion(runId) {
+      await ownerRequestCards?.settleQuestion(runId);
     },
 
     async ownerRequestSweep() {

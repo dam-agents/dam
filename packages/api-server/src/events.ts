@@ -48,6 +48,8 @@ export enum EventType {
   ApprovalResolved = "ApprovalResolved",
   ApprovalRouteRaised = "ApprovalRouteRaised",
   ApprovalWaitChanged = "ApprovalWaitChanged",
+  OwnerQuestionAsked = "OwnerQuestionAsked",
+  OwnerQuestionClosed = "OwnerQuestionClosed",
   SpendLimitsChanged = "SpendLimitsChanged",
   SpendWorkStopped = "SpendWorkStopped",
   GatewayCallEnded = "GatewayCallEnded",
@@ -279,6 +281,23 @@ export type ApprovalRouteRaised = {
   approvalId: string;
   agentId: string;
   ownerSub: string;
+};
+
+// UNIT_BOUNDARY_DESCRIPTION: a sub-agent's run ended on a question for its owner, which waits for an answer until its deadline.
+export type OwnerQuestionAsked = {
+  type: EventType.OwnerQuestionAsked;
+  runId: string;
+  invocationId: string;
+  ownerSub: string;
+};
+
+// UNIT_BOUNDARY_DESCRIPTION: a sub-agent's question stopped waiting: its owner answered it (`owner`), its deadline gave it the sub-agent's default (`default`), or the sub-agent was stopped (`stopped`).
+export type OwnerQuestionClosed = {
+  type: EventType.OwnerQuestionClosed;
+  runId: string;
+  invocationId: string;
+  ownerSub: string;
+  closedBy: "owner" | "default" | "stopped";
 };
 
 // UNIT_BOUNDARY_DESCRIPTION: whether any held request still waits for a routed approval's answer. `waiting: false` comes when the last wait ended without a verdict (its client went away, or a "Don't wait" release); `waiting: true` when a request waits on it again. A verdict or an expiry sends `ApprovalResolved` instead.
@@ -677,6 +696,8 @@ export type DomainEvent =
   | ApprovalResolved
   | ApprovalRouteRaised
   | ApprovalWaitChanged
+  | OwnerQuestionAsked
+  | OwnerQuestionClosed
   | SpendLimitsChanged
   | SpendWorkStopped
   | GatewayCallEnded

@@ -102,6 +102,15 @@ export function createDelegationStop(deps: {
         },
       });
       for (const run of stopped) await deps.reaper.reap(run);
+      for (const run of stopped)
+        if (run.status === "asking" && run.runId)
+          emit({
+            type: EventType.OwnerQuestionClosed,
+            runId: run.runId,
+            invocationId: run.id,
+            ownerSub: run.owner,
+            closedBy: "stopped",
+          });
       if (stopped.some((run) => run.status === "asking"))
         emit({
           type: EventType.AttentionChanged,

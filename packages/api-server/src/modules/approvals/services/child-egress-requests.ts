@@ -115,6 +115,7 @@ export function createChildEgressRequests(deps: {
           ...(ask === "wider" && { widerThanDriver: true }),
         },
         expiresAt: new Date(now() + EGRESS_PROPOSAL_TTL_MS),
+        ownerRoute: "background",
       });
       securityLog("info", "approval.child_egress_requested", {
         category: "approval",
@@ -130,6 +131,7 @@ export function createChildEgressRequests(deps: {
         agentId: childId,
         ownerSub,
         forAgentId: driverId,
+        ownerRoute: "background",
       });
       return { id };
     },

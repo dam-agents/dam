@@ -144,6 +144,12 @@ export function createOwnerQuestions(deps: {
         };
       void hold.capture.capture({ id: invocationId });
       attentionChanged(row);
+      emit({
+        type: EventType.OwnerQuestionAsked,
+        runId: row.runId,
+        invocationId,
+        ownerSub: row.owner,
+      });
       return { ok: true, answerBy };
     },
 
@@ -175,6 +181,13 @@ export function createOwnerQuestions(deps: {
       });
       if (outcome !== "answered") return false;
       attentionChanged(asking);
+      emit({
+        type: EventType.OwnerQuestionClosed,
+        runId,
+        invocationId: asking.id,
+        ownerSub: asking.owner,
+        closedBy: answer.by === "default" ? "default" : "owner",
+      });
       await deps.runtimeMutator.bump(asking.id, [
         {
           id: next,

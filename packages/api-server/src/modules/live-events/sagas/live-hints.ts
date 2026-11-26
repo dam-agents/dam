@@ -150,6 +150,8 @@ export function hintFor(event: DomainEvent): {
     case EventType.ProviderStatusEvaluated:
     case EventType.CostReviewStarted:
     case EventType.CostReviewDismissed:
+    case EventType.OwnerQuestionAsked:
+    case EventType.OwnerQuestionClosed:
       return null;
     default: {
       const unhandled: never = event;

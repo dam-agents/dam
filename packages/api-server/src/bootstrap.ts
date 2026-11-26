@@ -194,7 +194,10 @@ import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-wor
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
 import { createOwnerCardReach } from "./modules/channels/services/owner-card-reach.js";
 import { createOwnerRequestCardsRepository } from "./modules/channels/infrastructure/owner-request-cards-repository.js";
-import type { OwnerRequestPortsForSlack } from "./modules/channels/infrastructure/slack-owner-requests.js";
+import type {
+  OwnerQuestionPortsForSlack,
+  OwnerRequestPortsForSlack,
+} from "./modules/channels/infrastructure/slack-owner-requests.js";
 import { startOwnerRequestCardsSaga } from "./modules/channels/sagas/owner-request-cards.js";
 import { createSlackAppTokenService } from "./modules/channels/services/slack-app-token-service.js";
 import { slackAppTokenSource } from "./modules/channels/services/slack-app-token-source.js";
@@ -340,6 +343,9 @@ import {
   composeInvocationLivenessSweep,
   composeSubAgentOutcomeDelivery,
   composeQuestionDeadlines,
+  composeOwnerQuestionPorts,
+  createInvocationsRepository,
+  type OwnerQuestionPorts,
   createDriverResolutionAdapter,
   createSpawnSessionsAdapter,
   createInvocationTasksAdapter,
@@ -2143,6 +2149,15 @@ export async function bootstrap() {
   };
 
   let ownerRequestPorts: OwnerRequestPorts | null = null;
+  let ownerQuestionPorts: OwnerQuestionPorts | null = null;
+  const slackOwnerQuestionPorts: OwnerQuestionPortsForSlack = {
+    view: async (runId) =>
+      ownerQuestionPorts ? ownerQuestionPorts.view(runId) : null,
+    open: async (limit) =>
+      ownerQuestionPorts ? ownerQuestionPorts.open(limit) : [],
+    answer: async (input) =>
+      ownerQuestionPorts ? ownerQuestionPorts.answer(input) : "not-actionable",
+  };
   const slackOwnerRequestPorts: OwnerRequestPortsForSlack = {
     view: async (id) => (ownerRequestPorts ? ownerRequestPorts.view(id) : null),
     refuseUnreachable: async (id) =>
@@ -2203,6 +2218,7 @@ export async function bootstrap() {
         ownerRequests: slackOwnerRequestPorts,
         ownerRequestHoldMs: config.approvalHoldSeconds * 1000,
         ownerActive: (ownerSub) => ownerActivity.isActive(ownerSub),
+        ownerQuestions: slackOwnerQuestionPorts,
         makeAcpClient,
         channelPair,
         createGateway: slackGatewayFactory,
@@ -2432,6 +2448,8 @@ export async function bootstrap() {
     ruleMatcher: createEgressRuleMatchAdapter(db),
     waitingRuleSpeaksFor: ruleSpeaksFor,
     promotionRulesOf: createPromotionRulesReader(db),
+    spawnDeadlineOf: async (agentId) =>
+      (await createInvocationsRepository(db).get(agentId))?.expiresAt ?? null,
     providerScopes: createProviderEgressScopes(db),
     toolAccessConnections: createToolAccessConnections(
       db,
@@ -2469,6 +2487,8 @@ export async function bootstrap() {
     waitChanged: (approvalId) =>
       channelManager.ownerRequestWaitChanged(approvalId),
     settle: (approvalId) => channelManager.settleOwnerRequest(approvalId),
+    placeQuestion: (runId) => channelManager.placeOwnerQuestion(runId),
+    settleQuestion: (runId) => channelManager.settleOwnerQuestion(runId),
   });
   await periodicJobs.register("owner-request-sweep", 30_000, () =>
     channelManager.ownerRequestSweep(),
@@ -3020,6 +3040,13 @@ export async function bootstrap() {
   await periodicJobs.register("sub-agent-outcome-wake-retry", 3_600_000, () =>
     subAgentOutcomes.retry(),
   );
+  ownerQuestionPorts = composeOwnerQuestionPorts({
+    db,
+    agentsFor: harnessAgentsServiceFor,
+    frames: delegationFrames,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
+    wakeAgent: wakeAgentFor,
+  });
   const questionDeadlines = composeQuestionDeadlines({
     db,
     runtimeMutator: runtimeDelivery.runtimeMutator,

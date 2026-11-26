@@ -176,6 +176,8 @@ export interface ChannelManager {
   ownerRequestWaitChanged(approvalId: string): Promise<void>;
   settleOwnerRequest(approvalId: string): Promise<void>;
   ownerRequestSweep(): Promise<void>;
+  placeOwnerQuestion(runId: string): Promise<{ placed: number }>;
+  settleOwnerQuestion(runId: string): Promise<void>;
   readThread(
     instanceName: string,
     channelType: ChannelType,
@@ -247,6 +249,8 @@ const METHOD_NAMES = [
   "ownerRequestWaitChanged",
   "settleOwnerRequest",
   "ownerRequestSweep",
+  "placeOwnerQuestion",
+  "settleOwnerQuestion",
   "notifyPerson",
 ] as const;
 
@@ -324,6 +328,8 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   ownerRequestWaitChanged: z.tuple([z.string()]),
   settleOwnerRequest: z.tuple([z.string()]),
   ownerRequestSweep: z.tuple([]),
+  placeOwnerQuestion: z.tuple([z.string()]),
+  settleOwnerQuestion: z.tuple([z.string()]),
   readThread: forInstance.rest(z.unknown()),
   readChannelHistory: forInstance.rest(z.unknown()),
   fetchAttachment: forInstance.rest(z.unknown()),
@@ -416,6 +422,8 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   ownerRequestWaitChanged: z.null(),
   settleOwnerRequest: z.null(),
   ownerRequestSweep: z.null(),
+  placeOwnerQuestion: z.object({ placed: z.number() }),
+  settleOwnerQuestion: z.null(),
   readThread: z.union([threadResultSchema, z.object({ error: z.string() })]),
   readChannelHistory: z.union([
     channelHistoryResultSchema,
@@ -693,6 +701,14 @@ export function createChannelManager(deps: {
     },
     ownerRequestSweep: async () => {
       await deps.slackWorker?.ownerRequestSweep();
+      return null;
+    },
+    placeOwnerQuestion: (runId: string) =>
+      deps.slackWorker
+        ? deps.slackWorker.placeOwnerQuestion(runId)
+        : Promise.resolve({ placed: 0 }),
+    settleOwnerQuestion: async (runId: string) => {
+      await deps.slackWorker?.settleOwnerQuestion(runId);
       return null;
     },
     slackGrantedScopes: (teamId: string) =>
@@ -976,6 +992,18 @@ export function createChannelManager(deps: {
     async ownerRequestSweep() {
       await dispatch("ownerRequestSweep", [], () =>
         explicitHandlers.ownerRequestSweep(),
+      );
+    },
+
+    placeOwnerQuestion(runId) {
+      return dispatch("placeOwnerQuestion", [runId], () =>
+        explicitHandlers.placeOwnerQuestion(runId),
+      );
+    },
+
+    async settleOwnerQuestion(runId) {
+      await dispatch("settleOwnerQuestion", [runId], () =>
+        explicitHandlers.settleOwnerQuestion(runId),
       );
     },
 

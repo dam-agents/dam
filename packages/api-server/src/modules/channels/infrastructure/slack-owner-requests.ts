@@ -16,6 +16,10 @@ import {
   type OwnerRequestView,
   type ThreadLineState,
 } from "../domain/owner-request-cards.js";
+import {
+  answerFromFields,
+  questionCard,
+} from "../domain/owner-question-card.js";
 import type {
   OwnerCard,
   OwnerCardItem,
@@ -49,6 +53,34 @@ export interface OwnerRequestPortsForSlack {
 export type DecidedAnswer = Exclude<OwnerAnswer, "dismiss">;
 
 export type DecideResult = "applied" | "not-actionable" | "conflict";
+
+// UNIT_BOUNDARY_DESCRIPTION: what the question cards read of sub-agent questions, by the asking run's id: the question as it stands, the questions that still wait, and the owner's answer through the delegation control the web uses.
+export interface OwnerQuestionPortsForSlack {
+  view(runId: string): Promise<{
+    runId: string;
+    invocationId: string;
+    label: string | null;
+    driverAgentId: string;
+    ownerSub: string;
+    question: string;
+    options: string[];
+    defaultOption: string;
+    askedAt: string;
+    answerBy: string;
+    status: "asking" | "answered" | "stopped";
+    answer: { text: string; by: "owner" | "default" } | null;
+  } | null>;
+  open(limit: number): Promise<string[]>;
+  answer(input: {
+    runId: string;
+    text: string;
+    ownerSub: string;
+  }): Promise<"applied" | "not-actionable">;
+}
+
+type QuestionData = NonNullable<
+  Awaited<ReturnType<OwnerQuestionPortsForSlack["view"]>>
+>;
 
 export interface AddressedTurnThread {
   turnKey: string;
@@ -117,6 +149,7 @@ export function createSlackOwnerRequests(deps: {
   holdWindowMs: number;
   ownerActive: (ownerSub: string) => Promise<boolean>;
   networkSettingsUrl: (agentId: string) => string;
+  questions?: OwnerQuestionPortsForSlack;
   appUrl: string;
 }) {
   const { cards } = deps.ports;
@@ -181,15 +214,9 @@ export function createSlackOwnerRequests(deps: {
     });
   }
 
-  async function show(
-    card: OwnerCard,
-    link: { userId: string; teamId: SlackWorkspace },
-    repost: boolean,
-  ): Promise<"posted" | "edited" | "failed" | "unreachable"> {
-    const gw = await deps.gateway();
-    if (!gw) return "failed";
+  async function renderCard(card: OwnerCard) {
     const rows = await rowsOf(card);
-    const rendered = ownerCard({
+    return ownerCard({
       kind: card.kind,
       agentName: await deps.agentName(card.agentId),
       threads: card.threads,
@@ -209,6 +236,43 @@ export function createSlackOwnerRequests(deps: {
             }
           : null,
     });
+  }
+
+  async function questionViewOf(runId: string): Promise<QuestionData | null> {
+    return deps.questions ? deps.questions.view(runId).catch(() => null) : null;
+  }
+
+  async function renderQuestion(card: OwnerCard) {
+    const [item] = await cards.items(card.id);
+    if (!item) return null;
+    const q = await questionViewOf(item.requestId);
+    if (!q) return null;
+    return questionCard({
+      runId: q.runId,
+      subAgentName: q.label ?? (await deps.agentName(q.invocationId)),
+      driverName: await deps.agentName(q.driverAgentId),
+      question: q.question,
+      options: q.options,
+      defaultOption: q.defaultOption,
+      answerBy: q.answerBy,
+      status: q.status,
+      answer: q.answer,
+      answeredHere: item.state === "answered",
+    });
+  }
+
+  async function show(
+    card: OwnerCard,
+    link: { userId: string; teamId: SlackWorkspace },
+    repost: boolean,
+  ): Promise<"posted" | "edited" | "failed" | "unreachable"> {
+    const gw = await deps.gateway();
+    if (!gw) return "failed";
+    const rendered =
+      card.kind === "question"
+        ? await renderQuestion(card)
+        : await renderCard(card);
+    if (!rendered) return "failed";
     const metadata = cardMetadata(card.id);
     try {
       if (card.messageTs && card.dmChannel && !repost) {
@@ -253,7 +317,7 @@ export function createSlackOwnerRequests(deps: {
           kind: card.kind,
           agentId: card.agentId,
           teamId: link.teamId,
-          rows: rows.length,
+          blocks: rendered.blocks.length,
           repost,
         },
         "owner_request.card_posted",
@@ -471,7 +535,7 @@ export function createSlackOwnerRequests(deps: {
   }
 
   async function applyCloseRule(card: OwnerCard): Promise<void> {
-    if (card.kind === "background") return;
+    if (card.kind === "background" || card.kind === "question") return;
     const rows = await rowsOf(card);
     if (rows.some((row) => rowWaits(row.view))) return;
     if (card.kind === "turn") {
@@ -553,6 +617,11 @@ export function createSlackOwnerRequests(deps: {
       await show(card, link, false);
     for (const item of await cards.items(card.id)) {
       if (FINAL_STATES.has(item.state)) continue;
+      if (item.requestKind === "question") {
+        const q = await questionViewOf(item.requestId);
+        if (q && q.status !== "asking") await settleQuestionItems(q, "settled");
+        continue;
+      }
       const view = await deps.ports.view(item.requestId);
       if (!view || view.status === "pending") continue;
       if (item.state === "rule" && view.status === "expired") continue;
@@ -565,6 +634,71 @@ export function createSlackOwnerRequests(deps: {
       !(await rowsOf(card)).some((row) => rowWaits(row.view))
     )
       await cards.close(card.id);
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: settles a question's card in every workspace once the question closed, under the owner's lock: the card says how it ended and closes. An item already settled is left alone; a card that cannot be edited keeps its old state, so the sweep tries again.
+  async function settleQuestionItems(
+    q: QuestionData,
+    outcome: "answered" | "settled",
+  ): Promise<void> {
+    const links = await workspaceLinks(q.ownerSub);
+    for (const card of await cards.cardsOfRequest(q.runId)) {
+      const item = (await cards.items(card.id)).find(
+        (it) => it.requestId === q.runId,
+      );
+      if (!item || FINAL_STATES.has(item.state)) continue;
+      await cards.setItemState(card.id, q.runId, outcome);
+      const link = links.find((l) => l.teamId === card.teamId);
+      if (link && card.messageTs) {
+        const shown = await show(card, link, false);
+        if (shown === "failed" || shown === "unreachable") {
+          await cards.setItemState(card.id, q.runId, item.state);
+          continue;
+        }
+      }
+      getLogger().info(
+        {
+          card: card.id,
+          kind: card.kind,
+          runId: q.runId,
+          settled: q.status,
+          where:
+            outcome === "answered"
+              ? "slack"
+              : q.status === "stopped"
+                ? "stopped"
+                : q.answer?.by === "default"
+                  ? "deadline"
+                  : "app",
+          delayMs: card.postedAt ? Date.now() - card.postedAt.getTime() : null,
+        },
+        "owner_request.card_settled",
+      );
+      await cards.close(card.id);
+    }
+  }
+
+  async function placeQuestionOn(
+    q: QuestionData,
+    link: { userId: string; teamId: SlackWorkspace },
+  ): Promise<boolean> {
+    const card =
+      (await cards.cardsOfRequest(q.runId)).find(
+        (held) => held.kind === "question" && held.teamId === link.teamId,
+      ) ??
+      (await cards.createCard({
+        ownerSub: q.ownerSub,
+        agentId: q.driverAgentId,
+        teamId: link.teamId,
+        kind: "question",
+      }));
+    await cards.addItem(card.id, {
+      requestKind: "question",
+      requestId: q.runId,
+      host: null,
+    });
+    const shown = await show(card, link, false);
+    return shown === "posted" || shown === "edited";
   }
 
   async function hostWaits(
@@ -607,7 +741,7 @@ export function createSlackOwnerRequests(deps: {
           })))
         : await cards.openCard({
             ownerSub: view.ownerSub,
-            agentId: view.agentId,
+            agentId: view.cardAgentId,
             teamId: link.teamId,
             kind,
           });
@@ -905,9 +1039,115 @@ export function createSlackOwnerRequests(deps: {
             continue;
           await api.place(id);
         }
+        if (deps.questions)
+          for (const runId of await deps.questions.open(200)) {
+            if ((await cards.cardsOfRequest(runId)).length > 0) continue;
+            const q = await questionViewOf(runId);
+            if (!q || Date.now() - Date.parse(q.askedAt) < BACKGROUND_DELAY_MS)
+              continue;
+            await api.placeQuestion(runId);
+          }
       } finally {
         sweeping = false;
       }
+    },
+
+    async placeQuestion(runId: string): Promise<{ placed: number }> {
+      const q = await questionViewOf(runId);
+      if (!q || q.status !== "asking") return { placed: 0 };
+      if ((await cards.cardsOfRequest(runId)).length > 0) return { placed: 0 };
+      if (await deps.ownerActive(q.ownerSub).catch(() => false))
+        return { placed: 0 };
+      if (
+        (await deps.reachOf(q.driverAgentId).catch(() => "unlinked")) !== "ok"
+      )
+        return { placed: 0 };
+      let placed = 0;
+      for (const link of await workspaceLinks(q.ownerSub)) {
+        const done = await withOwnerLock(q.ownerSub, () =>
+          placeQuestionOn(q, link),
+        ).catch((err: unknown) => {
+          getLogger().warn(
+            { runId, error: formatError(err) },
+            "owner_request.question_place_failed",
+          );
+          return false;
+        });
+        if (done) placed++;
+      }
+      return { placed };
+    },
+
+    async settleQuestion(runId: string): Promise<void> {
+      const q = await questionViewOf(runId);
+      if (!q || q.status === "asking") return;
+      await withOwnerLock(q.ownerSub, () =>
+        settleQuestionItems(q, "settled"),
+      ).catch((err: unknown) =>
+        getLogger().warn(
+          { runId, error: formatError(err) },
+          "owner_request.question_settle_failed",
+        ),
+      );
+    },
+
+    async answerQuestion(input: {
+      runId: string;
+      fields: unknown;
+      slackUserId: string;
+      teamId: SlackWorkspace;
+      reply: SlackPrivateReply;
+    }): Promise<void> {
+      if (!deps.questions) return;
+      const ports = deps.questions;
+      const q = await questionViewOf(input.runId);
+      if (!q) return;
+      const note = (text: string) =>
+        input
+          .reply(text)
+          .catch((err: unknown) =>
+            getLogger().warn(
+              { runId: input.runId, error: formatError(err) },
+              "owner_request.reply_failed",
+            ),
+          );
+      const clicker = await deps.subOf(input.slackUserId).catch(() => null);
+      if (clicker !== q.ownerSub) {
+        const owner = await deps.ownerName(q.driverAgentId, input.teamId);
+        await note(`Only ${owner} can answer this.`);
+        return;
+      }
+      if (q.status !== "asking") {
+        await note("Already answered.");
+        await withOwnerLock(q.ownerSub, () =>
+          settleQuestionItems(q, "settled"),
+        );
+        return;
+      }
+      const parsed = answerFromFields(input.fields, q.options);
+      if ("hint" in parsed) {
+        await note(parsed.hint);
+        return;
+      }
+      const result = await withOwnerLock(q.ownerSub, async () => {
+        const outcome = await ports.answer({
+          runId: input.runId,
+          text: parsed.text,
+          ownerSub: q.ownerSub,
+        });
+        const fresh = await questionViewOf(input.runId);
+        if (fresh && fresh.status !== "asking")
+          await settleQuestionItems(
+            fresh,
+            outcome === "applied" ? "answered" : "settled",
+          );
+        return outcome;
+      });
+      if (result === "not-actionable") await note("Already answered.");
+      getLogger().info(
+        { runId: input.runId, result, teamId: input.teamId },
+        "owner_request.question_answered",
+      );
     },
 
     async released(input: {

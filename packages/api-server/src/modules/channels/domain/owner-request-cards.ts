@@ -20,7 +20,7 @@ export const HOST_ROW_PATHS = 5;
 export const DISMISS_DAYS = 7;
 export const MANY_HOSTS = 10;
 
-export type OwnerCardKind = "turn" | "background" | "call";
+export type OwnerCardKind = "turn" | "background" | "call" | "question";
 
 export type OwnerAnswer =
   | "approve-once"
@@ -100,6 +100,15 @@ export interface OwnerRequestView {
   refusedIn: "slack" | "telegram" | "artifact" | "unknown" | null;
   timesToday: number;
   restart: { path: boolean; host: boolean };
+  cardAgentId: string;
+  launch: {
+    reason: string;
+    driverName: string | null;
+    wider: boolean;
+    allowLabel: string;
+    hostWideLabel: string | null;
+    deadline: string | null;
+  } | null;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a Slack thread a turn card holds requests from: where it is, who started the turn, the people whose messages the turn carried, the line the app posted there, and when its person pressed "Don't wait" or the line last said that the agent went on without the step.
@@ -628,6 +637,59 @@ export function callRow(row: CardRow, appUrl: string): SlackBlock[] {
   ];
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the row of a network rule a Driver set at a one-off sub-agent's launch, which holds the sub-agent's task until the owner answers: the rule in the platform's words, whether it is wider than the Driver's own rules, until when the sub-agent waits, and the web's verdicts for it. Letting the Driver widen every later launch on its own stays in the app.
+export function launchRow(row: CardRow, appUrl: string): SlackBlock[] {
+  const { view } = row;
+  const launch = view.launch;
+  if (!launch) return fallbackRow(row, appUrl);
+  const ids = [view.id];
+  const restartConfirm = confirmOf({
+    title: "Restart network access?",
+    text: `The sub-agent's network access restarts to apply the rule, so its outbound requests stop for a moment.`,
+    confirm: "Allow and restart",
+  });
+  return [
+    { type: "section", text: plainText(cut(launch.reason, 600)) },
+    ...infoContext(
+      launch.wider && launch.driverName
+        ? [`This is wider than ${launch.driverName}'s own network rules.`]
+        : [],
+      launch.deadline
+        ? `The sub-agent waits until ${slackDate(launch.deadline)}, then stops.`
+        : `Answer by ${slackDate(view.expiresAt)}`,
+    ),
+    {
+      type: "actions",
+      elements: [
+        button({
+          label: launch.allowLabel,
+          actionId: OWNER_REQUEST_APPROVE_PATH_ACTION,
+          requests: ids,
+          style: "primary",
+          ...(view.restart.path ? { confirm: restartConfirm } : {}),
+        }),
+        ...(launch.hostWideLabel
+          ? [
+              button({
+                label: launch.hostWideLabel,
+                actionId: OWNER_REQUEST_APPROVE_HOST_ACTION,
+                requests: ids,
+                ...(view.restart.host ? { confirm: restartConfirm } : {}),
+              }),
+            ]
+          : []),
+        button({
+          label: "Decline",
+          actionId: OWNER_REQUEST_DENY_ONCE_ACTION,
+          requests: ids,
+          style: "danger",
+        }),
+        openInAppButton(appUrl),
+      ],
+    },
+  ];
+}
+
 function settledRow(row: CardRow): SlackBlock[] {
   return [
     {
@@ -645,6 +707,7 @@ function rowBlocks(row: CardRow, appUrl: string): SlackBlock[] {
   if (row.dismissed || row.view.status === "resolved") return settledRow(row);
   if (isRuleKind(row.view)) return networkRow(row, appUrl);
   if (row.view.status !== "pending") return settledRow(row);
+  if (row.view.launch) return launchRow(row, appUrl);
   return row.view.kind === "mcp_tool_call"
     ? callRow(row, appUrl)
     : fallbackRow(row, appUrl);

@@ -2,6 +2,7 @@ import {
   describeApprovalPayload,
   gatewayRestartImpact,
   WEB_SEARCH_FOLLOW_UP_QUERIES,
+  wildcardHostReach,
   type ApprovalStatus,
   type ApprovalVerdict,
   type OwnerRoute,
@@ -46,6 +47,15 @@ export interface OwnerRequestViewData {
   refusedIn: RefusedIn | null;
   timesToday: number;
   restart: { path: boolean; host: boolean };
+  cardAgentId: string;
+  launch: {
+    reason: string;
+    driverName: string | null;
+    wider: boolean;
+    allowLabel: string;
+    hostWideLabel: string | null;
+    deadline: string | null;
+  } | null;
 }
 
 export const WEB_SEARCH_HOST = "web search";
@@ -138,11 +148,16 @@ export function createOwnerRequestPorts(deps: {
   promotionRulesOf: (
     agentId: string,
   ) => Promise<readonly (PromotionRule & { id: string })[]>;
+  spawnDeadlineOf?: (agentId: string) => Promise<Date | null>;
 }) {
   async function restartOf(
     row: PendingApprovalRow,
   ): Promise<OwnerRequestViewData["restart"]> {
-    if (row.payload.kind !== "ext_authz") return { path: false, host: false };
+    if (
+      row.payload.kind !== "ext_authz" &&
+      row.payload.kind !== "egress_proposal"
+    )
+      return { path: false, host: false };
     const { host, port, method, path } = row.payload;
     const current = await deps.promotionRulesOf(row.agentId).catch(() => []);
     const restarts = (rule: Omit<PromotionRule, "source">) =>
@@ -153,6 +168,30 @@ export function createOwnerRequestPorts(deps: {
     return {
       path: restarts({ host, method, pathPattern: path }),
       host: restarts({ host, method: "*", pathPattern: "*" }),
+    };
+  }
+
+  async function launchOf(
+    row: PendingApprovalRow,
+  ): Promise<OwnerRequestViewData["launch"]> {
+    const { payload } = row;
+    if (payload.kind !== "egress_proposal" || !payload.forAgentId) return null;
+    const wider = payload.widerThanDriver === true;
+    const deadline = deps.spawnDeadlineOf
+      ? await deps.spawnDeadlineOf(row.agentId).catch(() => null)
+      : null;
+    return {
+      reason: payload.reason,
+      driverName: payload.forAgentName ?? null,
+      wider,
+      allowLabel: wider
+        ? "Allow this"
+        : `Allow ${wildcardHostReach(payload.host)}`,
+      hostWideLabel:
+        wider && (payload.method !== "*" || payload.path !== "*")
+          ? `Allow all of ${payload.host}`
+          : null,
+      deadline: deadline ? deadline.toISOString() : null,
     };
   }
 
@@ -199,6 +238,11 @@ export function createOwnerRequestPorts(deps: {
         refusedIn: refusedInOf(row),
         timesToday: await timesTodayOf(row),
         restart: await restartOf(row),
+        cardAgentId:
+          row.payload.kind === "egress_proposal" && row.payload.forAgentId
+            ? row.payload.forAgentId
+            : row.agentId,
+        launch: await launchOf(row),
       };
     },
 

@@ -139,6 +139,7 @@ interface ComposeApprovalsSystemDeps {
   promotionRulesOf: (
     agentId: string,
   ) => Promise<readonly (PromotionRule & { id: string })[]>;
+  spawnDeadlineOf?: (agentId: string) => Promise<Date | null>;
 }
 
 export { turnReleaseChannelOf } from "./services/held-verdict.js";
@@ -193,6 +194,7 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     repo,
     waiters,
     promotionRulesOf: deps.promotionRulesOf,
+    ...(deps.spawnDeadlineOf ? { spawnDeadlineOf: deps.spawnDeadlineOf } : {}),
   });
   return { relay, gate, sweeper, wakeSaga, ownerRequests };
 }

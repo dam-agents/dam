@@ -94,6 +94,19 @@ The call sends nothing else and shows nothing, and only a browser session, never
 There is no cap on cards: an agent has at most one open background card, whose rows group by host, and each call card or question card needs its own answer.
 When an agent was blocked on ten or more different hosts today, counted from its card rows, its background card says so, says that a rule for each host will not stop it, and links to the agent's network settings; it never suggests a rule for every host.
 
+## Sub-agent questions and launch rules
+
+A sub-agent's [question](invocations.md#asking-the-owner) gets a **question card** of its own, keyed to the asking run, under the timing of a `background` request: a minute after the question, while the owner is not active in the web UI, or at the first sweep after they stop.
+It works like Claude's question UI: who asks under which Driver, the question, the options as a radio list with "Other", a text field, "Send answer", and until when it waits and which default the sub-agent takes then.
+An option longer than Slack shows is cut on the card, and its index travels with it, so the answer is the full option.
+A pick answers with that option, and "Other" or no pick with the text written; with neither, the owner gets a private hint and nothing changes.
+The answer goes through the same delegation control as an answer in the Driver's chat, run as the owner, so each answer reaches its own sub-agent and the first answer counts; the Driver still has no way to answer.
+When the question closes, by the owner here or in the chat, by its default at the deadline, or by a stop, the card says how and closes.
+
+A network rule a Driver set at a one-off sub-agent's launch, which holds the sub-agent's task until the owner answers, is a row of the Driver's background card under the same timing: the rule in the platform's words, whether it is wider than the Driver's own rules, until when the sub-agent waits, and the web's verdicts for it.
+Letting the Driver widen every later launch on its own stays in the app.
+An agent's own rule proposal gets no row, because it holds nothing.
+
 ## The thread line
 
 While an addressed Slack turn waits on a request, the app posts one line in its thread: the agent asked its owner, by display name and without a mention, to approve a step, with a "Don't wait" button.
