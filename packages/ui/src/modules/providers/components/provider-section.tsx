@@ -11,7 +11,11 @@ import type { ProviderPresetType } from "../../../types.js";
 import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { useDisconnectConnection } from "../../connections/hooks/use-disconnect-connection.js";
 import { useProviderStatus } from "../../provider-status/api/queries.js";
-import { AllAgentsSpendBadge } from "../../spend/components/all-agents-provider-limit.js";
+import {
+  AllAgentsLimitChevron,
+  AllAgentsLimitPanel,
+  AllAgentsSpendToggle,
+} from "../../spend/components/all-agents-provider-limit.js";
 import { useRecheckProviderKeys } from "../api/mutations.js";
 import { useProviderItems } from "../hooks/use-provider-items.js";
 import { useRecheckOnOpen } from "../hooks/use-recheck-on-open.js";
@@ -72,6 +76,19 @@ export function ProviderSection({
     item?: ProviderItem;
   } | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [openLimits, setOpenLimits] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const limitToggle = (connectionId: string) => ({
+    open: openLimits.has(connectionId),
+    controls: `provider-limit-${connectionId}`,
+    onToggle: () =>
+      setOpenLimits((was) => {
+        const next = new Set(was);
+        if (!next.delete(connectionId)) next.add(connectionId);
+        return next;
+      }),
+  });
 
   const disconnectProvider = async (item: ProviderItem) => {
     if (deletingId !== null) return;
@@ -92,6 +109,15 @@ export function ProviderSection({
           : entries.map(({ key, row, item, name }) => {
               const managed =
                 row.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID;
+              const limit =
+                item && !onConnected
+                  ? {
+                      connectionId: item.id,
+                      connectionName: item.conn.name,
+                      templateId: item.conn.templateId,
+                    }
+                  : null;
+              const toggle = item ? limitToggle(item.id) : null;
               return (
                 <Card key={key} className="overflow-hidden">
                   <ProviderRow
@@ -116,13 +142,15 @@ export function ProviderSection({
                       )
                     }
                     spend={
-                      item &&
-                      !onConnected && (
-                        <AllAgentsSpendBadge
-                          connectionId={item.id}
-                          connectionName={item.conn.name}
-                          templateId={item.conn.templateId}
-                        />
+                      limit &&
+                      toggle && (
+                        <AllAgentsSpendToggle {...limit} toggle={toggle} />
+                      )
+                    }
+                    trailing={
+                      limit &&
+                      toggle && (
+                        <AllAgentsLimitChevron {...limit} toggle={toggle} />
                       )
                     }
                     connectedAction={
@@ -142,6 +170,9 @@ export function ProviderSection({
                               : setDialog({ provider: row.type, item })
                     }
                   />
+                  {limit && toggle?.open && (
+                    <AllAgentsLimitPanel {...limit} id={toggle.controls} />
+                  )}
                 </Card>
               );
             })}

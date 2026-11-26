@@ -47,6 +47,24 @@ export function limitButtonLabel(hasLimit: boolean, subject: string): string {
     : `Set a limit on the daily spend of ${subject}`;
 }
 
+export const LIMIT_FOR_ALL_AGENTS = "Limit for all agents";
+export const LIMIT_ON_THE_AGENT = "Limit on the agent";
+
+export function showLimitLabel(open: boolean, provider: string): string {
+  return `${open ? "Hide" : "Show"} the limits on ${provider}`;
+}
+
+export const CHANGE_THE_LIMIT = "Change the limit";
+export const SEE_WHAT_IT_COUNTS = "See what it counts";
+
+export function stoppedByLimit(
+  limitName: string,
+  left: string,
+  until: string,
+): string {
+  return `Stopped by a limit: ${limitName}. ${left} left today, calls stop until ${until}.`;
+}
+
 export function limitShareLabel(name: string, pct: number): string {
   return `${name}: ${String(Math.round(pct))}% used`;
 }
@@ -593,12 +611,6 @@ export const LEVEL_NAMES = {
   ceiling: "Spend ceiling",
 } as const;
 
-export const LEVEL_SHORT = {
-  agent: "The agent limit",
-  total: "The total daily limit",
-  ceiling: "The spend ceiling",
-} as const;
-
 export const LEVEL_SCOPES = {
   agent: "every paid provider",
   total: "all agents, every paid provider",
@@ -613,10 +625,6 @@ export const THIS_AGENT = "this agent";
 
 export function thisAgentOn(connectionName: string): string {
   return `${connectionName}, ${THIS_AGENT}`;
-}
-
-export function stopsFirstShort(name: string): string {
-  return `${name} stops first`;
 }
 
 export const AGENT_PROVIDER_LIMIT_BUTTON_TIP =

@@ -88,23 +88,7 @@ function ProviderLimitRow({
   );
   return (
     <li className="contents">
-      <LevelIcon
-        level={{
-          key: limit.id,
-          kind: "all-connection",
-          connection,
-          unit: limit.unit,
-          amountMicros: limit.amountMicros,
-          extensions: limit.extensions,
-          effectiveMicros: limit.effectiveMicros,
-          spentMicros: limit.spentMicros,
-          leftMicros: limit.leftMicros,
-          state: limit.state,
-          mineMicros: null,
-          stopsFirst: false,
-        }}
-        agent={null}
-      />
+      <LevelIcon level={{ kind: "all-connection", connection }} agent={null} />
       <span className="text-xs text-foreground">{name}</span>
       <div className="flex flex-col gap-0.5">
         <LimitBar

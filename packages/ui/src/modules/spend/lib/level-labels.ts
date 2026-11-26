@@ -7,7 +7,6 @@ import {
   allAgentsOn,
   LEVEL_NAMES,
   LEVEL_SCOPES,
-  LEVEL_SHORT,
   THIS_AGENT,
   thisAgentOn,
 } from "./copy.js";
@@ -43,21 +42,6 @@ export function levelListName(level: Level): string {
   return level.kind === "agent-connection"
     ? thisAgentOn(level.connection?.name ?? "")
     : levelName(level);
-}
-
-export function levelShort(level: Level, onProviderPage: boolean): string {
-  switch (level.kind) {
-    case "agent-connection":
-      return onProviderPage
-        ? "This agent's limit"
-        : (level.connection?.name ?? "");
-    case "all-connection":
-      return onProviderPage
-        ? "The limit for all agents"
-        : allAgentsOn(level.connection?.name ?? "");
-    default:
-      return LEVEL_SHORT[level.kind];
-  }
 }
 
 export function levelScope(level: Level): string | null {

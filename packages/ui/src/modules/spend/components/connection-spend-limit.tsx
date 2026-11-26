@@ -1,25 +1,24 @@
 import { connectionLimitRule } from "api-server-api";
 
+import { Tooltip } from "@/components/ui/tooltip";
+
 import { useAgentDisplayName } from "../../agents/api/queries.js";
 import { useAgentSpendStatus } from "../api/queries.js";
 import { useLevelAgent } from "../hooks/use-level-agent.js";
-import { AGENT_PROVIDER_LIMIT_BUTTON_TIP } from "../lib/copy.js";
-import { NO_LIMIT_REASONS } from "../lib/format.js";
+import {
+  AGENT_PROVIDER_LIMIT_BUTTON_TIP,
+  allAgentsOn,
+  LIMIT_ON_THE_AGENT,
+} from "../lib/copy.js";
 import { levelName } from "../lib/level-labels.js";
 import {
   agentConnectionLevels,
   type LevelsView,
   spentOn,
 } from "../lib/limit-levels.js";
-import { LimitLine } from "./limit-line.js";
-
-interface Props {
-  agentId: string;
-  connectionId: string;
-  connectionName: string;
-  templateId: string;
-  compact?: boolean;
-}
+import { LimitRow } from "./limit-row.js";
+import { ProviderLimitBlock } from "./provider-limit-panel.js";
+import { SpendLimitButton } from "./spend-limit-button.js";
 
 export function useConnectionSpendLimit({
   agentId,
@@ -27,7 +26,7 @@ export function useConnectionSpendLimit({
   connectionName,
   templateId,
 }: {
-  agentId: string;
+  agentId: string | null;
   connectionId: string;
   connectionName: string;
   templateId: string;
@@ -36,7 +35,7 @@ export function useConnectionSpendLimit({
   const { data: status } = useAgentSpendStatus(rule.limitable ? agentId : null);
   const agentName = useAgentDisplayName(agentId);
   const agent = useLevelAgent(agentId);
-  if (!rule.limitable || !status) return null;
+  if (!rule.limitable || !status || !agentId) return null;
   const connection = { id: connectionId, name: connectionName, templateId };
   const view = agentConnectionLevels(status, agentId, connection, rule.unit);
   const spentMicros = spentOn(
@@ -48,6 +47,8 @@ export function useConnectionSpendLimit({
     rule,
     view,
     agent,
+    connection,
+    resetsAt: status.resetsAt,
     spentMicros,
     subject: `${agentName} on ${connectionName}`,
     compare: {
@@ -58,44 +59,58 @@ export function useConnectionSpendLimit({
   };
 }
 
-export function ConnectionSpendLimit({
+/** UNIT_BOUNDARY_DESCRIPTION: the open part of an agent's provider row: the agent's own limit there, with the button that sets it and when it resets, then, under a hairline, the provider's limit for all agents. */
+export function AgentProviderLimitPanel({
+  id,
+  spend,
   agentId,
   connectionId,
-  connectionName,
-  templateId,
-  compact = false,
-}: Props) {
-  const spend = useConnectionSpendLimit({
-    agentId,
-    connectionId,
-    connectionName,
-    templateId,
-  });
-  const rule = connectionLimitRule(templateId);
-  if (!rule.limitable) {
-    if (compact) return null;
-    return (
-      <p className="border-t border-border pt-3 text-xs text-muted-foreground">
-        {NO_LIMIT_REASONS[rule.reason]}
-      </p>
-    );
-  }
-  if (!spend) return null;
-
+}: {
+  id: string;
+  spend: NonNullable<ReturnType<typeof useConnectionSpendLimit>>;
+  agentId: string;
+  connectionId: string;
+}) {
+  const { view, rule, agent, connection } = spend;
+  const all = view.others.find(
+    ({ level }) => level.kind === "all-connection",
+  )?.level;
   return (
-    <div className="border-t border-border pt-3">
-      <LimitLine
-        view={spend.view}
+    <div
+      id={id}
+      className="flex flex-col gap-3 border-t border-border px-4 py-3"
+    >
+      <ProviderLimitBlock
+        icon={{ kind: "agent", connection: null }}
+        agent={agent}
+        name={LIMIT_ON_THE_AGENT}
+        level={view.current}
         spentMicros={spend.spentMicros}
         unit={rule.unit}
-        scope={{ kind: "connection", agentId, connectionId }}
-        subject={spend.subject}
-        buttonTip={AGENT_PROVIDER_LIMIT_BUTTON_TIP}
-        agentId={agentId}
-        agent={spend.agent}
-        compact={compact}
-        compare={spend.compare}
+        resetsAt={spend.resetsAt}
+        action={
+          <Tooltip content={AGENT_PROVIDER_LIMIT_BUTTON_TIP}>
+            <span>
+              <SpendLimitButton
+                scope={{ kind: "connection", agentId, connectionId }}
+                subject={spend.subject}
+                amountMicros={view.current?.amountMicros ?? null}
+                unit={rule.unit}
+                compare={spend.compare}
+              />
+            </span>
+          </Tooltip>
+        }
       />
+      {all && (
+        <div className="border-t border-border pt-3">
+          <LimitRow
+            level={all}
+            agent={null}
+            name={allAgentsOn(connection.name)}
+          />
+        </div>
+      )}
     </div>
   );
 }

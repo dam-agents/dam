@@ -31,7 +31,9 @@ vi.mock("@/components/modal", () => ({
   DialogFooter: passthrough,
 }));
 vi.mock("../../modules/spend/components/all-agents-provider-limit.js", () => ({
-  AllAgentsSpendBadge: () => null,
+  AllAgentsSpendToggle: () => null,
+  AllAgentsLimitChevron: () => null,
+  AllAgentsLimitPanel: () => null,
 }));
 vi.mock("@/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: unknown }) => children,

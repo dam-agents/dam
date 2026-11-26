@@ -12,8 +12,10 @@ const state = vi.hoisted(() => ({
 
 vi.mock("../../brand.js", () => ({ getBrand: () => ({ name: "Acme" }) }));
 vi.mock("../../modules/spend/components/all-agents-provider-limit.js", () => ({
-  AllAgentsSpendBadge: ({ connectionId }: { connectionId: string }) =>
+  AllAgentsSpendToggle: ({ connectionId }: { connectionId: string }) =>
     `spend:${connectionId}`,
+  AllAgentsLimitChevron: () => null,
+  AllAgentsLimitPanel: () => null,
 }));
 vi.mock("@/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: unknown }) => children,
