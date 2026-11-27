@@ -1,6 +1,6 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-11-25
+Last verified: 2026-11-27
 
 Companion to [channels](channels.md), [channel-turns](channel-turns.md), [slack-threads](slack-threads.md), [slack-channel-history](slack-channel-history.md) and [slack-edits](slack-edits.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
@@ -41,6 +41,8 @@ It authorizes `/dam bind|unbind|ambient|history|ignore|unignore|default|delete` 
 It is also what lets a person connect an Agent to a conversation from the platform UI or CLI: only to one they and the bot are both in.
 
 Every connect, in-chat or from the UI or CLI, posts one notice in the conversation that tags the person who connected the Agent, its owner; a 1:1 DM's notice names no one.
+The notice gives the words that reach the new Agent, and names the default Agent when that is another Agent.
+A 1:1 DM's notice names no command: its one reader connected the Agent from the UI or CLI, and Slack runs no slash command in the app's own DM, where agent view makes every chat a thread.
 `/dam who` needs no link: anyone in the conversation sees its Agents with each owner's Slack tag, or display name when the owner has no link in that workspace, and `/dam default` with no name shows the same list.
 Each line also says whether the Agent is the default, whether it reads every message, whether it can read the conversation's history, the mention that reaches it, and the description its owner set.
 `/dam` with no text answers with a private menu, an ephemeral message that offers the commands as buttons and leaves out the ones the person may not use ([slack-commands](slack-commands.md)).
@@ -59,6 +61,7 @@ Two paths, both by tool call; plain assistant text is never posted.
   `send_channel_message` is `post`'s old name, kept for one release.
   `reply`, `post` and `start_thread` take an optional [Channel Card](channel-cards.md) of Slack Block Kit blocks, whose rules `describe_blocks` lists on request.
   Every post carries a footer naming the Agent and linking to the session that wrote it.
+  In a channel or a group DM the footer also names `/dam`, which shows every Agent there and the whisper; a 1:1 DM and a private answer to a whisper leave it out.
   The owner removes one with `/dam delete <message link> [reason]`: confirmation dialog, post and files go, the agent's session is told.
 - **As the owner**, through Slack's own MCP server, when the Agent's tool access on the owner's Slack Account Connection lets it post, at once or once someone approves the post.
   Posts carry no footer, `/dam delete` doesn't apply, and the platform doesn't see them (§2).

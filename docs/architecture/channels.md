@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-11-23
+Last verified: 2026-11-27
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -30,13 +30,15 @@ A Slack "conversation" is any surface the bot is party to: a public/private **ch
 The binding key is the conversation id in every case, so DMs and group DMs reuse the channel binding mechanics wholesale.
 
 Because one bot serves every Agent in a workspace, a bare `@bot` cannot say which Agent is meant.
-So a conversation carries at most one **default Agent** — the first connected, and the one a mention whose message names no Agent reaches — while a mention opening with an Agent's name reaches that Agent.
+So a conversation carries at most one **default Agent** — the first Agent connected while no Agent holds it, and the one a mention whose message names no Agent reaches — while a mention opening with an Agent's name reaches that Agent.
 Which Agent holds it can be changed, in-chat.
 A name matching nobody is not an address at all: it falls through to the default as ordinary prose.
 A name matching *several* Agents also falls through, but carries the unresolved name forward, so the default can say it could not tell them apart.
 Releasing the default leaves the conversation with **none** — nothing is promoted, since that would hand the load to an owner who never accepted it.
 Unnamed mentions are then refused, naming the connected Agents and how to set one; named mentions still work.
 A single-Agent conversation therefore behaves exactly as it always did, and nothing about the default surfaces until a second Agent joins.
+The notice posted when an Agent joins gives the words that reach it: the bare mention when it holds the default, else the mention with its name, with the name of the Agent that holds the default.
+The notice writes the app's name as text, never as a mention: it is the Agent's own post, and an Agent's post that tags the app routes like a person's mention, so a live tag would start a turn for the default Agent.
 
 Multiple bindings share the Agent but never each other's conversations: routing is by conversation id both ways, and every session key is qualified by the conversation it belongs to, so a thread — and a channel's read-along flow — stays inside the channel it happened in.
 

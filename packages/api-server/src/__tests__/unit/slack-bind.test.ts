@@ -39,6 +39,7 @@ async function harness(opts?: {
     postMessage: vi.fn(async () =>
       opts?.postError ? { error: opts.postError } : { ok: true as const },
     ),
+    brand: { name: "DAM", short: "dam" },
   };
   const findChannelBindings = vi.fn(async () =>
     opts?.boundTo
@@ -57,6 +58,10 @@ async function harness(opts?: {
     getAgent: async (id) =>
       id === "agent-1" ? { id: "agent-1", name: "my-agent" } : null,
     findChannelBindings,
+    readDefault: async () =>
+      opts?.boundTo
+        ? { isDefault: false, defaultName: "agent-two" }
+        : { isDefault: true },
     connectShared,
     binding,
   });
@@ -117,8 +122,8 @@ describe("slack bind flow", () => {
     });
     expect(h.connectShared).toHaveBeenCalledWith("agent-1", "C-1", "T-HERE");
     const [, , text] = vi.mocked(h.binding.postMessage).mock.calls[0]!;
-    expect(text).toContain("alongside one agent");
-    expect(text).toContain("Start a mention with an agent's name");
+    expect(text).toContain("Send `@DAM my-agent` to talk to it.");
+    expect(text).toContain("goes to agent-two, the default agent here");
   });
 
   /**

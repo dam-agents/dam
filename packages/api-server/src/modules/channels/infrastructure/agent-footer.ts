@@ -20,6 +20,7 @@ export interface AgentFooter {
   emoji?: string;
   sessionId?: string;
   ambientRound?: boolean;
+  hint?: string;
 }
 
 const AMBIENT_ROUND_PARAM = "via=ambient";
@@ -36,6 +37,10 @@ function escapeLinkLabel(name: string): string {
 
 export function agentFooterLabel(agentName?: string): string {
   return `Sent by ${agentName?.trim() || "an agent"}`;
+}
+
+export function commandMenuHint(brandShort: string): string {
+  return `Run \`/${brandShort}\` to see every agent here or whisper to one`;
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: the address that opens one of an agent's sessions in the web chat, through the public agent page, which signs a visitor in first. */
@@ -55,7 +60,8 @@ export function agentFooterMrkdwn(footer: AgentFooter): string {
   ];
   const query = params.length > 0 ? `?${params.join("&")}` : "";
   const emoji = footer.emoji ? `${footer.emoji} ` : "";
-  return `${emoji}<${footer.uiBaseUrl}${PUBLIC_AGENT_PATH}${footer.agentId}${query}|${label || footer.agentId}>`;
+  const hint = footer.hint ? ` · ${footer.hint}` : "";
+  return `${emoji}<${footer.uiBaseUrl}${PUBLIC_AGENT_PATH}${footer.agentId}${query}|${label || footer.agentId}>${hint}`;
 }
 
 export function agentContextBlock(footer: AgentFooter): SlackBlock {

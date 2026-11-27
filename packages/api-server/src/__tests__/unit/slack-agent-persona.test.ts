@@ -205,7 +205,7 @@ describe("slack agent persona", () => {
         elements: [
           {
             type: "mrkdwn",
-            text: ":team-agent-5: <http://ui/a/agent-1|Sent by Scout>",
+            text: ":team-agent-5: <http://ui/a/agent-1|Sent by Scout> · Run `/dam` to see every agent here or whisper to one",
           },
         ],
       });

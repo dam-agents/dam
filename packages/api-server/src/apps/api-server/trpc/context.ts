@@ -436,6 +436,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           channelManager.postMessage(agentId, ChannelType.Slack, text, {
             conversationId: slackChannelId,
           }),
+        brand: config.brand,
       },
       resolveSlackConversationLabels: (refs) =>
         channelManager.resolveSlackConversationLabels(refs),
