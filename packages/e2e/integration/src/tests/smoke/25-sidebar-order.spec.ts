@@ -1,7 +1,6 @@
-// TEST_OVERVIEW: The sidebar lists every Agent, newest created first, in one manual order per user that the user changes by drag and drop, in a real browser against a real api-server, and lists an Agent's Sessions by last activity, newest first. A drop on an Agent row puts the dragged Agent before or after it, by the half of the row the pointer is in. A new Agent joins the foot of the list, and a click or activity never moves an Agent: a click narrows the sidebar to that Agent, and All agents brings every Agent back in place. The Agent order survives a reload and is the same in another browser. A new Session, or a turn in an old one, puts that Session at the top of the Agent's list, and a Session row does not drag. The "⋯" button of a Session row takes a click anywhere on its visible area, also on a working row, where a hidden indicator sits in the same place. The spec creates its own Agents, so the Agents and Sessions of the other specs never move.
+// TEST_OVERVIEW: The "⋯" button of a working Session row takes a click anywhere on its visible area, where a hidden indicator sits in the same place, in a real browser against a real api-server; on the way, the Sessions of an Agent are listed by last activity, newest first, a turn puts its Session at the top, and a Session row does not drag. The order of the Agents and of an Agent's Sessions are Examples of the acceptance suite (features/agents/order.feature, features/chat/session-order.feature); this spec keeps the hit area, a layout regression only a real page shows. It creates its own Agent, so the Agents and Sessions of the other specs never move.
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
-import { baseUrl } from "../../config.js";
 import {
   chatInput,
   deleteAgentIfPresent,
@@ -24,15 +23,12 @@ import { harnessName } from "../../lib/fixtures.js";
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 1100 } });
 
-const AGENTS = ["e2e-order-a", "e2e-order-b", "e2e-order-c"] as const;
-const LATE_AGENT = "e2e-order-d";
+const AGENT = "e2e-order-a";
 const PROMPTS = ["order-first", "order-second", "order-third"] as const;
 const reply = "order-reply";
 
 let api: ApiClient;
 const agentIds = new Map<string, string>();
-const ours = (name: string) =>
-  (AGENTS as readonly string[]).includes(name) || name === LATE_AGENT;
 
 async function reload(page: Page): Promise<void> {
   await page.reload().catch(async (error: Error) => {
@@ -40,29 +36,6 @@ async function reload(page: Page): Promise<void> {
     await page.reload();
   });
   await expect(page.getByTestId("app-sidebar")).toBeVisible();
-}
-
-async function openSidebar(page: Page): Promise<void> {
-  await page.goto(baseUrl);
-  await expect(page.getByTestId("app-sidebar")).toBeVisible();
-  await ensureSidebarExpanded(page);
-  await expect(
-    page.getByTestId("sidebar-agents").getByTestId("sidebar-agent-row").first(),
-  ).toBeVisible();
-}
-
-async function shownAgents(page: Page): Promise<string[]> {
-  const names = await page
-    .getByTestId("sidebar-agents")
-    .getByTestId("sidebar-agent-row")
-    .evaluateAll((rows) =>
-      rows.map((row) => row.textContent?.replace("(unread)", "").trim() ?? ""),
-    );
-  return names.filter(ours);
-}
-
-function agentRow(page: Page, name: string): Locator {
-  return sidebarAgentRow(page, name).getByTestId("sidebar-agent-row");
 }
 
 function sessionRows(page: Page): Locator {
@@ -73,16 +46,6 @@ async function shownSessions(page: Page): Promise<string[]> {
   return sessionRows(page).evaluateAll((rows) =>
     rows.map((row) => row.querySelector("span")?.textContent ?? ""),
   );
-}
-
-async function createSleeping(name: string): Promise<string> {
-  const { id } = await api.agents.create.mutate({
-    name,
-    templateId: harnessName,
-  });
-  agentIds.set(name, id);
-  await api.agents.sleep.mutate({ id });
-  return id;
 }
 
 async function dragTo(
@@ -136,113 +99,24 @@ test.beforeAll(async () => {
   test.setTimeout(300_000);
   api = createRefreshingApiClient(refreshingToken());
   await acceptTerms(api);
-  for (const name of [...AGENTS, LATE_AGENT])
-    await deleteAgentIfPresent(api, name);
-  for (const name of AGENTS) {
-    if (name !== AGENTS[0]) {
-      await createSleeping(name);
-      continue;
-    }
-    const { id } = await api.agents.create.mutate({
-      name,
-      templateId: harnessName,
-    });
-    agentIds.set(name, id);
-  }
-  for (const [name, id] of agentIds)
-    await waitAgentState(
-      api,
-      id,
-      name === AGENTS[0] ? "running" : "hibernated",
-    );
-  await api.sidebarOrder.setAgents.mutate({ agentIds: [] });
+  await deleteAgentIfPresent(api, AGENT);
+  const { id } = await api.agents.create.mutate({
+    name: AGENT,
+    templateId: harnessName,
+  });
+  agentIds.set(AGENT, id);
+  await waitAgentState(api, id, "running");
 });
 
 test.afterAll(async () => {
-  await api.sidebarOrder.setAgents.mutate({ agentIds: [] });
   for (const id of agentIds.values()) await api.agents.delete.mutate({ id });
 });
 
-// TEST_SCENARIO: a drag moves an Agent to any place in the list: after the row it is dropped on in its lower half, before it in its upper half. The order is the same after a reload and in a second browser, and an Agent created after that joins the foot of the list, under the Agents the user has arranged. A click on an Agent narrows the sidebar to it and opens its new-session page, and All agents brings back every Agent in the same order and stays on that page.
-test("drag reorders Agents, and a new Agent joins the foot", async ({
-  page,
-  browser,
-}) => {
-  test.setTimeout(300_000);
-  await openSidebar(page);
-  await expect.poll(() => shownAgents(page)).toHaveLength(AGENTS.length);
-  const start = await shownAgents(page);
-  const [first, second, third] = start as [string, string, string];
-
-  await test.step("a drop on the lower half puts the Agent after the row", async () => {
-    await dragTo(
-      page,
-      agentRow(page, first),
-      () => agentRow(page, third),
-      "bottom",
-    );
-    await expect.poll(() => shownAgents(page)).toEqual([second, third, first]);
-  });
-
-  await test.step("a drop on the upper half puts the Agent before the row", async () => {
-    await dragTo(
-      page,
-      agentRow(page, third),
-      () => agentRow(page, second),
-      "top",
-    );
-    await expect.poll(() => shownAgents(page)).toEqual([third, second, first]);
-  });
-
-  await test.step("the order survives a reload", async () => {
-    await reload(page);
-    await ensureSidebarExpanded(page);
-    await expect.poll(() => shownAgents(page)).toEqual([third, second, first]);
-  });
-
-  await test.step("a second browser shows the same order", async () => {
-    const other = await browser.newContext({
-      storageState: "./.auth/user.json",
-    });
-    try {
-      const second2 = await other.newPage();
-      await openSidebar(second2);
-      await expect
-        .poll(() => shownAgents(second2))
-        .toEqual([third, second, first]);
-    } finally {
-      await other.close();
-    }
-  });
-
-  await test.step("a new Agent joins the foot", async () => {
-    await createSleeping(LATE_AGENT);
-    await expect
-      .poll(() => shownAgents(page))
-      .toEqual([third, second, first, LATE_AGENT]);
-  });
-
-  await test.step("a click narrows the sidebar to the Agent and opens its page; All agents brings every Agent back in place", async () => {
-    const before = await shownAgents(page);
-    await agentRow(page, AGENTS[0]).click();
-    await expect(page.getByTestId("sidebar-all-agents")).toBeVisible();
-    await expect.poll(() => shownAgents(page)).toEqual([AGENTS[0]]);
-    const chat = new RegExp(
-      `/chat/${encodeURIComponent(agentIds.get(AGENTS[0])!)}$`,
-    );
-    await expect(page).toHaveURL(chat);
-    await page.getByTestId("sidebar-all-agents").click();
-    await expect.poll(() => shownAgents(page)).toEqual(before);
-    await expect(page).toHaveURL(chat);
-  });
-});
-
-// TEST_SCENARIO: Sessions are listed by last activity, newest first, and do not drag. A new Session goes to the top, a turn in the oldest Session moves it to the top, and the order is the same after a reload, once the user opens the Agent's view again. The "⋯" button of a working row takes a click on every point: the hidden working indicator sits in the same place and must not catch it.
 test("Sessions are listed newest first, and a turn moves its Session to the top", async ({
   page,
 }) => {
   test.setTimeout(300_000);
-  const name = AGENTS[0];
+  const name = AGENT;
   const agentId = agentIds.get(name)!;
   await waitForAgentRunning(api, name);
   await setMockAgentReply(api, agentId, reply);
@@ -318,7 +192,7 @@ test("Sessions are listed newest first, and a turn moves its Session to the top"
     await reload(page);
     await ensureSidebarExpanded(page);
     await expect(page.getByTestId("sidebar-all-agents")).toBeHidden();
-    await agentRow(page, name).click();
+    await sidebarAgentRow(page, name).getByTestId("sidebar-agent-row").click();
     await expect(page.getByTestId("sidebar-all-agents")).toBeVisible();
     await expect
       .poll(() => shownSessions(page))

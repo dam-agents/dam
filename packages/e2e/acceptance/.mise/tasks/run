@@ -4,4 +4,5 @@
 #MISE env={ NODE_OPTIONS = "--dns-result-order=ipv4first" }
 set -euo pipefail
 pnpm exec bddgen
-pnpm exec playwright test "$@"
+# E2E_ACCEPTANCE_SHARD, as "2/3", runs one shard of the suite, as a CI job does.
+pnpm exec playwright test ${E2E_ACCEPTANCE_SHARD:+--shard="$E2E_ACCEPTANCE_SHARD"} "$@"

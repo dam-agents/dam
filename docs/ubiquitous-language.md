@@ -519,5 +519,5 @@ How the product's behaviour is specified and checked: the acceptance suite in `p
 | Journey          | A user's story across several actions, a Gherkin scenario in `features/journeys/` built from the Examples' steps and run only on the surfaces it names                |
 | Driver           | The test code that performs a step's action and observation through one public interface, split by capability; a step definition is one call into it                  |
 | Driver Surface   | The public interface a Driver acts through, the API, the web UI or the CLI, chosen per scenario by its tags; not a Chat Form's Surface                                |
-| Persona          | A named person of the Examples — Ada, Ben, Jo — signed in as an account of its own that nothing else uses                                                             |
+| Persona          | A named person of the Examples — Ada, Ben, Jo; Kim never accepts the Terms — with an account of its own                                                               |
 | Work in Progress | An Example tagged `@wip`: it states behaviour the product does not have yet and runs as an expected failure until the change that adds the behaviour removes the tag  |

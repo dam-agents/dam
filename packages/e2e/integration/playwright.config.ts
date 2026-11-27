@@ -54,11 +54,6 @@ const smokeStages: NamedProject[][] = [
       use: { ...devices["Desktop Chrome"] },
     },
     {
-      name: "connection",
-      testMatch: /02-.*\.spec\.ts$/,
-      use: { ...devices["Desktop Chrome"], storageState },
-    },
-    {
       name: "trpc-ws-auth",
       testMatch: /13-.*\.spec\.ts$/,
       use: { ...devices["Desktop Chrome"] },
@@ -78,18 +73,6 @@ const smokeStages: NamedProject[][] = [
   ],
   [
     {
-      name: "agent",
-      testMatch: /03-.*\.spec\.ts$/,
-      use: { ...devices["Desktop Chrome"], storageState },
-    },
-    {
-      name: "api-keys",
-      testMatch: /15-.*\.spec\.ts$/,
-      use: { ...devices["Desktop Chrome"] },
-    },
-  ],
-  [
-    {
       name: "chain",
       testMatch: /\/(0[4-9]|1[0-2]|21)-.*\.spec\.ts$/,
       workers: 1,
@@ -97,7 +80,7 @@ const smokeStages: NamedProject[][] = [
     },
     {
       name: "own-agents",
-      testMatch: /\/(17|18|22|23|25|27|29)-.*\.spec\.ts$/,
+      testMatch: /\/(22|25|27|29)-.*\.spec\.ts$/,
       workers: 1,
       use: { ...devices["Desktop Chrome"], storageState },
     },

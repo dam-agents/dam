@@ -79,25 +79,44 @@ export async function accessToken(account: Account): Promise<string> {
   return ((await res.json()) as { access_token: string }).access_token;
 }
 
+/** UNIT_BOUNDARY_DESCRIPTION: signs in through Keycloak's page; a person who has accepted the Terms lands in the app, one who has not on the Terms page, where nothing here accepts them. */
 export async function signInThroughTheBrowser(
   page: Page,
   account: Account,
+  acceptedTerms = true,
 ): Promise<void> {
   await page.goto(baseUrl);
   const username = page.locator("#username");
   const terms = page.getByRole("button", { name: /I accept the Terms of Use/ });
   const sidebar = page.getByTestId("app-sidebar");
   await expect(username.or(terms).or(sidebar)).toBeVisible();
-  if (await username.isVisible())
-    await oneLoginAtATime(async () => {
-      await username.fill(account.username);
-      await page.locator("#password").fill(account.password);
-      await page
-        .locator("#kc-form-login")
-        .getByRole("button", { name: /sign in/i })
-        .click();
-      await expect(terms.or(sidebar)).toBeVisible();
-    });
+  if (await username.isVisible()) {
+    await submitSignInForm(page, account);
+    await expect(terms.or(sidebar)).toBeVisible();
+  }
+  if (!acceptedTerms) {
+    await expect(
+      terms,
+      `${account.username} was not asked for the Terms`,
+    ).toBeVisible();
+    return;
+  }
   if (await terms.isVisible()) await terms.click();
   await expect(sidebar).toBeVisible();
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: fills Keycloak's sign-in form on the page, which must show it. */
+export async function submitSignInForm(
+  page: Page,
+  account: Account,
+): Promise<void> {
+  await oneLoginAtATime(async () => {
+    await page.locator("#username").fill(account.username);
+    await page.locator("#password").fill(account.password);
+    await page
+      .locator("#kc-form-login")
+      .getByRole("button", { name: /sign in/i })
+      .click();
+    await expect(page.locator("#kc-form-login")).toBeHidden();
+  });
 }
