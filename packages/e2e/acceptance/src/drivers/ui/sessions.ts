@@ -1,22 +1,30 @@
 import { expect, type Page } from "@playwright/test";
 
-import { baseUrl } from "../../config.js";
 import type { World } from "../../world.js";
 import type { SessionsDriver } from "../driver.js";
+import { agentSessionRows, showAgentView } from "./nav.js";
 import type { Pages } from "./pages.js";
 
 function sessionRow(page: Page, title: string) {
-  return page.getByTestId("session-row").filter({ hasText: title });
+  return agentSessionRows(page).filter({ hasText: title });
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: an agent's sessions in the web UI: the sidebar lists them under the agent whose chat is shown, and a row's menu deletes one. A person's page stays where it is unless it shows no chat of the agent, so a session deleted beside the open one leaves that one on screen.
+ * UNIT_BOUNDARY_DESCRIPTION: an agent's sessions in the web UI: the left nav lists them in the agent's own view, and a row's menu deletes one. Entering that view opens the agent's new-session page, so a person who had a session of the agent open opens it again from the list, as they would by hand, and a session deleted beside it leaves it on screen.
  */
 export function uiSessions(world: World, pages: Pages): SessionsDriver {
   const showAgent = async (page: Page, agentName: string) => {
     const { id } = world.agent(agentName);
-    if (!new URL(page.url()).pathname.startsWith(`/chat/${id}`))
-      await page.goto(`${baseUrl}/chat/${id}`);
+    const open = new URL(page.url()).pathname.match(
+      new RegExp(`^/chat/${id}/([^/]+)`),
+    )?.[1];
+    if (!(await showAgentView(page, id)) || !open) return;
+    const session = [...world.sessions.values()].find(
+      (s) => s.id === decodeURIComponent(open),
+    );
+    if (!session) return;
+    await sessionRow(page, session.title).click();
+    await expect(page).toHaveURL(new RegExp(`/chat/${id}/${open}`));
   };
   return {
     async expectListed(person, agentName, text, listed) {

@@ -3,24 +3,13 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import { baseUrl } from "../../config.js";
 import type { World } from "../../world.js";
 import type { OrderDriver } from "../driver.js";
-import { openHome, type Pages } from "./pages.js";
-
-async function showAgents(page: Page): Promise<void> {
-  if (!new URL(page.url()).pathname.startsWith("/chat/")) await openHome(page);
-  const expand = page
-    .getByTestId("app-sidebar")
-    .getByRole("button", { name: "Expand navigation" });
-  if (await expand.isVisible()) await expand.click();
-  await expect(page.getByTestId("sidebar-agents")).toBeVisible();
-  const folded = page
-    .getByTestId("sidebar-agents-hibernating")
-    .filter({ hasText: "See all" });
-  if (await folded.isVisible()) await folded.click();
-}
-
-function agentRows(page: Page): Locator {
-  return page.getByTestId("sidebar-agents").getByTestId("sidebar-agent-row");
-}
+import {
+  agentRows,
+  agentSessionRows,
+  showAgentView,
+  showAllAgents,
+} from "./nav.js";
+import type { Pages } from "./pages.js";
 
 async function dragTo(
   page: Page,
@@ -45,32 +34,21 @@ async function dragTo(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the order of the agents and of an agent's sessions in the web UI's sidebar: an agent moves by drag and drop, as the old smoke spec dragged it, and an agent's sessions show under its row while it is open. A move is undone through the API when the example ends.
+ * UNIT_BOUNDARY_DESCRIPTION: the order of the agents and of an agent's sessions in the web UI's left nav: an agent moves by drag and drop where every agent is listed, and an agent's sessions show in its own view, which a click on the agent opens. A move is undone through the API when the example ends.
  */
 export function uiOrder(world: World, pages: Pages): OrderDriver {
   const row = (page: Page, name: string) =>
     agentRows(page).filter({
       hasText: new RegExp(`^${world.nameOf(name)}\\s*(\\(unread\\))?$`),
     });
-  const shownSessions = async (page: Page, agentName: string) =>
-    page
-      .getByTestId("sidebar-agents")
-      .locator("li")
-      .filter({
-        has: page.getByTestId("sidebar-agent-row").filter({
-          hasText: new RegExp(
-            `^${world.nameOf(agentName)}\\s*(\\(unread\\))?$`,
-          ),
-        }),
-      })
-      .getByTestId("session-row")
-      .evaluateAll((rows) =>
-        rows.map((r) => r.querySelector("span")?.textContent ?? ""),
-      );
+  const shownSessions = async (page: Page) =>
+    agentSessionRows(page).evaluateAll((rows) =>
+      rows.map((r) => r.querySelector("span")?.textContent ?? ""),
+    );
   return {
     async expectAgents(person, names) {
       const page = await pages.of(person);
-      await showAgents(page);
+      await showAllAgents(page);
       const wanted = new Set(names.map((n) => world.nameOf(n)));
       await expect
         .poll(async () =>
@@ -82,7 +60,7 @@ export function uiOrder(world: World, pages: Pages): OrderDriver {
     },
     async move(person, name, where, target) {
       const page = await pages.of(person);
-      await showAgents(page);
+      await showAllAgents(page);
       await dragTo(
         page,
         row(page, name),
@@ -94,11 +72,7 @@ export function uiOrder(world: World, pages: Pages): OrderDriver {
       );
     },
     async openSessions(person, agentName) {
-      const page = await pages.of(person);
-      await showAgents(page);
-      const agent = row(page, agentName);
-      if ((await agent.getAttribute("aria-expanded")) !== "true")
-        await agent.click();
+      await showAgentView(await pages.of(person), world.agent(agentName).id);
     },
     async sendIn(person, agentName, session, text) {
       const page = await pages.of(person);
@@ -120,12 +94,12 @@ export function uiOrder(world: World, pages: Pages): OrderDriver {
     },
     async expectSessions(person, agentName, texts) {
       const page = await pages.of(person);
-      await showAgents(page);
+      await showAgentView(page, world.agent(agentName).id);
       const titles = new Set(texts.map((t) => world.unique(t)));
       await expect
         .poll(
           async () =>
-            (await shownSessions(page, agentName))
+            (await shownSessions(page))
               .map((t) => t.trim())
               .filter((t) => titles.has(t)),
           { timeout: 30_000 },
