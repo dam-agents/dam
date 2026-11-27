@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-11-24
+Last verified: 2026-11-27
 
 ## Overview
 
@@ -115,6 +115,7 @@ OAuth stays a person's step: an Agent does not start a sign-in.
 An **OAuth** credential is re-acquired, not pasted: re-running login and consent on the same Connection lands fresh tokens on the same Secret and asks for the template's current scopes, so a scope list that grew since create takes effect then.
 A credential that stops working reads as **expired**: the refresh loop persists a marker when the token endpoint *rejects* it rather than merely failing to answer, and a marked Connection stops being retried until a new credential clears it.
 A rejected *operator-supplied* client secret stays retryable, so a centrally-fixed one revives without per-connection action.
+A Connection on the operator's app — one that brought no client secret of its own — reads that app's client ID from the install each time it signs in or renews, as it reads the secret, so a rotated app takes effect on every such Connection at once; one with its own secret keeps the ID it was made with.
 A failure that is not a rejection parks nothing and instead defers the next attempt on a widening backoff held on the Connection itself, so a renewal that keeps failing is not re-attempted every sweep; any successful credential write clears both records.
 Credential writers — refresh, rotation, re-consent, and the re-point of a shared knowledge base onto a fresh link — serialize per Connection across replicas with an in-lock re-read that stands down if the state already advanced; grant fan-out serializes per Agent.
 Past its token horizon a Connection also reads expired, since a healthy one is renewed well ahead of it; a provider issuing non-expiring tokens has no horizon and stays active.

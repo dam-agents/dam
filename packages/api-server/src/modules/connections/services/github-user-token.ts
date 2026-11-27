@@ -10,17 +10,23 @@ import { gitHubUserTokenApiBase } from "../domain/github-user-token-scope.js";
 
 type OAuthAuth = Extract<ConnectionAuthConfig, { kind: "oauth" }>;
 
+export interface OAuthClient {
+  clientId: string;
+  clientSecret?: string;
+}
+
 export async function scopeGitHubUserToken(
   engine: GitHubAppEngine,
   opts: {
     connectionRef: string;
     auth: OAuthAuth;
     scope: GitHubUserTokenScope;
-    clientSecret: string | undefined;
+    client: OAuthClient;
     accessToken: string;
   },
 ): Promise<GitHubUserTokenSet> {
-  if (!opts.clientSecret) {
+  const { clientId, clientSecret } = opts.client;
+  if (!clientSecret) {
     throw new Error(
       `${opts.connectionRef}: narrowing a GitHub user token needs the GitHub App's client secret, and none is configured`,
     );
@@ -28,8 +34,8 @@ export async function scopeGitHubUserToken(
   return engine.scopeUserToken({
     id: opts.connectionRef,
     apiBaseUrl: gitHubUserTokenApiBase(opts.auth.host),
-    clientId: opts.auth.clientId,
-    clientSecret: opts.clientSecret,
+    clientId,
+    clientSecret,
     accessToken: opts.accessToken,
     targetId: opts.scope.targetId,
     ...(opts.scope.repositoryIds

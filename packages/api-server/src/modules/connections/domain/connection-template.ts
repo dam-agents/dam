@@ -2,6 +2,7 @@ import {
   CONNECTION_ENV_NAME_HINT,
   CONNECTION_ENV_NAME_RE,
   type Contribution,
+  type ConnectionAuthConfig,
   type ConnectionCategory,
   type ConnectionTemplateInput,
   type ConnectionTemplateView,
@@ -160,6 +161,23 @@ export function operatorAppFor(
       ? { appSlug: t.extras.appSlug }
       : {}),
   };
+}
+
+export function oauthClientIdFor(
+  template: ConnectionTemplate | null | undefined,
+  auth: Pick<
+    Extract<ConnectionAuthConfig, { kind: "oauth" }>,
+    "clientId" | "clientSecretRef" | "host"
+  >,
+): string {
+  if (
+    auth.clientSecretRef !== undefined ||
+    template?.authKind !== "oauth" ||
+    template.dynamicRegistration
+  ) {
+    return auth.clientId;
+  }
+  return operatorAppFor(template, auth.host).clientId ?? auth.clientId;
 }
 
 export function hostnameOf(raw: string): string {
