@@ -103,6 +103,21 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
     const admitted = await deps.authenticate(token, site);
     if (!admitted.ok) return admitted;
     const { user } = admitted.principal;
+    if (user.actingAgent !== undefined) {
+      securityLog("warn", "agent.self_act", {
+        category: "authz",
+        actor: user.actingAgent,
+        actorKind: "agent",
+        surface: "ws",
+        agentId,
+        result: "failure",
+        decision: "deny",
+        reason: "relay-closed-to-agents",
+        sourceIp: site.sourceIp,
+        detail: { relay: relayKind },
+      });
+      return { ok: false, kind: "not-permitted" };
+    }
 
     const standing = await deps.standingOf(agentId, user);
     if (standing === null) {

@@ -97,7 +97,7 @@ An Agent opens an Environment as itself, from its sandbox, with whatever tool it
   Let in, an Agent meets the app's start as a person does: a 503 to try again until the endpoint is ready.
   The cross-origin check holds for keyed requests too, so another site's page in the Agent's browser cannot use the key.
 - **The key reaches only the gate.** The relay strips it before the app; a request that carries it to any other host of the api-server is refused before any route reads it.
-  That holds for the key in its own header; as a bearer credential the same key is what an Agent on the Platform Access scale presents to the platform API ([security and credentials](security-and-credentials.md#identity)).
+  That holds for the key in its own header; as a bearer credential the same key is what an Agent on the Platform Access scale presents to the platform API ([connections](connections.md#connection)).
 - **A visible rule.** The key is sent only while the Agent carries the platform's Environments egress rule: an allow for the environments domain, `source: platform:environments`, added with the key and listed in its own group on the agent's egress rules, labelled as the platform's.
   It cannot be edited.
   Its owner can remove it, which revokes the row, deletes the key and its Secret, and so stops the gateway sending it; the agent's requests to the domain then need approval like any other host.

@@ -167,7 +167,9 @@ The scale knows one entry so far: every area and every action with reach own, wi
 A grant that stores no Platform Access is not on the scale: its Agent acts with the Connection's own key, as its owner.
 Only a person signed in as the Connection's owner sets it, never an API key, so an Agent that holds the Connection cannot change what it may do.
 Setting it needs no offer, because it narrows the Agent; clearing it is refused where the install does not offer the Connection, because it gives the Agent its owner's access again.
-The login reads it on every request made with an Agent Key ([security and credentials](security-and-credentials.md#identity)), so a change holds from the Agent's next request, and a stored value that cannot be read names no permission.
+The platform API accepts the Agent Key as a bearer credential, marked by its `ak_` prefix, only while the grant stores an access that lets the Agent read itself and its owner may still act; it reads both on every request, so a change holds from the Agent's next request, and a stored value that cannot be read names no permission.
+The caller is then the Agent, acting as itself: bound to that one Agent, read-only, and named as the actor in the security log.
+Every tRPC procedure is closed to it unless a list names it, so a procedure added later starts closed, and every other route under `/api`, the agent relays included, is closed to it, because those routes check only that the caller owns the Agent, and the Agent carries its owner's identity.
 Every change is written to the security log.
 No client sets it yet and no gateway sends an Agent Key to the platform API yet, so an Agent still reaches the platform with the Connection's own key.
 A Connection still in needs approval when the feature is turned off keeps its mark and its dialog, so the owner can switch it to another mode it offers, but not back.

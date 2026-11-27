@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-11-27
+Last verified: 2026-11-24
 
 ## Overview
 
@@ -133,13 +133,6 @@ A key outlives its sign-in: the api-server asks the identity provider whether it
 
 A key is checked when a request or connection opens, so every long-lived stream it opens — an HTTP subscription, the tRPC WebSocket, an agent relay — re-checks the key every few seconds and ends once it is revoked or expired.
 That re-check is a poll, since a revoke can land on another replica; its interval bounds how long a revoked key keeps a stream.
-
-An **Agent Key** is a third credential in the same slot, marked by an `ak_` prefix: the Agent it names is the caller, acting as itself.
-It is accepted only while that Agent's grant of the platform Connection stores a Platform Access that lets it read itself ([connections](connections.md#connection)), and only while its owner may still act; both are read on every request.
-The principal carries the owner's `sub`, because everything the Agent reaches is its owner's; it is bound to that one Agent, holds the read scope alone and names the Agent as the acting Agent, with no key id, email or operator role.
-Every tRPC procedure is closed to such a caller unless a list names it, so a procedure added later starts closed; the list names the two reads of the Agent itself.
-Every other route under `/api` is closed to it, because those routes check only that the caller owns the Agent, and the agent relays refuse it for want of the operate scope.
-A refusal is a security log record with the Agent as the actor, an Agent's call is not counted as its owner signing in, and a WebSocket it opened ends within the re-check interval once its key or its access is gone.
 
 **Platform operators** run the install for all its users.
 The realm role `keycloak.operatorRole` (`platform-operator` by default) marks an operator, and the chart creates an `operators` group that grants it.

@@ -22,6 +22,7 @@ import {
   type AgentCaller,
 } from "../../apps/api-server/admission/agent-caller.js";
 import { createAuthMiddleware } from "../../apps/api-server/admission/auth-middleware.js";
+import { createRelayAdmission } from "../../apps/api-server/agent-proxies/upgrade.js";
 import { logInternalError } from "../../apps/api-server/trpc/log-internal-error.js";
 import { configureLogger } from "../../core/logger.js";
 import type { OwnerActiveState } from "../../modules/api-keys/index.js";
@@ -165,6 +166,43 @@ describe("an Agent caller on the HTTP routes", () => {
       decision: "deny",
       reason: "route-closed-to-agents",
       target: "/api/agents/agent-a/trpc/files.list",
+    });
+  });
+});
+
+describe("an Agent caller at an agent relay", () => {
+  // TEST_SCENARIO: a relay opens a live conversation or a shell in an Agent for whoever owns it. The Agent caller carries its owner's subject, so standing alone would admit it to its own relays. The relay refuses it before it reads standing or scopes, whatever scope the caller holds, and logs the Agent as the actor.
+  it("is refused before standing and scopes are read", async () => {
+    const cap = capture();
+    const standingOf = vi.fn(async () => ({ role: "owner" as const }));
+    const admission = createRelayAdmission({
+      authenticate: async () => ({
+        ok: true,
+        principal: {
+          user: { ...AS_ITSELF, scopes: ["agents:operate"] },
+          azp: "",
+          roles: [],
+        },
+      }),
+      standingOf,
+      editorSockets: { track: () => {}, close: () => {} },
+      isTermsAccepted: async () => true,
+      surfaceAttribution: { uiClientId: "platform-ui", cliClientId: "cli" },
+    });
+    const admitted = await admission(
+      { headers: {}, socket: {} } as never,
+      new URL(`http://x/api/agents/agent-a/acp?token=${AGENT_KEY}`),
+      "agent-a",
+      { kind: "acp", permission: "sessions" },
+    );
+    expect(admitted).toEqual({ ok: false, kind: "not-permitted" });
+    expect(standingOf).not.toHaveBeenCalled();
+    const refusal = cap.records().find((r) => r.msg === "agent.self_act");
+    expect(refusal).toMatchObject({
+      actor: "agent-a",
+      actorKind: "agent",
+      reason: "relay-closed-to-agents",
+      detail: { relay: "acp" },
     });
   });
 });
