@@ -58,6 +58,7 @@ import {
   inheritsFamily,
   isHostChoice,
   isRetiredHost,
+  oauthClientIdFor,
   operatorAppFor,
   templateToView,
 } from "../domain/connection-template.js";
@@ -161,7 +162,7 @@ import {
 import type { XactLock } from "../../../core/xact-lock.js";
 import {
   refreshOAuthAccessToken,
-  resolveOAuthClientSecret,
+  resolveOAuthClient,
   type OAuthAuth,
 } from "./oauth-token.js";
 import { scopeGitHubUserToken } from "./github-user-token.js";
@@ -487,7 +488,7 @@ export function createConnectionsService(deps: {
     const presetAppSlug =
       conn.auth.kind === "oauth" &&
       operatorApp?.clientId !== undefined &&
-      conn.auth.clientId === operatorApp.clientId
+      oauthClientIdFor(template, conn.auth) === operatorApp.clientId
         ? operatorApp.appSlug
         : undefined;
     const appSlug =
@@ -1134,7 +1135,7 @@ export function createConnectionsService(deps: {
           fresh,
           next,
           { accessToken: userToken, expiresAt: parentAuth.expiresAt },
-          await resolveOAuthClientSecret({
+          await resolveOAuthClient({
             conn: freshParent,
             auth: parentAuth,
             templates: deps.templates,
@@ -1185,7 +1186,7 @@ export function createConnectionsService(deps: {
               connectionRef: `connection:${conn.id}:${conn.templateId}`,
               auth,
               scope,
-              clientSecret: await resolveOAuthClientSecret({
+              client: await resolveOAuthClient({
                 conn: fresh,
                 auth,
                 templates: deps.templates,
@@ -2032,7 +2033,7 @@ export function createConnectionsService(deps: {
               { id, templateId: parent.templateId },
               oauthChild,
               { accessToken: userToken, expiresAt: parentAuth.expiresAt },
-              await resolveOAuthClientSecret({
+              await resolveOAuthClient({
                 conn: fresh,
                 auth: parentAuth,
                 templates: deps.templates,

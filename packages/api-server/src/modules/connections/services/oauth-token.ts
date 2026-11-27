@@ -10,6 +10,7 @@ import type {
 } from "../infrastructure/oauth-engine.js";
 import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
 import {
+  oauthClientIdFor,
   operatorAppFor,
   type ConnectionTemplateRegistry,
 } from "../domain/connection-template.js";
@@ -17,7 +18,10 @@ import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
 import { earliestExpiry } from "../domain/github-user-token-scope.js";
 import type { SecretStore } from "../../secret-store/index.js";
-import { scopeGitHubUserToken } from "./github-user-token.js";
+import {
+  scopeGitHubUserToken,
+  type OAuthClient,
+} from "./github-user-token.js";
 import {
   rederiveGitHubChildren,
   type ChildTokenDeps,
@@ -51,6 +55,27 @@ export async function resolveOAuthClientSecret(opts: {
   return app.clientSecret;
 }
 
+/**
+ * The app a connection signs in and renews with, its client ID and secret
+ * read together, so a rotated operator app never pairs its new secret with
+ * the ID stored before the rotation.
+ */
+export async function resolveOAuthClient(opts: {
+  conn: Connection;
+  auth: OAuthAuth;
+  templates: ConnectionTemplateRegistry;
+  secretStore: SecretStore;
+}): Promise<OAuthClient> {
+  const clientSecret = await resolveOAuthClientSecret(opts);
+  return {
+    clientId: oauthClientIdFor(
+      opts.templates.get(opts.conn.templateId),
+      opts.auth,
+    ),
+    ...(clientSecret ? { clientSecret } : {}),
+  };
+}
+
 export async function oauthProviderFor(opts: {
   conn: Connection;
   auth: OAuthAuth;
@@ -68,12 +93,12 @@ export async function oauthProviderFor(opts: {
   const scopes = dynamicMcp
     ? (auth.requestedScopes ?? auth.scopes)
     : (templateScopes ?? auth.scopes);
-  const clientSecret = await resolveOAuthClientSecret(opts);
+  const { clientId, clientSecret } = await resolveOAuthClient(opts);
   return {
     id: `connection:${conn.id}:${conn.templateId}`,
     authorizationUrl: auth.authorizationUrl,
     tokenEndpoint: auth.tokenUrl,
-    clientId: auth.clientId,
+    clientId,
     ...(clientSecret ? { clientSecret } : {}),
     scopes,
     ...(auth.resource ? { resource: auth.resource } : {}),
@@ -143,7 +168,10 @@ export async function refreshOAuthAccessToken(opts: {
   const { conn, auth, secretStore } = opts;
   const connectionRef = `connection:${conn.id}:${conn.templateId}`;
   const provider = await oauthProviderFor(opts);
-  const clientSecret = provider.clientSecret;
+  const client: OAuthClient = {
+    clientId: provider.clientId,
+    ...(provider.clientSecret ? { clientSecret: provider.clientSecret } : {}),
+  };
   const scope = auth.githubUserTokenScope;
 
   const refreshToken = auth.refreshTokenRef
@@ -155,7 +183,7 @@ export async function refreshOAuthAccessToken(opts: {
       throw new Error(`access token missing at ${auth.accessTokenRef.path}`);
     }
     return injectScopedToken(
-      { ...opts, connectionRef, clientSecret, scope },
+      { ...opts, connectionRef, client, scope },
       { accessToken: stored },
     );
   }
@@ -180,7 +208,7 @@ export async function refreshOAuthAccessToken(opts: {
       },
       conn,
       next,
-      clientSecret,
+      client,
     );
     return { expiresAt };
   }
@@ -194,7 +222,7 @@ export async function refreshOAuthAccessToken(opts: {
 
   await secretStore.putFields(auth.accessTokenRef, fields);
   return injectScopedToken(
-    { ...opts, connectionRef, clientSecret, scope },
+    { ...opts, connectionRef, client, scope },
     next,
   );
 }
@@ -206,7 +234,7 @@ async function injectScopedToken(
     githubAppEngine: GitHubAppEngine;
     secretStore: SecretStore;
     connectionRef: string;
-    clientSecret: string | undefined;
+    client: OAuthClient;
     scope: GitHubUserTokenScope;
   },
   userToken: { accessToken: string; expiresAt?: number | undefined },
@@ -215,7 +243,7 @@ async function injectScopedToken(
     connectionRef: opts.connectionRef,
     auth: opts.auth,
     scope: opts.scope,
-    clientSecret: opts.clientSecret,
+    client: opts.client,
     accessToken: userToken.accessToken,
   });
   await opts.secretStore.putFields(
