@@ -101,13 +101,17 @@ The draft PR's `author-decisions` block carries the same list, so the review doe
    See fact 3.
 8. **Slack only.**
    Telegram does not change.
+9. **The hint names `/dam`, although the footer's label carries no brand.**
+   The label stays brand-free, as #5431 decided, so a team's own product is not credited to DAM.
+   The hint names the slash command only because a person must type it, and it credits nothing.
+   Petr decided this on 2026-11-27, while 01 was built.
 
 ## Sub-issues
 
-| #   | Title                                              | Scope                                                                                                                              | Depends on |
-| --- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | The `/dam` hint in the Agent Footer                | The hint after the footer link on agent posts in channels and group DMs, never in a 1:1 DM or a private answer; docs               | —          |
-| 02  | The connect notice says how to reach the new agent | New notice copy for the default agent, another default and a 1:1 DM; the brand and the default agent's name reach the notice; docs | 01         |
+| #   | Title                                              | Scope                                                                                                                              | Depends on | Done |
+| --- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---- |
+| 01  | The `/dam` hint in the Agent Footer                | The hint after the footer link on agent posts in channels and group DMs, never in a 1:1 DM or a private answer; docs               | —          | ✅   |
+| 02  | The connect notice says how to reach the new agent | New notice copy for the default agent, another default and a 1:1 DM; the brand and the default agent's name reach the notice; docs | 01         |      |
 
 ## Conventions & glossary
 

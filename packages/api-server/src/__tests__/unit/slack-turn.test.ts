@@ -448,7 +448,7 @@ describe("slack reply / react tools", () => {
       elements: [
         {
           type: "mrkdwn",
-          text: ":robot_face: <http://ui/a/agent-1?s=sess-42|Sent by an agent>",
+          text: ":robot_face: <http://ui/a/agent-1?s=sess-42|Sent by an agent> · Run `/dam` to see every agent here or whisper to one",
         },
       ],
     });
@@ -467,7 +467,7 @@ describe("slack reply / react tools", () => {
       elements: [
         {
           type: "mrkdwn",
-          text: ":robot_face: <http://ui/a/agent-1|Sent by an agent>",
+          text: ":robot_face: <http://ui/a/agent-1|Sent by an agent> · Run `/dam` to see every agent here or whisper to one",
         },
       ],
     });

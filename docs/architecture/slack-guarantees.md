@@ -1,6 +1,6 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-11-25
+Last verified: 2026-11-27
 
 Companion to [channels](channels.md), [channel-turns](channel-turns.md), [slack-threads](slack-threads.md), [slack-channel-history](slack-channel-history.md) and [slack-edits](slack-edits.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
@@ -59,6 +59,7 @@ Two paths, both by tool call; plain assistant text is never posted.
   `send_channel_message` is `post`'s old name, kept for one release.
   `reply`, `post` and `start_thread` take an optional [Channel Card](channel-cards.md) of Slack Block Kit blocks, whose rules `describe_blocks` lists on request.
   Every post carries a footer naming the Agent and linking to the session that wrote it.
+  In a channel or a group DM the footer also names `/dam`, which shows every Agent there and the whisper; a 1:1 DM and a private answer to a whisper leave it out.
   The owner removes one with `/dam delete <message link> [reason]`: confirmation dialog, post and files go, the agent's session is told.
 - **As the owner**, through Slack's own MCP server, when the Agent's tool access on the owner's Slack Account Connection lets it post, at once or once someone approves the post.
   Posts carry no footer, `/dam delete` doesn't apply, and the platform doesn't see them (§2).

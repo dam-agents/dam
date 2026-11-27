@@ -36,10 +36,10 @@ Apply the `/typescript-engineering` skill.
    Then grep for `agentFooter(` and `agentContextBlock(` (also `renderAssistantBlocks` in `slack-turn-presenter.ts`) to confirm that no other place builds a footer.
 
 4. Docs (one sentence per line, bump `Last verified`, describe behavior rather than exact copy):
-   - [channel-turns › The Agent Footer](../../architecture/channel-turns.md#the-agent-footer): after the label paragraph, say that a post that other people can see also points at the command menu after the link.
-     Say why the pointer sits in the footer's own element: agents never read that block, and a block of its own would reach their history.
-     Say that a 1:1 DM and a private answer get no pointer, because their reader already reached the Agent.
    - [slack-commands](../../architecture/slack-commands.md): add how people find the menu: the footer of each agent post that others see names the command.
+     Say why the hint sits in the footer's own element: agents never read that block, and a block of its own would reach their history.
+     Say that a 1:1 DM and a private answer get no hint, because their reader already reached the Agent.
+     `channel-turns.md` is at its size cap, so it does not change.
    - [slack-guarantees](../../architecture/slack-guarantees.md): the line "Every post carries a footer naming the Agent …" also says that in channels and group DMs the footer names `/dam`.
 
 5. Run the api-server suite and update existing assertions that quote a whole footer of a channel post.
@@ -50,14 +50,15 @@ Apply the `/typescript-engineering` skill.
 
 ## Acceptance criteria
 
-- [ ] A reply, a `post` tool post, a card post, a file-only post and an edited post in a channel or a group DM end with one `context` block.
+- [x] A reply, a `post` tool post, a card post, a file-only post and an edited post in a channel or a group DM end with one `context` block.
   Its one `mrkdwn` element holds the emoji, the unchanged "Sent by <Name>" link, ` · `, and "Run `/dam` to see every agent here or whisper to one", with `dam` taken from `brand.short`.
-- [ ] The same kinds of post in a 1:1 DM, and the private answer to a quoted whisper, have the footer of today, with no hint.
-- [ ] The footer stays the last block of every post, and its link URL and label do not change.
-- [ ] The post's top-level `text` (the notification text) does not change, and `renderSlackPostText` returns no hint for a post that has one.
-- [ ] The command name comes from `brand.short`; no literal brand is added to code.
-- [ ] `channel-turns.md`, `slack-commands.md` and `slack-guarantees.md` describe the hint, with `Last verified` bumped.
-- [ ] `mise run //packages/api-server:check`, `mise run //packages/api-server:test`, `mise run check:comment-types` and `mise run fix:markdown` pass, with no new test added.
+- [x] The same kinds of post in a 1:1 DM, and the private answer to a quoted whisper, have the footer of today, with no hint.
+- [x] The footer stays the last block of every post, and its link URL and label do not change.
+- [x] The post's top-level `text` (the notification text) does not change, and `renderSlackPostText` returns no hint for a post that has one.
+- [x] The command name comes from `brand.short`; no literal brand is added to code.
+- [x] `slack-commands.md` and `slack-guarantees.md` describe the hint, with `Last verified` bumped.
+  `channel-turns.md` does not change: it is at its size cap, so the hint's description lives on `slack-commands.md` and links to the Agent Footer (Petr decided this on 2026-11-27).
+- [x] `mise run //packages/api-server:check`, `mise run //packages/api-server:test`, `mise run check:comment-types` and `mise run fix:markdown` pass, with no new test added.
 
 ## Smoke test
 

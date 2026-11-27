@@ -211,6 +211,7 @@ import {
   agentContextBlock,
   agentFooterLabel,
   catchUpLegend,
+  commandMenuHint,
   historyLegend,
   historyPreamble,
   labelHistoryMessage,
@@ -2949,16 +2950,23 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
   async function agentFooter(
     instanceName: string,
-    sessionId?: string,
-    ambientRound?: boolean,
+    post: {
+      conversationId: string;
+      privateAnswer?: boolean;
+      sessionId?: string | undefined;
+      ambientRound?: boolean | undefined;
+    },
   ): Promise<AgentFooter> {
     const resolved = await resolveAgentName(instanceName);
+    const seenByOthers =
+      !post.privateAnswer && !isDirectMessageId(post.conversationId);
     return {
       uiBaseUrl,
       agentId: instanceName,
       label: agentFooterLabel(resolved === instanceName ? undefined : resolved),
-      ...(sessionId ? { sessionId } : {}),
-      ...(ambientRound ? { ambientRound } : {}),
+      ...(post.sessionId ? { sessionId: post.sessionId } : {}),
+      ...(post.ambientRound ? { ambientRound: post.ambientRound } : {}),
+      ...(seenByOthers ? { hint: commandMenuHint(brandShort) } : {}),
     };
   }
 
@@ -3580,7 +3588,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     );
     if ("error" in linked) return linked;
     const [base, { persona, sign, emoji }] = await Promise.all([
-      agentFooter(instanceName, turn.sessionId),
+      agentFooter(instanceName, {
+        conversationId: turn.channel,
+        privateAnswer: true,
+        sessionId: turn.sessionId,
+      }),
       agentPersona(gw, instanceName, {
         id: turn.channel,
         teamId: turn.teamId,
@@ -9238,7 +9250,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if ("error" in linked) return linked;
 
       const [base, { persona, sign, emoji }] = await Promise.all([
-        agentFooter(instanceName),
+        agentFooter(instanceName, { conversationId: target.id }),
         agentPersona(gw, instanceName, target),
       ]);
       const footer = { ...base, emoji };
@@ -9602,7 +9614,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if ("error" in linked) return linked;
 
       const [base, { persona, sign, emoji }] = await Promise.all([
-        agentFooter(instanceName, turn?.sessionId, turn?.ambient),
+        agentFooter(instanceName, {
+          conversationId: target.id,
+          sessionId: turn?.sessionId,
+          ambientRound: turn?.ambient,
+        }),
         agentPersona(gw, instanceName, target),
       ]);
       const footer = { ...base, emoji };
@@ -9740,11 +9756,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if ("error" in linked) return linked;
 
       const [base, { sign, emoji }] = await Promise.all([
-        agentFooter(
-          instanceName,
-          footerSessionId(written) ?? undefined,
-          footerMarksAmbientRound(written),
-        ),
+        agentFooter(instanceName, {
+          conversationId: target.id,
+          sessionId: footerSessionId(written) ?? undefined,
+          ambientRound: footerMarksAmbientRound(written),
+        }),
         agentPersona(gw, instanceName, target),
       ]);
       const footer = { ...base, emoji };
