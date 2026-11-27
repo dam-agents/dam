@@ -41,6 +41,8 @@ It authorizes `/dam bind|unbind|ambient|history|ignore|unignore|default|delete` 
 It is also what lets a person connect an Agent to a conversation from the platform UI or CLI: only to one they and the bot are both in.
 
 Every connect, in-chat or from the UI or CLI, posts one notice in the conversation that tags the person who connected the Agent, its owner; a 1:1 DM's notice names no one.
+The notice gives the words that reach the new Agent, and names the default Agent when that is another Agent.
+A 1:1 DM's notice names no command: its one reader connected the Agent from the UI or CLI, and Slack runs no slash command in the app's own DM, where agent view makes every chat a thread.
 `/dam who` needs no link: anyone in the conversation sees its Agents with each owner's Slack tag, or display name when the owner has no link in that workspace, and `/dam default` with no name shows the same list.
 Each line also says whether the Agent is the default, whether it reads every message, whether it can read the conversation's history, the mention that reaches it, and the description its owner set.
 `/dam` with no text answers with a private menu, an ephemeral message that offers the commands as buttons and leaves out the ones the person may not use ([slack-commands](slack-commands.md)).

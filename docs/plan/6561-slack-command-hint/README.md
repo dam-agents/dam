@@ -17,7 +17,7 @@ After this feature:
 - A 1:1 DM and a private answer to a whisper get no hint, because their only reader already reached the agent.
 - The notice that the app posts when an agent joins a conversation gives the exact words that reach the agent.
   The words are `@DAM` alone when the agent is the default agent, and `@DAM <Name>` when another agent is the default, which the notice then names.
-- In a 1:1 DM the notice says how to change or disconnect the agent with `/dam`.
+- In a 1:1 DM the notice names no command: its reader connected the agent, and Slack runs no slash command in the app's own DM.
 
 `/dam` and `@DAM` in this plan stand for the install's `/${brand.short}` and `@${brand.name}`.
 Never hard-code them.
@@ -93,8 +93,10 @@ The draft PR's `author-decisions` block carries the same list, so the review doe
 5. **The notice's `/dam` line comes from its footer in channels and group DMs.**
    The issue says the notice carries the same `/dam` line.
    The notice is an agent post, so its footer already carries the hint, and the text does not repeat it.
-   A 1:1 DM has no footer hint, so there the text says "Run `/dam` to change its settings or disconnect it".
-   The person in a 1:1 DM is the person who connected the agent, so the menu lets them change it.
+   A 1:1 DM has no footer hint, and its notice names no command either.
+   Its one reader is the person who connected the agent from the UI, the CLI or a Starter Kit, so they know where its settings live.
+   And Slack runs no slash command in the app's own DM: agent view makes every chat a thread, and Slack answers "/dam is not supported in threads".
+   Petr asked to reason about this line again on 2026-11-27, after the smoke test showed that `/dam` fails there; the line was dropped.
 6. **The notice drops "run the unbind command to disconnect".**
    The sentence names no command, and Disconnect is in the menu.
 7. **`@DAM` in the notice is code text, not a live mention.**
@@ -111,7 +113,7 @@ The draft PR's `author-decisions` block carries the same list, so the review doe
 | #   | Title                                              | Scope                                                                                                                              | Depends on | Done |
 | --- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---- |
 | 01  | The `/dam` hint in the Agent Footer                | The hint after the footer link on agent posts in channels and group DMs, never in a 1:1 DM or a private answer; docs               | —          | ✅   |
-| 02  | The connect notice says how to reach the new agent | New notice copy for the default agent, another default and a 1:1 DM; the brand and the default agent's name reach the notice; docs | 01         |      |
+| 02  | The connect notice says how to reach the new agent | New notice copy for the default agent, another default and a 1:1 DM; the brand and the default agent's name reach the notice; docs | 01         | ✅   |
 
 ## Conventions & glossary
 
@@ -150,8 +152,8 @@ On the local cluster with Slack wired (the [`cluster-ops`](../../../.agents/skil
    The menu shows both agents with Whisper and no settings.
 6. Run `/dam whisper A "a question"`.
    The private answer has no hint.
-7. In your DM with the app, run `/dam bind` and pick agent A.
-   The notice says "Run `/dam` to change its settings or disconnect it", and A's replies in the DM have no hint.
+7. Connect agent A to your DM with the app from the UI, because `/dam` does not run in that DM.
+   The notice says "Message it here, no mention needed" and names no command, and A's replies in the DM have no hint.
 8. `mise run check` and `mise run test` pass.
 
 The dev Slack app grants every manifest scope, so it shows the "agent as poster" look.

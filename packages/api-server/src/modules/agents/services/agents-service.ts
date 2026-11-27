@@ -387,23 +387,40 @@ export interface SlackBindingPort {
     slackChannelId: string,
     text: string,
   ): Promise<{ ok: true } | { error: string }>;
+  brand: { name: string; short: string };
 }
+
+type ConversationDefault =
+  { isDefault: true } | { isDefault: false; defaultName: string | null };
+
+type ConversationDefaultReader = (
+  agentId: string,
+  slackChannelId: string,
+) => Promise<ConversationDefault>;
 
 function slackConnectNotice(notice: {
   agentName: string;
   slackChannelId: string;
-  alreadyHere: number;
   connectedBy: string;
+  conversationDefault: ConversationDefault;
+  brand: { name: string; short: string };
 }): string {
-  const { agentName } = notice;
+  const { agentName, brand, conversationDefault } = notice;
+  const name = `**${agentName}**`;
   if (notice.slackChannelId.startsWith("D"))
-    return `This DM is now connected to ${agentName}. Message it here; run the unbind command to disconnect.`;
-  const connected = `This channel is now connected to ${agentName} owned by <@${notice.connectedBy}>`;
-  if (notice.alreadyHere === 0)
-    return `${connected}. Everyone here can use it; run the unbind command to disconnect.`;
-  const alongside =
-    notice.alreadyHere === 1 ? "one agent" : `${notice.alreadyHere} agents`;
-  return `${connected}, alongside ${alongside} already here. Start a mention with an agent's name to reach that one; a mention with no name goes to the channel's default agent. Run the unbind command to disconnect.`;
+    return conversationDefault.isDefault
+      ? `This DM is now connected to ${name}. Message it here, no mention needed.`
+      : `This DM is now connected to ${name}. Start your message with ${agentName} to reach it.`;
+  const connected = `This channel is now connected to ${name}, owned by <@${notice.connectedBy}>. Everyone here can use it.`;
+  if (conversationDefault.isDefault)
+    return [connected, `Send \`@${brand.name}\` to talk to it.`].join("\n\n");
+  const unnamed = conversationDefault.defaultName
+    ? ` \`@${brand.name}\` with no name goes to ${conversationDefault.defaultName}, the default agent here.`
+    : "";
+  return [
+    connected,
+    `Send \`@${brand.name} ${agentName}\` to talk to it.${unnamed}`,
+  ].join("\n\n");
 }
 
 async function announceSlackConnect(
@@ -413,16 +430,24 @@ async function announceSlackConnect(
     agentId: string;
     agentName: string;
     slackChannelId: string;
-    alreadyHere: number;
     connectedBy: string;
   },
+  readDefault: ConversationDefaultReader,
 ): Promise<void> {
   let failure: string;
   try {
+    const conversationDefault = await readDefault(
+      notice.agentId,
+      notice.slackChannelId,
+    );
     const post = await binding.postMessage(
       notice.agentId,
       notice.slackChannelId,
-      slackConnectNotice(notice),
+      slackConnectNotice({
+        ...notice,
+        conversationDefault,
+        brand: binding.brand,
+      }),
     );
     if (!("error" in post)) return;
     failure = post.error;
@@ -447,6 +472,7 @@ export function executeSlackBind(deps: {
   findChannelBindings: (
     slackChannelId: string,
   ) => Promise<{ agentId: string }[]>;
+  readDefault: ConversationDefaultReader;
   connectShared: (
     agentId: string,
     slackChannelId: string,
@@ -517,13 +543,17 @@ export function executeSlackBind(deps: {
       },
     });
 
-    await announceSlackConnect(deps.binding, deps.owner ?? null, {
-      agentId,
-      agentName: agent.name,
-      slackChannelId: flow.slackChannelId,
-      alreadyHere: existing.length,
-      connectedBy: flow.slackUserId,
-    });
+    await announceSlackConnect(
+      deps.binding,
+      deps.owner ?? null,
+      {
+        agentId,
+        agentName: agent.name,
+        slackChannelId: flow.slackChannelId,
+        connectedBy: flow.slackUserId,
+      },
+      deps.readDefault,
+    );
 
     return ok({
       slackChannelId: flow.slackChannelId,
@@ -1044,6 +1074,26 @@ export function createAgentsService(deps: {
     const infra = await deps.repo.get(id, deps.owner);
     return infra ? { id: infra.id, name: infra.name } : null;
   }
+
+  const readConversationDefault: ConversationDefaultReader = async (
+    agentId,
+    slackChannelId,
+  ) => {
+    try {
+      const holder = (await deps.findSlackBindings(slackChannelId)).find(
+        (b) => b.isDefault,
+      );
+      if (holder?.agentId === agentId) return { isDefault: true };
+      const named = holder ? await deps.repo.get(holder.agentId) : null;
+      return { isDefault: false, defaultName: named?.name ?? null };
+    } catch (err) {
+      getLogger().warn(
+        { err, agentId, slackChannelId },
+        "agents: could not read the conversation's default agent; the connect notice names the agent's own mention, which reaches it either way",
+      );
+      return { isDefault: false, defaultName: null };
+    }
+  };
 
   const unresolvedWorkspace = (workspace: {
     kind: "unknown" | "unreachable" | "none";
@@ -2132,13 +2182,17 @@ export function createAgentsService(deps: {
         customEmoji,
       );
       if (connected.ok && !options?.quiet && deps.slackBinding)
-        void announceSlackConnect(deps.slackBinding, deps.actor ?? null, {
-          agentId: id,
-          agentName: connected.value.name,
-          slackChannelId,
-          alreadyHere: bindings.length,
-          connectedBy: connector.value,
-        });
+        void announceSlackConnect(
+          deps.slackBinding,
+          deps.actor ?? null,
+          {
+            agentId: id,
+            agentName: connected.value.name,
+            slackChannelId,
+            connectedBy: connector.value,
+          },
+          readConversationDefault,
+        );
       return connected;
     },
 
@@ -2156,13 +2210,17 @@ export function createAgentsService(deps: {
           own.teamId,
         );
         if (connector.ok) {
-          void announceSlackConnect(binding, deps.actor ?? null, {
-            agentId: id,
-            agentName: agent.name,
-            slackChannelId,
-            alreadyHere: bindings.length - 1,
-            connectedBy: connector.value,
-          });
+          void announceSlackConnect(
+            binding,
+            deps.actor ?? null,
+            {
+              agentId: id,
+              agentName: agent.name,
+              slackChannelId,
+              connectedBy: connector.value,
+            },
+            readConversationDefault,
+          );
           return;
         }
         reason = connector.error.type;
@@ -2295,6 +2353,7 @@ export function createAgentsService(deps: {
         owner: deps.owner,
         getAgent: namedAgent,
         findChannelBindings: deps.findSlackBindings,
+        readDefault: readConversationDefault,
         connectShared: (id, slackChannelId, teamId) =>
           connectSlackImpl(id, slackChannelId, {}, teamId),
         binding,

@@ -75,6 +75,7 @@ function harness(flowTeamId: string) {
       }),
       consumeFlow: async () => {},
       postMessage: async () => ({ ok: true as const }),
+      brand: { name: "DAM", short: "dam" },
     },
   } as unknown as AgentsDeps);
 
