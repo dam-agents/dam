@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "api-server-api";
 
+import { leaveNoAssistant } from "../../lib/agents.js";
 import { createApiClient, createWsApiClient } from "../../lib/api-client.js";
 import {
   answerDeviceGrant,
@@ -125,6 +126,13 @@ test("a bind deep link survives the login roundtrip and the Terms gate (#3107)",
       url.pathname === "/slack/bind" &&
       url.searchParams.get("flow") === bindFlowId,
   );
+});
+
+// TEST_SCENARIO: the deep link above accepts the Terms for the gate account, which makes it an assistant; it is switched off and deleted so its machine does not take the node's memory from the agents of the specs after.
+test.afterAll(async () => {
+  const api = createApiClient(await getAccessToken(termsGateUser));
+  const accepted = await api.terms.latestAcceptance.query().catch(() => null);
+  if (accepted) await leaveNoAssistant(api);
 });
 
 async function deviceGrantPoll(deviceCode: string) {

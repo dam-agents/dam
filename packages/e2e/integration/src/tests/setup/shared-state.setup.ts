@@ -2,8 +2,12 @@
 import { expect, test as setup } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
-import { expectAgentEnv, waitForAgentRunning } from "../../lib/agents.js";
-import { type ApiClient, createApiClient } from "../../lib/api-client.js";
+import {
+  expectAgentEnv,
+  leaveNoAssistant,
+  waitForAgentRunning,
+} from "../../lib/agents.js";
+import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken, submitKeycloakLoginForm } from "../../lib/auth.js";
 import { ensureCustomHeaderConnection } from "../../lib/connections.js";
 import {
@@ -19,25 +23,6 @@ import {
 } from "../../lib/fixtures.js";
 
 const storageStatePath = "./.auth/user.json";
-
-async function leaveNoAssistant(api: ApiClient): Promise<void> {
-  const deadline = Date.now() + 60_000;
-  let state = await api.assistants.state.query();
-  while ((state === null || !state.ready) && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
-    state = await api.assistants.state.query();
-  }
-  if (state === null) return;
-  const agentId = state.agentId;
-  await api.agents.delete.mutate({ id: agentId });
-  await expect
-    .poll(
-      async () =>
-        (await api.agents.list.query()).some((agent) => agent.id === agentId),
-      { timeout: 120_000, intervals: [2_000] },
-    )
-    .toBe(false);
-}
 
 // TEST_SCENARIO: the shared account signs in through Keycloak and accepts the Terms in the browser, and its session is stored for every spec that drives the web UI as it.
 setup("sign the shared account in and store its session", async ({ page }) => {
@@ -63,7 +48,6 @@ setup("switch the shared account's assistant off", async () => {
   const api = createApiClient(await getAccessToken());
   const terms = await api.terms.current.query();
   await api.terms.accept.mutate({ version: terms.version });
-  await api.features.setFlag.mutate({ feature: "dambledore", enabled: false });
   await leaveNoAssistant(api);
 });
 
