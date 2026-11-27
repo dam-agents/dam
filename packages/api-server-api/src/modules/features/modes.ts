@@ -22,18 +22,22 @@ import { featureRegistrySchema } from "./schemas.js";
  * a release stops every program and test that reads the contract.
  */
 export const FEATURES = featureRegistrySchema.parse({
-  "advanced-connections": { level: "internal", issue: 0, since: "v0.3.3" },
-  processes: { level: "internal", issue: 0, since: "v0.3.3" },
-  "custom-avatars": { level: "experimental", issue: 0, since: "v0.3.3" },
-  environments: { level: "internal", issue: 0, since: "v0.3.3" },
-  hermes: { level: "internal", issue: 0, since: "v0.3.3" },
-  "github-enterprise-hosts": { level: "internal", issue: 0, since: "v0.3.3" },
-  dambledore: { level: "experimental", issue: 0, since: "v0.3.3" },
-  damConnection: { level: "internal", issue: 0, since: "v0.3.3" },
-  "chat-network-approvals": { level: "internal", issue: 0, since: "v0.3.3" },
-  "one-time-tasks": { level: "internal", issue: 0, since: "v0.3.3" },
-  "security-check": { level: "internal", issue: 0, since: "v0.3.3" },
-  "mcp-tool-approval": { level: "internal", issue: 0, since: "v0.3.3" },
+  "advanced-connections": { level: "internal", issue: 6909, since: "v0.3.3" },
+  processes: { level: "internal", issue: 6910, since: "v0.3.3" },
+  "custom-avatars": { level: "experimental", issue: 6907, since: "v0.3.3" },
+  environments: { level: "internal", issue: 6911, since: "v0.3.3" },
+  hermes: { level: "internal", issue: 6912, since: "v0.3.3" },
+  "github-enterprise-hosts": {
+    level: "internal",
+    issue: 6913,
+    since: "v0.3.3",
+  },
+  dambledore: { level: "experimental", issue: 6908, since: "v0.3.3" },
+  damConnection: { level: "internal", issue: 6914, since: "v0.3.3" },
+  "chat-network-approvals": { level: "internal", issue: 6915, since: "v0.3.3" },
+  "one-time-tasks": { level: "internal", issue: 6916, since: "v0.3.3" },
+  "security-check": { level: "internal", issue: 6917, since: "v0.3.3" },
+  "mcp-tool-approval": { level: "internal", issue: 6918, since: "v0.3.3" },
 } satisfies Record<FeatureId, FeatureEntry>);
 
 /**
