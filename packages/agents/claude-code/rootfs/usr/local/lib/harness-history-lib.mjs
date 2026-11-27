@@ -328,6 +328,18 @@ function decodeOlder(cursor) {
     : null;
 }
 
+async function entryAt(handle, offset) {
+  const chunk = await readFully(handle, offset, CHUNK_BYTES);
+  const end = chunk.indexOf(10);
+  try {
+    return JSON.parse(
+      chunk.subarray(0, end === -1 ? chunk.length : end).toString("utf8"),
+    );
+  } catch {
+    return null;
+  }
+}
+
 async function messagesOfEntries(sdk, sessionId, entries) {
   return sdk.getSessionMessages(sessionId, {
     sessionStore: { append: async () => {}, load: async () => entries },
@@ -346,7 +358,9 @@ async function loadWindow(agent, sdk, { sessionId, frames, before }) {
     for (;;) {
       await reader.readChunk();
       if (reader.preserved)
-        return cursor === null ? null : { lines: [], older: null };
+        return cursor === null
+          ? null
+          : { before: await entryAt(handle, cursor.offset) };
       const parent = cursor && reader.located.get(cursor.parentUuid);
       const leaf = cursor
         ? parent && { uuid: cursor.parentUuid, offset: parent.offset }
@@ -384,6 +398,16 @@ async function loadWindow(agent, sdk, { sessionId, frames, before }) {
   }
 }
 
+function framesBefore(agent, sessionId, messages, entry) {
+  const names = new Set(
+    [entry?.uuid, entry && sourceUuidOf(entry)].filter(
+      (name) => typeof name === "string",
+    ),
+  );
+  const at = messages.findIndex((message) => names.has(message.uuid));
+  return at === -1 ? [] : framesOf(agent, sessionId, messages.slice(0, at));
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a Claude Code session's conversation as the
  * runtime replays it, read from the CLI's own transcript without starting the
@@ -397,11 +421,12 @@ async function loadWindow(agent, sdk, { sessionId, frames, before }) {
  * long session costs the same however long its transcript grew. The request
  * records the CLI writes after each model call are skipped unread, since they
  * hold no conversation and most of a long transcript is them. The SDK turns
- * the entries read into messages exactly as it turns the whole file. Paging
- * back ends at a compaction which kept a segment of the conversation from
- * before it, as the SDK's own read of a long file starts there; a newest part
- * that reaches such a compaction falls back to the whole read, since the kept
- * segment can sit anywhere earlier in the file.
+ * the entries read into messages exactly as it turns the whole file. A
+ * compaction that kept a segment of the conversation from before it relinks
+ * that segment, which can sit anywhere earlier in the file, so a part that
+ * reaches such a compaction is read whole: a newest part answers the whole
+ * read, and a page answers everything the whole read shows before the page's
+ * first message, with nothing older.
  */
 export async function loadHistory(input) {
   const { agent, sdk } = await modulesPromise;
@@ -413,7 +438,17 @@ export async function loadHistory(input) {
 
   if (windowed) {
     const window = await loadWindow(agent, sdk, input);
-    if (window !== null) return window;
+    if (window?.lines) return window;
+    if (window?.before !== undefined)
+      return {
+        lines: framesBefore(
+          agent,
+          sessionId,
+          await sdk.getSessionMessages(sessionId),
+          window.before,
+        ),
+        older: null,
+      };
     if (input.before !== undefined) return { lines: [], older: null };
   }
 

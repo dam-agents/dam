@@ -95,6 +95,53 @@ try {
   assert.deepEqual(short, { lines: whole, older: null });
 
   await assert.rejects(loadHistory({ sessionId: randomUUID(), frames: 40 }), /unknown session/);
+
+  // TEST_SCENARIO: an auto-compaction that kept the last turns before it. Claude Code relinks that kept segment between the summary and the turns after it, so paging back across the compaction must give what the whole read gives there, never an empty page that loses the turns before the cursor.
+  const compacted = randomUUID();
+  const kept = [];
+  parent = null;
+  const turnOf = (id, turn) => {
+    const promptId = randomUUID();
+    entryOf(id, "user", { role: "user", content: `question ${turn}` }, { promptId });
+    const first = parent;
+    lines.push(JSON.stringify({ type: "api-request", sessionId: id, params: { safeguards: [{ classifier_context: { prior_turn_context: "x".repeat(20_000) } }] } }));
+    const tool = `toolu_c${turn}`;
+    entryOf(id, "assistant", { id: `msg_c${turn}a`, role: "assistant", model: "claude-test", content: [{ type: "tool_use", id: tool, name: "Bash", input: { command: `echo ${turn}` } }] });
+    entryOf(id, "user", { role: "user", content: [{ type: "tool_result", tool_use_id: tool, content: `${turn}` }] }, { promptId });
+    entryOf(id, "assistant", { id: `msg_c${turn}b`, role: "assistant", model: "claude-test", content: [{ type: "text", text: `answer ${turn}` }] });
+    return first;
+  };
+  function entryOf(id, type, message, extra = {}) {
+    const uuid = randomUUID();
+    lines.push(JSON.stringify({ parentUuid: parent, isSidechain: false, type, message, uuid, timestamp: stamp(), sessionId: id, cwd, ...extra }));
+    parent = uuid;
+  }
+  lines.length = 0;
+  for (let turn = 0; turn < 80; turn++) {
+    const first = turnOf(compacted, turn);
+    if (turn >= 75) kept.push(first);
+  }
+  const keptTail = parent;
+  const boundary = randomUUID();
+  const summary = randomUUID();
+  lines.push(JSON.stringify({ parentUuid: null, logicalParentUuid: keptTail, isSidechain: false, type: "system", subtype: "compact_boundary", content: "Conversation compacted", uuid: boundary, timestamp: stamp(), sessionId: compacted, cwd, compactMetadata: { trigger: "auto", preTokens: 150000, preservedSegment: { headUuid: kept[0], anchorUuid: summary, tailUuid: keptTail } } }));
+  lines.push(JSON.stringify({ parentUuid: boundary, isSidechain: false, type: "user", isCompactSummary: true, isVisibleInTranscriptOnly: true, message: { role: "user", content: "This session continues from an earlier conversation." }, uuid: summary, timestamp: stamp(), sessionId: compacted, cwd }));
+  parent = summary;
+  for (let turn = 80; turn < 140; turn++) turnOf(compacted, turn);
+  writeFileSync(join(project, `${compacted}.jsonl`), lines.join("\n") + "\n");
+
+  const compactedWhole = await loadHistory(compacted);
+  assert.ok(compactedWhole.some((l) => l.includes("question 139")), "precondition: the whole read answers the turns after the compaction");
+  const compactedPages = [];
+  let page = await loadHistory({ sessionId: compacted, frames: 40 });
+  assert.ok(page.older !== null, "precondition: the newest window does not reach the compaction");
+  compactedPages.unshift(page.lines);
+  while (page.older !== null) {
+    page = await loadHistory({ sessionId: compacted, frames: 40, before: page.older });
+    assert.ok(page.lines.length > 0, "a page across the compaction came back empty");
+    compactedPages.unshift(page.lines);
+  }
+  assert.deepEqual(compactedPages.flat(), compactedWhole, "paging back across the compaction does not join into the whole read");
   console.log("claude-history-window: ok");
 } finally {
   rmSync(work, { recursive: true, force: true });

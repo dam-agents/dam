@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-11-25
+Last verified: 2026-11-27
 
 ## Session inside the machine
 
@@ -74,7 +74,7 @@ An image may declare a **session-history provider**: it fills the log with no ha
 A provider module runs in a worker thread that the runtime's entry point starts before the server loads, since its import takes most of a second on a machine.
 A provider may also read **windows** of the history: the newest part, or the part before a cursor it answered with.
 A cold load that opts into the tail then fills the log from the newest window alone, so opening a long Session costs the same however long its history grew, and its cut carries a cursor that pages the older part from the provider, window by window; a load without the opt-in first gets the part before the window, and a fill that keeps the conversation — a fork, a reset, the runtime's own — reads the history whole.
-Claude Code's provider reads its window from the end of the CLI's transcript, back along the conversation chain only as far as the window reaches, skipping the request records the CLI writes beside each model call; a window that reaches a compaction which kept an earlier segment falls back to the whole read.
+Claude Code's provider reads its window from the end of the CLI's transcript, back along the conversation chain only as far as the window reaches, skipping the request records the CLI writes beside each model call; a window that reaches a compaction which kept an earlier segment is read whole, since the kept segment can sit anywhere earlier in the file: the newest window answers the whole read, and a page answers what the whole read shows before the page, with nothing older.
 Resume is the better fit: the log already holds the history, so a harness that streams its replay only after answering the load would otherwise duplicate it.
 Otherwise, or on provider failure, the runtime's own `session/load` fills the log, reaching no client.
 Waiters are then served from the log; the UI also reads its newest tail as data, a window of the provider's when the log is cold, and renders it while the load engages the session.
