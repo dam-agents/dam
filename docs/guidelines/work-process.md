@@ -6,7 +6,7 @@ Proposed ideal — not a hard rule.
 2. **File issue** — `/file-issue`.
    Captures the problem statement.
 3. **Grill** — `/grill-me`.
-   Pressure-tests vocabulary and architecture against the project's docs and code.
+   Pressure-tests vocabulary and architecture against the project's docs and code, and puts the concepts the system already has before any new one.
 4. **Implement** — use `/typescript-engineering` for server-side TS work and `/react-ui-engineering` for UI work.
 
 ## Keep in mind
