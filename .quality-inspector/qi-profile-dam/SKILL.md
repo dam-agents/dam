@@ -61,10 +61,13 @@ Builds published before these accounts were added have only `qa-owner`; there an
   While waiting for an agent to stop, watch only that list: opening its chat starts it.
 - **Artifact** — a work product an agent or user publishes, shareable by link.
 - **Settings** — API keys, providers, connections, appearance, usage, schedules, about.
-- **DAM connection** — the connection that lets an agent act as its owner on the install; an account's own, made from an agent's Connections page once the experimental feature `damConnection` is on for it.
+- **Experimental features** and **Internal features** — the two levels of pre-release switches, each changing only the account's own flag.
+  *Experimental features* is a Settings tab every account sees while the install leaves it a switch: *Custom avatars* and the assistant.
+  *Internal features* is a page with no menu entry, opened only by its address, `/settings/internal`; it holds every other switch and the onboarding reset, and the install cannot pin what is on it.
+- **DAM connection** — the connection that lets an agent act as its owner on the install; an account's own, made from an agent's Connections page once the internal feature `damConnection` is on for it.
   Turning that switch off leaves every connection and grant working and only stops new ones being offered.
 - **Home** — what changed since the user last looked; agents, usage, spend.
-- **Tool-call approval** — an agent's call of an MCP connection's tool whose rule for that agent is *Ask* (experimental feature `mcp-tool-approval`; the rules are set per agent in the *Tool access* dialog, see the Slack Account below).
+- **Tool-call approval** — an agent's call of an MCP connection's tool whose rule for that agent is *Ask* (internal feature `mcp-tool-approval`; the rules are set per agent in the *Tool access* dialog, see the Slack Account below).
   A tool set to *Allow* passes at once, with no card; a tool set to *Block* is refused at once, and the agent's reply says the tool is blocked for this agent on that connection.
   It waits in the approvals bell and on Home as a card, in a toast headed *Wants to <action>* (such as *Wants to send a Slack message*) or *Wants to use <tool> on <connection>*, and, with `chat-network-approvals` on, as the same card in every open conversation of the agent.
   The card's title says who wants to do what where: *<Agent> wants to post in <#channel>*, *… reply in a thread in …*, *… schedule a post in …*, *… save a draft in …*, *… send a direct message to <name>*, and for any other tool *<Agent> wants to use <tool>*.
@@ -94,11 +97,11 @@ Builds published before these accounts were added have only `qa-owner`; there an
   Where the install has the shared CurveBender, its notice appears in the assistant's chat exactly as in any other agent's.
   The assistant marks **the person's first result** itself once it has actually got them one — a schedule set, an artifact made, a knowledge base saved — and that is what finishes their onboarding: the Get started checklist then counts the task for a schedule or an artifact as done, and the record keeps the kind, what it was and when.
   A knowledge base finishes no checklist item, because the checklist has none for one; the result is recorded all the same.
-  Experimental features ends with one **Onboarding progress** card — *Restarts your onboarding.
+  The Internal features page (`/settings/internal`, which no menu lists) ends with one **Onboarding progress** card — *Restarts your onboarding.
   Nothing in your account is deleted.* — and one button, the only onboarding reset there is: it asks first, locks every avatar again and starts the Get started checklist over, the assistant's own create task counting as done once its celebration has been dismissed — wait for it and click *Nice* before asserting the checklist, since until then the task is unlocked but unseen.
   For an account the assistant is on for it also gives them a first open in it: the greeting comes back, a Dammy the platform made is reused with its use forgotten, one that is gone is made again when the name is free, and the account is taken to the entry route.
   For an account it is off for the card does the checklist alone and leaves the account where it is.
-  The assistant can also run a weekly **security check** of the account's whole setup: the experimental feature `security-check`, off by default, whose row under Settings → Experimental features is labelled *Security advisory* and says that the assistant looks for security problems once a week, and that the person chooses how much it checks in the assistant's settings.
+  The assistant can also run a weekly **security check** of the account's whole setup: the internal feature `security-check`, off by default, whose row on the Internal features page (`/settings/internal`) is labelled *Security advisory* and says that the assistant looks for security problems once a week, and that the person chooses how much it checks in the assistant's settings.
   Switching it on adds an ordinary schedule named *Security advisory* to the assistant's schedules, and switching it off removes that schedule; an account with no assistant gets an error and the switch stays off.
   With the feature on, the General section of the assistant's settings, and of no other agent's, shows a *Security advisory* choice: *Off*, *Standard* and *Deep*, each with one short line; it starts at *Standard*, whose line says that the other agents do not run, *Off* removes the schedule, and only *Deep* lets the check run the other agents, which its line says costs what a run of each usually costs.
   When a check found something, the approvals bell shows one card under the assistant's name, headed *Your setup has N security problem(s)*, with one line per problem and a *Review in chat* button that opens the session of that check.
@@ -137,7 +140,7 @@ Builds published before these accounts were added have only `qa-owner`; there an
     A task that should post in Slack gets a thread of its own the same way: the root, then its link (`threadLink(root)`) in the task's prompt, then `botReplies(root)` for the agent's post — a post at the channel's top level would share one count with every other run's posts there and could be dropped.
     A Mock agent answers a Slack mention in the thread with its scripted reply, without a model.
   - **The Slack Account connection** is not a channel: it gives an agent its owner's own Slack, through Slack's sign-in (Settings → Connections → Slack Account).
-    With the experimental feature `mcp-tool-approval` off, its form asks what agents can do with it: **Read only**, the default, or **Can post as me**.
+    With the internal feature `mcp-tool-approval` off, its form asks what agents can do with it: **Read only**, the default, or **Can post as me**.
     Every row of the connection, also under an agent's **Connections**, says which in the line under its name (*Read only: …* or *Searches, reads and posts as you*), and one that can post also carries the red mark *Can post as me*; *Change access* in the row's menu switches between them for every agent that holds it.
     With *Read only* the platform refuses every Slack tool that posts or changes something, and the agent says so in its reply.
     With `mcp-tool-approval` on, access belongs to each agent instead, on every MCP connection with a credential (the Slack Account, a custom MCP server with OAuth or a header), and the connect forms ask nothing about it.

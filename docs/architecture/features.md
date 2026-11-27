@@ -1,22 +1,38 @@
-# Experimental features
+# Features
 
-Last verified: 2026-11-24
+Last verified: 2026-11-25
 
 ## Overview
 
-**Experimental features** are per-user toggles for pre-release surfaces.
-Every feature defaults **off**, except the assistant, which every person has on and can turn off; a user opts in through a hidden "Experimental features" settings tab (revealed by five taps on the version string).
-The tab also carries a button that resets the user's [onboarding progress](getting-started.md#in-the-browser).
-The current features are advanced connection types, the processes panel (a chat-view section listing what runs in the agent, what keeps it awake and what finished, with each process's output, a Stop per process and a keep switch per background process, the agent's Login items with their controls, and a header indicator that replaces the background-task one; see [agent-processes](agent-processes.md)), custom avatars (an emoji or an uploaded image as an Agent's avatar; see [agent-avatars](agent-avatars.md#custom-avatars)), Environments and kept sub-agents (sandboxes an agent creates for others to open, and sub-agents it keeps after their result to enter, run more work in and continue; see [environments](environments.md) and [invocations](invocations.md#outcomes)), the Hermes harness (Nous Research's Hermes Agent offered beside the other harnesses an agent's image carries), the install's own Connection ([connection presets](connection-presets.md#platform-preset-this-install-itself)), which lets an Agent act as its owner, GitHub Enterprise hosts (a host picker in the connect form, of the offered hosts or one with the user's own app, and a move between offered hosts; see [github-connections](github-connections.md#github-enterprise-hosts)), network approvals in the chat (an Agent's waiting network approvals above the message box of its open conversation, which otherwise wait in the approvals list and the notifications; see [security-and-credentials](security-and-credentials.md#hitl-ext_authz)), one-time tasks in the schedule form (its Repeat / Once choice and the one-time task editor; agents, the CLI and the API create one-time tasks whatever the flag says, and without it the schedules list shows one as a row that can only be deleted; see [schedules](schedules.md#one-time-schedules)), tool approval for MCP connections (each Agent's own tool access on an MCP Connection, allow, ask or block per tool, which the owner sets only with the flag on and which a new grant starts safe in; the gate reads a stored access whatever the flag says, though with the flag off nothing shows it; see [connections](connections.md#connection)), the assistant (the ordinary Agent the platform makes for a person under its brand's assistant name; see [assistant](assistant.md)), and the assistant's security check (a weekly scheduled run that reports what in the person's setup goes against the security advisory; see [assistant](assistant.md#the-security-check)).
+A **feature** is a per-user toggle for a pre-release surface.
+Every feature has a **level**, set in the contract beside its id.
+
+An **experimental feature** is one any person may try.
+The test is whether it is fine for a normal user to turn it on today.
+Its switch is under Settings › Experimental features, a tab everyone sees, and the install gives it a mode.
+The experimental features are custom avatars (an emoji or an uploaded image as an Agent's avatar; see [agent-avatars](agent-avatars.md#custom-avatars)) and the assistant (the ordinary Agent the platform makes for a person under its brand's assistant name; see [assistant](assistant.md)).
+
+An **internal feature** is one the team is still trying out, and most of them will not stay as they are.
+Its switch is on the Internal features page, which no navigation lists: only its address, `/settings/internal`, opens it.
+The page is hidden, not locked, so whoever knows the address may switch an internal feature on for themselves, on any install.
+The install has no say over an internal feature, which is what lets the team try one where real work happens.
+The page also carries a button that resets the user's [onboarding progress](getting-started.md#in-the-browser).
+The internal features are advanced connection types, the processes panel (a chat-view section listing what runs in the agent, what keeps it awake and what finished, with each process's output, a Stop per process and a keep switch per background process, the agent's Login items with their controls, and a header indicator that replaces the background-task one; see [agent-processes](agent-processes.md)), Environments and kept sub-agents (sandboxes an agent creates for others to open, and sub-agents it keeps after their result to enter, run more work in and continue; see [environments](environments.md) and [invocations](invocations.md#outcomes)), the Hermes harness (Nous Research's Hermes Agent offered beside the other harnesses an agent's image carries), the install's own Connection ([connection presets](connection-presets.md#platform-preset-this-install-itself)), which lets an Agent act as its owner, GitHub Enterprise hosts (a host picker in the connect form, of the offered hosts or one with the user's own app, and a move between offered hosts; see [github-connections](github-connections.md#github-enterprise-hosts)), network approvals in the chat (an Agent's waiting network approvals above the message box of its open conversation, which otherwise wait in the approvals list and the notifications; see [security-and-credentials](security-and-credentials.md#hitl-ext_authz)), one-time tasks in the schedule form (its Repeat / Once choice and the one-time task editor; agents, the CLI and the API create one-time tasks whatever the flag says, and without it the schedules list shows one as a row that can only be deleted; see [schedules](schedules.md#one-time-schedules)), tool approval for MCP connections (each Agent's own tool access on an MCP Connection, allow, ask or block per tool, which the owner sets only with the flag on and which a new grant starts safe in; the gate reads a stored access whatever the flag says, though with the flag off nothing shows it; see [connections](connections.md#connection)), and the assistant's security check (a weekly scheduled run that reports what in the person's setup goes against the security advisory; see [assistant](assistant.md#the-security-check)).
+
+Every feature defaults **off**, except the assistant, which every person has on and can turn off.
+A feature moves from internal to experimental by changing its level, and each user's stored choice stays.
 Graduating a feature to always-on is deletion: drop its id from the enum and its gates from the UI — stored rows for a dropped id are simply never read again (Knowledge Bases, the [starter kit](starter-kits.md) catalog, session costs, [agent avatars](agent-avatars.md), addressed credential injection, [interactive artifacts](artifact-library.md#interactive-pages), [agent telemetry](agent-telemetry.md) and [chat forms](chat-forms.md) graduated this way).
 A graduation may also add a migration that deletes the dropped id's rows, so no stored choice outlives the feature; interactive artifacts, agent telemetry and chat forms did.
 
-An operator can take a feature out of users' hands: the chart's `features` value gives each feature a mode, `experimental` leaving the per-user switch, `on` or `off` deciding for every user whatever they stored.
-A feature `features` does not name takes the chart's `featureDefault` mode, `experimental` unless set.
-The chart names no feature itself, so an install that sets `featureDefault` to `off` keeps every feature off, including one a later release adds, until it names that feature.
-A pinned feature's switch is hidden from the settings tab, and the api-server answers its flag from the mode, so every surface that reads flags — the UI and agent surfaces alike — sees the same answer.
-Stored rows are kept, so returning a feature to `experimental` restores each user's own choice.
-One feature is **on by default** — the [assistant](assistant.md) — so in `experimental` a person who has stored nothing has it on, and their switch turns it off; every other feature is off until switched on.
+An operator can take an experimental feature out of users' hands: the chart's `features` value gives each one a mode, `user` leaving the per-user switch, `on` or `off` deciding for every user whatever they stored.
+An experimental feature `features` does not name takes the chart's `featureDefault` mode, `user` unless set.
+The chart names no feature itself, so an install that sets `featureDefault` to `off` keeps every experimental feature off, including one a later release adds, until it names that feature.
+`experimental` is the old name of the `user` mode, and values that still say it mean the same.
+A pinned feature's switch is hidden from the settings tab, the tab itself hides while it has no switch to offer, and the api-server answers the flag from the mode, so every surface that reads flags — the UI and agent surfaces alike — sees the same answer.
+Stored rows are kept, so returning a feature to `user` restores each user's own choice.
+Values that name an internal feature fail the install, at the chart's render and again when the api-server starts, so an operator never trusts a pin that does nothing.
+An internal feature always reads as the `user` mode.
+One feature is **on by default** — the [assistant](assistant.md) — so in `user` a person who has stored nothing has it on, and their switch turns it off; every other feature is off until switched on.
 
 Flags are stored server-side, per user, in Postgres — not in the browser.
 That is deliberate: feature surfaces are not necessarily UI-only.
@@ -50,7 +66,7 @@ It controls where a feature *appears*:
 
 What none of these do is **gate an endpoint**: the feature's tRPC procedures remain callable by the authenticated owner regardless of the flag, and a flagged-off client that calls one gets a valid, owner-scoped answer rather than a refusal.
 Every endpoint is owner-scoped and safe on its own terms — a flag decides what is shown and what is computed, it is not a security boundary.
-Two features refuse with the flag off.
+Two internal features refuse with the flag off, for that person alone; no install mode stands behind the refusal.
 `damConnection` refuses its own create and its grants, because they make the Connection that acts as the owner and hand it to an Agent.
 `mcp-tool-approval` refuses a tool mode that asks and any change of one Agent's tool access, and it also decides whether a new grant stores a tool access of its own and whether a client is shown one ([connections](connections.md#connection)).
 Anything else that must actually be denied is enforced by auth and owner scoping, never by a flag check.
@@ -62,6 +78,6 @@ Anything else that must actually be denied is enforced by auth and owner scoping
 
 ## Where the code lives
 
-- Contract (feature ids, tRPC router): [`packages/api-server-api/src/modules/features/`](../../packages/api-server-api/src/modules/features/)
+- Contract (feature ids, levels, modes, tRPC router): [`packages/api-server-api/src/modules/features/`](../../packages/api-server-api/src/modules/features/)
 - Implementation (service, repository): [`packages/api-server/src/modules/features/`](../../packages/api-server/src/modules/features/)
-- Hidden settings tab: [`packages/ui/src/modules/settings/`](../../packages/ui/src/modules/settings/)
+- The two settings pages: [`packages/ui/src/modules/features/`](../../packages/ui/src/modules/features/)

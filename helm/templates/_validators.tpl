@@ -88,16 +88,45 @@ exists only with clickstack.enabled.
 {{- end -}}
 
 {{/*
-The api-server refuses to start on a feature mode it cannot read.
+The api-server refuses to start on a feature mode it cannot read, and on a mode
+for an internal feature: each person's own switch decides those, so a mode
+would do nothing and the operator would not know.
 */}}
 {{- define "platform.validate.featureModes" -}}
+{{- $internal := include "platform.internalFeatures" . | fromJsonArray -}}
 {{- range $id, $mode := fromJson (include "platform.featureModes" $) -}}
-{{- if not (has $mode (list "off" "experimental" "on")) -}}
-{{- fail (printf "features.%s must be off, experimental or on, got %v." $id $mode) -}}
+{{- if has $id $internal -}}
+{{- fail (printf "features.%s: %s is an internal feature, which an install cannot set. Remove it from features." $id $id) -}}
+{{- end -}}
+{{- if not (has $mode (list "off" "user" "on")) -}}
+{{- fail (printf "features.%s must be off, user or on, got %v." $id $mode) -}}
 {{- end -}}
 {{- end -}}
-{{- if not (has (include "platform.featureDefault" .) (list "off" "experimental" "on")) -}}
-{{- fail (printf "featureDefault must be off, experimental or on, got %v." .Values.featureDefault) -}}
+{{- if not (has (include "platform.featureDefault" .) (list "off" "user" "on")) -}}
+{{- fail (printf "featureDefault must be off, user or on, got %v." .Values.featureDefault) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The internal features, as the api-server's contract lists them
+(packages/api-server-api/src/modules/features/modes.ts).
+*/}}
+{{- define "platform.internalFeatures" -}}
+{{- list "advanced-connections" "processes" "environments" "hermes" "github-enterprise-hosts" "damConnection" "chat-network-approvals" "one-time-tasks" "security-check" "mcp-tool-approval" | toJson -}}
+{{- end -}}
+
+{{/*
+One feature mode as written. YAML 1.1 reads an unquoted on/off as a boolean, so
+a boolean is taken as the mode it was written as. `experimental` is the old
+name of `user`.
+*/}}
+{{- define "platform.featureMode" -}}
+{{- if kindIs "bool" . -}}
+{{- ternary "on" "off" . -}}
+{{- else if eq (toString .) "experimental" -}}
+user
+{{- else -}}
+{{- . -}}
 {{- end -}}
 {{- end -}}
 
@@ -107,9 +136,9 @@ The api-server refuses to start on a feature mode it cannot read.
 {{- define "platform.featureDefault" -}}
 {{- $mode := .Values.featureDefault -}}
 {{- if kindIs "bool" $mode -}}
-{{- ternary "on" "off" $mode -}}
+{{- include "platform.featureMode" $mode -}}
 {{- else -}}
-{{- $mode | default "experimental" -}}
+{{- include "platform.featureMode" ($mode | default "user") -}}
 {{- end -}}
 {{- end -}}
 
@@ -127,17 +156,12 @@ mode: an unquoted `off` arrives as `false`, which `default` would take as unset.
 {{- end -}}
 
 {{/*
-`features` as JSON. YAML 1.1 reads an unquoted on/off as a boolean, so a
-boolean is taken as the mode it was written as.
+`features` as JSON, each mode read by `platform.featureMode`.
 */}}
 {{- define "platform.featureModes" -}}
 {{- $modes := dict -}}
 {{- range $id, $mode := .Values.features | default dict -}}
-{{- if kindIs "bool" $mode -}}
-{{- $_ := set $modes $id (ternary "on" "off" $mode) -}}
-{{- else -}}
-{{- $_ := set $modes $id $mode -}}
-{{- end -}}
+{{- $_ := set $modes $id (include "platform.featureMode" $mode) -}}
 {{- end -}}
 {{- toJson $modes -}}
 {{- end -}}

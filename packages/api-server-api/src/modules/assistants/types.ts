@@ -62,7 +62,7 @@ export interface AssistantsService {
   ): Promise<AssistantFirstResult | null>;
   /**
    * UNIT_BOUNDARY_DESCRIPTION: the person's one onboarding reset, which Settings ›
-   * Experimental features offers as a single button. The Get started checklist
+   * Internal features offers as a single button. The Get started checklist
    * starts over — every avatar locked again — and when the feature is on for them
    * the assistant counts as never used again, so the first landing and the
    * greeting come back, with an assistant they deleted made again when the name is

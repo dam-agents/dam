@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The words of the security check. Its Experimental features row
+// TEST_OVERVIEW: The words of the security check. Its Internal features row
 // TEST_OVERVIEW: names the install's assistant from the brand and says where the
 // TEST_OVERVIEW: person chooses how much a check does. The levels say in a few
 // TEST_OVERVIEW: plain words what each one runs, and only the top one says that
@@ -30,7 +30,7 @@ const brand = {
   },
 };
 
-describe("the security check's row in Experimental features", () => {
+describe("the security check's row in Internal features", () => {
   // TEST_SCENARIO: the row is the `security-check` feature. It tells the person what the assistant does once a week, and that the level is in the assistant's own settings.
   it("says who runs the check and where its level is chosen", () => {
     const row = securityCheckFeatureRow(brand);

@@ -15,8 +15,8 @@ An Agent they made under the name is never adopted as the assistant either — i
 
 ## Provisioning
 
-The install decides whether people get one at all through the `dambledore` [feature](features.md), which follows the chart's `featureDefault` like every other feature and is named only when an install wants another answer: `off` gives nobody one, `experimental` leaves the person's switch, and `on` gives one to everyone.
-It is the one feature **on by default** (rollout, 2026-11-10): in `experimental` a person who has stored no choice gets one, and their switch in Settings › Experimental features turns it off.
+The install decides whether people get one at all through the `dambledore` [feature](features.md), which follows the chart's `featureDefault` like every other feature and is named only when an install wants another answer: `off` gives nobody one, `user` leaves the person's switch, and `on` gives one to everyone.
+It is the one feature **on by default** (rollout, 2026-11-10): in `user` a person who has stored no choice gets one, and their switch in Settings › Experimental features turns it off.
 So an existing account gets one at its next request, as a new one does — the switch is the way to decline, not to ask.
 Until a person has it on, nothing of theirs exists: no record, no Agent, no provisioning.
 Turning the mode or the flag off later deletes nothing — the Agent stays in their list, theirs to use and to delete — and only hides the greeting, the landing and the reset ([where it appears](#where-it-appears)).
@@ -128,7 +128,7 @@ It never offers to read the person's Slack: it reads only what the person sends 
 
 ## Starting it over
 
-Experimental features ends with one **Onboarding progress** card, one button and one confirm: it restarts the person's [Getting Started](getting-started.md) checklist and, for a person the feature is on for, gives them a first open in their assistant too.
+The hidden Internal features page ([features](features.md)) ends with one **Onboarding progress** card, one button and one confirm: it restarts the person's [Getting Started](getting-started.md) checklist and, for a person the feature is on for, gives them a first open in their assistant too.
 There is no second button, and the reset is not refused for anyone: a person the feature is off for gets the checklist alone, and the assistant, its record and its use are left as they were.
 It is the person's own reset, scoped to the caller.
 Nothing is deleted — not the assistant, its sessions or its files.

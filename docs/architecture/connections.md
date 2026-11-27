@@ -63,7 +63,7 @@ They can change later without re-entering the credential, unless one also decide
 #### Internal-only templates
 
 Some templates (Spotify, YouTube, Google services, and the custom client-credentials shape) are hidden from regular users client-side, affecting only what's offered (wherever the catalog is browsed), not Connections already created.
-Testers reveal the full catalog by enabling the *advanced connections* per-user experimental feature flag — see [features](features.md).
+Testers reveal the full catalog by enabling the *advanced connections* per-user internal feature flag — see [features](features.md).
 The install's own [DAM Connection](connection-presets.md#platform-preset-this-install-itself) is offered only to a person whose own flag says so, because only the platform mints its credential: with the flag off the catalog hides it and no grant of it is accepted, while a Connection already made keeps working.
 The GitHub App templates are offered to everyone, grouped with the other GitHub auth methods.
 
@@ -140,7 +140,7 @@ It reads the list when the credential first works, at create or at the OAuth cal
 A list that fails keeps the tools read before and stores why, for the owner to see, and never fails the create or the update.
 A Template may declare its own read list, as the Slack Account does, and that list wins over the server's hints, in the stored list and at the gate.
 
-With the `mcp-tool-approval` [experimental feature](features.md) on for the owner, a new grant starts safe: each group takes the stricter rule of the safe start and of the Connection's mode, so a grant never starts looser than the mode the owner chose.
+With the `mcp-tool-approval` [internal feature](features.md) on for the owner, a new grant starts safe: each group takes the stricter rule of the safe start and of the Connection's mode, so a grant never starts looser than the mode the owner chose.
 The safe start is read only where the Template's default is read only, as on the Slack Account, else the read tools allowed and every other tool asking.
 Every path that grants does so, and a grant that is new when the grants are written always gets it, also one that another request revoked just before; a grant that already exists keeps its own when the Agent's grants are written again.
 A sub-agent that takes its connections from its Driver, all of them or a list, starts each new grant of such a Connection with what the Driver's grant stores, or with nothing where it stores nothing, so both follow the mode; a Connection the Driver does not hold gets the safe start ([invocations](invocations.md)).

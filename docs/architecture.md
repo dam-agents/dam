@@ -93,7 +93,7 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [chat-forms](architecture/chat-forms.md) — agents put A2UI forms, choices and cards into chat replies, rendered with the app's own components.
 - [case-studies](architecture/case-studies.md) — agents write sanitized weekly accounts of their own use case: the skill that produces them, and the edition store the owner releases them from.
 - [getting-started](architecture/getting-started.md) — a per-user first-run checklist; each task done unlocks an avatar.
-- [features](architecture/features.md) — per-user experimental-feature flags: server-stored, default off, gating pre-release surfaces (progressive disclosure, not authorization).
+- [features](architecture/features.md) — per-user feature flags, experimental or internal: server-stored, default off, gating pre-release surfaces (progressive disclosure, not authorization).
 - [usage-tracking](architecture/usage-tracking.md) — append-only activity log in Postgres, SQL views as the read interface, HMAC-pseudonymized identifiers, the inspector-gated analytics dashboard.
 - [agent-telemetry](architecture/agent-telemetry.md) — the user-facing read path over raw agent traces and log records, scoped to the agents you own.
 - [metrics](architecture/metrics.md) — the user-facing spend read path behind the global and per-agent Usage surfaces: how much the agents you own have spent.

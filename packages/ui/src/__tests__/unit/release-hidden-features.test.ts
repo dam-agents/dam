@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: two surfaces stay behind experimental features, off by default. With chat-network-approvals off, an agent's waiting network approval does not show above the message box of its open conversation; with it on, it does. With one-time-tasks off, the schedule form offers no Repeat / Once choice and opens the recurring form, and a one-time task an agent or the API made stays in the list as a row whose editor never opens; with it on, the choice is back and a pending one-time task opens in its own editor.
+// TEST_OVERVIEW: two surfaces stay behind internal features, off by default. With chat-network-approvals off, an agent's waiting network approval does not show above the message box of its open conversation; with it on, it does. With one-time-tasks off, the schedule form offers no Repeat / Once choice and opens the recurring form, and a one-time task an agent or the API made stays in the list as a row whose editor never opens; with it on, the choice is back and a pending one-time task opens in its own editor.
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -128,7 +128,7 @@ describe("network approvals in the chat", () => {
     expect(byTestId("chat-egress-approval")).toBeNull();
   });
 
-  // TEST_SCENARIO: a person who turned it on in Experimental features answers the approval in the chat.
+  // TEST_SCENARIO: a person who turned it on in Internal features answers the approval in the chat.
   it("shows the waiting approval above the message box with the feature on", () => {
     fake.flags = { "chat-network-approvals": true };
     renderChatInput();

@@ -1311,11 +1311,11 @@ export async function bootstrap() {
     },
   });
   const featuresRepo = createFeaturesRepository(db);
-  /* UNIT_BOUNDARY_DESCRIPTION: whether an owner is offered the Connection that drives this install, for every composition root that needs it — the per-request one in the tRPC context, and this one, which feeds the harness grant provisioner and so an Agent that spawns another: the install's mode decides, and in `experimental` the person's own switch. */
+  /* UNIT_BOUNDARY_DESCRIPTION: whether an owner is offered the Connection that drives this install, for every composition root that needs it — the per-request one in the tRPC context, and this one, which feeds the harness grant provisioner and so an Agent that spawns another: the install's mode decides, and in `user` the person's own switch. */
   const damConnectionOfferedFor = async (ownerId: string): Promise<boolean> => {
     const mode = config.featureModes.damConnection;
     if (mode === "on") return true;
-    if (mode !== "experimental") return false;
+    if (mode !== "user") return false;
     const stored = await featuresRepo.listEnabled(ownerId);
     return stored.damConnection === true;
   };
@@ -1323,7 +1323,7 @@ export async function bootstrap() {
   const toolApprovalOfferedFor = async (ownerId: string): Promise<boolean> => {
     const mode = config.featureModes["mcp-tool-approval"];
     if (mode === "on") return true;
-    if (mode !== "experimental") return false;
+    if (mode !== "user") return false;
     const stored = await featuresRepo.listEnabled(ownerId);
     return stored["mcp-tool-approval"] === true;
   };

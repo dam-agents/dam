@@ -135,7 +135,7 @@ function world(
       owner: OWNER,
       repo,
       assistantName: "Ada",
-      mode: opts.mode ?? "experimental",
+      mode: opts.mode ?? "user",
       enabled: async () => opts.enabled ?? true,
       assistantAgentId: async () =>
         state.assistant === undefined ? "agent-ada" : state.assistant,

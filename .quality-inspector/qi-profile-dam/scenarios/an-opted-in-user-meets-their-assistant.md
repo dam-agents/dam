@@ -74,7 +74,7 @@ Then the *Onboarding progress* card at the bottom of the tab still offers its re
 ## AC-6 — the Onboarding progress card takes the account back to a first open
 
 Given that account with the assistant used, and the Switch on
-When the owner clicks *Reset onboarding progress* on the *Onboarding progress* card at the bottom of Experimental features
+When the owner clicks *Reset onboarding progress* on the *Onboarding progress* card at the bottom of the Internal features page (`/settings/internal`), not Experimental features
 Then one confirm asks first, saying that every avatar locks again, that agents keep theirs and that nothing in the account is deleted
 When they confirm
 Then the app goes to its entry route and lands them in Dammy's chat, which opens on the greeting again

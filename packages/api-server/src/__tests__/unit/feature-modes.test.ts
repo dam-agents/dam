@@ -1,42 +1,46 @@
+import { readFileSync } from "node:fs";
+
+import { featuresOfLevel } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import { createFeaturesService } from "../../modules/features/services/features-service.js";
 
 /**
- * TEST_OVERVIEW: The chart's per-feature mode decides a flag for every user when it is on or off, and leaves the user's stored choice in force when it is experimental — where a feature on by default, the assistant, reads as on until the person stores that they do not want it.
+ * TEST_OVERVIEW: The chart's per-feature mode decides a flag for every user when it is on or off, and leaves the user's stored choice in force when it is `user` — where a feature on by default, the assistant, reads as on until the person stores that they do not want it.
  */
 describe("feature modes", () => {
   // TEST_SCENARIO: a user has opted into two features and out of none; the install pins one of them off and an untouched one on.
-  it("pins on and off over the stored choice, and leaves experimental to the user", async () => {
+  it("pins on and off over the stored choice, and leaves the user mode to the user", async () => {
     const service = createFeaturesService({
       repo: {
         listEnabled: () =>
           Promise.resolve({
             processes: true,
-            hermes: true,
+            dambledore: true,
           }),
         upsert: () => Promise.resolve(),
       },
       owner: "u",
       surface: "test",
       modes: {
-        processes: "off",
-        "advanced-connections": "experimental",
-        "custom-avatars": "experimental",
-        environments: "experimental",
-        hermes: "experimental",
-        "github-enterprise-hosts": "experimental",
-        damConnection: "experimental",
-        dambledore: "experimental",
-        "chat-network-approvals": "experimental",
-        "one-time-tasks": "experimental",
-        "security-check": "experimental",
-        "mcp-tool-approval": "experimental",
+        processes: "user",
+        "advanced-connections": "user",
+        "custom-avatars": "on",
+        environments: "user",
+        hermes: "user",
+        "github-enterprise-hosts": "user",
+        damConnection: "user",
+        dambledore: "off",
+        "chat-network-approvals": "user",
+        "one-time-tasks": "user",
+        "security-check": "user",
+        "mcp-tool-approval": "user",
       },
     });
     expect(await service.flags()).toMatchObject({
-      processes: false,
-      hermes: true,
+      processes: true,
+      dambledore: false,
+      "custom-avatars": true,
       "advanced-connections": false,
     });
   });
@@ -52,18 +56,18 @@ describe("feature modes", () => {
         owner: "u",
         surface: "test",
         modes: {
-          processes: "experimental",
-          "advanced-connections": "experimental",
-          "custom-avatars": "experimental",
-          "github-enterprise-hosts": "experimental",
-          environments: "experimental",
-          hermes: "experimental",
-          dambledore: "experimental",
-          damConnection: "experimental",
-          "chat-network-approvals": "experimental",
-          "one-time-tasks": "experimental",
-          "security-check": "experimental",
-          "mcp-tool-approval": "experimental",
+          processes: "user",
+          "advanced-connections": "user",
+          "custom-avatars": "user",
+          "github-enterprise-hosts": "user",
+          environments: "user",
+          hermes: "user",
+          dambledore: "user",
+          damConnection: "user",
+          "chat-network-approvals": "user",
+          "one-time-tasks": "user",
+          "security-check": "user",
+          "mcp-tool-approval": "user",
         },
       }).flags();
     expect(await flags({})).toMatchObject({
@@ -77,5 +81,20 @@ describe("feature modes", () => {
     expect(await flags({ dambledore: true })).toMatchObject({
       dambledore: true,
     });
+  });
+
+  // TEST_SCENARIO: the chart refuses values that name an internal feature, before the api-server would. It keeps its own list of them, which must name the same features as the contract, or a pin of a new internal feature would pass the render and stop the api-server.
+  it("has the chart refuse the same internal features as the contract", () => {
+    const chart = readFileSync(
+      new URL("../../../../../helm/templates/_validators.tpl", import.meta.url),
+      "utf8",
+    );
+    const listed =
+      /define "platform\.internalFeatures" -}}\n{{- list (.+?) \| toJson/.exec(
+        chart,
+      );
+    expect(
+      listed?.[1].split(" ").map((id) => JSON.parse(id) as string),
+    ).toEqual(featuresOfLevel("internal"));
   });
 });

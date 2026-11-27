@@ -18,7 +18,7 @@ import { runResetOnboarding } from "../lib/reset-onboarding.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The one onboarding reset, the card at the bottom of
- * Settings › Experimental features: it asks first, and on confirm it restarts the
+ * Settings › Internal features: it asks first, and on confirm it restarts the
  * Get started checklist and, for a person the assistant is on for, gives them a
  * first open in it — then releases the one-time landing and goes to the entry
  * route, so the same first-open logic a new person meets decides on fresh answers

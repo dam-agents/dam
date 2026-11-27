@@ -15,7 +15,9 @@ export const featureIdSchema = z.enum([
   "mcp-tool-approval",
 ]);
 
-export const featureModeSchema = z.enum(["off", "experimental", "on"]);
+export const featureLevelSchema = z.enum(["internal", "experimental"]);
+
+export const featureModeSchema = z.enum(["off", "user", "on"]);
 
 export const featureSetFlagInputSchema = z.object({
   feature: featureIdSchema,

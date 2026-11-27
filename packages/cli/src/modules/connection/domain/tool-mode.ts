@@ -10,7 +10,7 @@ export const TOOL_MODE_FLAG_HINT = `--mode takes ${TOOL_MODES.join(", ")}`;
 
 export const LATER_GRANT_HELP =
   "\nAn agent granted the connection later gets the mode too, while tool access\n" +
-  "per agent is off. With it on (an experimental feature), a new agent starts\n" +
+  "per agent is off. With it on (an internal feature), a new agent starts\n" +
   "with the stricter of the mode and the safe start instead. The safe start\n" +
   "allows reads and blocks writes on a Slack Account, and allows reads and asks\n" +
   "before writes on any other MCP server. `dam connection grant` prints what\n" +

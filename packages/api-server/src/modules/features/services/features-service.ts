@@ -23,7 +23,7 @@ export function createFeaturesService(deps: {
         const mode = deps.modes[id];
         return [
           id,
-          mode === "experimental"
+          mode === "user"
             ? (stored[id] ?? FEATURES_ON_BY_DEFAULT.has(id))
             : mode === "on",
         ];
