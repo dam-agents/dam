@@ -148,8 +148,8 @@ export const t = {
   ...tBase,
   procedure: tBase.procedure
     .use(({ path, type, next }) => withTrpcTelemetry(path, type, next))
-    .use(limitAgentCallers)
     .use(rejectOversizedArrays)
     .use(mapPgErrors)
+    .use(limitAgentCallers)
     .use(requireTermsAccepted),
 };

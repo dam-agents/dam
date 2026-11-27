@@ -22,7 +22,7 @@ const router = t.router({
 });
 
 function caller() {
-  const ctx = {} as ApiContext;
+  const ctx = { user: { sub: "owner-1" } } as ApiContext;
   markTermsProven(ctx);
   return { call: t.createCallerFactory(router)(ctx), ctx };
 }

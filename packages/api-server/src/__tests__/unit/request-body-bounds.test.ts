@@ -45,7 +45,7 @@ async function userTrpc() {
     createTrpcHttpRoutes({
       composeApiContext: async () => {
         composed.count++;
-        return {} as ApiContext;
+        return { user: { sub: "owner-1" } } as ApiContext;
       },
     }),
   );
