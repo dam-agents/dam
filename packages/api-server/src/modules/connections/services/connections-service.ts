@@ -593,7 +593,7 @@ export function createConnectionsService(deps: {
       throw new TRPCError({
         code: "FORBIDDEN",
         message:
-          "Approval of each tool call is an experimental feature that is off for you, so this connection cannot be set to need approval.",
+          "Approval of each tool call is an internal feature that is off for you, so this connection cannot be set to need approval.",
       });
     }
   }
@@ -3486,7 +3486,7 @@ export function createConnectionsService(deps: {
         throw new TRPCError({
           code: "FORBIDDEN",
           message:
-            "Tool access for each agent is an experimental feature that is off for you, so it cannot be set.",
+            "Tool access for each agent is an internal feature that is off for you, so it cannot be set.",
         });
       }
       if (!mcpServerOf(conn)) {

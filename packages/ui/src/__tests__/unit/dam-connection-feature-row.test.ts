@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The Experimental features row that offers the Connection letting
+// TEST_OVERVIEW: The Internal features row that offers the Connection letting
 // TEST_OVERVIEW: an agent act as its owner: its own switch beside the assistant's,
 // TEST_OVERVIEW: named by the install's brand, and saying what turning it off does
 // TEST_OVERVIEW: — nothing already made stops working.
@@ -22,7 +22,7 @@ const brand = {
   },
 };
 
-describe("the connection row in Experimental features", () => {
+describe("the connection row in Internal features", () => {
   // TEST_SCENARIO: the row is the `damConnection` feature, and both its sentences name the install rather than anything hardcoded.
   it("reads as its own switch, in the install's words", () => {
     expect(damConnectionFeatureRow(brand)).toEqual({

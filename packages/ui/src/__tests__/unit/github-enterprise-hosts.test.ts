@@ -437,7 +437,7 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
     expect(document.body.textContent).not.toContain("Required");
   });
 
-  // TEST_SCENARIO: with the experimental feature off the form keeps the free-text host field it always had.
+  // TEST_SCENARIO: with the internal feature off the form keeps the free-text host field it always had.
   it("keeps the free-text host field with the feature off", () => {
     act(() =>
       root.render(
@@ -471,7 +471,7 @@ describe("a sign-in on a retired host", RENDER_TIMEOUT, () => {
     expect(onMoveHost).toHaveBeenCalledOnce();
   });
 
-  // TEST_SCENARIO: retiring a host is the operator's act, not a feature a user opted into; with the experimental feature off a sign-in on a retired host must still offer the move, while a working sign-in only offers it with the feature on.
+  // TEST_SCENARIO: retiring a host is the operator's act, not a feature a user opted into; with the internal feature off a sign-in on a retired host must still offer the move, while a working sign-in only offers it with the feature on.
   it("offers the move on a retired host with the feature off", () => {
     let actions: ReturnType<
       ReturnType<typeof useConnectionMaintenance>["rowActions"]

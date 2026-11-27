@@ -2,8 +2,10 @@ import {
   type FeatureId,
   type FeatureMode,
   brandSchema,
+  FEATURE_LEVELS,
   featureIdSchema,
   featureModeSchema,
+  featuresOfLevel,
   harnessCatalogConfigSchema,
   linksSchema,
   PROVIDER_TEMPLATE_IDS,
@@ -40,7 +42,13 @@ const positiveQuantitySchema = z
     message: "must be a positive quantity",
   });
 
-// UNIT_BOUNDARY_DESCRIPTION: the chart's per-feature mode, with every feature it does not name read as the chart's default mode. An id the api-server no longer knows is ignored rather than refused, so values that still name a graduated feature keep the install starting.
+// UNIT_BOUNDARY_DESCRIPTION: one mode as the chart writes it. The per-user mode was named `experimental` before features had levels, and values that still say so mean `user`.
+const installFeatureModeSchema = z.preprocess(
+  (mode) => (mode === "experimental" ? "user" : mode),
+  featureModeSchema,
+);
+
+// UNIT_BOUNDARY_DESCRIPTION: the chart's mode for each experimental feature, with every one it does not name read as the chart's default mode. An internal feature takes no mode from the install: each person's own switch decides it, so it always reads `user`, and values that name one are refused, so a pin that would do nothing is noticed. An id the api-server no longer knows is ignored rather than refused, so values that still name a graduated feature keep the install starting.
 const featureModesSchema = z
   .object({
     named: z
@@ -54,15 +62,24 @@ const featureModesSchema = z
           return z.NEVER;
         }
       })
-      .pipe(z.record(z.string(), featureModeSchema)),
-    fallback: featureModeSchema.default("experimental"),
+      .pipe(z.record(z.string(), installFeatureModeSchema)),
+    fallback: installFeatureModeSchema.default("user"),
   })
-  .transform(
-    ({ named, fallback }) =>
-      Object.fromEntries(
-        featureIdSchema.options.map((id) => [id, named[id] ?? fallback]),
-      ) as Record<FeatureId, FeatureMode>,
-  );
+  .transform(({ named, fallback }, ctx) => {
+    for (const id of featuresOfLevel("internal"))
+      if (named[id] !== undefined)
+        ctx.addIssue({
+          code: "custom",
+          path: ["named", id],
+          message: `${id} is an internal feature, which the install cannot set. Remove it from features.`,
+        });
+    return Object.fromEntries(
+      featureIdSchema.options.map((id) => [
+        id,
+        FEATURE_LEVELS[id] === "internal" ? "user" : (named[id] ?? fallback),
+      ]),
+    ) as Record<FeatureId, FeatureMode>;
+  });
 
 // UNIT_BOUNDARY_DESCRIPTION: the chart's extra GitHub Enterprise hosts, each with the app registered on it, and the hosts it retired. A user picks one of the hosts when connecting; a retired host's connections read disconnected.
 const gheHostsSchema = z

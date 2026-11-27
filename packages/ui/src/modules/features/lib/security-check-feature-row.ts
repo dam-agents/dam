@@ -1,7 +1,7 @@
 import type { Brand, FeatureId } from "api-server-api";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the Experimental features row that offers the
+ * UNIT_BOUNDARY_DESCRIPTION: the Internal features row that offers the
  * weekly security check. It says in a few plain words who runs the check
  * and where the person chooses how much a check does, which is the
  * assistant's own settings and not this tab. The assistant's name comes

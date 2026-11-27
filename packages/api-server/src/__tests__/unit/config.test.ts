@@ -194,14 +194,14 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     });
   });
 
-  // TEST_SCENARIO: an operator sets the install's default mode off and pins one feature on. Every feature the chart does not name takes the default; without a default each unnamed feature stays experimental.
+  // TEST_SCENARIO: an operator sets the install's default mode off and pins one feature on. Every feature the chart does not name takes the default; without a default each unnamed feature is left to each user.
   it("reads every feature the chart does not name as the default mode", () => {
-    expect(loadConfig().featureModes.processes).toBe("experimental");
+    expect(loadConfig().featureModes["custom-avatars"]).toBe("user");
     process.env.FEATURE_DEFAULT_MODE = "off";
-    process.env.FEATURE_MODES = JSON.stringify({ processes: "on" });
+    process.env.FEATURE_MODES = JSON.stringify({ "custom-avatars": "on" });
     expect(loadConfig().featureModes).toMatchObject({
-      processes: "on",
-      "custom-avatars": "off",
+      "custom-avatars": "on",
+      dambledore: "off",
     });
   });
 
@@ -209,11 +209,34 @@ describe("agentsInstallSettings — what every agents module is built with", () 
   it("ignores a feature the chart names after it graduated", () => {
     process.env.FEATURE_MODES = JSON.stringify({
       "chat-forms": "off",
-      processes: "on",
+      "custom-avatars": "on",
     });
     const modes = loadConfig().featureModes;
     expect(modes).not.toHaveProperty("chat-forms");
-    expect(modes.processes).toBe("on");
+    expect(modes["custom-avatars"]).toBe("on");
+  });
+
+  // TEST_SCENARIO: an internal feature is each person's own to switch, whatever the install says. The install's default mode does not reach it, and values that name one are refused, so an operator does not believe in a pin that does nothing.
+  it("leaves an internal feature to each user and refuses a mode for one", () => {
+    process.env.FEATURE_DEFAULT_MODE = "off";
+    expect(loadConfig().featureModes).toMatchObject({
+      environments: "user",
+      "custom-avatars": "off",
+    });
+    process.env.FEATURE_MODES = JSON.stringify({ environments: "off" });
+    expect(() => loadConfig()).toThrow(/environments is an internal feature/);
+  });
+
+  // TEST_SCENARIO: the per-user mode was named `experimental` before features had levels. Values written then still start the install and mean the same.
+  it("reads the old name of the per-user mode", () => {
+    process.env.FEATURE_DEFAULT_MODE = "experimental";
+    process.env.FEATURE_MODES = JSON.stringify({
+      "custom-avatars": "experimental",
+    });
+    expect(loadConfig().featureModes).toMatchObject({
+      dambledore: "user",
+      "custom-avatars": "user",
+    });
   });
 
   // TEST_SCENARIO: the deployment's CurveBender is offered only where the install sets its key; without one the install configures no shared CurveBender rather than failing the boot.

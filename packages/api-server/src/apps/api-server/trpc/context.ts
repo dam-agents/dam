@@ -246,18 +246,18 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       surface,
       modes: config.featureModes,
     });
-    /* UNIT_BOUNDARY_DESCRIPTION: whether a feature is on for this person — the install's mode, and in `experimental` their own switch — asked so that a mode set to `on` or `off` costs no read at all. */
+    /* UNIT_BOUNDARY_DESCRIPTION: whether a feature is on for this person — the install's mode, and in `user` their own switch — asked so that a mode set to `on` or `off` costs no read at all. */
     const featureOn = (feature: FeatureId) => async (): Promise<boolean> => {
       const mode = config.featureModes[feature];
       if (mode === "on") return true;
-      if (mode !== "experimental") return false;
+      if (mode !== "user") return false;
       return featureOnForUser(mode, (await features.flags())[feature]);
     };
-    /* UNIT_BOUNDARY_DESCRIPTION: whether this person is offered the Connection that drives the install — the install's mode, and in `experimental` their own switch. It gates their own create and grants of it, never the platform's provisioning: Dambledore is made holding it whatever this says. */
+    /* UNIT_BOUNDARY_DESCRIPTION: whether this person is offered the Connection that drives the install — the install's mode, and in `user` their own switch. It gates their own create and grants of it, never the platform's provisioning: Dambledore is made holding it whatever this says. */
     const damConnectionOffered = async (): Promise<boolean> => {
       const mode = config.featureModes.damConnection;
       if (mode === "on") return true;
-      if (mode !== "experimental") return false;
+      if (mode !== "user") return false;
       return featureOnForUser(mode, (await features.flags()).damConnection);
     };
     const connections = composeConnectionsForOwner({

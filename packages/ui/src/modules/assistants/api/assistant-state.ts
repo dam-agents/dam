@@ -15,7 +15,7 @@ import {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: whether this person has an assistant to hear about:
  * the install's mode decides — `on` for everyone, `off` for nobody, whether or
- * not the settings tab still shows a switch — except in `experimental`, where
+ * not the settings tab still shows a switch — except in `user`, where
  * their own switch does. `known` says whether both answers are in, so a caller
  * that must not decide on a guess can wait. Nothing is asked of the server for
  * anyone it is off for.
@@ -25,7 +25,7 @@ export function assistantGate(
   stored: boolean | undefined,
 ): { on: boolean; known: boolean } {
   if (mode === undefined) return { on: false, known: false };
-  if (mode !== "experimental") return { on: mode === "on", known: true };
+  if (mode !== "user") return { on: mode === "on", known: true };
   if (stored === undefined) return { on: false, known: false };
   return { on: featureOnForUser(mode, stored), known: true };
 }

@@ -553,17 +553,21 @@ export {
 export type {
   FeatureId,
   FeatureFlags,
+  FeatureLevel,
   FeatureMode,
   FeatureModes,
   FeaturesService,
 } from "./modules/features/types.js";
 export {
   featureIdSchema,
+  featureLevelSchema,
   featureModeSchema,
 } from "./modules/features/schemas.js";
 export {
+  FEATURE_LEVELS,
   FEATURES_ON_BY_DEFAULT,
   featureOnForUser,
+  featuresOfLevel,
   hiddenHarnessesFor,
 } from "./modules/features/modes.js";
 export type {

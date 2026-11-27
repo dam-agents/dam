@@ -334,7 +334,7 @@ describe("dam connection scope --agent", () => {
       EXIT_INVALID_INPUT,
     );
     expect(output.stderr).toContain(
-      "tool access per agent is an experimental feature that is off for you",
+      "tool access per agent is an internal feature that is off for you",
     );
     expect(output.stderr).toContain(
       "dam connection scope slack-account --mode <mode>",

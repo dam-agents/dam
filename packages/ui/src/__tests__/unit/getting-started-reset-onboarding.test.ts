@@ -1,5 +1,5 @@
 // TEST_OVERVIEW: the one onboarding reset, offered by the card at the bottom of
-// TEST_OVERVIEW: Settings › Experimental features: it asks first, and only its
+// TEST_OVERVIEW: Settings › Internal features: it asks first, and only its
 // TEST_OVERVIEW: confirmation changes anything — the reset, the fresh answers, and,
 // TEST_OVERVIEW: for a person the assistant is on for, the released one-shot and the
 // TEST_OVERVIEW: entry route, so they are routed by the same first-open logic a new

@@ -2,7 +2,7 @@
 // TEST_OVERVIEW: the assistant's state as the client keeps it: whether the person
 // TEST_OVERVIEW: has an assistant at all — the install's mode, `on` or `off` even
 // TEST_OVERVIEW: where the settings tab hides the switch, and the person's own
-// TEST_OVERVIEW: switch in `experimental` — and whether it has been used, which a
+// TEST_OVERVIEW: switch in `user` — and whether it has been used, which a
 // TEST_OVERVIEW: Session that just appeared marks here so a New chat does not bring
 // TEST_OVERVIEW: the greeting back. An answer that was on its way when the mark was
 // TEST_OVERVIEW: set cannot take the mark back, while a reset — this tab's, or
@@ -66,17 +66,17 @@ describe("whether the person has the assistant", () => {
     expect(assistantGate("off", true)).toEqual({ on: false, known: true });
   });
 
-  // TEST_SCENARIO: in `experimental` the person's own switch decides, and neither answer is known until it has been read.
-  it("follows the person's own switch in experimental", () => {
-    expect(assistantGate("experimental", undefined)).toEqual({
+  // TEST_SCENARIO: in `user` the person's own switch decides, and neither answer is known until it has been read.
+  it("follows the person's own switch in the user mode", () => {
+    expect(assistantGate("user", undefined)).toEqual({
       on: false,
       known: false,
     });
-    expect(assistantGate("experimental", true)).toEqual({
+    expect(assistantGate("user", true)).toEqual({
       on: true,
       known: true,
     });
-    expect(assistantGate("experimental", false)).toEqual({
+    expect(assistantGate("user", false)).toEqual({
       on: false,
       known: true,
     });

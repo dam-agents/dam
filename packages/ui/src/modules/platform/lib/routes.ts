@@ -14,6 +14,7 @@ const settingsTabSchema = z.enum([
   "analytics",
   "operator",
   "features",
+  "internal",
   "about",
 ]);
 export type SettingsTab = z.infer<typeof settingsTabSchema>;

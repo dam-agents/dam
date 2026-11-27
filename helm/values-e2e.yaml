@@ -6,7 +6,7 @@
 e2e:
   enabled: true
 
-# The install keeps the chart's `experimental` mode, so the assistant is on by
+# The install keeps the chart's `user` mode, so the assistant is on by
 # default exactly as in a release. The suite's shared users store the switch
 # off for themselves (01-auth.spec.ts, once they accepted the Terms), which
 # keeps every other lane deterministic, and 16-assistant.spec.ts signs in as its

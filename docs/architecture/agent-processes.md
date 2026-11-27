@@ -81,7 +81,7 @@ A watch sends data-less change notices when a row appears, goes, or changes whet
 The runtime scans every few seconds while someone watches, every quarter minute while a Keep Mark or kept Detached Process lives, and twice a minute otherwise, so finished work is recorded even when nobody looks.
 The user's decisions — the keep switch and Stop — go through the same surface.
 Field-level contract: [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
-The chat view shows the inventory behind the `processes` [experimental feature](features.md).
+The chat view shows the inventory behind the `processes` [internal feature](features.md).
 On a desktop it is a panel docked beside the conversation, opened from the agent menu's *Processes* or the running count, like the browser and the changes; a row's output opens in the same dock, the way a file does, and its Back returns to the processes.
 A phone keeps it as a Processes section in its sections screen, with Files and Artifacts.
 Either way the output follows the file while the process runs.

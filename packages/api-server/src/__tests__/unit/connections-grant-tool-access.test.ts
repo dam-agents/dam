@@ -172,7 +172,7 @@ describe("setting the tool access of one grant", () => {
     expect(await accessOf(owner, "agent-1", notes.id)).toEqual(ASK_WRITES);
   });
 
-  // TEST_SCENARIO: tool access for each Agent is an experimental feature. With it off for the owner, setting it is refused and nothing is stored.
+  // TEST_SCENARIO: tool access for each Agent is an internal feature. With it off for the owner, setting it is refused and nothing is stored.
   it("refuses with the feature off", async () => {
     const h = harness({ toolApproval: false });
     const notes = await connectNotes(h);
@@ -183,7 +183,7 @@ describe("setting the tool access of one grant", () => {
         connectionId: notes.id,
         access: READ_ONLY,
       }),
-    ).rejects.toThrow(/experimental feature/);
+    ).rejects.toThrow(/internal feature/);
     expect(h.grantAccess.get(`${notes.id}|agent-1`)).toBeNull();
   });
 

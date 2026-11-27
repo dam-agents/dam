@@ -183,7 +183,7 @@ export function buildScopeCommand(deps: {
         "A Slack Account is read only unless you choose another mode. --mode sets\n" +
         "every agent that holds the connection now, and drops its own tool access.\n" +
         "The platform's gateway enforces it from the agent's next request, whatever\n" +
-        "the harness. Needs approval is an experimental feature. An MCP server\n" +
+        "the harness. Needs approval is an internal feature. An MCP server\n" +
         "connected with no auth offers allow all alone.\n" +
         "`dam connection tools <connection>` lists the tools and which ones read.\n" +
         LATER_GRANT_HELP +
@@ -192,7 +192,7 @@ export function buildScopeCommand(deps: {
         "until someone approves it) or block. --read sets the rule of the tools that\n" +
         "read, --write the rule of every other tool, and --tool gives one tool its own\n" +
         "rule. A flag you leave out keeps that part. Tool access per agent is an\n" +
-        "experimental feature; while it is off, --agent can neither show nor set it.\n",
+        "internal feature; while it is off, --agent can neither show nor set it.\n",
     )
     .action(async (ref: string, opts: ScopeOpts) => {
       const json = opts.json ?? false;

@@ -80,7 +80,7 @@ The CA is optional, never reaches the agent, and configures gateway-side upstrea
 ## Platform preset: this install itself
 
 The Connection that lets an Agent drive this install as its owner, one per owner, and the client of the [CLI](cli.md#agent-skill) inside the agent: the `dam` of the agent's own image, pointed at the install it runs on.
-It is never offered in the catalog unless the install offers it to that person — the `damConnection` [experimental feature](features.md) — and the owner can neither paste a credential into it nor choose its key, because the platform mints both.
+It is never offered in the catalog unless the install offers it to that person — the `damConnection` [internal feature](features.md) — and the owner can neither paste a credential into it nor choose its key, because the platform mints both.
 Provisioning is idempotent and takes the first free name, which is the brand's.
 With the flag on, the person has the same create themselves, from the catalog: it answers with the one Connection they hold — the one it makes, or the one already there — and they may grant it to any of their Agents.
 An install that cannot offer it makes nothing and says so, and the pane stays where it is rather than closing on a Connection that does not exist.

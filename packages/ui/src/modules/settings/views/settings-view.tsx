@@ -13,6 +13,7 @@ import { useStore } from "../../../store.js";
 import { ApiKeysList } from "../../api-keys/components/api-keys-list.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
 import { FeaturesTab } from "../../features/components/features-tab.js";
+import { InternalFeaturesTab } from "../../features/components/internal-features-tab.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
 import { OperatorView } from "../../operator/views/operator-view.js";
 import { routeToPath } from "../../platform/lib/routes.js";
@@ -212,6 +213,7 @@ export function SettingsView() {
         {activeTab === "operator" && <OperatorView />}
 
         {activeTab === "features" && <FeaturesTab />}
+        {activeTab === "internal" && <InternalFeaturesTab />}
 
         {activeTab === "about" && <AboutTab />}
       </div>

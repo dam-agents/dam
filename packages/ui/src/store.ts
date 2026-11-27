@@ -10,10 +10,6 @@ import {
   type BrowserSlice,
   createBrowserSlice,
 } from "./modules/browser/store.js";
-import {
-  createFeaturesSlice,
-  type FeaturesSlice,
-} from "./modules/features/store.js";
 import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
 import {
   createGettingStartedSlice,
@@ -78,7 +74,6 @@ export type PlatformStore = DialogSlice &
   FilesSlice &
   ArtifactsSlice &
   BrowserSlice &
-  FeaturesSlice &
   PermissionsSlice &
   GettingStartedSlice &
   ProcessesSlice &
@@ -98,7 +93,6 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createFilesSlice(...a),
   ...createArtifactsSlice(...a),
   ...createBrowserSlice(...a),
-  ...createFeaturesSlice(...a),
   ...createPermissionsSlice(...a),
   ...createGettingStartedSlice(...a),
   ...createProcessesSlice(...a),

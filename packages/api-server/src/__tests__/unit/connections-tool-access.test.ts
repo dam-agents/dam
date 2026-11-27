@@ -127,17 +127,17 @@ describe("the tool mode of a Slack Account Connection", () => {
     expect(h.rows.get(created.id)).toEqual(created);
   });
 
-  // TEST_SCENARIO: needs approval is an experimental mode. With the feature off for the owner it is refused, at create and later, and the mode stays; with it on it is stored.
+  // TEST_SCENARIO: needs approval belongs to an internal feature. With the feature off for the owner it is refused, at create and later, and the mode stays; with it on it is stored.
   it("sets needs approval only with the feature on", async () => {
     const off = harness({ toolApproval: false });
     await expect(connectSlack(off, "needs-approval")).rejects.toThrow(
-      /experimental feature/,
+      /internal feature/,
     );
     expect(off.rows.size).toBe(0);
     const refused = await connectSlack(off);
     await expect(
       off.svc.setToolMode({ id: refused.id, mode: "needs-approval" }),
-    ).rejects.toThrow(/experimental feature/);
+    ).rejects.toThrow(/internal feature/);
     expect(off.rows.get(refused.id)!.toolAccess?.mode).toBe("read-only");
     await off.svc.setToolMode({ id: refused.id, mode: "allow-all" });
     expect(off.rows.get(refused.id)!.toolAccess?.mode).toBe("allow-all");

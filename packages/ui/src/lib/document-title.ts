@@ -13,6 +13,7 @@ const SETTINGS_TAB_TITLE: Record<SettingsTab, string> = {
   analytics: "Analytics",
   operator: "Operator",
   features: "Experimental features",
+  internal: "Internal features",
   about: "About",
 };
 

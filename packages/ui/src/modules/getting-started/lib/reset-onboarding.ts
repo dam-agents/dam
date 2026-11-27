@@ -1,6 +1,6 @@
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The words and the steps of the one onboarding reset,
- * the card at the bottom of Settings › Experimental features. It restarts the Get
+ * the card at the bottom of Settings › Internal features. It restarts the Get
  * started checklist — every avatar locked again, the assistant's own create task
  * recorded as a first open records it — and, for a person the assistant is on for,
  * gives them a first open in it too: the greeting comes back and a Dambledore they
