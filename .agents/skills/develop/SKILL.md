@@ -165,6 +165,7 @@ Without a fitting skill, follow the conventions of the surrounding code and the 
 
 Implement what the decision log from step 2 settled.
 When the code shows that a decision does not hold, stop and bring it back to the user instead of deciding it yourself.
+So does a guard that refuses what you build, and code that starts to copy a concept the system already has: never route around the one or build the other.
 Append every decision the user makes from here on, in steps 3 to 5, to the same decision log file, so step 6 finds them all.
 An architectural decision made here gets a decision record, as in step 2a.
 

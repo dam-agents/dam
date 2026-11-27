@@ -34,22 +34,6 @@ ADRs (`docs/adrs/`) are human-first decision history; the agent-facing source of
 Agents read ADRs only when authoring a new ADR (via the `/adr` skill) or recompiling docs.
 Never link or reference an ADR from code or documentation.
 
-## Existing concepts first
-
-Before you propose or build a mechanism, name the concepts the system already has for the same question, from the architecture pages, [`docs/ubiquitous-language.md`](docs/ubiquitous-language.md) and the code, and use or evolve one of them.
-Add a new concept only with a gap you checked in every existing one, and state that gap where the reviewer reads it: the decision log or the pull request body.
-Two concepts never answer one question: a change that outgrows a concept evolves or replaces it.
-Say also what the change lets us remove.
-
-Stop and ask the user before you write more code when:
-
-- **A guard refuses what you are doing**: a validation, an authorization check, a test that asserts the refusal.
-  It records a decision, so never route around it.
-- **The change adds a parallel thing**: a new list, a new kind of caller, a new permission vocabulary, or its own copy of something the system does elsewhere, such as revocation.
-- **You are about to write that the change repeats or overlaps something existing**, in a comment, a doc or a pull request body.
-
-The [`grill-me`](.agents/skills/grill-me/SKILL.md) skill applies this to a plan; for screens and components, [`propose-ux`](.agents/skills/propose-ux/SKILL.md) does.
-
 ## TypeScript Engineering (how to write TS here)
 
 Invoke the `/typescript-engineering` skill whenever touching server-side TS.
