@@ -9,6 +9,7 @@ argument-hint: "[what the issue is about]"
 # File an Issue
 
 Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md).
+The title is about ten words and says what is wanted, never a sentence about today's state: see **Titles** there, and check the draft's title against them before you show it.
 
 ## Workflow
 
@@ -76,7 +77,7 @@ Use `gh issue create`, never the GitHub MCP tools (`mcp__github__*`):
 - `--label`: only labels the user specified
 
 ```sh
-gh issue create --repo owner/repo --title "Short declarative title" --body "$(cat <<'EOF'
+gh issue create --repo owner/repo --title "Short title that says what is wanted" --body "$(cat <<'EOF'
 ## Problem
 
 ...

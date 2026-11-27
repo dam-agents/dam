@@ -9,6 +9,7 @@ description: >
 # Draft an Issue
 
 Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md).
+The title is about ten words and says what is wanted, never a sentence about today's state: see **Titles** there, and check the draft's title against them before you show it.
 
 ## Workflow
 
