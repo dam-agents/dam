@@ -1,1 +1,0 @@
-ALTER TABLE "pending_approvals" ADD COLUMN "owner_route" text;

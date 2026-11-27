@@ -66,6 +66,7 @@ import {
 import { composeResourceAlerts } from "./modules/resource-alerts/index.js";
 import { parseInfraAgent } from "./modules/agents/infrastructure/agent-mappers.js";
 import { createKitUpdateMarks } from "./modules/agents/infrastructure/kit-update-marks.js";
+import { createSeedStamp } from "./modules/agents/infrastructure/kit-stamp.js";
 import {
   AGENTS_PLURAL,
   ANN_STARTER_KIT,
@@ -234,6 +235,7 @@ import {
 } from "./modules/schedules/index.js";
 import { createKubernetesSecretStore } from "./modules/secret-store/index.js";
 import {
+  composeAttentionItemsOf,
   composeAttentionRetention,
   composeSessionWatcher,
   createAttentionCleanupHook,
@@ -246,6 +248,7 @@ import { createAssistantUsageMarker } from "./modules/assistants/services/usage-
 import { composeUsageModule } from "./modules/usage/compose.js";
 import { composeGettingStartedModule } from "./modules/getting-started/index.js";
 import { composeSidebarOrderModule } from "./modules/sidebar-order/index.js";
+import { composeSessionPinsModule } from "./modules/session-pins/index.js";
 import {
   createUsageAgentsCleanupHook,
   listUsageAgentIds,
@@ -335,6 +338,7 @@ import {
   createTurnReplyReader,
   createKitUpdateReporter,
   createLinkedKits,
+  createKitSeedOutcome,
   createResolvedCatalogRepository,
   parseCatalogSeeds,
   parseKitRef,
@@ -1569,6 +1573,10 @@ export async function bootstrap() {
   gettingStarted.start();
 
   const sidebarOrder = composeSidebarOrderModule({ db });
+  const sessionPins = composeSessionPinsModule({
+    db,
+    attentionItemsOf: composeAttentionItemsOf(db),
+  });
 
   const caseStudies = composeCaseStudiesModule({
     db,
@@ -1669,6 +1677,15 @@ export async function bootstrap() {
         .catch((err: unknown) => {
           getLogger().warn(
             `[kit-update] no reminder for ${agentId}: ${formatError(err)}`,
+          );
+        });
+    },
+    onSessionsGone: (agentId, sessionIds) => {
+      void sessionPins
+        .deleteSessions(agentId, sessionIds)
+        .catch((err: unknown) => {
+          getLogger().warn(
+            `[session-pins] pins of gone sessions on ${agentId} kept: ${formatError(err)}`,
           );
         });
     },
@@ -2730,6 +2747,11 @@ export async function bootstrap() {
       cleanup: (agentId: string) => sidebarOrder.deleteForAgent(agentId),
     },
     {
+      name: "session-pins",
+      listAgentIds: () => sessionPins.listAgentIds(),
+      cleanup: (agentId: string) => sessionPins.deleteForAgent(agentId),
+    },
+    {
       name: "agent-editors",
       listAgentIds: agentEditors.listAgentIds,
       cleanup: agentEditors.cleanup,
@@ -2994,6 +3016,10 @@ export async function bootstrap() {
       );
     });
   runtimeDelivery.registerEventOutcomeHandler(
+    "kit-seed",
+    createKitSeedOutcome({ stampSeed: createSeedStamp(agentsRepo) }),
+  );
+  runtimeDelivery.registerEventOutcomeHandler(
     "harness-config",
     async (event, input) => {
       if (input.outcome === "ok") return;
@@ -3116,8 +3142,10 @@ export async function bootstrap() {
     () => sessionDirectoryRetentionTick(),
   );
 
-  const { retentionTick: attentionRetentionTick } =
-    composeAttentionRetention(db);
+  const { retentionTick: attentionRetentionTick } = composeAttentionRetention({
+    db,
+    keptSessions: () => sessionPins.pinnedSessionKeys(),
+  });
   await periodicJobs.register("attention-retention", 24 * 60 * 60 * 1000, () =>
     attentionRetentionTick(),
   );
@@ -3223,6 +3251,7 @@ export async function bootstrap() {
     gettingStarted,
     sidebarOrder,
     ownerActivity,
+    sessionPins,
     sessionPresence,
     wakeAgent: wakeAgentFor,
     artifactLibraryFor,

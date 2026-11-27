@@ -437,7 +437,7 @@ describe("the level of the check", () => {
     expect(taskOf(w)).not.toContain(ASKS_AGENTS);
   });
 
-  // TEST_SCENARIO: the owner raises the check to the top level, so the Schedule that stands gets the task that asks each Agent others steer, under the name and time it had; no second Schedule is made.
+  // TEST_SCENARIO: the owner raises the check to the top level, so the Schedule that stands gets the task that asks each Agent others steer, under the name and time it had; no second Schedule is made. The task sets no number of questions: the assistant may ask an Agent again when an answer left something open, and it names each Agent it asked and how many times.
   it("lets the check ask agents at the top level", async () => {
     const w = world();
     await w.checks.enable();
@@ -445,7 +445,13 @@ describe("the level of the check", () => {
     expect(w.createRRule).toHaveBeenCalledTimes(1);
     expect(await w.checks.level()).toBe("deep");
     expect(taskOf(w)).toContain(ASKS_AGENTS);
-    expect(taskOf(w)).toContain("Name in this chat each agent you asked");
+    expect(taskOf(w)).toContain(
+      "ask an agent again only when its answer left open something the check needs",
+    );
+    expect(taskOf(w)).not.toContain("ask each agent once");
+    expect(taskOf(w)).toContain(
+      "Name in this chat each agent you asked and how many times",
+    );
   });
 
   // TEST_SCENARIO: the owner lowers the check from the top level, so the next run asks no Agent again.

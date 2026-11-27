@@ -354,7 +354,7 @@ function connectionNote(
   return note ? `${note}; ${why}` : why;
 }
 
-function shellWord(word: string): string {
+export function shellWord(word: string): string {
   return /^[A-Za-z0-9_@%+=:,./-]+$/.test(word)
     ? word
     : `'${word.replace(/'/g, `'\\''`)}'`;

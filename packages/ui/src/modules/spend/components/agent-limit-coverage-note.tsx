@@ -20,8 +20,8 @@ export function AgentLimitCoverageNote({
     return coverage.paid ? null : (
       <p className="text-sm text-muted-foreground">
         {hasLimit
-          ? "This agent has no paid provider, so this limit never stops it."
-          : "This agent has no paid provider, so it has no spend to limit."}
+          ? "This agent has no paid provider yet, so this limit counts nothing until it gets one."
+          : "This limit counts the agent's paid calls. It has no paid provider yet."}
       </p>
     );
   }
@@ -29,7 +29,7 @@ export function AgentLimitCoverageNote({
     <p className="text-sm text-muted-foreground">
       {coverage.paid
         ? `Calls on ${names} count only toward ${several ? "their own limits" : "its own limits"}, for this agent or for all agents, in `
-        : `This agent uses only ${names}, so only a limit for this agent or for all agents in `}
+        : `This limit counts paid calls, and this agent uses only ${names}. Limit ${names} for this agent or for all agents in `}
       <Button
         variant="link"
         size="inline"
@@ -37,7 +37,7 @@ export function AgentLimitCoverageNote({
       >
         Providers
       </Button>
-      {coverage.paid ? "." : " can stop it."}
+      .
     </p>
   );
 }

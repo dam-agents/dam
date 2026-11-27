@@ -1,10 +1,10 @@
 # Home feed
 
-Last verified: 2026-11-20
+Last verified: 2026-11-25
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
-Two surfaces read it: the sidebar's **Activity** section lists the newest Sessions of every Agent, and the **approvals bell** lists what waits on the user's decision.
+Two surfaces read it: the sidebar's **Sessions** section lists the newest Sessions of every Agent, and the **approvals bell** lists what waits on the user's decision.
 The bell sits in the page's own top corner, and opens Approvals as a drawer over the page.
 The [Get started](getting-started.md) checklist sits in the sidebar footer, so it is no surface of this page.
 In an Agent's chat the bell sits in the thin strip across the top of the chat and opens that same drawer.
@@ -53,41 +53,48 @@ It shows its owner the rows filed for that Agent as a **provisional** list, and 
 The UI asks the Agent for that list once the Agent shows as starting, not first at Ready: the agent's tRPC relay holds the ask while the wake runs, and an ask it refuses, or a hold that fails, is asked again when the Agent turns Ready.
 Nothing acts on a provisional row as proof the session exists: opening one asks the Agent, which still decides.
 Rename and Delete on a provisional row wake the Agent and run once it answers, so the Agent still decides; a Delete asks its confirmation before the wake, and an Agent that stops before it answers changes nothing.
-The sidebar's Agents section lists the Sessions of an Agent only while the user has it open, and the Agent whose chat is shown is open.
-A click on a closed Agent opens its list and its new-session page, with its Files and Artifacts sections as this browser last left them (closed at first); a click on an open Agent only closes its list and leaves the page where it is.
-An open Agent lists five Sessions, and each **View more** shows five more and moves keyboard focus to the first of them.
+The sidebar has one list of Sessions, the **Sessions** section, and two views of it.
+In **All agents**, the default view, the Agents section lists every Agent and no Agent lists Sessions of its own; the Sessions section lists the record's rows for every Agent the user owns.
+A click on an Agent opens its **agent view**: the other Agents and Shared with me hide, **All agents** shows above the selected Agent, the Sessions section lists only that Agent's own list, and the page opens the Agent's new-session page, with its Files and Artifacts sections as this browser last left them (closed at first).
+A click on the selected Agent opens its new-session page again; only All agents leaves the view.
+All agents scrolls the list to the open Session's row, in Pinned or Sessions, when that row is already loaded, and moves keyboard focus to the row of the Agent the user came from; it never loads another page to find the Session.
+The view lives in the page and is not kept: a reload opens All agents.
+Opening a Session from the list never changes the view, and leaving the chat for another page keeps it; when the chat moves to another Agent's Session from outside the sidebar, by a link, a notification or the palette, the view goes back to All agents, so the open Session is always one the list can hold.
+
+The agent view lists five Sessions, and each **View more** shows five more and moves keyboard focus to the first of them.
 When the new rows come later, from the Agent's own list after its last known Sessions or from a Retry of a failed page, focus moves once they show.
-An open Agent that is not the shown one lists the record's rows; the shown Agent lists its own list, and so does any Agent once the user asks for more.
-It offers more only when rows are hidden or more may exist: a feed shorter than its row limit lists every row filed for the owner.
-An open Agent with no row in a whole, loaded record shows "No sessions yet."; while the record is cut off, loading or unreadable, it lists its own list instead.
-Opening an Agent's Sessions wakes a hibernated Agent once per open, as opening its chat does ([agent-lifecycle](agent-lifecycle.md#wake)), so its own list loads when it answers.
-An open lasts until the Agent's list closes: a sidebar that mounts again, or the mobile drawer's copy of it, does not wake the Agent again.
+Opening an agent view wakes a hibernated Agent once per open, as opening its chat does ([agent-lifecycle](agent-lifecycle.md#wake)), so its own list loads when it answers.
+An open lasts until the user goes back to All agents: a sidebar that mounts again, or the mobile drawer's copy of it, does not wake the Agent again.
 When it stays asleep, because its wake failed or is not allowed, and the record holds none of its Sessions, the list offers a retry that wakes it.
-When that list's own first read fails, it offers a retry instead of "No sessions yet."
+When the list's own first read fails, it offers a retry instead of "No sessions yet."
 After View more, the list asks the Agent for further pages while its rows fall short of the next five and the Agent has more, and it stops offering more when a page brings no new Session or the Agent's cursor does not move.
 One click asks for at most five pages, while the button says it is looking; then the button offers Keep looking, so a click never waits without end.
-Opening a Session from Activity leaves its Agent's row as it was, closed or open.
 
-The sidebar lists Agents in one **manual order** the user changes by drag and drop or with Alt+Up and Alt+Down, oldest created first until they do.
+The sidebar lists Agents in one **manual order** the user changes, in All agents, by drag and drop or with Alt+Up and Alt+Down, oldest created first until they do.
 An Agent the order does not name yet, a new Agent, joins the foot of the list, and neither a click nor activity moves an Agent.
-Hibernated Agents fold under **See all (N more)**, unless the user has clicked its row or its chat is shown, so closing an Agent's Sessions keeps its row in place.
-An Agent's row shows a blue dot, also while it is open and shown, when one of its Sessions is unread in the record or in its own list already loaded; its hover actions are a session **filter**, **New session** and **Agent settings**, which opens the Agent's settings in a modal over the current view, and a ⋮ menu with Add to Slack channel or Telegram chat only where the installation has them.
-The Agent's filter keeps its Sessions by status and by type, like the Activity filter, but narrows only that Agent's list, not Activity; it is kept in the browser per Agent, and while it is on its control stays shown with a mark.
-The filter goes with each page request, so the Agent's runtime pages only the Sessions of the chosen types, and only those in progress or unread when that status is chosen.
-The runtime cannot tell which Sessions need attention, so for that status the browser picks the matches from each page, and filling the next five may take several pages.
-While the filter is on, the list names it and offers Clear filter; when none of the latest Sessions match, it says so and its button reads Look further.
-The open Session stays in the list even when the filter would hide it, marked as open.
+Every Agent is listed, awake or asleep; nothing folds away.
+An Agent's row shows a blue dot when one of its Sessions is unread in the record or in its own list already loaded, and a filter mark while its session filter is on; its hover actions are **New session**, **Agent settings**, which opens the Agent's settings in a modal over the current view, and a ⋮ menu with Add to Slack channel or Telegram chat only where the installation has them.
 A move stores the whole list as the user sees it, so the Agents the user did not touch keep their places too.
 The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entry when the Agent is deleted.
 The order is only a list of ids: it never decides that an Agent exists, and an id that names nothing shows nothing.
 
-The Sessions of each Agent are listed by **last activity, newest first**, and the user does not reorder them: a new Session, or a turn in an old one, puts that Session at the top.
-A Session row shows a blue dot while it is unread, and an approval dot in its place while an approval waits on the user.
+**Shared with me** sits below the Agents in All agents and lists the Shared Agents of an Agent Editor.
+A Shared Agent the editor may use sessions on opens the same agent view as an own Agent; any other opens its settings.
+The record files no rows for an editor, so a Shared Agent's Sessions show only in its agent view, and when the editor's All agents list is empty it says so.
 
-The **Activity** section, below the Agents, lists the record's rows for every Agent, newest activity first, each with its Agent's avatar and name and its time, and after the time the email of whoever started the Session when that is not the viewer.
-Its filter keeps Sessions by status (All, Needs attention, In progress, Unread) and by type (Chat, Slack, Telegram, Artifact page, Schedule, Terminal); Needs attention is a Session with an approval waiting on the user.
-The filter is kept in the browser, so it survives a reload but does not follow the user to another device; both layouts share it.
-The two sections scroll together, each header staying at the top while its section is in view.
+The Sessions are listed by **last activity, newest first**, and the user does not reorder them: a new Session, or a turn in an old one, puts that Session at the top.
+A Session row shows a blue dot while it is unread, and an approval dot in its place while an approval waits on the user.
+In All agents each row shows its Agent's avatar and name and its time, and after the time the email of whoever started the Session when that is not the viewer; in an agent view the Agent is not repeated.
+Every row, in both views, has the same ⋯ menu, also on a right click: Pin session (Unpin session on a pinned row), Rename session, Export telemetry where the installation has telemetry, and Delete session; on a row the record lists, Rename and Delete wake the Agent first, as on a provisional row.
+
+The Sessions section's filter keeps Sessions by status (All, Needs attention, In progress, Unread) and by type (Chat, Slack, Telegram, Artifact page, Schedule, Terminal); Needs attention is a Session with an approval waiting on the user.
+The filter follows the view: All agents has one filter, and each Agent has its own for its agent view; neither changes the other.
+Both are kept in the browser, so they survive a reload but do not follow the user to another device; both layouts share them.
+An Agent's filter goes with each page request, so the Agent's runtime pages only the Sessions of the chosen types, and only those in progress or unread when that status is chosen.
+The runtime cannot tell which Sessions need attention, so for that status the browser picks the matches from each page, and filling the next five may take several pages.
+While an Agent's filter is on, its list names it and offers Clear filter; when none of the latest Sessions match, it says so and its button reads Look further.
+The open Session stays in the list even when the filter would hide it, marked as open.
+The sections scroll together, each header staying at the top while its section is in view.
 The record's rows and the Agent's own list are both newest first, and each View more appends an older page, so the rows already shown keep their places.
 
 That boundary is what makes the record safe to rebuild or discard.
@@ -150,7 +157,7 @@ A new or recovered alert reaches open tabs through the attention hint.
 The bell also lists the questions the owner's sub-agents [wait on](invocations.md#asking-the-owner), as one card per Agent they work for, which counts once: who asks, the question, and the time it waits until.
 The card does not take an answer; a dismissal hides it from the bell alone, while the question still waits in its chat, and a later question of the same sub-agent is told again.
 Each question opens the chat of that Agent, in the Session that started the sub-agent, whose input takes the answer.
-That Session shows as waiting in Activity and in the Agent's session list, like one with an approval.
+That Session shows as waiting in the sidebar's Sessions, like one with an approval.
 A question asked or answered reaches open tabs through the attention hint.
 The bell still lists a question whose card also went to Slack, and an answer on that card clears it like an answer in the chat.
 
@@ -217,10 +224,26 @@ A viewer leaving causes a last resize, and the shell repaints in response; the i
 Both produce bytes after the last viewer is gone, and counting either one would mark the session unread every time a user closed it and again five minutes later.
 Output during teardown — a short settle window after a viewer detaches, and the whole of a terminal being reaped — is therefore counted as neither activity nor liveness.
 
+## Pinned sessions
+
+A user can pin a Session to keep it in reach, whatever else runs on its Agent.
+The api-server keeps the pins per user, so they follow the user to every browser.
+A pin is only the pair of Agent and Session: it never decides that the Session exists, and a pin whose Session is gone shows nothing.
+The pin list comes back joined with the user's own row in the record, the row the sidebar shows for any Session, so a pinned row needs no call to a sleeping Agent.
+A pin on a Shared Agent has no such row, because the record files nothing for an Agent Editor.
+Pinning needs the user to own the Agent, or to hold its `sessions` permission as an Agent Editor.
+The watcher drops the pins of a Session it sees gone, and an Agent's delete drops its pins through the cleanup list.
+
+In the sidebar, pinned Sessions show in a **Pinned** section above the Sessions section, in both views, and never again in the Sessions list below.
+All agents shows every pin the record holds a row for; an agent view shows that Agent's pins, from its own list when the record holds none, as on a Shared Agent.
+Pinned is ordered by last activity, newest first, as Sessions is; the filter never hides a pin, there is no View more, and the section is hidden while it has no row.
+A pinned row looks and acts like any other Session row; its menu offers Unpin session where others offer Pin session, and a pin or an unpin shows at once.
+
 ## Lifetime
 
 Rows are agent-scoped and follow their Agent: an API delete removes them through the same declared cleanup list every other agent-scoped record kind uses, and the periodic orphan sweep backstops it (see [persistence](persistence.md#lifetime)).
 Rows older than 90 days are trimmed by a periodic job, so the feed's cost tracks recent activity rather than an Agent's whole history.
+The job keeps the row of a pinned Session, so a pin stays readable however long its Session is quiet.
 A dismissal of an approval is the one per-user row with no record of its own to follow — an approval is not agent-scoped state the feed owns — so the same job trims it by age instead.
 The owner is stored as a real Keycloak sub, not a pseudonymized one — the feed has to name a person's own sessions back to them, which a hash cannot do.
 

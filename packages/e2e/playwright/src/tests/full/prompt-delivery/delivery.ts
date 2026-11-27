@@ -6,6 +6,7 @@ import {
   agentCardStatus,
   chatInput,
   ensureAgentRunning,
+  ensureSidebarExpanded,
   gotoAgentChat,
   openAgentChat,
   sendMessageToAgent,
@@ -51,7 +52,10 @@ export async function retryUndelivered(
 }
 
 export function newestSessionRow(page: Page): Locator {
-  return sidebarAgentRow(page, agentName).getByTestId("session-row").first();
+  return page
+    .getByTestId("sidebar-agent-sessions")
+    .getByTestId("session-row")
+    .first();
 }
 
 export async function reopenMockAgentChat(
@@ -63,6 +67,10 @@ export async function reopenMockAgentChat(
     timeout: 60_000,
   });
   await gotoAgentChat(page, agentName, agentId);
+  await ensureSidebarExpanded(page);
+  await sidebarAgentRow(page, agentName)
+    .getByTestId("sidebar-agent-row")
+    .click();
   const sessionRow = newestSessionRow(page);
   await expect(sessionRow).toBeVisible({ timeout: 60_000 });
   await sessionRow.click();

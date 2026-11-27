@@ -103,7 +103,7 @@ function json(data: unknown, status = 200): Response {
 
 function makeGitHub() {
   const calls: Call[] = [];
-  const state = { refuseScoped: false, scoped: 0 };
+  const state = { refuseScoped: false, failScoped: false, scoped: 0 };
   const engine = createGitHubAppEngine({
     now: () => NOW_MS,
     fetchImpl: (async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -120,6 +120,9 @@ function makeGitHub() {
       if (call.url.endsWith("/token/scoped")) {
         if (state.refuseScoped) {
           return json({ message: "Validation Failed" }, 422);
+        }
+        if (state.failScoped) {
+          return json({ message: "Server Error" }, 500);
         }
         state.scoped += 1;
         return json({
@@ -347,6 +350,7 @@ const FULL = {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("GitHub sign-in — the sign-in itself", () => {
@@ -553,6 +557,111 @@ describe("GitHub sign-in — renewal", () => {
     expect((await svc.getConnection(full))?.status).toBe("active");
     const fullSecret = oauthAuthOf(rows.get(full)).accessTokenRef.path;
     expect(stored.get(fullSecret)!.access_token).toBe("ghu_user2");
+    expect(oauthAuthOf(rows.get(narrowed)).refreshBackoff).toBeUndefined();
+  });
+
+  // TEST_SCENARIO: a refused scope is not retried, so it never pulls the sign-in's renewal forward: the sign-in renews by its own token and its other connections.
+  it("does not move the sign-in's renewal up for a refused connection", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: NOW_MS });
+    const { svc, repo, rows, store, github } = makeService();
+    await svc.createFromParent(NARROWED);
+    await svc.createFromParent(FULL);
+    github.state.refuseScoped = true;
+    const parent = rows.get("conn-signin")!;
+
+    const out = await refreshOAuthAccessToken({
+      conn: parent,
+      auth: oauthAuthOf(parent),
+      engine: refreshingEngine(),
+      githubAppEngine: github.engine,
+      templates,
+      secretStore: store,
+      children: repo,
+    });
+
+    expect(out.expiresAt).toBe(NOW_SEC + 28_800);
+  });
+
+  // TEST_SCENARIO: GitHub failing to answer a connection's scoped-token request (a 5xx) is not a refusal: that connection is retried on a widening backoff, the sign-in's next renewal moves up to the retry, and once GitHub answers again the connection is renewed and its backoff cleared — minutes of failure, not the user token's eight hours.
+  it("retries a connection GitHub failed to renew on a backoff", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: NOW_MS });
+    const { svc, repo, rows, stored, store, github } = makeService();
+    const narrowed = await svc.createFromParent(NARROWED);
+    const full = await svc.createFromParent(FULL);
+    github.state.failScoped = true;
+    const renew = async () => {
+      const parent = rows.get("conn-signin")!;
+      return refreshOAuthAccessToken({
+        conn: parent,
+        auth: oauthAuthOf(parent),
+        engine: refreshingEngine(),
+        githubAppEngine: github.engine,
+        templates,
+        secretStore: store,
+        children: repo,
+      });
+    };
+
+    const first = await renew();
+    const failed = oauthAuthOf(rows.get(narrowed));
+    expect(failed.refreshFailedAt).toBeUndefined();
+    expect(failed.refreshBackoff).toEqual({
+      failures: 1,
+      nextAttempt: NOW_SEC + 60,
+    });
+    expect(first.expiresAt).toBe(NOW_SEC + 60 + 5 * 60);
+    const fullSecret = oauthAuthOf(rows.get(full)).accessTokenRef.path;
+    expect(stored.get(fullSecret)!.access_token).toBe("ghu_user2");
+
+    const second = await renew();
+    expect(oauthAuthOf(rows.get(narrowed)).refreshBackoff).toEqual({
+      failures: 2,
+      nextAttempt: NOW_SEC + 120,
+    });
+    expect(second.expiresAt).toBe(NOW_SEC + 120 + 5 * 60);
+
+    github.state.failScoped = false;
+    const third = await renew();
+    const renewed = oauthAuthOf(rows.get(narrowed));
+    expect(renewed.refreshBackoff).toBeUndefined();
+    expect(renewed.refreshFailedAt).toBeUndefined();
+    expect(renewed.expiresAt).toBe(NOW_SEC + 1800);
+    expect(stored.get(renewed.accessTokenRef.path)!.access_token).toMatch(
+      /^ghu_scoped_/,
+    );
+    expect(third.expiresAt).toBe(NOW_SEC + 1800);
+    expect((await svc.getConnection(narrowed))?.status).toBe("active");
+  });
+
+  // TEST_SCENARIO: a connection on a backoff that GitHub then refuses is parked as expired, drops its backoff, and stops moving the sign-in's renewal up, so a permanent failure still stops the retries.
+  it("parks a connection on a backoff once GitHub refuses it", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: NOW_MS });
+    const { svc, repo, rows, store, github } = makeService();
+    const narrowed = await svc.createFromParent(NARROWED);
+    const renew = async () => {
+      const parent = rows.get("conn-signin")!;
+      return refreshOAuthAccessToken({
+        conn: parent,
+        auth: oauthAuthOf(parent),
+        engine: refreshingEngine(),
+        githubAppEngine: github.engine,
+        templates,
+        secretStore: store,
+        children: repo,
+      });
+    };
+
+    github.state.failScoped = true;
+    await renew();
+    github.state.failScoped = false;
+    github.state.refuseScoped = true;
+    const out = await renew();
+
+    const parked = oauthAuthOf(rows.get(narrowed));
+    expect(parked.refreshFailedAt).toBe(NOW_SEC);
+    expect(parked.refreshBackoff).toBeUndefined();
+    expect(out.expiresAt).toBe(NOW_SEC + 28_800);
+    expect((await svc.getConnection(narrowed))?.status).toBe("expired");
   });
 });
 

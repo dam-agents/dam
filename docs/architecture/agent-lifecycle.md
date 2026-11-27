@@ -136,7 +136,7 @@ Its chat, and each configuration panel that needs the running Agent (model setti
 One sleep gets one wake: a wake already running counts as it, so a chat and a panel open together wake the Agent once, and a wake that fails leaves the Agent asleep until it is seen awake again, so a failing wake is no loop; the chat then says the Agent isn't running and offers a Start button.
 An Agent that falls asleep under an open chat, as when the tab's connection dropped, is woken again once the page is visible; a hidden page follows the Agent but wakes nothing, its sidebar included.
 An Agent whose last start never came up shows as an error with that start's reason and a Start button; its open retries the start once.
-Its sidebar session list wakes it once per open (the open lasts until the sidebar row closes), and offers a retry when the Agent stays asleep ([home-feed](home-feed.md)).
+Its sidebar agent view wakes it once per open (the open lasts until the user goes back to All agents), and offers a retry when the Agent stays asleep ([home-feed](home-feed.md)).
 An Agent still falling asleep is woken once it is asleep.
 The deliberate opt-outs never wake anything: a **passive** relay connection (`passive=1`) fails closed unless `Ready`, takes no pin and never bumps activity; the per-agent tRPC relay takes no pin, waits out a wake already asked for without stamping activity, and keeps the stamp fresh while a view is open.
 The agent relays — ACP, per-agent tRPC, terminal, browser stream and SSH — do not wait for `Ready` alone when they hold a socket for a wake from hibernation.

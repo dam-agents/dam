@@ -46,6 +46,13 @@ import {
 import type { ReadTemplateSpec } from "../../templates/index.js";
 import { createOnboardingMarker } from "./onboarding-marker.js";
 import { createKitUpdates, type KitUpdateMarks } from "./kit-updates.js";
+import {
+  createKitApplyToAgent,
+  type KitClaim,
+  type KitSeedDelivery,
+  type KitSeedWait,
+  type KitStamp,
+} from "./kit-apply-existing.js";
 import { seedStampAtApply } from "../domain/seed-stamp.js";
 import type { KitUpstream } from "../infrastructure/kit-upstream.js";
 import type { LinkedKit, LinkedKits } from "../infrastructure/linked-kits.js";
@@ -96,8 +103,11 @@ export interface StarterKitsServiceDeps {
     | "delete"
     | "get"
     | "list"
+    | "update"
     | "connectSlack"
+    | "disconnectSlack"
     | "announceSlackConnect"
+    | "ensureReady"
   >;
   schedules: Pick<
     SchedulesService,
@@ -105,7 +115,10 @@ export interface StarterKitsServiceDeps {
   >;
   connections: Pick<
     ConnectionsService,
-    "listConnections" | "listTemplates" | "getAgentConnections"
+    | "listConnections"
+    | "listTemplates"
+    | "getAgentConnections"
+    | "updateAgentConnections"
   >;
   skills: Pick<SkillsService, "applyEntries">;
   surface: string;
@@ -126,6 +139,10 @@ export interface StarterKitsServiceDeps {
   ) => Promise<ChatFormPreferences | null>;
   kitUpstream: KitUpstream;
   kitUpdateMarks: KitUpdateMarks;
+  stampKit: (agentId: string, stamp: KitStamp) => Promise<void>;
+  kitClaim: KitClaim;
+  kitSeed: KitSeedDelivery;
+  kitSeedWait?: KitSeedWait;
   linkedKits: LinkedKits;
 }
 
@@ -152,7 +169,9 @@ function toView(loaded: LoadedKit | LinkedKit): StarterKitView {
 export function createStarterKitsService(
   deps: StarterKitsServiceDeps,
 ): StarterKitsService {
-  async function requireKit(input: StarterKitApplyInput): Promise<KitToApply> {
+  async function requireKit(
+    input: Pick<StarterKitApplyInput, "catalog" | "kitId" | "link">,
+  ): Promise<KitToApply> {
     const { catalog, kitId, link } = input;
     if (link) {
       const linked = await deps.linkedKits.read(link.url, link.commit);
@@ -294,6 +313,99 @@ export function createStarterKitsService(
     await deps.runtimeMutator.enqueueAfterCommit(agentId);
   }
 
+  async function queueKitWork(
+    agentId: string,
+    loaded: KitToApply,
+  ): Promise<void> {
+    const { kit, version } = loaded;
+    await deps.egressRules.seed(agentId, kit.egressRules, deps.owner);
+    if (kit.install) {
+      await deps.runtimeMutator.bump(agentId, [
+        workspaceCommandEvent(
+          "kit-install",
+          agentId,
+          kit.install.command,
+          new Date(),
+        ),
+      ]);
+      await deps.runtimeMutator.enqueueAfterCommit(agentId);
+    }
+    if (kit.startupItems.length > 0) {
+      await deps.runtimeMutator.bump(agentId, [
+        startupItemsEvent(
+          agentId,
+          {
+            kit: kitRef(loaded.catalog, kit.id, version),
+            items: kit.startupItems,
+          },
+          new Date(),
+        ),
+      ]);
+      await deps.runtimeMutator.enqueueAfterCommit(agentId);
+    }
+  }
+
+  async function onboard(
+    agent: Agent,
+    loaded: KitToApply,
+    harness: TemplateHarness | undefined,
+  ): Promise<void> {
+    const { kit } = loaded;
+    const briefs =
+      kit.onboarding !== false &&
+      !(kit.onboarding && "command" in kit.onboarding);
+    if (!briefs)
+      await deps.markAgentOnboarded(agent.id, new Date().toISOString());
+    await enqueueOnboardingTurn(agent, loaded, loaded.version, harness);
+  }
+
+  async function finishApply(
+    agentId: string,
+    loaded: KitToApply,
+  ): Promise<Pick<StarterKitApplyResult, "skills" | "skillsError">> {
+    const { kit, version } = loaded;
+    emit({
+      type: EventType.StarterKitApplied,
+      agentId,
+      actorSub: deps.owner,
+      surface: deps.surface,
+      catalog: loaded.catalog,
+      kitId: kit.id,
+      version,
+    });
+
+    let skills: StarterKitApplyResult["skills"] = null;
+    let skillsError: string | null = null;
+    if (kit.skills.length > 0) {
+      try {
+        skills = await deps.skills.applyEntries({
+          agentId,
+          skills: kit.skills,
+        });
+      } catch (err) {
+        skillsError = err instanceof Error ? err.message : String(err);
+        securityLog("warn", "starter_kit.skills_failed", {
+          category: "resource",
+          actor: deps.owner,
+          actorKind: "user",
+          agentId,
+          result: "failure",
+          reason: skillsError,
+        });
+      }
+    }
+
+    securityLog("info", "starter_kit.apply", {
+      category: "resource",
+      actor: deps.owner,
+      actorKind: "user",
+      agentId,
+      result: "success",
+      target: kitRef(loaded.catalog, kit.id, version),
+    });
+    return { skills, skillsError };
+  }
+
   const kitUpdates = createKitUpdates({
     owner: deps.owner,
     repo: deps.repo,
@@ -383,31 +495,7 @@ export function createStarterKitsService(
       const agent = await deps.agents.create(createInput);
 
       try {
-        await deps.egressRules.seed(agent.id, kit.egressRules, deps.owner);
-        if (kit.install) {
-          await deps.runtimeMutator.bump(agent.id, [
-            workspaceCommandEvent(
-              "kit-install",
-              agent.id,
-              kit.install.command,
-              new Date(),
-            ),
-          ]);
-          await deps.runtimeMutator.enqueueAfterCommit(agent.id);
-        }
-        if (kit.startupItems.length > 0) {
-          await deps.runtimeMutator.bump(agent.id, [
-            startupItemsEvent(
-              agent.id,
-              {
-                kit: kitRef(loaded.catalog, kit.id, version),
-                items: kit.startupItems,
-              },
-              new Date(),
-            ),
-          ]);
-          await deps.runtimeMutator.enqueueAfterCommit(agent.id);
-        }
+        await queueKitWork(agent.id, loaded);
         await seedSchedules(
           agent.id,
           loaded,
@@ -428,12 +516,7 @@ export function createStarterKitsService(
               message: `The agent was not created: ${slackConnectRefusal(connected.error.type, slackChannelId)}`,
             });
         }
-        const briefs =
-          kit.onboarding !== false &&
-          !(kit.onboarding && "command" in kit.onboarding);
-        if (!briefs)
-          await deps.markAgentOnboarded(agent.id, new Date().toISOString());
-        await enqueueOnboardingTurn(agent, loaded, version, harness);
+        await onboard(agent, loaded, harness);
       } catch (err) {
         await deps.agents.delete(agent.id).catch((cleanupErr: unknown) => {
           getLogger().error(
@@ -446,47 +529,30 @@ export function createStarterKitsService(
       for (const slackChannelId of input.slackChannelIds ?? [])
         await deps.agents.announceSlackConnect(agent.id, slackChannelId);
       await deps.wakeAgent(agent.id);
-      emit({
-        type: EventType.StarterKitApplied,
-        agentId: agent.id,
-        actorSub: deps.owner,
-        surface: deps.surface,
-        catalog: loaded.catalog,
-        kitId: kit.id,
-        version,
-      });
-
-      let skills: StarterKitApplyResult["skills"] = null;
-      let skillsError: string | null = null;
-      if (kit.skills.length > 0) {
-        try {
-          skills = await deps.skills.applyEntries({
-            agentId: agent.id,
-            skills: kit.skills,
-          });
-        } catch (err) {
-          skillsError = err instanceof Error ? err.message : String(err);
-          securityLog("warn", "starter_kit.skills_failed", {
-            category: "resource",
-            actor: deps.owner,
-            actorKind: "user",
-            agentId: agent.id,
-            result: "failure",
-            reason: skillsError,
-          });
-        }
-      }
-
-      securityLog("info", "starter_kit.apply", {
-        category: "resource",
-        actor: deps.owner,
-        actorKind: "user",
-        agentId: agent.id,
-        result: "success",
-        target: kitRef(loaded.catalog, kit.id, version),
-      });
+      const { skills, skillsError } = await finishApply(agent.id, loaded);
       return { agent, skills, skillsError };
     },
+
+    applyToAgent: createKitApplyToAgent({
+      steps: {
+        requireKit,
+        grantedTemplates: (ids) => grantedTemplates(ids),
+        familyTitles,
+        queueKitWork,
+        seedSchedules,
+        onboard,
+        slackRefusal: slackConnectRefusal,
+        finishApply,
+      },
+      agents: deps.agents,
+      schedules: deps.schedules,
+      connections: deps.connections,
+      kitSeed: deps.kitSeed,
+      ...(deps.kitSeedWait ? { seedWait: deps.kitSeedWait } : {}),
+      stampKit: deps.stampKit,
+      kitClaim: deps.kitClaim,
+      wakeAgent: deps.wakeAgent,
+    }),
 
     async markOnboarded(agentId) {
       await createOnboardingMarker(deps)(agentId, deps.owner);

@@ -24,6 +24,7 @@ import {
   type BreakdownRow,
 } from "../domain/breakdown.js";
 import { bindingOf } from "../domain/binding.js";
+import { type DayRefusal, stoppedAgent } from "../domain/stopped.js";
 import { utcDay } from "../domain/ledger.js";
 import {
   ceilingCounter,
@@ -441,6 +442,49 @@ export function createSpendService(deps: {
               }),
             })
           : [],
+      };
+    },
+
+    async stopped() {
+      const now = new Date();
+      const day = utcDay(now);
+      const [refusals, ceiling, names] = await Promise.all([
+        deps.ledger.refusals({
+          ownerSub: deps.ownerSub,
+          agentIds: scopedAgents(undefined),
+          day,
+        }),
+        deps.ceilings.forOwner(deps.ownerSub),
+        deps.connectionNames(),
+      ]);
+      const byAgent = new Map<string, DayRefusal[]>();
+      for (const refusal of refusals) {
+        const list = byAgent.get(refusal.payerAgentId) ?? [];
+        list.push(refusal);
+        byAgent.set(refusal.payerAgentId, list);
+      }
+      const ceilingReading =
+        ceiling && byAgent.size > 0 ? await ceilingView(ceiling, day) : null;
+      const agents = await Promise.all(
+        [...byAgent].map(async ([agentId, agentRefusals]) => {
+          const limits = await deps.limits.applying(
+            { agentId, ownerSub: deps.ownerSub },
+            day,
+          );
+          return stoppedAgent({
+            agentId,
+            refusals: agentRefusals,
+            limits: await Promise.all(
+              limits.map((limit) => limitView(limit, day)),
+            ),
+            ceiling: ceilingReading,
+            connectionNames: names,
+          });
+        }),
+      );
+      return {
+        resetsAt: nextUtcMidnight(now).toISOString(),
+        agents: agents.filter((agent) => agent !== null),
       };
     },
 

@@ -26,7 +26,7 @@ import {
   oauthProviderForSignIn,
   resolveOAuthClientSecret,
 } from "./oauth-token.js";
-import { scopeGitHubUserToken } from "./github-user-token.js";
+import { scopeGitHubUserToken, type OAuthClient } from "./github-user-token.js";
 import { rederiveGitHubChildren } from "./github-children.js";
 import { withoutParentScope } from "../domain/github-parent.js";
 import { recordAccountLabel } from "./account-label.js";
@@ -152,6 +152,12 @@ export function createOAuthFlowService(deps: {
         ...pending.provider,
         ...(clientSecret ? { clientSecret } : {}),
       };
+      const client: OAuthClient = {
+        clientId: provider.clientId,
+        ...(provider.clientSecret
+          ? { clientSecret: provider.clientSecret }
+          : {}),
+      };
       const tokens = await deps.engine.exchange({ ...pending, provider }, code);
 
       const isReauth =
@@ -179,7 +185,7 @@ export function createOAuthFlowService(deps: {
             },
             fresh,
             tokens,
-            provider.clientSecret,
+            client,
           );
           await deps.repo.updateAuth(conn.id, {
             ...withoutParentScope(
@@ -208,7 +214,7 @@ export function createOAuthFlowService(deps: {
               connectionRef: provider.id,
               auth: fresh.auth,
               scope,
-              clientSecret: provider.clientSecret,
+              client,
               accessToken: tokens.accessToken,
             })
           : undefined;

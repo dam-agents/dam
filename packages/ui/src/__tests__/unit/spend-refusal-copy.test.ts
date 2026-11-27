@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: When a spend limit stops a model call, the chat says what to do next. The owner continues the agent on Home. An Agent Editor cannot, so their chat names the owner by email to ask, and adds "or raise this agent's spend limit" only when the agent's own limit is the one reached. Everyone reads when the limit resets.
+// TEST_OVERVIEW: When a spend limit stops a model call, the chat says what to do next. The owner raises the spend limit, with links to the agent's limits instead of the raw error. An Agent Editor cannot, so their chat names the owner by email to ask, and adds "or raise this agent's spend limit" only when the agent's own limit is the one reached. Everyone reads when the limit resets.
 import type { SpendStatus } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
@@ -14,10 +14,21 @@ const editor = (agentLimit: boolean) =>
   ({ role: "editor", owner: OWNER, agentLimitReached: agentLimit }) as const;
 
 describe("a spend limit in the chat", () => {
-  // TEST_SCENARIO: the owner's text is the one they always had: continue on Home, or wait for the reset.
-  it("tells the owner to continue on Home", () => {
-    expect(describeSendError(SOFT, { role: "owner" }).message).toMatch(
-      /^This agent reached a daily spend limit, so its model calls stop\. Continue it on Home, or wait until .+ your time\.$/,
+  // TEST_SCENARIO: the owner reads to raise the spend limit, or wait for the reset, and the card links to the agent's limits, and keeps the raw error only where it cannot link.
+  it("tells the owner to raise the spend limit", () => {
+    const { message, hint, kind } = describeSendError(SOFT, { role: "owner" });
+    expect(message).toMatch(
+      /^This agent reached a daily spend limit, so its model calls stop\. Raise your spend limit, or wait until .+ your time\.$/,
+    );
+    expect(kind).toBe("spend-limit");
+    expect(hint).toMatch(/^Details: /);
+  });
+
+  // TEST_SCENARIO: an editor and the operator's ceiling keep the raw error as detail, and no limit links.
+  it("keeps the details for an editor and for the ceiling", () => {
+    expect(describeSendError(SOFT, editor(false)).kind).toBeUndefined();
+    expect(describeSendError(CEILING, { role: "owner" }).hint).toMatch(
+      /^Details: /,
     );
   });
 

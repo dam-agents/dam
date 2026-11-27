@@ -4,6 +4,7 @@ import type {
   KitUpdateChanges,
   KitUpdateStatus,
   StarterKitApplyInput,
+  StarterKitApplyToAgentInput,
   StarterKitView,
 } from "api-server-api";
 import { err, ok, type Result } from "../../../result.js";
@@ -24,12 +25,19 @@ export type KitCreateResult = Awaited<
   ReturnType<TrpcClient["starterKits"]["create"]["mutate"]>
 >;
 
+export type KitApplyToAgentResult = Awaited<
+  ReturnType<TrpcClient["starterKits"]["applyToAgent"]["mutate"]>
+>;
+
 export interface KitService {
   list(): Promise<
     Result<readonly StarterKitView[], TransportError | AuthRequiredError>
   >;
   inspect(url: string): KitResult<StarterKitView>;
   create(input: StarterKitApplyInput): KitResult<KitCreateResult>;
+  applyToAgent(
+    input: StarterKitApplyToAgentInput,
+  ): KitResult<KitApplyToAgentResult>;
   updates(): Promise<
     Result<readonly KitUpdateStatus[], TransportError | AuthRequiredError>
   >;
@@ -53,6 +61,7 @@ export interface KitService {
 const REFUSALS = new Set([
   "BAD_REQUEST",
   "NOT_FOUND",
+  "CONFLICT",
   "PRECONDITION_FAILED",
   "BAD_GATEWAY",
 ]);
@@ -78,6 +87,8 @@ export function createKitService(deps: { trpc: TrpcClient }): KitService {
     list: () => trpcCall(() => starterKits.list.query()),
     inspect: (url) => refusable(() => starterKits.inspect.query({ url })),
     create: (input) => refusable(() => starterKits.create.mutate(input)),
+    applyToAgent: (input) =>
+      refusable(() => starterKits.applyToAgent.mutate(input)),
     updates: () => trpcCall(() => starterKits.updates.query()),
     changes: (agentId) =>
       refusable(() => starterKits.updateChanges.query({ agentId })),

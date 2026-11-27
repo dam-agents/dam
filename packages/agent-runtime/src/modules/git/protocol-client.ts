@@ -220,6 +220,16 @@ export function createGitProtocolClient(
   };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: runs one git command in a directory and answers
+ * its standard output, or throws with what failed, under the same timeout
+ * every git call here has.
+ */
+export function createGitRunner(env?: () => NodeJS.ProcessEnv) {
+  return (dir: string, args: readonly string[]): Promise<string> =>
+    runCaptureIn("git", ["-C", dir, ...args], env?.());
+}
+
 async function runCaptureIn(
   cmd: string,
   args: string[],

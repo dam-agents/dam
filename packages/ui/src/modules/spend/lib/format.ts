@@ -33,18 +33,14 @@ export const UNIT_NAMES: Readonly<Record<SpendUnit, string>> = {
   free: "USD",
 };
 
-export const NO_LIMIT_REASONS: Readonly<
-  Record<"free" | "not_priced" | "not_metered", string>
-> = {
-  free: "This provider has no billing.",
-  not_priced:
-    "Calls on this provider are not priced yet, so it takes no spend limit.",
-  not_metered:
-    "Calls on this provider are not measured, so it takes no spend limit.",
-};
-
 export function bareSpend(micros: number, unit: SpendUnit): string {
   return BARE_AMOUNTS[unit](micros);
+}
+
+export function meterAmount(micros: number, unit: SpendUnit): string {
+  return unit === "bobcoin"
+    ? `${bareSpend(micros, unit)} Bc`
+    : bareSpend(micros, unit);
 }
 
 export function formatSpend(micros: number, unit: SpendUnit): string {

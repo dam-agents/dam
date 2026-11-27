@@ -5,7 +5,7 @@ Last verified: 2026-11-27
 ## Session inside the machine
 
 agent-runtime holds one harness process, a **Harness Lease**, per harness and set of process-scoped [session settings](harness-config.md#session-settings) its sessions ask for; the provider and model are no fact of a process, except where the harness must know at start which side of a split they fall on (a native Connection, or a Claude Code model that is not Claude, see [harness configuration](harness-config.md#session-settings)).
-Every model call goes through the [Model Router](harness-config.md#the-model-router) by the session's model name: a per-turn choice kept in the session's metadata and applied through the harness's own per-session call before each prompt and after every cold load; a harness that refuses the name is asked once more, then the queued prompts fail with its reason rather than run on a substitute.
+Every model call goes through the [Model Router](harness-config.md#the-model-router) by the session's model name: a per-turn choice kept in the session's metadata and applied through the harness's own per-session call before each prompt and after every cold load; a harness that refuses the name is asked once more, then the queued prompts fail with its reason, marked `model-refused-by-harness` in the error's data, rather than run on a substitute.
 A model change applies to the next turn; a setting change moves the next turn to the matching lease.
 A session is either **on the default** of its kind (chat, channel or scheduled; a sub-agent session has none) or on its **own choice**, and the metadata keeps which.
 Before each turn of a session on the default, the runtime applies the newest default of that kind: its model, and its settings, a process-scoped one moving the session only once a running turn ends.
@@ -25,6 +25,7 @@ A model resolved while the session's turn runs waits for that turn to end, so a 
 A `session/new` released on its kind's default opens on that default's model, settings and follow marker, as the api-server fills them into a run that names no model; a harness that does not reach its models through the Model Router needs no model, so it bypasses the gate, and a sub-agent session has no kind default to take.
 The default harness's lease starts once the server listens, so a waking chat finds it loaded; where the machine kept the [model catalog](harness-config.md#the-model-catalog) it last routed on, the lease starts on that instead of waiting for the provider listing.
 Any other lease starts on the first frame naming a session on its harness.
+A new harness process gets no other frame until it has answered its first `initialize`, since a harness may refuse every request before that; the frames sent meanwhile reach it in order once it answers.
 A lease that held no session for a while shuts down, the default's included, and one whose harness crashes is respawned by the next frame.
 A lease outlives connections.
 ACP channels attach concurrently and engage sessions by the `sessionId` each frame carries.

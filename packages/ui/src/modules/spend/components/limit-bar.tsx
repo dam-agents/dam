@@ -1,19 +1,13 @@
-import type { SpendLimitState } from "api-server-api";
-
 import { cn } from "@/lib/utils";
 
 import { SpendBarTrack } from "../../metrics/components/spend-bar.js";
-import {
-  LIMIT_STATE_FILL,
-  LIMIT_STATE_PERCENT,
-  LIMIT_STATE_TRACK,
-} from "../lib/state-colors.js";
 
 interface Props {
   pct: number;
-  state: SpendLimitState;
   label: string;
   size?: "md" | "sm";
+  percent?: boolean;
+  className?: string;
 }
 
 const SIZE = {
@@ -21,22 +15,27 @@ const SIZE = {
   sm: "h-1 rounded-full",
 } as const;
 
-export function LimitBar({ pct, state, label, size = "md" }: Props) {
+export function LimitBar({
+  pct,
+  label,
+  size = "md",
+  percent = true,
+  className,
+}: Props) {
+  const track = (
+    <SpendBarTrack
+      pct={pct}
+      label={label}
+      className={percent ? "flex-1" : className}
+      trackClassName={cn(SIZE[size], "bg-foreground/10")}
+      fillClassName="bg-foreground"
+    />
+  );
+  if (!percent) return track;
   return (
-    <div className="flex items-center gap-2.5">
-      <SpendBarTrack
-        pct={pct}
-        label={label}
-        className="flex-1"
-        trackClassName={cn(SIZE[size], LIMIT_STATE_TRACK[state])}
-        fillClassName={LIMIT_STATE_FILL[state]}
-      />
-      <span
-        className={cn(
-          "min-w-9 text-right text-xs tabular-nums",
-          LIMIT_STATE_PERCENT[state],
-        )}
-      >
+    <div className={cn("flex items-center gap-2.5", className)}>
+      {track}
+      <span className="min-w-9 text-right text-xs text-muted-foreground tabular-nums">
         {`${String(Math.round(pct))}%`}
       </span>
     </div>

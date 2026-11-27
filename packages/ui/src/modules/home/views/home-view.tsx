@@ -47,7 +47,7 @@ export function HomeView() {
 
   return (
     <div>
-      <PageHeader title="Home" />
+      <PageHeader title="Home" actions={<EntryPointButtons />} />
       <ApprovalsBanner />
       <div className="@container mb-8">
         <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-2">
@@ -57,9 +57,6 @@ export function HomeView() {
           </div>
           <SpendWidget />
         </div>
-      </div>
-      <div className="mb-4 flex flex-wrap justify-end gap-2">
-        <EntryPointButtons />
       </div>
       <SandboxList
         agents={visible}

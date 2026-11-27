@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 
 const PATCHED_VERSION = "0.0.34";
@@ -12,7 +12,8 @@ const UPSTREAM_GAPS =
   "writes no retry notice into the reply, " +
   "hands each pi the session ref its session/new or session/load carries " +
   "and serves _session/steering, answering promptRequired for a steer that reaches pi after its run settled " +
-  "(https://github.com/svkozak/pi-acp/pull/115 does not)";
+  "(https://github.com/svkozak/pi-acp/pull/115 does not), " +
+  "and restarts pi on a session pi never wrote to its file under the session's own id";
 const HELPERS = `globalThis[Symbol.for("platform.pi-acp-patch")]`;
 const SESSION_REF_HEADER = "x-platform-session-ref";
 const STEER_METHOD = "_session/steering";
@@ -270,6 +271,12 @@ function rememberSessionRef(sessionId, mcpServers) {
   if (ref) sessionRefs.set(sessionId, ref);
 }
 
+function sessionArgs(sessionPath, sessionId) {
+  return sessionId !== undefined && !existsSync(sessionPath)
+    ? ["--session-id", sessionId]
+    : ["--session", sessionPath];
+}
+
 function piEnv(sessionId, mcpServers) {
   const ref =
     sessionRefOf(mcpServers) ??
@@ -469,11 +476,17 @@ const edits = [
     count: 1,
   },
   {
+    find: '    if (params.sessionPath) args.push("--session", params.sessionPath);\n',
+    replace: `    if (params.sessionPath) args.push(...${HELPERS}.sessionArgs(params.sessionPath, params.sessionId));\n`,
+    count: 1,
+  },
+  {
     find:
       "          sessionPath: stored.sessionFile,\n" +
       "          piCommand: process.env.PI_ACP_PI_COMMAND\n",
     replace:
       "          sessionPath: stored.sessionFile,\n" +
+      "          sessionId,\n" +
       "          piCommand: process.env.PI_ACP_PI_COMMAND,\n" +
       `          env: ${HELPERS}.piEnv(sessionId, opts?.mcpServers)\n`,
     count: 1,
@@ -532,6 +545,7 @@ globalThis[Symbol.for("platform.pi-acp-patch")] = {
   replayMeta,
   callArguments,
   fileTitle,
+  sessionArgs,
   piEnv,
   rememberSessionRef,
   replayThinking,

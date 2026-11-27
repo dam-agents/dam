@@ -19,7 +19,7 @@ export function LevelIcon({
   agent,
   small = false,
 }: {
-  level: Level;
+  level: Pick<Level, "kind" | "connection">;
   agent: LevelAgent | null;
   small?: boolean;
 }) {

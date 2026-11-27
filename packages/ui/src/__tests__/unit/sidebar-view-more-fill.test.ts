@@ -24,6 +24,11 @@ vi.mock("../../modules/sessions/lib/agent-session-filters.js", async () => {
   };
 });
 
+vi.mock("../../modules/sessions/api/session-pins.js", () => ({
+  useSessionPins: () => ({ pins: [], pinnedKeys: new Set() }),
+  useSessionPinActions: () => ({ pin: () => {}, unpin: () => {} }),
+  refetchSessionPins: () => {},
+}));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) =>
     select({ deleteSession: () => {}, showConfirm: async () => false }),
@@ -33,6 +38,7 @@ vi.mock("../../modules/agents/hooks/use-act-when-awake.js", () => ({
 }));
 vi.mock("../../modules/agents/api/queries.js", () => ({
   useAgentRunState: () => "running",
+  useAgent: () => null,
 }));
 vi.mock("../../modules/features/api/queries.js", () => ({
   useFeatures: () => ({ data: {} }),
@@ -44,6 +50,7 @@ vi.mock("../../modules/sessions/hooks/use-open-session.js", () => ({
 vi.mock("../../modules/sessions/api/queries.js", () => ({
   prefetchSessionHistory: () => {},
   provisionalSessionView: (s: unknown) => s,
+  attentionItemOfSession: (s: unknown) => s,
 }));
 vi.mock("../../modules/telemetry/api/download-export.js", () => ({
   downloadTelemetryExport: () => {},
@@ -103,13 +110,7 @@ function setList(over: Record<string, unknown>) {
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
-const props = {
-  agentId: "a-1",
-  open: true,
-  preview: [],
-  previewComplete: true,
-  conversationOf: () => undefined,
-};
+const props = { agentId: "a-1" };
 
 function mount() {
   container = document.createElement("div");

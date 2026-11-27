@@ -42,6 +42,12 @@ const NO_MARKS = {
   skip: async () => {},
   nudge: async () => false,
 };
+const NO_KIT_SEED = {
+  supports: async () => true,
+  send: async () => "kit-seed:none",
+  answer: async () => ({ state: "seeded" as const }),
+  abandon: async () => {},
+};
 const NO_LINKS: LinkedKits = {
   read: async () => {
     throw new Error("no linked kit in this test");
@@ -185,6 +191,13 @@ function makeHarness(
         return { ok: true, value: fakeAgent(agentId) } as never;
       },
       async announceSlackConnect() {},
+      async update() {
+        return null;
+      },
+      async disconnectSlack() {
+        return null;
+      },
+      async ensureReady() {},
     },
     schedules: {
       async createCron(input) {
@@ -225,6 +238,7 @@ function makeHarness(
       async getAgentConnections(agentId: string) {
         return { agentId, connections: agentGrants };
       },
+      async updateAgentConnections() {},
     },
     skills: {
       async applyEntries(input) {
@@ -260,6 +274,9 @@ function makeHarness(
     },
     kitUpstream: NO_UPSTREAM,
     kitUpdateMarks: NO_MARKS,
+    stampKit: async () => {},
+    kitClaim: { claim: async () => true, release: async () => {} },
+    kitSeed: NO_KIT_SEED,
     linkedKits,
     sessionPair: async () => undefined,
     runtimeMutator: {
@@ -698,6 +715,9 @@ describe("starter kits: apply", () => {
           throw new Error("nope");
         },
         announceSlackConnect: async () => {},
+        update: async () => null,
+        disconnectSlack: async () => null,
+        ensureReady: async () => {},
       },
       schedules: {
         createCron: async () => {
@@ -716,6 +736,7 @@ describe("starter kits: apply", () => {
           agentId,
           connections: [],
         }),
+        updateAgentConnections: async () => {},
       },
       skills: {
         applyEntries: async () => ({ installed: [], added: 0, skipped: [] }),
@@ -726,6 +747,9 @@ describe("starter kits: apply", () => {
       egressRules: { seed: async () => {} },
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
+      stampKit: async () => {},
+      kitClaim: { claim: async () => true, release: async () => {} },
+      kitSeed: NO_KIT_SEED,
       linkedKits: NO_LINKS,
       sessionPair: async () => undefined,
       runtimeMutator: {
@@ -819,6 +843,9 @@ describe("starter kits: apply", () => {
         list: async () => [],
         connectSlack: async () => ({}) as never,
         announceSlackConnect: async () => {},
+        update: async () => null,
+        disconnectSlack: async () => null,
+        ensureReady: async () => {},
       },
       schedules: {
         createCron: async (input) =>
@@ -835,6 +862,7 @@ describe("starter kits: apply", () => {
           agentId,
           connections: [],
         }),
+        updateAgentConnections: async () => {},
       },
       skills: {
         applyEntries: async () => {
@@ -847,6 +875,9 @@ describe("starter kits: apply", () => {
       egressRules: { seed: async () => {} },
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
+      stampKit: async () => {},
+      kitClaim: { claim: async () => true, release: async () => {} },
+      kitSeed: NO_KIT_SEED,
       linkedKits: NO_LINKS,
       sessionPair: async () => undefined,
       runtimeMutator: {
@@ -928,6 +959,9 @@ describe("starter kits: onboarding turn", () => {
           throw new Error("unreachable");
         },
         announceSlackConnect: async () => {},
+        update: async () => null,
+        disconnectSlack: async () => null,
+        ensureReady: async () => {},
       },
       schedules: {
         createCron: async (input) =>
@@ -941,6 +975,7 @@ describe("starter kits: onboarding turn", () => {
         listConnections: async () => [connection("c-gh", "github-pat")],
         listTemplates: async () => TEMPLATES,
         getAgentConnections: async () => ({ connections: [] }) as never,
+        updateAgentConnections: async () => {},
       },
       skills: {
         applyEntries: async () => ({ applied: [], skipped: [] }) as never,
@@ -951,6 +986,9 @@ describe("starter kits: onboarding turn", () => {
       egressRules: { seed: async () => {} },
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
+      stampKit: async () => {},
+      kitClaim: { claim: async () => true, release: async () => {} },
+      kitSeed: NO_KIT_SEED,
       linkedKits: NO_LINKS,
       sessionPair: async () => undefined,
       runtimeMutator: {

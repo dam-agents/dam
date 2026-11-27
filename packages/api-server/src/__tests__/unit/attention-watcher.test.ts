@@ -91,6 +91,7 @@ function harness(): Harness {
     listForOwner: async () => [],
     listForOwnerPage: async () => [],
     listForOwnerAgent: async () => [],
+    listForOwnerSessions: async () => [],
     upsertRecord: async (row) => {
       if (failWrite) {
         failWrite = false;

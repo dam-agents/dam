@@ -102,7 +102,9 @@ vi.mock("../../modules/providers/components/provider-balance.js", () => ({
   ProviderBalance: () => null,
 }));
 vi.mock("../../modules/spend/components/all-agents-provider-limit.js", () => ({
-  AllAgentsSpendBadge: () => null,
+  AllAgentsSpendToggle: () => null,
+  AllAgentsLimitChevron: () => null,
+  AllAgentsLimitPanel: () => null,
 }));
 vi.mock("../../modules/agents/api/queries.js", () => ({
   useAgent: () => null,

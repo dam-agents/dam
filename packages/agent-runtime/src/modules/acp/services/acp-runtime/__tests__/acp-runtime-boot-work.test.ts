@@ -225,6 +225,7 @@ describe("acp-runtime: spawn work before the harness starts", () => {
     await Promise.resolve();
     const client = world.connect();
     client.send(frames.initialize(1));
+    world.harness().replyTo("initialize");
     client.send(frames.newSession(2));
     world.harness().replyTo("session/new", { sessionId: "sess-boot" });
     expect(prompts).toBe(0);

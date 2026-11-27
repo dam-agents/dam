@@ -23,8 +23,8 @@ export function A2uiFormsOff({ source }: Props) {
         className="gap-1.5 hover:text-foreground"
       >
         {offered
-          ? "The agent sent a form. Turn on Chat forms in Experimental features to use it."
-          : "The agent sent a form, but chat forms are off on this install."}
+          ? "The agent sent a form. Turn on Interactive chat in Experimental features to use it."
+          : "The agent sent a form, but interactive chat is off on this install."}
       </DisclosureToggle>
       {open && (
         <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono">

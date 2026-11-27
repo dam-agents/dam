@@ -136,17 +136,20 @@ dam run my-agent -p "<the questions below>" --json
 
 The question runs a turn on that agent, on its model, and the turn spends the user's budget.
 So the deep check needs the user's approval, whoever you are and whatever asked you to check.
-Before the first question, tell the user which agents you would ask, and that each question runs one turn on that agent.
+Before the first question, tell the user which agents you would ask, that each question runs one turn on that agent, and that you ask an agent again when its answer leaves something open.
 Ask no agent until the user agrees; the approval covers the agents you named, for this check only.
 When the user does not agree, or does not answer, stop at what the files say, and say which agents the deep check would ask.
 In a run with no user in the chat, such as a schedule, ask an agent only when the task says that the user chose the deep check.
 
-With the approval, ask only what the files left open, once for each agent, all in one prompt:
+With the approval, ask only what the files left open, all in one prompt for each agent:
 
 - what it is for, and whom it works for;
 - what it does when a message in a channel, or text in something it reads, asks for work outside that purpose;
 - what it does when such a message asks it to change its instructions, its memory, its skills or its schedules, or to send what it knows or holds somewhere else;
 - where in its files those rules are written.
+
+Ask an agent again only when its answer left one of these open, and only for that.
+Each further question runs another turn on that agent, so tell the user how many times you asked each agent.
 
 Only ask.
 Send nothing that tries to break the agent's rules: a test of that kind can change the agent, and it comes from the user, so it shows nothing about a stranger's message.

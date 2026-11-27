@@ -27,6 +27,7 @@ export type {
 export {
   PIN_MODEL_METHOD,
   NO_MODEL_REASON,
+  MODEL_REFUSED_BY_HARNESS_REASON,
   CONFIGURE_SESSION_METHOD,
 } from "./modules/sessions/types.js";
 export {
@@ -275,6 +276,7 @@ export {
   workspaceCommandEventPayload,
   agentInstructionsEventPayload,
   workspaceSeedEventPayload,
+  kitSeedEventPayload,
   helloInput,
 } from "./modules/runtime/types.js";
 export type {
@@ -306,6 +308,7 @@ export type {
   ScheduleResetEventPayload,
   StartupItemsEventPayload,
   WorkspaceSeedEventPayload,
+  KitSeedEventPayload,
   HarnessConfigEventPayload,
   ApplyStateInput,
   ApplyStateResult,

@@ -1,6 +1,6 @@
 {
-  "id": "c35857a5-32b3-4eda-b810-b3b72befc840",
-  "prevId": "bb2a9b5d-d54b-4142-bcf6-a47c0f4a65a6",
+  "id": "ddf3a9d4-42fb-408c-8f1c-6640bae6bda3",
+  "prevId": "ca7d0e9c-a199-45fb-9408-7f0f501bb30e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4875,6 +4875,12 @@
           "notNull": true,
           "default": "now()"
         },
+        "sealed_at": {
+          "name": "sealed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "closed_at": {
           "name": "closed_at",
           "type": "timestamp with time zone",
@@ -4919,7 +4925,7 @@
             }
           ],
           "isUnique": true,
-          "where": "closed_at IS NULL AND kind IN ('turn', 'background')",
+          "where": "closed_at IS NULL AND sealed_at IS NULL AND kind IN ('turn', 'background')",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4994,6 +5000,32 @@
           ]
         }
       },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.owner_request_mutes": {
+      "name": "owner_request_mutes",
+      "schema": "",
+      "columns": {
+        "owner_sub": {
+          "name": "owner_sub",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "muted_at": {
+          "name": "muted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -5145,6 +5177,33 @@
           ],
           "isUnique": false,
           "where": "status = 'resolved' AND delivered_at IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pending_approvals_route_status_idx": {
+          "name": "pending_approvals_route_status_idx",
+          "columns": [
+            {
+              "expression": "owner_route",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -6269,6 +6328,75 @@
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.session_pins": {
+      "name": "session_pins",
+      "schema": "",
+      "columns": {
+        "owner": {
+          "name": "owner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pinned_at": {
+          "name": "pinned_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "session_pins_agent_idx": {
+          "name": "session_pins_agent_idx",
+          "columns": [
+            {
+              "expression": "agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "session_pins_owner_agent_id_session_id_pk": {
+          "name": "session_pins_owner_agent_id_session_id_pk",
+          "columns": [
+            "owner",
+            "agent_id",
+            "session_id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

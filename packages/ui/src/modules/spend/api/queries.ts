@@ -34,6 +34,13 @@ export function useOwnerSpendStatus() {
   });
 }
 
+export function useSpendStopped() {
+  return useQuery({
+    ...trpc.spend.stopped.queryOptions(),
+    refetchInterval: SPEND_REFRESH_MS,
+  });
+}
+
 export function useSpendCeilings() {
   return useQuery(trpc.spend.ceilings.list.queryOptions());
 }

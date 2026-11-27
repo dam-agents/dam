@@ -19,6 +19,7 @@ CREATE TABLE "owner_request_cards" (
 	"posted_at" timestamp with time zone,
 	"threads" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"last_change" timestamp with time zone DEFAULT now() NOT NULL,
+	"sealed_at" timestamp with time zone,
 	"closed_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -31,7 +32,14 @@ CREATE TABLE "owner_request_dismissals" (
 	CONSTRAINT "owner_request_dismissals_owner_sub_agent_id_host_pk" PRIMARY KEY("owner_sub","agent_id","host")
 );
 --> statement-breakpoint
+CREATE TABLE "owner_request_mutes" (
+	"owner_sub" text PRIMARY KEY NOT NULL,
+	"muted_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "pending_approvals" ADD COLUMN "owner_route" text;--> statement-breakpoint
 ALTER TABLE "owner_request_card_items" ADD CONSTRAINT "owner_request_card_items_card_id_owner_request_cards_id_fk" FOREIGN KEY ("card_id") REFERENCES "public"."owner_request_cards"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "owner_request_card_items_request_idx" ON "owner_request_card_items" USING btree ("request_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "owner_request_cards_open_idx" ON "owner_request_cards" USING btree ("owner_sub","agent_id","team_id","kind") WHERE closed_at IS NULL AND kind IN ('turn', 'background');--> statement-breakpoint
-CREATE INDEX "owner_request_cards_owner_idx" ON "owner_request_cards" USING btree ("owner_sub","closed_at");
+CREATE UNIQUE INDEX "owner_request_cards_open_idx" ON "owner_request_cards" USING btree ("owner_sub","agent_id","team_id","kind") WHERE closed_at IS NULL AND sealed_at IS NULL AND kind IN ('turn', 'background');--> statement-breakpoint
+CREATE INDEX "owner_request_cards_owner_idx" ON "owner_request_cards" USING btree ("owner_sub","closed_at");--> statement-breakpoint
+CREATE INDEX "pending_approvals_route_status_idx" ON "pending_approvals" USING btree ("owner_route","status","created_at");

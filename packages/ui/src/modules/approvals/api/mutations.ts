@@ -14,7 +14,11 @@ export function useApproveOnce() {
   return useMutation({
     ...trpc.approvals.approveOnce.mutationOptions(),
     meta: {
-      invalidates: [...AFTER_VERDICT, trpc.spend.status.queryKey()],
+      invalidates: [
+        ...AFTER_VERDICT,
+        trpc.spend.status.queryKey(),
+        trpc.spend.stopped.queryKey(),
+      ],
       errorToast: "Couldn't approve",
     },
   });

@@ -5,6 +5,7 @@ import type { SandboxSection } from "../platform/lib/routes.js";
 export interface AgentSettingsTarget {
   agentId: string;
   section: SandboxSection;
+  focus?: string;
 }
 
 /**
@@ -14,7 +15,12 @@ export interface AgentSettingsTarget {
  */
 export interface AgentSettingsSlice {
   agentSettings: AgentSettingsTarget | null;
-  openAgentSettings: (agentId: string, section?: SandboxSection) => void;
+  openAgentSettings: (
+    agentId: string,
+    section?: SandboxSection,
+    focus?: string,
+  ) => void;
+  clearAgentSettingsFocus: () => void;
   closeAgentSettings: () => void;
 }
 
@@ -22,7 +28,13 @@ export const createAgentSettingsSlice: StateCreator<AgentSettingsSlice> = (
   set,
 ) => ({
   agentSettings: null,
-  openAgentSettings: (agentId, section = "setup") =>
-    set({ agentSettings: { agentId, section } }),
+  openAgentSettings: (agentId, section = "setup", focus) =>
+    set({ agentSettings: { agentId, section, ...(focus && { focus }) } }),
+  clearAgentSettingsFocus: () =>
+    set((s) =>
+      s.agentSettings?.focus
+        ? { agentSettings: { ...s.agentSettings, focus: undefined } }
+        : s,
+    ),
   closeAgentSettings: () => set({ agentSettings: null }),
 });

@@ -13,7 +13,6 @@ import { ProgressRing } from "./progress-ring.js";
 interface Props {
   rows: readonly ChecklistRow[];
   onClose: () => void;
-  onDismiss: () => void;
   onStart: (task: GettingStartedTask) => void;
 }
 
@@ -22,10 +21,9 @@ interface Props {
  * eight characters as slots, and the tasks that unlock them. An unlocked
  * character takes its slot, a locked one keeps the egg, so the strip is the
  * reward the rows below describe. A click on a row opens the place where the
- * task is done and closes the popover; Dismiss hides the checklist until the
- * next unlock or the avatar picker.
+ * task is done and closes the popover.
  */
-export function ChecklistPanel({ rows, onClose, onDismiss, onStart }: Props) {
+export function ChecklistPanel({ rows, onClose, onStart }: Props) {
   const done = rows.filter((row) => row.reward !== null).length;
   const total = rows.length;
   return (
@@ -82,15 +80,6 @@ export function ChecklistPanel({ rows, onClose, onDismiss, onStart }: Props) {
           />
         ))}
       </ul>
-      <div className="flex justify-end border-t border-border px-4 py-2">
-        <button
-          type="button"
-          className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-          onClick={onDismiss}
-        >
-          Dismiss
-        </button>
-      </div>
     </section>
   );
 }

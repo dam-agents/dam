@@ -40,6 +40,8 @@ import {
 import { createInvocationCancelPlugin } from "./drivers/invocation-cancel-plugin.js";
 import { createSessionMessagePlugin } from "./drivers/session-message-plugin.js";
 import { createPrecheckRunner } from "./infrastructure/precheck-runner.js";
+import { createKitSeedPlugin } from "./drivers/kit-seed-plugin.js";
+import { createGitRunner } from "../git/protocol-client.js";
 import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
 import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
 import { createAgentInstructionsPlugin } from "./drivers/agent-instructions-plugin.js";
@@ -210,6 +212,14 @@ export async function composeRuntimeChannel(
   );
   registry.register(
     createWorkspaceCommandPlugin({ workDir: opts.workDir, spawnEnv, log }),
+  );
+  registry.register(
+    createKitSeedPlugin({
+      workDir: opts.workDir,
+      git: createGitRunner(spawnEnv),
+      reporter,
+      log,
+    }),
   );
 
   registry.register(createAgentInstructionsPlugin({ log }));

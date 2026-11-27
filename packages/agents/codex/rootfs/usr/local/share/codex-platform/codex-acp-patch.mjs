@@ -7,7 +7,8 @@ const UPSTREAM_GAPS =
   "other than OpenAI's own (#595), names the session from session/new (#338) or carries a switch; " +
   "and codex-acp fails a turn whose model request failed, with the error in data.details " +
   "and no error text in the reply (https://github.com/agentclientprotocol/codex-acp/issues/647); " +
-  "and a _session/steering request that asks for promptRequired starts no turn when none runs";
+  "and a _session/steering request that asks for promptRequired starts no turn when none runs; " +
+  "and codex-acp starts a new codex process when its codex process exits, as 2.2.0 and later do";
 
 function dropOwnImport() {
   const rest = (process.env.NODE_OPTIONS ?? "")
@@ -34,7 +35,13 @@ function dropOwnImport() {
  * failure reply. A steer that finds no running turn starts a hidden turn of
  * its own, although the runtime asks for promptRequired and then queues the
  * same message again, so the agent would read it two times. The third edit
- * answers promptRequired instead.
+ * answers promptRequired instead. codex-acp runs one codex process for all
+ * its sessions and starts a new one only for a provider change, which the
+ * platform never sends. When that process exits on its own, codex-acp stays
+ * alive and fails every later request, and the runtime replaces a harness
+ * only when the adapter process exits. The fourth edit lets the background
+ * tasks finish, for at most five seconds, and then exits codex-acp, so the
+ * next frame starts a new harness.
  */
 const edits = [
   {
@@ -63,6 +70,17 @@ const edits = [
   {
     find: "    return await this.startNewTurnFromSteering(params);\n",
     replace: '    return { outcome: "promptRequired", reason: "noRunningTurn" };\n',
+    count: 1,
+  },
+  {
+    find: '      void this.finishAllAsyncTasks("failed", "after the Codex process exited");\n',
+    replace:
+      '      const finished = this.finishAllAsyncTasks("failed", "after the Codex process exited");\n' +
+      "      const bounded = new Promise((resolve) => setTimeout(resolve, 5e3));\n" +
+      "      void Promise.race([finished, bounded]).finally(() => {\n" +
+      "        process.stderr.write(`codex-acp-patch: the codex process exited (${process11.signalCode ?? `code ${process11.exitCode}`}); codex-acp exits too, so the next request starts a new harness\\n`);\n" +
+      "        process.exit(1);\n" +
+      "      });\n",
     count: 1,
   },
 ];

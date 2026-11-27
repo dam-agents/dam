@@ -44,7 +44,7 @@ A few observations the diagram glosses over:
 - **The gates are the binding check plus the binding owner's Terms-of-Use acceptance** — no sender identity is resolved.
   Both messengers behave identically here.
   An Agent at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) starts no turn either and is not woken; whoever addressed it gets a notice.
-  An unallowed host is refused, not held, but an addressed Slack turn [holds it](slack-owner-requests.md).
+  An unallowed host is [held or refused](slack-owner-requests.md).
 - **An attachment is a picture the agent is shown or a file it is handed**, by what the sender sent, not what the bytes are.
   Slack only: Telegram drops one at its gateway.
   A picture becomes prompt content only in a format the harness decodes, the sniffed type outranking the messenger's label.
@@ -183,8 +183,8 @@ A steer held for a running turn has no time limit either; the turn is judged onl
 
 An addressed turn that fails is answered in plain language keyed to what happened, never a raw error — and answered not at all where the thread already carries the agent's own post or a deliberate decline or hand-off.
 A turn that failed because the model provider is down or overloaded is answered with what [Provider Status](provider-status.md#screens) knows: the provider's outage and since when, a fault on the platform's side, or only that the provider did not respond.
-A turn the model refused (ACP's `refusal` stop reason) fails as `model-refused`; one whose model call failed, as `model-call-rejected` or `model-call-failed`.
-Either reply links the agent's Providers section; a failed call's reply also quotes the provider's error, never the agent's text, and links the session.
+A turn fails as `model-refused` when the model refused it, `model-call-rejected` or `model-call-failed` when the call failed, and `model-refused-by-harness` when the harness refused its model.
+Each reply links the agent's Providers section; a failed call's also quotes the provider's error, never the agent's text, and links the session.
 On Slack a refusal's reply advises a new thread, since the thread's session keeps the refused message.
 Either message counts as delivered, so the next turn's catch-up does not hand it to the agent again.
 A turn that a spend limit or the ceiling stops partway fails with the harness's report of the gate's refusal, and the relay counts it as failed with the `spend-limit` or `spend-ceiling` reason.

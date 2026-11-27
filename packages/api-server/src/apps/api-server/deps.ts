@@ -85,6 +85,7 @@ import type {
 } from "../../modules/login-testimonials/index.js";
 import type { GettingStartedModule } from "../../modules/getting-started/index.js";
 import type { SidebarOrderModule } from "../../modules/sidebar-order/index.js";
+import type { SessionPinsModule } from "../../modules/session-pins/index.js";
 export type { ApiVariables };
 
 export interface ApiServerDeps {
@@ -185,6 +186,7 @@ export interface ApiServerDeps {
   gettingStarted: GettingStartedModule;
   sidebarOrder: SidebarOrderModule;
   ownerActivity: OwnerActivity;
+  sessionPins: SessionPinsModule;
   sessionPresence: SessionPresence;
   wakeAgent: (agentId: string) => Promise<void>;
   artifactLibraryFor: ArtifactLibraryFor;

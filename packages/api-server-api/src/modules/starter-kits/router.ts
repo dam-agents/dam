@@ -8,6 +8,7 @@ import { toAgentView } from "../agents/view.js";
 import {
   kitUpdateAgentInputSchema,
   starterKitApplyInputSchema,
+  starterKitApplyToAgentInputSchema,
   starterKitGetInputSchema,
   starterKitInspectInputSchema,
 } from "./schemas.js";
@@ -41,6 +42,13 @@ export const starterKitsRouter = t.router({
           ...(result.agent.startsOn && { startsOn: result.agent.startsOn }),
         },
       };
+    }),
+
+  applyToAgent: manageAgentsProcedure
+    .input(starterKitApplyToAgentInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.starterKits.applyToAgent(input);
+      return { ...result, agent: toAgentView(result.agent) };
     }),
 
   updates: readAgentProcedure.query(({ ctx }) => ctx.starterKits.updates()),

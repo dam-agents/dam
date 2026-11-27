@@ -11,11 +11,17 @@ import {
   earliestExpiry,
   gitHubUserTokenApiBase,
 } from "../domain/github-user-token-scope.js";
-import { withoutRefreshFailureMarker } from "../domain/refresh-failure-marker.js";
-import { scopeGitHubUserToken } from "./github-user-token.js";
+import {
+  isPermanentTokenRejection,
+  nextRefreshBackoff,
+  REFRESH_SKEW_SECONDS,
+  tokenRejectionOf,
+  withoutRefreshFailureMarker,
+} from "../domain/refresh-failure-marker.js";
+import { scopeGitHubUserToken, type OAuthClient } from "./github-user-token.js";
 import { securityLog } from "../../../core/security-log.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: the connections made from a GitHub sign-in hold no token of their own to renew: each one injects the sign-in's user token for full access, or the token GitHub derives from it for its scope. After the sign-in's user token changes, under the sign-in's refresh lock, every one of them gets a token from the new one. A connection whose scope GitHub refuses reads expired and the others are still renewed, so one connection's narrowing never costs its siblings their access.
+// UNIT_BOUNDARY_DESCRIPTION: the connections made from a GitHub sign-in hold no token of their own to renew: each one injects the sign-in's user token for full access, or the token GitHub derives from it for its scope. After the sign-in's user token changes, under the sign-in's refresh lock, every one of them gets a token from the new one. A connection whose scope GitHub refuses reads expired and the others are still renewed, so one connection's narrowing never costs its siblings their access. A connection whose token GitHub fails to give without refusing it — a 5xx, no answer — is retried on a widening backoff held on it, and the sign-in's next renewal moves up to that retry, so one transient error costs minutes rather than the user token's lifetime.
 type OAuthAuth = Extract<ConnectionAuthConfig, { kind: "oauth" }>;
 
 export interface ChildTokenDeps {
@@ -34,7 +40,7 @@ export async function childUserToken(
   child: Pick<Connection, "id" | "templateId">,
   auth: OAuthAuth,
   userToken: UserToken,
-  clientSecret: string | undefined,
+  client: OAuthClient,
 ): Promise<{ accessToken: string; expiresAt?: number; accountLogin?: string }> {
   const scope = auth.githubUserTokenScope;
   if (!scope) {
@@ -54,7 +60,7 @@ export async function childUserToken(
     connectionRef: `connection:${child.id}:${child.templateId}`,
     auth,
     scope,
-    clientSecret,
+    client,
     accessToken: userToken.accessToken,
   });
   const expiresAt = earliestExpiry(userToken.expiresAt, scoped.expiresAt);
@@ -120,20 +126,14 @@ export async function rederiveGitHubChildren(
   deps: ChildTokenDeps,
   parent: Connection,
   userToken: UserToken,
-  clientSecret: string | undefined,
+  client: OAuthClient,
 ): Promise<number | undefined> {
   let earliest = userToken.expiresAt;
   for (const child of await deps.repo.listChildren(parent.id)) {
     if (child.auth.kind !== "oauth") continue;
     const auth = child.auth;
     try {
-      const next = await childUserToken(
-        deps,
-        child,
-        auth,
-        userToken,
-        clientSecret,
-      );
+      const next = await childUserToken(deps, child, auth, userToken, client);
       await writeChildToken(deps.secretStore, child, auth, next.accessToken);
       const renewed: OAuthAuth = { ...withoutRefreshFailureMarker(auth) };
       delete renewed.expiresAt;
@@ -144,22 +144,50 @@ export async function rederiveGitHubChildren(
       });
       earliest = earliestExpiry(earliest, next.expiresAt);
     } catch (err) {
-      await deps.repo.updateAuth(child.id, {
-        ...auth,
-        refreshFailedAt: Math.floor(Date.now() / 1000),
-      });
+      const nowMs = Date.now();
+      const unmarked = withoutRefreshFailureMarker(auth);
+      const permanent = isRefusal(err, parent);
+      const backoff = permanent
+        ? undefined
+        : nextRefreshBackoff(auth.refreshBackoff, nowMs);
+      await deps.repo.updateAuth(
+        child.id,
+        backoff
+          ? { ...unmarked, refreshBackoff: backoff }
+          : { ...unmarked, refreshFailedAt: Math.floor(nowMs / 1000) },
+      );
+      if (backoff) {
+        earliest = earliestExpiry(
+          earliest,
+          backoff.nextAttempt + REFRESH_SKEW_SECONDS,
+        );
+      }
       securityLog("warn", "connection.child_token_failed", {
         category: "credential",
         actor: "system:oauth-refresh",
         actorKind: "system",
         target: child.id,
         result: "failure",
+        ...(permanent ? { decision: "expired" } : {}),
         detail: {
           parentId: parent.id,
           error: err instanceof Error ? err.message : String(err),
+          ...(backoff
+            ? { attempt: backoff.failures, retryAt: backoff.nextAttempt }
+            : {}),
         },
       });
     }
   }
   return earliest;
+}
+
+function isRefusal(err: unknown, parent: Connection): boolean {
+  const rejection = tokenRejectionOf(err);
+  if (!rejection) return false;
+  return isPermanentTokenRejection({
+    ...rejection,
+    ownsClientSecret:
+      parent.auth.kind === "oauth" && parent.auth.clientSecretRef !== undefined,
+  });
 }

@@ -59,10 +59,12 @@ async function channelTurnRunning(
   });
   const turn = world.connect({ viewer: false });
   turn.send(frames.initialize(1));
-  if (initialize !== null) world.harness().replyTo("initialize", initialize);
-  turn.send(frames.newSession(2));
-  world.harness().replyTo("session/new", { sessionId: SESSION });
-  await settle();
+  if (initialize !== null) {
+    world.harness().replyTo("initialize", initialize);
+    turn.send(frames.newSession(2));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    await settle();
+  }
   turn.send({
     jsonrpc: "2.0",
     id: 3,
@@ -151,12 +153,21 @@ describe("acp-runtime: a channel's steer that does not join its turn", () => {
   /**
    * TEST_SCENARIO: The manifest says the harness steers, and the steer
    * arrives while the harness has not answered initialize yet — an agent that
-   * just woke, or a harness that just restarted. The steer must wait rather
+   * just woke, or a harness that just restarted, whose first frame is the
+   * turn's prompt, which waits for that answer. The steer must wait rather
    * than be refused as unsupported, and join the turn at its first steer point
    * once the harness says it steers.
    */
   it("holds a steer for a harness that has not answered initialize yet", async () => {
     const { world, logs, channel } = await channelTurnRunning(null, "native");
+    channel.send(steer(2, "steer-e"));
+    await settle();
+    expect(channel.reply(2)).toBeUndefined();
+    expect(world.harness().receivedMethods()).toEqual(["initialize"]);
+
+    world.harness().replyTo("initialize", {
+      _meta: { steering: { supported: true } },
+    });
     world.harness().emit(
       update({
         sessionUpdate: "tool_call",
@@ -164,13 +175,6 @@ describe("acp-runtime: a channel's steer that does not join its turn", () => {
         status: "pending",
       }),
     );
-    channel.send(steer(2, "steer-e"));
-    await settle();
-    expect(channel.reply(2)).toBeUndefined();
-
-    world.harness().replyTo("initialize", {
-      _meta: { steering: { supported: true } },
-    });
     world.harness().emit(
       update({
         sessionUpdate: "tool_call_update",

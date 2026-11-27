@@ -22,7 +22,8 @@ if (pinned === undefined || pinned !== patched) {
       "writes no retry notice into the reply, " +
       "hands pi the session ref of session/new and session/load " +
       "or serves _session/steering and answers promptRequired for a steer that reaches pi after its run settled " +
-      "(https://github.com/svkozak/pi-acp/pull/115 does not), drop the edits it makes unnecessary " +
+      "(https://github.com/svkozak/pi-acp/pull/115 does not), " +
+      "or restarts pi on a session pi never wrote under the session's own id, drop the edits it makes unnecessary " +
       "(packages/agents/pi-agent/README.md, \"pi-acp patch\"); " +
       "otherwise confirm its edits still apply and update PATCHED_VERSION.",
   );

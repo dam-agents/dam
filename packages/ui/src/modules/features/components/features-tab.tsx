@@ -44,7 +44,7 @@ const FEATURE_ROWS: FeatureRow[] = [
   },
   {
     id: "chat-forms",
-    label: "Chat forms",
+    label: "Interactive chat",
     description:
       "Let agents put forms, choices and cards into their chat replies, for example during onboarding or a kit update, and send your answer back with one click.",
   },
