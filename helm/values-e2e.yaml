@@ -61,6 +61,12 @@ keycloak:
     - username: dammy-owner
       password: dammy-e2e
       firstName: Owner
+    # The account the integration suite's auth spec proves the Terms gate on:
+    # no setup accepts the Terms for it, so the gate still stands when the spec
+    # runs, whatever ran before it.
+    - username: terms-gate
+      password: terms-gate-e2e
+      firstName: Gate
     # The acceptance suite's personas (packages/e2e/acceptance), one set per
     # worker slot, and the suite runs one worker: every owner gets a VM runner
     # of its own that reserves memory, and a second set of three owners beside

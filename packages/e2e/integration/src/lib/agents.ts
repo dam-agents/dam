@@ -306,3 +306,24 @@ export function agentCardStatus(
     })
     .getByText(label, { exact: true });
 }
+
+/** UNIT_BOUNDARY_DESCRIPTION: an account that accepted the Terms holds no assistant: the assistant ships on, so accepting them makes one, and its machine would hold memory on the node for the rest of the run. A create runs behind the request that asked for one, so the wait lets it settle, and the Agent it made is then deleted. */
+export async function leaveNoAssistant(api: ApiClient): Promise<void> {
+  await api.features.setFlag.mutate({ feature: "dambledore", enabled: false });
+  const deadline = Date.now() + 60_000;
+  let state = await api.assistants.state.query();
+  while ((state === null || !state.ready) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    state = await api.assistants.state.query();
+  }
+  if (state === null) return;
+  const agentId = state.agentId;
+  await api.agents.delete.mutate({ id: agentId });
+  await expect
+    .poll(
+      async () =>
+        (await api.agents.list.query()).some((agent) => agent.id === agentId),
+      { timeout: 120_000, intervals: [2_000] },
+    )
+    .toBe(false);
+}

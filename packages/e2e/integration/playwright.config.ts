@@ -38,64 +38,85 @@ function workersFromEnv(): number {
 
 type NamedProject = Project & { name: string };
 
+/* UNIT_BOUNDARY_DESCRIPTION: the setup project, which makes the shared state every other project runs on: the shared account's stored login, Terms and assistant switch, the suite's connection, model provider and mock agent. No spec makes state another reads, so a spec can be deleted without breaking the ones after it. */
+const setup: NamedProject = {
+  name: "setup",
+  testMatch: /setup\/.*\.setup\.ts$/,
+  use: { ...devices["Desktop Chrome"] },
+};
+
+/* UNIT_BOUNDARY_DESCRIPTION: the smoke projects in stages: each project waits for setup and for every project of the stage before, the order the suite always ran in, so a project leaves the suite by leaving its stage, and a stage left empty is skipped. */
+const smokeStages: NamedProject[][] = [
+  [
+    {
+      name: "auth",
+      testMatch: /01-.*\.spec\.ts$/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "connection",
+      testMatch: /02-.*\.spec\.ts$/,
+      use: { ...devices["Desktop Chrome"], storageState },
+    },
+    {
+      name: "trpc-ws-auth",
+      testMatch: /13-.*\.spec\.ts$/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "live-events",
+      testMatch: /14-.*\.spec\.ts$/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      /* UNIT_BOUNDARY_DESCRIPTION: the assistant spec signs in as accounts of its own, so it takes no stored session and no other spec's account. */
+      name: "assistant",
+      testMatch: /16-.*\.spec\.ts$/,
+      workers: 1,
+      use: { ...devices["Desktop Chrome"] },
+    },
+  ],
+  [
+    {
+      name: "agent",
+      testMatch: /03-.*\.spec\.ts$/,
+      use: { ...devices["Desktop Chrome"], storageState },
+    },
+    {
+      name: "api-keys",
+      testMatch: /15-.*\.spec\.ts$/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+  ],
+  [
+    {
+      name: "chain",
+      testMatch: /\/(0[4-9]|1[0-2]|21)-.*\.spec\.ts$/,
+      workers: 1,
+      use: { ...devices["Desktop Chrome"], storageState },
+    },
+    {
+      name: "own-agents",
+      testMatch: /\/(17|18|22|23|25|27|29)-.*\.spec\.ts$/,
+      workers: 1,
+      use: { ...devices["Desktop Chrome"], storageState },
+    },
+  ],
+];
+
 const smoke: NamedProject[] = [
-  {
-    name: "auth",
-    testMatch: /01-.*\.spec\.ts$/,
-    use: { ...devices["Desktop Chrome"] },
-  },
-  {
-    name: "connection",
-    testMatch: /02-.*\.spec\.ts$/,
-    dependencies: ["auth"],
-    use: { ...devices["Desktop Chrome"], storageState },
-  },
-  {
-    name: "trpc-ws-auth",
-    testMatch: /13-.*\.spec\.ts$/,
-    dependencies: ["auth"],
-    use: { ...devices["Desktop Chrome"] },
-  },
-  {
-    name: "live-events",
-    testMatch: /14-.*\.spec\.ts$/,
-    dependencies: ["auth"],
-    use: { ...devices["Desktop Chrome"] },
-  },
-  {
-    /* UNIT_BOUNDARY_DESCRIPTION: the assistant spec signs in as accounts of its own, so it takes no stored session and no other spec's account: it runs once, before anything that shares the suite's state. */
-    name: "assistant",
-    testMatch: /16-.*\.spec\.ts$/,
-    dependencies: ["auth"],
-    workers: 1,
-    use: { ...devices["Desktop Chrome"] },
-  },
-  {
-    name: "agent",
-    testMatch: /03-.*\.spec\.ts$/,
-    dependencies: ["connection"],
-    use: { ...devices["Desktop Chrome"], storageState },
-  },
-  {
-    name: "api-keys",
-    testMatch: /15-.*\.spec\.ts$/,
-    dependencies: ["connection"],
-    use: { ...devices["Desktop Chrome"] },
-  },
-  {
-    name: "chain",
-    testMatch: /\/(0[4-9]|1[0-2]|21)-.*\.spec\.ts$/,
-    dependencies: ["agent"],
-    workers: 1,
-    use: { ...devices["Desktop Chrome"], storageState },
-  },
-  {
-    name: "own-agents",
-    testMatch: /\/(17|18|22|23|25|27|29)-.*\.spec\.ts$/,
-    dependencies: ["agent"],
-    workers: 1,
-    use: { ...devices["Desktop Chrome"], storageState },
-  },
+  setup,
+  ...smokeStages
+    .filter((stage) => stage.length > 0)
+    .flatMap((stage, index, stages) =>
+      stage.map((project) => ({
+        ...project,
+        dependencies: [
+          "setup",
+          ...(index === 0 ? [] : stages[index - 1]!.map(({ name }) => name)),
+        ],
+      })),
+    ),
 ];
 
 const suite: NamedProject[] = [
@@ -105,43 +126,43 @@ const suite: NamedProject[] = [
         {
           name: "invocations-full",
           testMatch: /full\/invocation-.*\.spec\.ts$/,
-          dependencies: ["auth"],
+          dependencies: ["setup"],
           use: { ...devices["Desktop Chrome"] },
         },
         {
           name: "slack-full",
           testMatch: /full\/slack-(?!token-rotation).*\.spec\.ts$/,
-          dependencies: ["auth"],
+          dependencies: ["setup"],
           use: { ...devices["Desktop Chrome"] },
         },
         {
           name: "slack-rotation-full",
           testMatch: /full\/slack-token-rotation\.spec\.ts$/,
-          dependencies: ["chain", "slack-full"],
+          dependencies: ["setup", "slack-full"],
           use: { ...devices["Desktop Chrome"] },
         },
         {
           name: "gateway-full",
           testMatch: /full\/gateway-.*\.spec\.ts$/,
-          dependencies: ["auth"],
+          dependencies: ["setup"],
           use: { ...devices["Desktop Chrome"] },
         },
         {
           name: "schedules-full",
           testMatch: /full\/schedule-.*\.spec\.ts$/,
-          dependencies: ["auth"],
+          dependencies: ["setup"],
           use: { ...devices["Desktop Chrome"] },
         },
         {
           name: "prompt-delivery-full",
           testMatch: /full\/prompt-delivery\/.*\.spec\.ts$/,
-          dependencies: ["auth"],
+          dependencies: ["setup"],
           use: { ...devices["Desktop Chrome"] },
         },
         {
           name: "skills-full",
           testMatch: /full\/skill-.*\.spec\.ts$/,
-          dependencies: ["auth"],
+          dependencies: ["setup"],
           use: { ...devices["Desktop Chrome"] },
         },
       ].map((project, index, fullProjects) => ({
@@ -214,10 +235,10 @@ const projects = [...suite, agentMachine, runnerRelease].filter(
  * that fail for real there, and a push to main, the nightly run and a dispatch take
  * every one (docs/architecture/e2e.md). pr-scope.json lists the specs it defers, and
  * E2E_PR_SPECS names those a pull request's change still needs, from the paths that
- * file maps to each. No spec a PR run keeps reads state an excluded spec creates. Every
- * project starts after the auth project, the full/ tier's too: its first test needs the
- * shared account before it has accepted the Terms, and the specs of every other
- * project accept them (#6579). The
+ * file maps to each. No spec reads state another spec creates: the setup project makes the
+ * shared account's login, Terms and assistant switch, the suite's connection, provider and
+ * mock agent, and every other project starts after it, the full/ tier's too. The Terms gate
+ * is proven on an account of its own that no setup accepts the Terms for (#6579). The
  * agent machine spec deletes its owner's runner, so it runs in its own project after
  * every other one, and in no other project. E2E_TIMEOUT_SCALE multiplies the default
  * test and expect timeouts: e2e:loop sets it, as a warm cluster shares the machine's
