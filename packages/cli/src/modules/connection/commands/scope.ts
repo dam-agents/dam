@@ -1,11 +1,10 @@
 import { Command, Option } from "commander";
-import {
-  DAM_TEMPLATE_ID,
-  type ConnectionToolAccess,
-  type ConnectionView,
-  type GitHubAppInstallationProbe,
-  type GitHubUserTokenProbe,
-  type ToolMode,
+import type {
+  ConnectionToolAccess,
+  ConnectionView,
+  GitHubAppInstallationProbe,
+  GitHubUserTokenProbe,
+  ToolMode,
 } from "api-server-api";
 import type { Result } from "../../../result.js";
 import type { AuthRequiredError, TransportError } from "../../shared/errors.js";
@@ -55,7 +54,6 @@ import {
 import type { ConnectionService } from "../services/connection-service.js";
 import { readBackFailure, readBackWarning } from "./connect-from.js";
 import { scopeGrantToolAccess } from "./grant-tool-access.js";
-import { scopeGrantPlatformAccess } from "./grant-platform-access.js";
 
 const collect = (v: string, acc: string[]): string[] => [...acc, v];
 
@@ -67,8 +65,6 @@ interface ScopeOpts extends ScopeFlags {
   write?: string;
   tool: string[];
   resetTool: string[];
-  asItself?: boolean;
-  asOwner?: boolean;
   clear?: boolean;
   server?: string;
   json?: boolean;
@@ -144,14 +140,6 @@ export function buildScopeCommand(deps: {
       collect,
       [] as string[],
     )
-    .option(
-      "--as-itself",
-      "with --agent, on the platform's own connection: the agent calls the platform as itself, with its own key; it can read itself and change nothing",
-    )
-    .option(
-      "--as-owner",
-      "with --agent, on the platform's own connection: the agent calls the platform as you again, with everything you can do",
-    )
     .addOption(new Option("--clear").hideHelp())
     .option(
       "--server <url>",
@@ -162,7 +150,6 @@ export function buildScopeCommand(deps: {
       "emit { id, name, kind, scope, parentId?, available?, check? } as JSON; available lists what can be chosen, " +
         'an MCP connection gives { id, name, kind: "tool-mode", toolAccess }, ' +
         'with --agent { id, name, kind: "grant-tool-access", agentId, agentName, grantToolAccess: { read, write, overrides } }, ' +
-        'or on the platform\'s own connection { id, name, kind: "grant-platform-access", agentId, agentName, platformAccess }, null when the agent acts as you, ' +
         "check is a GitHub App's credential check of the new scope, as in `dam connection test`; " +
         "a GitHub sign-in or installation gives { id, name, kind, isParent: true, connections, available }",
     )
@@ -181,7 +168,6 @@ export function buildScopeCommand(deps: {
         "  dam connection scope slack --agent standup       # show one agent's tool access\n" +
         "  dam connection scope slack --agent standup --write ask \\\n" +
         "      --tool slack_add_reaction=allow              # writes wait, reactions pass\n" +
-        "  dam connection scope dam --agent helper --as-itself # it calls the platform as itself\n" +
         "\nA flag you leave out keeps that part of the current scope; on a connection\n" +
         "with full access, it leaves every one of that part.\n" +
         "A connection made from a GitHub sign-in reaches one account once it is limited;\n" +
@@ -206,12 +192,7 @@ export function buildScopeCommand(deps: {
         "until someone approves it) or block. --read sets the rule of the tools that\n" +
         "read, --write the rule of every other tool, and --tool gives one tool its own\n" +
         "rule. A flag you leave out keeps that part. Tool access per agent is an\n" +
-        "experimental feature; while it is off, --agent can neither show nor set it.\n" +
-        "\nOn the platform's own connection, --agent shows whether that agent calls the\n" +
-        "platform as you or as itself. --as-itself gives it its own identity: it can\n" +
-        "read itself and change nothing, and the security log names it. --as-owner\n" +
-        "gives it your access again. Only you can set this, signed in with\n" +
-        "`dam login`: an API key, and so an agent, is refused.\n",
+        "experimental feature; while it is off, --agent can neither show nor set it.\n",
     )
     .action(async (ref: string, opts: ScopeOpts) => {
       const json = opts.json ?? false;
@@ -264,48 +245,6 @@ export function buildScopeCommand(deps: {
       if (!match) {
         process.stderr.write(unresolvedConnectionRef(listed.value, ref));
         process.exit(EXIT_INVALID_INPUT);
-      }
-      if (opts.asItself === true && opts.asOwner === true) {
-        process.stderr.write(
-          "error: --as-itself and --as-owner are the two answers to one question; pass one of them\n",
-        );
-        process.exit(EXIT_INVALID_INPUT);
-      }
-      const platformChange =
-        opts.asItself === true
-          ? ("as-itself" as const)
-          : opts.asOwner === true
-            ? ("as-owner" as const)
-            : null;
-      const ownConnection = match.templateId === DAM_TEMPLATE_ID;
-      if (platformChange !== null && !(opts.agent !== undefined && ownConnection)) {
-        process.stderr.write(
-          "error: --as-itself and --as-owner set how one agent calls the platform; " +
-            "pass them with --agent <agent> on the platform's own connection\n",
-        );
-        process.exit(EXIT_INVALID_INPUT);
-      }
-      if (opts.agent !== undefined && ownConnection) {
-        if (
-          hasScopeFlags(opts) ||
-          opts.fullAccess === true ||
-          hasToolAccessFlags(accessFlags)
-        ) {
-          process.stderr.write(
-            `error: ${match.name} is the platform's own connection: it has neither a scope nor tool access; ` +
-              "pass only --as-itself or --as-owner with --agent\n",
-          );
-          process.exit(EXIT_INVALID_INPUT);
-        }
-        return scopeGrantPlatformAccess({
-          createAgentService: deps.createAgentService,
-          svc,
-          host,
-          connection: match,
-          agentRef: opts.agent,
-          change: platformChange,
-          json,
-        });
       }
       if (opts.agent !== undefined) {
         if (!match.toolAccess) {

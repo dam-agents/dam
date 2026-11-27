@@ -182,11 +182,7 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
           );
       },
       attached: () =>
-        logWsAttach(
-          user,
-          site,
-          Math.round(performance.now() - connectedAt),
-        ),
+        logWsAttach(user, site, Math.round(performance.now() - connectedAt)),
       watchKey: (onDead) =>
         user.keyId === undefined
           ? () => {}

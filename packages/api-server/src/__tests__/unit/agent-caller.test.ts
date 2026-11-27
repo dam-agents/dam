@@ -125,7 +125,9 @@ describe("an Agent Key at the platform API's login", () => {
 });
 
 describe("an Agent caller on the HTTP routes", () => {
-  const middlewareOf = (authenticate: ReturnType<typeof login>["authenticate"]) =>
+  const middlewareOf = (
+    authenticate: ReturnType<typeof login>["authenticate"],
+  ) =>
     createAuthMiddleware(
       (token, site) =>
         authenticate(token ?? "", site.edge === "http" ? site.target : ""),

@@ -159,6 +159,17 @@ An Agent granted later starts from the mode, or, with the feature on, from the s
 Every client reads a grant's access only while the owner has the feature, so with it off the screens and the CLI show what they showed before it.
 Turning the feature off therefore keeps every grant's stored access, and the gate still holds the Agent to it, but nothing shows it; setting the Connection's mode clears it.
 The flag decides which screens read and write the access, never what the gate reads.
+
+**Platform Access** is what one Agent may do on the platform when it calls with its own Agent Key, and it lives on the Agent's grant of the platform Connection ([connection presets](connection-presets.md#platform-preset-this-install-itself)).
+It is a list of entries shaped like the authorization details of a rich authorization request: a `type`, the `locations` it covers, the `actions` allowed there, and a `reach`, where own is the Agent itself and what it created.
+An Agent has a permission only when an entry names it, and entries add up; a `*` is written out, so an entry that leaves a field out is refused and never read as everything.
+The scale knows one entry so far: every area and every action with reach own, with which an Agent reads itself and changes nothing.
+A grant that stores no Platform Access is not on the scale: its Agent acts with the Connection's own key, as its owner.
+Only a person signed in as the Connection's owner sets it, never an API key, so an Agent that holds the Connection cannot change what it may do.
+Setting it needs no offer, because it narrows the Agent; clearing it is refused where the install does not offer the Connection, because it gives the Agent its owner's access again.
+The login reads it on every request made with an Agent Key ([security and credentials](security-and-credentials.md#identity)), so a change holds from the Agent's next request, and a stored value that cannot be read names no permission.
+Every change is written to the security log.
+No client sets it yet and no gateway sends an Agent Key to the platform API yet, so an Agent still reaches the platform with the Connection's own key.
 A Connection still in needs approval when the feature is turned off keeps its mark and its dialog, so the owner can switch it to another mode it offers, but not back.
 The CLI sets one Agent's access with `scope --agent`, the mode with `--mode`, and lists the tools with each one's rule with `dam connection tools` ([cli](cli.md)).
 
@@ -317,7 +328,7 @@ They flow independently.
 | Substrate                    | What lives there                                                                 | Notes                                                                                                                                                                       |
 | ---------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Postgres `connections`       | Connection records                                                               | The unified model's own table.                                                                                                                                              |
-| Postgres `connection_grants` | Grants, each with its tool access                                                | The tool access step reads it on every request.                                                                                                                             |
+| Postgres `connection_grants` | Grants, each with its tool access and its Platform Access                        | The tool access step reads the first on every request, and the login reads the second on every request made with an Agent Key.                                              |
 | Postgres `egress_rules`      | `egress-allow`, `egress-inject` and `egress-sign` Contributions joined per grant | Existing table; same as today. All three kinds produce the same allow row; `egress-inject`'s credential and `egress-sign`'s signing step ride a separate gateway-side rail. |
 | K8s Secret per Connection    | Auth credentials (refresh tokens, api-keys, HMAC key pairs)                      | Owner-label-scoped; mounted into the paired gateway pod, never into the machine. A parent's holds its credential; a Connection made from it holds only its own token.       |
 
