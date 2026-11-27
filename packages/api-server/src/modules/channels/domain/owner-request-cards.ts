@@ -109,7 +109,16 @@ export interface OwnerRequestView {
     hostWideLabel: string | null;
     deadline: string | null;
   } | null;
+  prompt: {
+    title: string;
+    input: string | null;
+    options: PromptOption[];
+    session: "chats" | "scheduled" | "channels" | "runs" | "terminal" | null;
+  } | null;
 }
+
+export type PromptOption =
+  "allow_once" | "allow_always" | "reject_once" | "reject_always";
 
 // UNIT_BOUNDARY_DESCRIPTION: a Slack thread a turn card holds requests from: where it is, who started the turn, the people whose messages the turn carried, the line the app posted there, and when its person pressed "Don't wait" or the line last said that the agent went on without the step.
 export interface OwnerCardThread {
@@ -192,7 +201,7 @@ export function outcomeLine(
   const { view } = row;
   if (row.dismissed) return `Dismissed for ${DISMISS_DAYS} days`;
   if (view.status === "expired")
-    return view.kind === "mcp_tool_call"
+    return view.kind === "mcp_tool_call" || view.kind === "acp_native"
       ? "Expired: the call was refused"
       : view.kind === "web_search"
         ? "Expired: the search was refused"
@@ -242,6 +251,15 @@ function isWaiting(view: OwnerRequestView): boolean {
 
 export function isRuleKind(view: OwnerRequestView): boolean {
   return view.kind === "ext_authz" || view.kind === "web_search";
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a request is held at the agent's gateway, where its waits are counted and can all end while the request stays pending. Any other request, such as a harness's permission prompt or a sub-agent's launch rule, waits as long as it is pending.
+export function heldAtGateway(view: Pick<OwnerRequestView, "kind">): boolean {
+  return (
+    view.kind === "ext_authz" ||
+    view.kind === "web_search" ||
+    view.kind === "mcp_tool_call"
+  );
 }
 
 function confirmOf(input: {
@@ -641,6 +659,84 @@ export function callRow(
   ];
 }
 
+const PROMPT_BUTTONS: Record<
+  PromptOption,
+  { label: string; actionId: string; style?: "primary" | "danger" }
+> = {
+  allow_once: {
+    label: "Allow once",
+    actionId: OWNER_REQUEST_APPROVE_ONCE_ACTION,
+    style: "primary",
+  },
+  allow_always: {
+    label: "Always allow",
+    actionId: OWNER_REQUEST_APPROVE_PATH_ACTION,
+  },
+  reject_once: {
+    label: "Deny",
+    actionId: OWNER_REQUEST_DENY_ONCE_ACTION,
+    style: "danger",
+  },
+  reject_always: {
+    label: "Always deny",
+    actionId: OWNER_REQUEST_DENY_FOREVER_ACTION,
+  },
+};
+
+const PROMPT_SESSION: Partial<
+  Record<
+    NonNullable<NonNullable<OwnerRequestView["prompt"]>["session"]>,
+    string
+  >
+> = {
+  scheduled: "In a scheduled run",
+  runs: "In a run",
+  chats: "In a chat that nobody has open",
+};
+
+// UNIT_BOUNDARY_DESCRIPTION: the row of a harness's permission prompt in a session nobody watches: the agent and the harness's own title of the call, the kind of session, the call's input as a code block cut at about 2,500 characters with "Open in app" when cut, the deadline the runtime keeps, and one button for each option the harness offered, which answers the harness with that option. Every part the harness wrote shows as plain text or inside the code block, never as Slack markup.
+export function promptRow(
+  row: CardRow,
+  appUrl: string,
+  argumentsMax = ARGUMENTS_MAX,
+): SlackBlock[] {
+  const { view } = row;
+  const prompt = view.prompt;
+  if (!prompt) return fallbackRow(row, appUrl);
+  const input = prompt.input;
+  const inputCut = input !== null && [...input].length > argumentsMax;
+  const session = prompt.session ? PROMPT_SESSION[prompt.session] : undefined;
+  return [
+    {
+      type: "section",
+      text: plainText(
+        cut(`${view.agentName} asks before: ${prompt.title}`, 300),
+      ),
+    },
+    ...(input !== null
+      ? [
+          {
+            type: "section",
+            text: { type: "mrkdwn", text: codeBlock(input, argumentsMax) },
+          },
+        ]
+      : []),
+    ...infoContext(
+      session ? [session] : [],
+      `Answer by ${slackDate(view.expiresAt)}${inputCut ? ". The input is cut: open the request in the app to read it all." : ""}`,
+    ),
+    {
+      type: "actions",
+      elements: [
+        ...prompt.options.map((option) =>
+          button({ ...PROMPT_BUTTONS[option], requests: [view.id] }),
+        ),
+        openInAppButton(appUrl),
+      ],
+    },
+  ];
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the row of a network rule a Driver set at a one-off sub-agent's launch, which holds the sub-agent's task until the owner answers: the rule in the platform's words, whether it is wider than the Driver's own rules, until when the sub-agent waits, and the web's verdicts for it. Letting the Driver widen every later launch on its own stays in the app.
 export function launchRow(row: CardRow, appUrl: string): SlackBlock[] {
   const { view } = row;
@@ -716,6 +812,7 @@ export function rowBlocks(
   if (isRuleKind(row.view)) return networkRow(row, appUrl);
   if (row.view.status !== "pending") return settledRow(row);
   if (row.view.launch) return launchRow(row, appUrl);
+  if (row.view.prompt) return promptRow(row, appUrl, argumentsMax);
   return row.view.kind === "mcp_tool_call"
     ? callRow(row, appUrl, argumentsMax)
     : fallbackRow(row, appUrl);

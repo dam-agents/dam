@@ -29,7 +29,7 @@ After this feature:
 
 - A request on an addressed Slack turn reaches the owner as a card at once, and the turn waits for the answer while the agent's tool waits; when the tool gives up, or the person who asked presses "Don't wait" or Stop, the agent goes on without the step, and a later allow tells the person who asked to ask again.
 - A request that nobody answers in the app reaches the owner as a card after a minute, unless the owner is active in the web UI.
-- The cards cover network holds, web-search holds, MCP tool-call holds, sub-agent questions and launch rules and, last, harness prompts.
+- The cards cover network holds, web-search holds, MCP tool-call holds, sub-agent questions and launch rules and, last, harness prompts in runs nobody watches.
 - `/dam approvals` gives the owner a private list of everything that waits for them, the same set the web approvals bell shows, and turns the cards off or on.
 - The card shows its outcome wherever the request settles: Slack, the web, the deadline or a stopped turn.
 - An owner without a Slack link keeps today's behavior; the agent can tell a Slack sender that its owner can link Slack to answer there.
@@ -122,7 +122,6 @@ Read these pages first:
   A press makes the turn stop counting as addressed, so its new requests are refused at once, also while someone has the agent open in the web; it then ends the turn's current waits with a neutral refusal (the wait ended, the request was not denied), and the agent finishes its answer without those steps.
   The member rejects the wait, not the request: the rows stay pending for the owner until their expiry, because only the owner decides access, and the gateway cannot tell which thread or run sent a request.
   An approve once or a rule that the owner gives later counts for the next try; an approve once stays usable for a full hold window after the answer.
-  A held harness prompt is released in its own turn's relay, gets the reject option at once, and its row expires, because the harness takes one answer per prompt.
   A release ends only waits that began after the turn did; a web search is released only when it comes from one of the turn's sessions.
   Network and MCP requests carry no session, so while two threads of the agent wait at the same time, a press in one ends the current network and MCP waits of both.
   Example: at 10:00 a member asks for a report and the agent waits for a host; at 10:03 the member presses "Don't wait" and the agent answers without that page; at 10:20 the owner allows the host, a reply in the thread tells the member, and the member asks again.
@@ -219,7 +218,6 @@ Names are illustrative where marked.
   `waitForVerdict` listens to it only for a `turn` wait and then ends with a new reason (illustrative `hold-released`), which leaves the row pending; each gate answers its client with its own neutral refusal text (a network refusal with a body, a new web-search refusal reason, a new end of the MCP hold).
   A release carries the time the turn began and the turn's session ids: a wait that began earlier is not released, and a web search is released only when its session stamp is one of the turn's sessions.
   The Slack worker calls `releaseAddressed` for every `TurnRef` of the turn and sets each stored `addressed` to false, then publishes the release once Redis has confirmed the change.
-  A held harness prompt ([09](./09-harness-prompts-on-slack-turns.md)) is released in its turn's own relay, not on the bus.
 - **Who still waits.** `waitForVerdict` counts the live waits of each routed row on the Redis bus (illustrative key `approval-waiters:<id>`), up when a wait starts and down when it ends, refreshed with the attendance heartbeat so a lost replica's waits expire.
   When the count leaves zero or returns to zero without a verdict (the client went away, or a release), it emits (illustrative) `ApprovalWaitChanged` with the row id, the agent, the owner, the route and `waiting: true` or `false`.
   The thread lines and the "Nobody waits for this now" notes follow that event ([02](./02-card-base.md)); a late allow is an allow on a row whose count was zero ([05](./05-card-lifecycle.md)).
@@ -237,7 +235,7 @@ Names are illustrative where marked.
   The thread line's "Don't wait" uses `owner-request:release`, with the team, the channel and the thread `ts` as its value.
   The prefix never collides with the agent prefixes in `channels/domain/channel-blocks.ts`.
 - **Ports into the Slack worker** (wired in `bootstrap.ts`, like `spendHold` and `providerOutage` today; illustrative names):
-  - `ownerRequests.view(kind, id)` returns what a card shows ([02](./02-card-base.md), [03](./03-mcp-tool-call-cards.md), [04](./04-network-and-web-search-cards.md), [07](./07-subagent-questions.md), [09](./09-harness-prompts-on-slack-turns.md));
+  - `ownerRequests.view(kind, id)` returns what a card shows ([02](./02-card-base.md), [03](./03-mcp-tool-call-cards.md), [04](./04-network-and-web-search-cards.md), [07](./07-subagent-questions.md), [10](./10-harness-prompts-in-unwatched-runs.md));
   - `ownerRequests.decide({ kind, id, choice, ownerSub, slackUserId })` applies a choice as the owner through the owning service;
   - `ownerRequests.refuseUnreachable(id)` denies a waiting `turn` row whose card cannot post ([02](./02-card-base.md));
   - `ownerRequests.waiting({ route, olderThan, limit })` returns pending routed rows and open questions for the sweep, bounded by age ([05](./05-card-lifecycle.md));
@@ -259,14 +257,13 @@ Names are illustrative where marked.
 | 06  | ✅ When background cards go out                           | Owner activity from the web UI, the 60-second escalation, the hint for an agent blocked on many hosts                                                                                                                             | 05         |
 | 07  | ✅ Sub-agent questions and launch rules reach the owner   | Question events, radio + Other + Send, labels cut to Slack's limit, the answer through the invocations service, rows for a sub-agent's launch rules, the same timing rule, the Slack mobile check                                 | 06         |
 | 08  | ✅ `/dam approvals` lists everything, and turns cards off | Private list in the bell's set, fallback rows, Slack's block limit, refresh in place, `/dam approvals off` and `on`                                                                                                               | 07         |
-| 09  | Harness prompts on Slack turns                            | Data check first, real prompt shapes, the relay holds addressed-turn prompts, Stop and "Don't wait" settle the wait, prompt rows                                                                                                  | 05         |
-| 10  | Harness prompts in runs nobody watches                    | The runtime waits the hold window for permission prompts only, the card shows the runtime's deadline, prompt rows on the background card under the timing rule                                                                    | 06, 09     |
+| 09  | ⛔ Harness prompts on Slack turns                         | Dropped after its data check: folded into 10                                                                                                                                                                                      | —          |
+| 10  | ✅ Harness prompts in runs nobody watches                 | The runtime learns the hold window and waits it for permission prompts only, the row gets the runtime's deadline, prompt rows on the background card and in the list, one button per harness option                               | 06         |
 
 ```mermaid
 graph LR
   00 --> 01 --> 02 --> 03 --> 04 --> 05 --> 06
   06 --> 07 --> 08
-  05 --> 09 --> 10
   06 --> 10
 ```
 
@@ -344,7 +341,7 @@ Petr has not confirmed these choices; a reviewer may challenge them.
 - The activity numbers: the web UI calls every 60 seconds, counts input of the last two minutes, and the key lives 120 seconds.
 - Sub-agent questions and launch rules follow the timing rule of `background` requests.
 - Telegram turns keep refusing at once and get no cards.
-- The platform-tool allow-once of the relay is not fixed in a separate pull request; [09](./09-harness-prompts-on-slack-turns.md) checks the real prompt shape of each harness.
+- The platform-tool allow-once of the relay is not fixed in a separate pull request; with [09](./09-harness-prompts-on-slack-turns.md) dropped, the relay does not change.
 - The thread's line names only "Don't wait", not Stop, so it needs no record of which workspace shows Stop.
 - A press of "Don't wait" moves the turn to a released count, and the decision refuses at once while a released Slack turn is open, so a retry does not wait 30 minutes when someone has the agent open in the web.
 - A message that joins a released turn does not make it addressed again.
@@ -381,13 +378,23 @@ Petr accepted these while the slices were built.
 - [08](./08-dam-approvals-and-mute.md): while cards are off, the sweep closes a card once nothing on it waits, with "You turned cards off: answer in the app" in place of its outcome lines.
 - [08](./08-dam-approvals-and-mute.md): while cards are off, the list ends with a line that says so and how to turn them on.
 - [08](./08-dam-approvals-and-mute.md): with cards off, Claude Haiku did not say that its owner takes no requests in Slack; the sentence is only in the turn's instructions.
+- [09](./09-harness-prompts-on-slack-turns.md) is dropped and folded into [10](./10-harness-prompts-in-unwatched-runs.md) after its data check.
+  Production had one Slack-turn permission refusal from 2026-11-20 to 2026-11-26 and none after it, while 133 harness prompts in unwatched runs expired (all Bob, about 19 a day).
+  A harness prompt on a Slack turn stays refused at once, so the Slack relay does not change; [10](./10-harness-prompts-in-unwatched-runs.md) takes the prompt row and the map from a button to the harness's option.
+  A later issue can add the Slack-turn hold and reuse both.
+- [10](./10-harness-prompts-in-unwatched-runs.md): the runtime learns the hold window from the api-server's answer to its `hello`, because the api-server sent the runtime no settings before; a runtime that boots against an older api-server keeps ten minutes.
+- [10](./10-harness-prompts-in-unwatched-runs.md): the runtime reports the time a prompt has left (`waitMs`), not a clock time, so the record expires when the runtime gives up even when the machine's clock is off.
+- [10](./10-harness-prompts-in-unwatched-runs.md): a prompt the web showed before its viewer left keeps no route and gets no card, because the row the web's relay wrote is kept as it is; only a prompt that nobody watched from the start gets one.
+- [10](./10-harness-prompts-in-unwatched-runs.md): the prompt row uses the web's labels for the harness's options (Allow once, Always allow, Deny, Always deny) and names the kind of session (a scheduled run, a run, or a chat that nobody has open).
+- [10](./10-harness-prompts-in-unwatched-runs.md): only a gateway hold can read "Nobody waits for this now"; a harness prompt and a launch rule wait while they are pending, which also fixes the note on the rows of [08](./08-dam-approvals-and-mute.md)'s list.
 
 ## Open items
 
 - **A note to #6421's author.** [01](./01-one-hold-decision.md) replaces the unattended check in `tool-call-hold.ts` with the shared decision and generalizes `consumeAllowOnce`; tell Tomáš Weiss before 01 starts.
 - **Issue #6287 is out of date.** Its body predates these decisions (gateway holds, unattended runs, MCP tool calls, harness `auto` kept) and still says "Done when: TBD"; its first user story ("keep it strict" for the harness's own tools) is replaced by keeping `auto`.
   Its "Done when" gets three measures: the share of carded requests answered before expiry, the time from card to answer, and the share of owners who turn cards off.
-- **The Bob issue is drafted, not filed.** Two causes still make unattended Bob runs ask (a write into `~/.bob` or a command Bob's own safety check flags; a schedule saved with "Ask every time"); [09](./09-harness-prompts-on-slack-turns.md) starts by checking what is left.
+- **The Bob issue is drafted, not filed.** Two causes still make unattended Bob runs ask (a write into `~/.bob` or a command Bob's own safety check flags; a schedule saved with "Ask every time"); [10](./10-harness-prompts-in-unwatched-runs.md) gives the owner those prompts in Slack, and the issue still stands.
+  Bob writes the same file with a shell command after its protected write fails, so its protection of `~/.bob` stops nothing; the issue draft gets that finding.
 - **A late network join waits for nothing.** Today a network request that joins a row late keeps its client waiting after the row expired; an issue is drafted, not filed.
   [01](./01-one-hold-decision.md) changes the same wait (the expiry follows the row), so whichever lands first, the other builds on it.
 - **Attendance is per agent.** While an addressed Slack turn runs, a schedule's request of the same agent gets the `turn` route and its card at once; today the gate refuses it at once.
@@ -421,6 +428,7 @@ Until #6855 is fixed, a site can drop a held HTTPS request after 15 s, and the a
    Click "Always deny…" on one row and confirm, and Dismiss another: the next run is refused at once on the denied host, and neither row comes back.
 9. Set a test MCP Connection to "needs approval" and run a schedule that calls one of its tools: a call card arrives, with the tool, the Connection and the arguments as plain text; Approve once runs the call.
 10. Ask the agent (with sub-agent tools) to spawn a sub-agent that asks the owner to choose between two options; close the web UI: a question card arrives; pick "Other", type an answer, Send: the sub-agent continues with it.
+    Give a Bob agent on Auto-approve a schedule whose task writes into `~/.bob`, close the web UI and run it: about a minute later the agent's background card shows the prompt with Allow once and Deny; Allow once lets the write through.
 11. Bind an agent to the owner's 1:1 DM with the app (the DM Bridge) and ask it there to read that conversation's history: its answer names no card.
 12. Run `/dam approvals`: the private list shows what still waits; act on an entry from the list.
     Run `/dam approvals off` and repeat step 1: refused at once, and the agent says its owner does not take requests in Slack; `/dam approvals on` turns the cards back on.

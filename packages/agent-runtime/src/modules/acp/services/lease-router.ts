@@ -281,8 +281,8 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       held(id, sessionId, line) {
         report.held(clientIdOf(id), sessionId, line);
       },
-      waiting(id, sessionId, line) {
-        report.waiting(clientIdOf(id), sessionId, line);
+      waiting(id, sessionId, line, deadline) {
+        report.waiting(clientIdOf(id), sessionId, line, deadline);
       },
       answered(id, sessionId, result) {
         const clientId = settled(id);

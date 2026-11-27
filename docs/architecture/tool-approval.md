@@ -1,6 +1,6 @@
 # Tool approval
 
-Last verified: 2026-11-12
+Last verified: 2026-11-27
 
 ## Overview
 
@@ -51,3 +51,6 @@ A terminal session is not covered: its harness shows and switches the mode on it
 
 With no agent value and no pick, a session starts on the mode the runtime derives from the catalog: Auto mode on Claude Code, or the first mode the session's model allows where it cannot use Auto ([harness configuration](harness-config.md#session-settings)).
 The chat's picker shows the approval the session really starts on: its own pick, else the agent's, else Auto mode.
+
+A harness can still ask before a call where its own rules say so, as Bob does before a write into `~/.bob`, also on Auto.
+In a session nobody watches, such as a schedule fire, the prompt waits the hold window and reaches the owner in Slack and on Home ([owner requests in Slack](slack-owner-requests.md#harness-prompts)); on a Slack turn, the relay refuses it at once.

@@ -1,6 +1,6 @@
 # Owner requests in Slack
 
-Last verified: 2026-11-26
+Last verified: 2026-11-27
 
 When an agent needs its owner's decision on a request nobody has allowed, the owner should be able to answer where the request was made.
 This page owns how the three gates of [HITL ext_authz](security-and-credentials.md#hitl-ext_authz) decide between holding and refusing a request, how a held request reaches its owner, and how long it waits.
@@ -71,7 +71,8 @@ For an owner without a Slack link, the agent also says that the owner can answer
 A routed request reaches its owner as a row of a **card** in the owner's direct message with the app, at once for a `turn` request and after a minute for a `background` one ([when background cards go out](#when-background-cards-go-out)), in every workspace where the owner can get cards; the card comes from the app with no agent persona, like the platform's other notices.
 Each agent has at most one open **turn card** for its `turn` requests and one open **background card** for the rest, per workspace; a raise moves a request from the background card to the turn card.
 A turn card names each thread it holds requests from and who started it, because it cannot tell which thread sent which request.
-Rows that still wait come first, at most ten, then a count with "Open in app"; a row whose request nobody waits for any more says that the answer counts for the next try.
+Rows that still wait come first, at most ten, then a count with "Open in app"; a row of a gateway hold that nobody waits for any more says that the answer counts for the next try.
+Any other request waits as long as it is pending.
 Agent-written text never reaches Slack as markup, and host, Connection and agent names come from the platform's own records.
 
 Placing runs on the channels leader, one owner at a time, so requests that arrive together join one card.
@@ -106,6 +107,16 @@ When the question closes, by the owner here or in the chat, by its default at th
 A network rule a Driver set at a one-off sub-agent's launch, which holds the sub-agent's task until the owner answers, is a row of the Driver's background card under the same timing: the rule in the platform's words, whether it is wider than the Driver's own rules, until when the sub-agent waits, and the web's verdicts for it.
 Letting the Driver widen every later launch on its own stays in the app.
 An agent's own rule proposal gets no row, because it holds nothing.
+
+## Harness prompts
+
+A harness can still stop to ask before a tool call while nobody watches its session, as Bob does before a write into `~/.bob`: in a schedule fire, a sub-agent run, or a chat that nobody has open.
+The runtime reports such a prompt with the time it will wait, which is the hold window for a permission prompt ([sessions](sessions.md#prompt-delivery)), and the approval gets the `background` route and that time as its expiry.
+An older runtime names no time and waits ten minutes, so the approval expires then.
+The runtime reports how each prompt ended, and that report expires the approval when the wait ends; the platform's own expiry sweep leaves such an approval for a day after its expiry, because the runtime starts a new wait when someone opens the session and leaves without answering.
+The prompt is a row of the agent's background card under the same timing: the agent and the harness's own title of the call, the kind of session, the call's input cut at about 2,500 characters, the deadline, and one button for each option the harness offered (Allow once, Always allow, Deny, Always deny).
+A click answers through the approvals service, as a verdict in Home does, and the harness gets the option clicked.
+On a Slack turn, the relay refuses a prompt at once, and it gets no row ([channel turns](channel-turns.md)).
 
 ## The thread line
 
@@ -174,7 +185,7 @@ A Slack error leaves an item as it was, and the sweep tries it again until its c
 Cards are a push, and not every request gets one, so `/dam approvals` is the pull: it answers the caller alone, in any conversation, with every request that waits for them as an owner, the same set as the web's approvals list, carded or not.
 A caller without a link is told to log in first, and an editor sees only the agents they own.
 The list groups the requests by agent, newest first; a network host or the web searches of one agent are one entry, as on the background card.
-A network, web-search, MCP tool-call, launch-rule or question entry carries the buttons or the form of its card, with the arguments and the question cut shorter; any other type shows its summary and "Open in app".
+A network, web-search, MCP tool-call, launch-rule, harness-prompt or question entry carries the buttons or the form of its card, with the arguments and the question cut shorter; any other type shows its summary and "Open in app".
 The fields of each question carry its run in their ids, so the fields of one question are read apart from another's.
 The list stops before Slack's limit of 50 blocks and ends with how many more requests wait in the app.
 A click in the list answers through the same path as a click on a card, so it edits the request's cards too, and then draws the list again in place through the click's own response URL; when that fails, a new private list goes out.

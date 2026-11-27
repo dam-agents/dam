@@ -7,6 +7,7 @@ import {
 import type {
   EventReportInput,
   ContributionKind,
+  HelloResult,
   HarnessConfigCurrent,
   HarnessConfigService,
   Plugin,
@@ -89,7 +90,7 @@ export interface RuntimeChannelComposition {
   writeModelWindows(): Promise<void>;
   sessionDirectory: SessionDirectoryReporter;
   triggerStateStore: TriggerStateStore;
-  helloOnBoot(opts: { agentRuntimeVersion: string }): Promise<void>;
+  helloOnBoot(opts: { agentRuntimeVersion: string }): Promise<HelloResult>;
 }
 
 export interface ComposeRuntimeChannelOpts {
@@ -446,7 +447,7 @@ export async function composeRuntimeChannel(
           `[runtime] hello → local v=${local.lastAppliedVersion} hash=${(local.lastAppliedHash ?? "<none>").slice(0, 8)} capabilities={contributions:${contributionKinds.join("|")}, events:${eventKinds.join("|")}}`,
         );
         try {
-          await harnessClient.runtime.v1.hello.mutate({
+          const hello = await harnessClient.runtime.v1.hello.mutate({
             lastAppliedVersion: local.lastAppliedVersion || undefined,
             lastAppliedHash: local.lastAppliedHash ?? undefined,
             protocolVersion: "v1",
@@ -456,7 +457,7 @@ export async function composeRuntimeChannel(
             harnessConfigCurrentByHarness,
           });
           sessionDirectory.report();
-          return;
+          return hello;
         } catch (err) {
           log(`[runtime] hello failed: ${(err as Error).message}`);
         }

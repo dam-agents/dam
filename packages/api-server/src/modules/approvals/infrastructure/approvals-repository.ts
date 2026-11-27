@@ -45,6 +45,8 @@ export async function deletePendingSpendQuestions(
     .returning({ id: pendingApprovals.id, agentId: pendingApprovals.agentId });
 }
 
+const RUNTIME_GONE_AFTER_MS = 24 * 60 * 60 * 1000;
+
 export interface ApprovalsRepository {
   insertPending(row: NewPendingApproval): Promise<boolean>;
   insertIfAbsent(row: NewPendingApproval): Promise<boolean>;
@@ -125,6 +127,7 @@ export interface ApprovalsRepository {
     limit: number;
   }): Promise<PendingApprovalRow[]>;
   expirePending(id: string, opts?: { onlyIfDue?: boolean }): Promise<boolean>;
+  /* UNIT_BOUNDARY_DESCRIPTION: expires every pending approval whose expiry has passed, except a harness prompt the runtime reported: the runtime holds that prompt and reports how it ended, and it starts a new wait when a viewer leaves without answering, so such a prompt expires here only a day after its expiry, when its runtime is gone. */
   expireOverdue(now: Date): Promise<
     Array<{
       id: string;
@@ -652,6 +655,14 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
           and(
             eq(pendingApprovals.status, "pending"),
             lt(pendingApprovals.expiresAt, now),
+            or(
+              ne(pendingApprovals.type, "acp_native"),
+              isNull(pendingApprovals.ownerRoute),
+              lt(
+                pendingApprovals.expiresAt,
+                new Date(now.getTime() - RUNTIME_GONE_AFTER_MS),
+              ),
+            ),
           ),
         )
         .returning({

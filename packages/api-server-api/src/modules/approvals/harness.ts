@@ -27,6 +27,12 @@ export const toolApprovalWaitingInputSchema = z.object({
       }),
     )
     .max(16),
+  waitMs: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(7 * 24 * 60 * 60 * 1000)
+    .optional(),
 });
 
 export const toolApprovalEndedInputSchema = z.object({

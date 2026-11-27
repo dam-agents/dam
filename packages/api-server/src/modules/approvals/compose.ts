@@ -10,6 +10,7 @@ import type { Db } from "db";
 import type {
   ApprovalsService,
   PromotionRule,
+  SessionCategory,
   SpendLimitPayload,
   ToolApprovalReports,
 } from "api-server-api";
@@ -140,6 +141,10 @@ interface ComposeApprovalsSystemDeps {
     agentId: string,
   ) => Promise<readonly (PromotionRule & { id: string })[]>;
   spawnDeadlineOf?: (agentId: string) => Promise<Date | null>;
+  sessionCategoryOf?: (
+    agentId: string,
+    sessionId: string,
+  ) => Promise<SessionCategory | null>;
 }
 
 export { turnReleaseChannelOf } from "./services/held-verdict.js";
@@ -195,6 +200,9 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     waiters,
     promotionRulesOf: deps.promotionRulesOf,
     ...(deps.spawnDeadlineOf ? { spawnDeadlineOf: deps.spawnDeadlineOf } : {}),
+    ...(deps.sessionCategoryOf
+      ? { sessionCategoryOf: deps.sessionCategoryOf }
+      : {}),
   });
   return { relay, gate, sweeper, wakeSaga, ownerRequests };
 }

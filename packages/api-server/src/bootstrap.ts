@@ -1061,6 +1061,7 @@ export async function bootstrap() {
     namespace: config.namespace,
     damSkill,
     mcpToolTimeoutSeconds: config.approvalHoldSeconds,
+    permissionWaitMs: config.approvalHoldSeconds * 1000,
     bullConnection,
     agentRunningPort: {
       isRunning: (agentId) => agentsRepo.isReady(agentId),
@@ -2456,6 +2457,10 @@ export async function bootstrap() {
     promotionRulesOf: createPromotionRulesReader(db),
     spawnDeadlineOf: async (agentId) =>
       (await createInvocationsRepository(db).get(agentId))?.expiresAt ?? null,
+    sessionCategoryOf: async (agentId, sessionId) =>
+      (await sessionDirectory.categorize([agentId], [sessionId])).get(
+        sessionId,
+      ) ?? null,
     providerScopes: createProviderEgressScopes(db),
     toolAccessConnections: createToolAccessConnections(
       db,

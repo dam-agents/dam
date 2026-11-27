@@ -1,4 +1,4 @@
-import type { AcpPermissionOption } from "api-server-api";
+import type { AcpPermissionOption, OwnerRoute } from "api-server-api";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
 import type { PendingApprovalRow } from "../domain/types.js";
 import type { RedisBus } from "../../../core/redis-bus.js";
@@ -24,6 +24,8 @@ interface RecordAcpNativePendingInput {
   args: unknown;
   idsWhole?: boolean;
   options: readonly AcpPermissionOption[];
+  expiresAt?: Date;
+  ownerRoute?: OwnerRoute;
 }
 
 export interface ApprovalsRelayService {
@@ -54,6 +56,10 @@ interface SettleAbsentInput {
 interface CreateApprovalsRelayServiceDeps {
   repo: ApprovalsRepository;
   bus: RedisBus;
+}
+
+function routeOf(row: PendingApprovalRow): { ownerRoute?: OwnerRoute } {
+  return row.ownerRoute ? { ownerRoute: row.ownerRoute } : {};
 }
 
 function describesSameRequest(
@@ -98,6 +104,7 @@ async function expireSupersededRows(
       agentId: row.agentId,
       ownerSub: row.ownerSub,
       resolution: "superseded",
+      ...routeOf(row),
     });
   }
 }
@@ -138,6 +145,7 @@ export function createApprovalsRelayService(
         agentId: row.agentId,
         ownerSub: row.ownerSub,
         resolution: verdict,
+        ...routeOf(row),
       });
       return "settled";
     },
@@ -159,6 +167,7 @@ export function createApprovalsRelayService(
         agentId: row.agentId,
         ownerSub: row.ownerSub,
         resolution: "expired",
+        ...routeOf(row),
       });
       return "settled";
     },
@@ -189,7 +198,8 @@ export function createApprovalsRelayService(
         ownerSub: input.ownerSub,
         sessionId: input.sessionId,
         payload,
-        expiresAt: new Date(Date.now() + ACP_NATIVE_TTL_MS),
+        expiresAt: input.expiresAt ?? new Date(Date.now() + ACP_NATIVE_TTL_MS),
+        ...(input.ownerRoute && { ownerRoute: input.ownerRoute }),
       });
       if (!written) {
         const held = await deps.repo.getPending(rowId);
@@ -200,6 +210,7 @@ export function createApprovalsRelayService(
         approvalId: rowId,
         agentId: input.agentId,
         ownerSub: input.ownerSub,
+        ...(input.ownerRoute && { ownerRoute: input.ownerRoute }),
       });
       if (input.toolCallId !== undefined)
         await expireSupersededRows(deps.repo, rowId, input).catch((err) => {

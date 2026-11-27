@@ -4,6 +4,7 @@ import {
   DISMISS_DAYS,
   cardMetadata,
   closedCard,
+  heldAtGateway,
   isRuleKind,
   lateAllowReply,
   ownerCard,
@@ -180,16 +181,21 @@ export function createSlackOwnerRequests(deps: {
     return next;
   }
 
+  async function waitsFor(
+    view: Omit<OwnerRequestView, "agentName">,
+  ): Promise<boolean> {
+    if (view.status !== "pending") return false;
+    if (!heldAtGateway(view)) return true;
+    return deps.ports.anyoneWaits(view.id).catch(() => true);
+  }
+
   async function rowsOf(card: OwnerCard): Promise<CardRow[]> {
     const rows: CardRow[] = [];
     for (const item of await cards.items(card.id)) {
       if (item.requestKind !== "approval") continue;
       const view = await deps.ports.view(item.requestId);
       if (!view) continue;
-      const waits =
-        view.status === "pending"
-          ? await deps.ports.anyoneWaits(view.id).catch(() => true)
-          : false;
+      const waits = await waitsFor(view);
       const answeredHere = item.state === "answered";
       const decider = view.decidedBy;
       const deciderName =
@@ -330,7 +336,7 @@ export function createSlackOwnerRequests(deps: {
       const view = await deps.ports.view(id);
       if (!view || view.status !== "pending" || view.ownerSub !== ownerSub)
         continue;
-      const waits = await deps.ports.anyoneWaits(view.id).catch(() => true);
+      const waits = await waitsFor(view);
       const row: CardRow = {
         view: { ...view, agentName: await deps.agentName(view.agentId) },
         nobodyWaits: !waits,

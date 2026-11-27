@@ -36,8 +36,14 @@ export function createHelloHandler(deps: {
   uow: UnitOfWork;
   resolveOwner: (agentId: string) => Promise<string | null>;
   eventOutcomeHandler?: (kind: string) => EventOutcomeHandler | undefined;
+  permissionWaitMs?: number;
   log: (msg: string) => void;
 }): RuntimeDeliveryService {
+  const settings: Pick<HelloResult, "permissionWaitMs"> =
+    deps.permissionWaitMs === undefined
+      ? {}
+      : { permissionWaitMs: deps.permissionWaitMs };
+
   async function stateDrifted(
     agentId: string,
     input: HelloInput,
@@ -118,7 +124,7 @@ export function createHelloHandler(deps: {
       const row =
         bumpedVersion === null ? await deps.outboxRepo.getRow(agentId) : null;
       let desiredVersion = bumpedVersion ?? row?.version;
-      if (desiredVersion === undefined) return { events: [] };
+      if (desiredVersion === undefined) return { events: [], ...settings };
       if (
         row &&
         desiredVersion === input.lastAppliedVersion &&
@@ -133,7 +139,7 @@ export function createHelloHandler(deps: {
       if (desiredVersion > (input.lastAppliedVersion ?? 0)) {
         await deps.queue.enqueue(agentId, { retryUntilReady: true });
       }
-      return { events: [] };
+      return { events: [], ...settings };
     },
   };
 }

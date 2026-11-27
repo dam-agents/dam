@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-11-12
+Last verified: 2026-11-27
 
 ## Overview
 
@@ -176,13 +176,14 @@ sequenceDiagram
   RT->>HS: runtime.v1.hello (applied cursor, capabilities)
   HS->>PG: compare reported cursor with outbox version
   HS->>HS: enqueue worker dispatch if behind
-  HS-->>RT: events: []
+  HS-->>RT: events: [], permission wait
   HS->>RT: applyState (state + pending events, via the worker)
   RT->>RT: reconcile contributions, run per-kind event handlers
 ```
 
 `hello` is read-only with respect to the outbox — the worker dispatch it enqueues is what stamps `dispatched_at`.
 Events never travel inside the `hello` response.
+The response names one setting: how long the runtime keeps a permission prompt that nobody watches, which is the platform's hold window ([sessions](sessions.md#prompt-delivery)); a runtime that boots against an older api-server keeps ten minutes.
 
 ### Per-kind event handlers (agent-side)
 

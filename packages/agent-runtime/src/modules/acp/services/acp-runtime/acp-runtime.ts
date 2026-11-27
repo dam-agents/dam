@@ -203,6 +203,7 @@ export interface AcpRuntimeDeps {
   workingDir: string;
   log?: (msg: string) => void;
   orphanTtlMs?: number;
+  permissionTtlMs?: () => number | undefined;
   envForceRecycleMs?: number;
   idleReapDelayMs?: number;
   envReadyAtBoot?: boolean;
@@ -655,6 +656,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const pendingRequests = createPendingAgentRequests({
     orphanTtlMs,
+    permissionTtlMs: () => deps.permissionTtlMs?.() ?? orphanTtlMs,
     channelsFor(sessionId) {
       return sessionId === null
         ? [...engagedSessions.keys()]

@@ -666,5 +666,6 @@ export const helloResult = z.object({
   version: z.number().int().positive().optional(),
   state: stateSlice.optional(),
   events: z.array(event),
+  permissionWaitMs: z.number().int().positive().optional(),
 });
 export type HelloResult = z.infer<typeof helloResult>;

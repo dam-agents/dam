@@ -1,13 +1,16 @@
 import {
+  answerableOption,
   describeApprovalPayload,
   gatewayRestartImpact,
   WEB_SEARCH_FOLLOW_UP_QUERIES,
   wildcardHostReach,
+  type AcpPermissionOptionKind,
   type ApprovalStatus,
   type ApprovalVerdict,
   type OwnerRoute,
   type PromotionRule,
   type RefusedIn,
+  type SessionCategory,
 } from "api-server-api";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
 import type { PendingApprovalRow } from "../domain/types.js";
@@ -56,6 +59,12 @@ export interface OwnerRequestViewData {
     hostWideLabel: string | null;
     deadline: string | null;
   } | null;
+  prompt: {
+    title: string;
+    input: string | null;
+    options: AcpPermissionOptionKind[];
+    session: SessionCategory | null;
+  } | null;
 }
 
 export const WEB_SEARCH_HOST = "web search";
@@ -63,6 +72,13 @@ export const WEB_SEARCH_HOST = "web search";
 const UNREACHABLE_DECIDER = "system:owner-unreachable";
 
 const WAITING_FOR_OWNER_LIMIT = 100;
+
+const PROMPT_OPTION_KINDS: readonly AcpPermissionOptionKind[] = [
+  "allow_once",
+  "allow_always",
+  "reject_once",
+  "reject_always",
+];
 
 function summaryOf(row: PendingApprovalRow): string {
   const { payload } = row;
@@ -155,6 +171,10 @@ export function createOwnerRequestPorts(deps: {
     agentId: string,
   ) => Promise<readonly (PromotionRule & { id: string })[]>;
   spawnDeadlineOf?: (agentId: string) => Promise<Date | null>;
+  sessionCategoryOf?: (
+    agentId: string,
+    sessionId: string,
+  ) => Promise<SessionCategory | null>;
 }) {
   async function restartOf(
     row: PendingApprovalRow,
@@ -198,6 +218,36 @@ export function createOwnerRequestPorts(deps: {
           ? `Allow all of ${payload.host}`
           : null,
       deadline: deadline ? deadline.toISOString() : null,
+    };
+  }
+
+  async function promptOf(
+    row: PendingApprovalRow,
+  ): Promise<OwnerRequestViewData["prompt"]> {
+    const { payload } = row;
+    if (payload.kind !== "acp_native") return null;
+    const args = payload.args;
+    const session =
+      deps.sessionCategoryOf && row.sessionId
+        ? await deps
+            .sessionCategoryOf(row.agentId, row.sessionId)
+            .catch(() => null)
+        : null;
+    return {
+      title: payload.toolName,
+      input:
+        args === undefined || args === null
+          ? null
+          : typeof args === "string"
+            ? args
+            : JSON.stringify(args, null, 2),
+      options: PROMPT_OPTION_KINDS.filter(
+        (kind) =>
+          answerableOption(payload.options ?? [], kind, {
+            idsWhole: payload.optionsWhole === true,
+          }) !== undefined,
+      ),
+      session,
     };
   }
 
@@ -249,6 +299,7 @@ export function createOwnerRequestPorts(deps: {
             ? row.payload.forAgentId
             : row.agentId,
         launch: await launchOf(row),
+        prompt: await promptOf(row),
       };
     },
 

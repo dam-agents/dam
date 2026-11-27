@@ -1,5 +1,8 @@
 import type { JsonRpcId, JsonRpcResponse } from "api-server-api";
-import { approvalToolCallIdOf } from "../../domain/attribution.js";
+import {
+  approvalToolCallIdOf,
+  isPermissionRequest,
+} from "../../domain/attribution.js";
 import { rewriteAuthError } from "../../domain/mappers.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 
@@ -7,6 +10,12 @@ interface PendingRequest {
   sessionId: string | null;
   line: string;
   unwatched: boolean;
+  permission: boolean;
+}
+
+interface ExpiryTimer {
+  timer: ReturnType<typeof setTimeout>;
+  at: number;
 }
 
 export interface PendingAgentRequests {
@@ -29,6 +38,7 @@ export interface AnsweredRequest {
 
 export interface PendingAgentRequestsDeps {
   orphanTtlMs: number;
+  permissionTtlMs(): number;
   channelsFor(sessionId: string | null): Iterable<ClientChannel>;
   sendToAgent(frame: unknown): void;
   onExpired(): void;
@@ -44,7 +54,12 @@ export const noopAgentRequests: AgentRequestObserver = {
 
 export interface AgentRequestObserver {
   held(id: JsonRpcId, sessionId: string, line: string): void;
-  waiting(id: JsonRpcId, sessionId: string, line: string): void;
+  waiting(
+    id: JsonRpcId,
+    sessionId: string,
+    line: string,
+    deadline?: number,
+  ): void;
   answered(id: JsonRpcId, sessionId: string, result: unknown): void;
   abandoned(id: JsonRpcId, sessionId: string): void;
 }
@@ -56,23 +71,31 @@ export interface AgentRequestObserver {
  * again on arrival; the first answer wins and later answers are dropped. A
  * session-scoped request with no engaged channel expires after a TTL,
  * answering the agent with a structured error so the tool call aborts
- * cleanly. A request with no session broadcasts to every channel and never
- * expires. Forgetting a session drops its requests the same way, because the
- * session id is reused after a reset: a question left open must not follow
- * that id into the next conversation, and must not keep the runtime busy.
- * The observer hears of every held request, of the first moment no channel
- * can answer it — so the platform can record it while nobody watches the
- * session — and of how each request ended, answered or dropped. The end
- * matters even for a request a client mirrored itself: the platform settles
- * its record on the answer the runtime accepted, whoever wrote the record.
- * When the runtime cancels a turn itself, no client cancels the session's
- * open tool call approvals, so the runtime answers them as cancelled.
+ * cleanly. A permission request waits a TTL of its own, as long as the
+ * platform holds a request for the owner, so the owner can answer it from
+ * elsewhere; every other request keeps the short one, because its expiry
+ * also lets the lease recycle. A request with no session broadcasts to every
+ * channel and never expires. Forgetting a session drops its requests the
+ * same way, because the session id is reused after a reset: a question left
+ * open must not follow that id into the next conversation, and must not keep
+ * the runtime busy. The observer hears of every held request, of the first
+ * moment no channel can answer it, with the time it will expire — so the
+ * platform can record it while nobody watches the session — and of how each
+ * request ended, answered or dropped. The end matters even for a request a
+ * client mirrored itself: the platform settles its record on the answer the
+ * runtime accepted, whoever wrote the record. When the runtime cancels a
+ * turn itself, no client cancels the session's open tool call approvals, so
+ * the runtime answers them as cancelled.
  */
 export function createPendingAgentRequests(
   deps: PendingAgentRequestsDeps,
 ): PendingAgentRequests {
   const pending = new Map<JsonRpcId, PendingRequest>();
-  const expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const expiryTimers = new Map<string, ExpiryTimer>();
+
+  function timerKey(sessionId: string, permission: boolean): string {
+    return `${permission ? "permission" : "other"}\u0000${sessionId}`;
+  }
 
   function hasOpenChannel(sessionId: string): boolean {
     for (const channel of deps.channelsFor(sessionId)) {
@@ -88,18 +111,33 @@ export function createPendingAgentRequests(
     return false;
   }
 
-  function clearExpiryTimer(sessionId: string): void {
-    const existing = expiryTimers.get(sessionId);
+  function hasOf(sessionId: string, permission: boolean): boolean {
+    for (const req of pending.values()) {
+      if (req.sessionId === sessionId && req.permission === permission)
+        return true;
+    }
+    return false;
+  }
+
+  function clearExpiryTimer(key: string): void {
+    const existing = expiryTimers.get(key);
     if (!existing) return;
-    clearTimeout(existing);
-    expiryTimers.delete(sessionId);
+    clearTimeout(existing.timer);
+    expiryTimers.delete(key);
+  }
+
+  function clearExpiryTimers(sessionId: string): void {
+    clearExpiryTimer(timerKey(sessionId, false));
+    clearExpiryTimer(timerKey(sessionId, true));
   }
 
   function announceUnwatched(sessionId: string): void {
     for (const [id, req] of pending) {
       if (req.sessionId !== sessionId || req.unwatched) continue;
+      const timer = expiryTimers.get(timerKey(sessionId, req.permission));
+      if (!timer) continue;
       req.unwatched = true;
-      deps.observer.waiting(id, sessionId, req.line);
+      deps.observer.waiting(id, sessionId, req.line, timer.at);
     }
   }
 
@@ -108,22 +146,35 @@ export function createPendingAgentRequests(
   }
 
   function updateExpiryTimer(sessionId: string): void {
-    const shouldRun = hasFor(sessionId) && !hasOpenChannel(sessionId);
-    if (shouldRun) announceUnwatched(sessionId);
-    if (shouldRun && !expiryTimers.get(sessionId)) {
-      expiryTimers.set(
-        sessionId,
-        setTimeout(() => expire(sessionId), deps.orphanTtlMs),
-      );
-    } else if (!shouldRun) {
-      clearExpiryTimer(sessionId);
+    const unwatched = !hasOpenChannel(sessionId);
+    for (const permission of [false, true]) {
+      const key = timerKey(sessionId, permission);
+      if (!unwatched || !hasOf(sessionId, permission)) {
+        clearExpiryTimer(key);
+        continue;
+      }
+      if (expiryTimers.has(key)) continue;
+      const ttl = permission ? deps.permissionTtlMs() : deps.orphanTtlMs;
+      expiryTimers.set(key, {
+        timer: setTimeout(() => expire(sessionId, permission), ttl),
+        at: Date.now() + ttl,
+      });
     }
+    if (unwatched) announceUnwatched(sessionId);
   }
 
-  function abortRequestsOf(sessionId: string, message: string): number {
+  function abortRequestsOf(
+    sessionId: string,
+    message: string,
+    permission?: boolean,
+  ): number {
     const aborted: [JsonRpcId, PendingRequest][] = [];
     for (const [id, req] of pending) {
-      if (req.sessionId === sessionId) aborted.push([id, req]);
+      if (
+        req.sessionId === sessionId &&
+        (permission === undefined || req.permission === permission)
+      )
+        aborted.push([id, req]);
     }
     for (const [id, req] of aborted) {
       pending.delete(id);
@@ -137,18 +188,24 @@ export function createPendingAgentRequests(
     return aborted.length;
   }
 
-  function expire(sessionId: string): void {
-    expiryTimers.delete(sessionId);
+  function expire(sessionId: string, permission: boolean): void {
+    expiryTimers.delete(timerKey(sessionId, permission));
     const expired = abortRequestsOf(
       sessionId,
       "Permission request expired: no client connected",
+      permission,
     );
     if (expired > 0) deps.onExpired();
   }
 
   return {
     onAgentRequest(id, sessionId, line) {
-      pending.set(id, { sessionId, line, unwatched: false });
+      pending.set(id, {
+        sessionId,
+        line,
+        unwatched: false,
+        permission: isPermissionRequest(line),
+      });
       if (sessionId !== null) deps.observer.held(id, sessionId, line);
       const out = rewriteAuthError(line);
       for (const channel of deps.channelsFor(sessionId)) {
@@ -208,14 +265,14 @@ export function createPendingAgentRequests(
     },
 
     forget(sessionId) {
-      clearExpiryTimer(sessionId);
+      clearExpiryTimers(sessionId);
       abortRequestsOf(sessionId, "Permission request cancelled: session reset");
     },
 
     clear() {
       for (const [id, req] of pending) abandoned(id, req);
       pending.clear();
-      for (const t of expiryTimers.values()) clearTimeout(t);
+      for (const t of expiryTimers.values()) clearTimeout(t.timer);
       expiryTimers.clear();
     },
   };
