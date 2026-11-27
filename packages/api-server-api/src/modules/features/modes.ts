@@ -13,8 +13,8 @@ import { featureRegistrySchema } from "./schemas.js";
  * mode. An internal feature is one the team is still trying out: it has no
  * place in the navigation, each person's own switch decides, and the install
  * cannot set it. A feature is experimental only when it is fine for any person
- * to turn it on today. The issue, in dam-agents/dam, names the owner, why the
- * feature exists and the release it is decided by. A new feature needs an id
+ * to turn it on today. The issue, in dam-agents/dam, names the owner and why
+ * the feature exists. A new feature needs an id
  * in `featureIdSchema`, an entry here with its issue, and, when it is
  * internal, its id in the chart's `platform.internalFeatures` list. A feature
  * that changes level takes the release of the change as its `since`. The
