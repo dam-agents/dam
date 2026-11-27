@@ -48,6 +48,7 @@ import type { HarnessConfigService } from "./modules/harness-config/types.js";
 import type { ProfilesService } from "./modules/profiles/types.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
 import type { SidebarOrderService } from "./modules/sidebar-order/types.js";
+import type { OwnerActivityService } from "./modules/owner-activity/types.js";
 import type { SessionPinsService } from "./modules/session-pins/types.js";
 import type { SkillsService } from "./modules/skills/types.js";
 import type {
@@ -106,6 +107,7 @@ export interface ApiContext {
   chatFormPreferences: ChatFormPreferencesService;
   gettingStarted: GettingStartedService;
   sidebarOrder: SidebarOrderService;
+  ownerActivity: OwnerActivityService;
   sessionPins: SessionPinsService;
   files: FilesService;
   harnessConfig: HarnessConfigService;

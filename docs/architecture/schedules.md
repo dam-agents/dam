@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-11-18
+Last verified: 2026-11-27
 
 ## Overview
 
@@ -181,6 +181,7 @@ Boot recovery moves that binding when it re-runs a continuous schedule's cut fir
 Resetting a continuous schedule rides the same outbox rail as fires — a `schedule-reset` event clears the binding on delivery, so the next fire starts fresh.
 Unlike a fire, a reset does not poke the Agent awake: one that stays hibernated past the event's TTL expires undelivered, and the next fire resumes the old session.
 Within a continuous schedule fires serialize naturally — each resumes the same session, prompts queuing at the runtime — while fresh fires each open their own session and may run concurrently.
+A run that waits on a harness's permission prompt waits up to the hold window, and its owner can answer the prompt from a Slack card ([owner requests in Slack](slack-owner-requests.md#harness-prompts)); a continuous schedule's next fire queues behind it, and a fresh fire runs beside it.
 
 A schedule may carry a **session title**, which the runtime stamps on each session a fire opens, in place of the title the harness derives from the task.
 It names a session only when the session is opened: a continuous schedule names its one session at the first fire, so a later edit, or a rename by the user or the agent, is never overwritten by the next fire.

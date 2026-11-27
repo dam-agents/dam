@@ -82,6 +82,8 @@ export function fakeInvocationsRepo(
     answerQuestion: async () => "closed",
     listAskingRuns: async () => [],
     listAskingDue: async () => [],
+    listAsking: async () => [],
+    answerTo: async () => null,
     listAskingByRoot: async () => [],
     listAskingByOwner: async () => [],
     hasAsking: async () => false,

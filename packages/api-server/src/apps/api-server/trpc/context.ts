@@ -187,6 +187,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     onboardingChecklists,
     gettingStarted,
     sidebarOrder,
+    ownerActivity,
     sessionPins,
     getAgentCapabilities,
     schedulesBoot,
@@ -940,6 +941,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       chatFormPreferences,
       gettingStarted: gettingStarted.forOwner(user.sub),
       sidebarOrder: sidebarOrder.forOwner(user.sub),
+      ownerActivity: { touch: () => ownerActivity.touch(user.sub) },
       sessionPins: sessionPins.forOwner(user.sub, async (agentId) => {
         if (await agentsRepo.isOwnedBy(agentId, user.sub)) return true;
         const editorEmail = editorEmailOf(user);

@@ -1,6 +1,6 @@
 # Web search control
 
-Last verified: 2026-11-20
+Last verified: 2026-11-26
 
 ## Overview
 
@@ -45,8 +45,9 @@ It is stored apart from the agent's egress rules, and neither an egress rule tha
 Rules and approvals belong to the agent whose rules decide its requests, so a sub-agent's search asks its driver, as its network requests do.
 An open child, whose network allows only what is listed for it, has its search refused when no rule allows it.
 
-With no rule, a search in a run nobody attends is refused at once: a channel turn with no interactive session attached, as for network requests, or a call whose Session a schedule started.
+With no rule, the shared decision of [owner requests in Slack](slack-owner-requests.md) holds or refuses the search: it is refused at once in a channel turn with no interactive session attached, as for network requests, and in a call whose Session a schedule started when the owner cannot get cards in Slack; for an owner who can, a scheduled search holds.
 The Session comes from the Model Router's stamp, written in the machine, so it can only turn a hold into a refusal.
+A held search ends when its client goes away, and a "Don't wait" press of a Slack turn ends it when the turn ran on its Session.
 The refusal leaves its approval for the owner, and its text says how to add the rule that lets such runs search.
 
 Otherwise the search waits as a **web search approval**, where network approvals show: in every open conversation of the agent, on Home and behind the approvals bell, and as an in-session prompt to attached clients such as the CLI.

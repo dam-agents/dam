@@ -9,6 +9,8 @@ import {
 import type { Db } from "db";
 import type {
   ApprovalsService,
+  PromotionRule,
+  SessionCategory,
   SpendLimitPayload,
   ToolApprovalReports,
 } from "api-server-api";
@@ -38,6 +40,7 @@ import {
 import {
   createExtAuthzGate,
   type EgressAttendance,
+  type OwnerCardReach,
   type EgressRuleMatcher,
   type ProviderScopes,
   type ExtAuthzDecision,
@@ -68,6 +71,12 @@ import {
 } from "./services/egress-proposals.js";
 import type { Subscription } from "rxjs";
 import type { RedisBus } from "../../core/redis-bus.js";
+import type { Redis } from "ioredis";
+import { createHoldWaiters } from "./infrastructure/hold-waiters.js";
+import {
+  createOwnerRequestPorts,
+  type OwnerRequestPorts,
+} from "./services/owner-request-ports.js";
 
 interface ComposeApprovalsServiceDeps {
   db: Db;
@@ -75,6 +84,7 @@ interface ComposeApprovalsServiceDeps {
   actor: string;
   actorEmail: string | null;
   agentBinding: readonly string[] | "*";
+  via?: { surface: "slack"; slackUserId: string; teamId: string };
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   egressRuleWriter: EgressRuleWriter;
   webSearchRuleWriter: WebSearchRuleWriter;
@@ -96,6 +106,7 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
     wrapperFrameSender: deps.wrapperFrameSender,
     isAgentOwnedBy: deps.isAgentOwnedBy,
     ownerSub: deps.ownerSub,
+    ...(deps.via ? { via: deps.via } : {}),
     actor: deps.actor,
     actorEmail: deps.actorEmail,
     agentBinding: deps.agentBinding,
@@ -114,6 +125,8 @@ interface ComposeApprovalsSystemDeps {
   toolAccessConnections: ToolAccessConnections;
   toolCallLabels: ToolCallLabels;
   attendance: EgressAttendance;
+  cardReach: OwnerCardReach;
+  redis: Redis;
   spend: SpendCheck;
   webSearch: {
     control: WebSearchControl;
@@ -124,15 +137,28 @@ interface ComposeApprovalsSystemDeps {
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
   waitingRuleSpeaksFor: WaitingRuleSpeaksFor;
+  promotionRulesOf: (
+    agentId: string,
+  ) => Promise<readonly (PromotionRule & { id: string })[]>;
+  spawnDeadlineOf?: (agentId: string) => Promise<Date | null>;
+  sessionCategoryOf?: (
+    agentId: string,
+    sessionId: string,
+  ) => Promise<SessionCategory | null>;
 }
+
+export { turnReleaseChannelOf } from "./services/held-verdict.js";
+export type { OwnerRequestPorts } from "./services/owner-request-ports.js";
 
 export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
   relay: ApprovalsRelayService;
   gate: ExtAuthzGate;
   sweeper: DeliverySweeper;
   wakeSaga: Subscription;
+  ownerRequests: OwnerRequestPorts;
 } {
   const repo = createApprovalsRepository(deps.db);
+  const waiters = createHoldWaiters(deps.redis);
   const wakeSaga = startWakeHeldCallsSaga(deps.bus);
   const relay = createApprovalsRelayService({ repo, bus: deps.bus });
   const gate = createExtAuthzGate({
@@ -142,12 +168,16 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     ruleMatcher: deps.ruleMatcher,
     providerScopes: deps.providerScopes,
     attendance: deps.attendance,
+    cardReach: deps.cardReach,
+    waiters,
     spend: deps.spend,
     questions: createSpendLimitQuestions({ repo }),
     webSearch: createWebSearchGate({
       repo,
       bus: deps.bus,
       attendance: deps.attendance,
+      cardReach: deps.cardReach,
+      waiters,
       holdSeconds: deps.holdSeconds,
       ...deps.webSearch,
     }),
@@ -165,7 +195,16 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     staleMs: 30_000,
     batchSize: 50,
   });
-  return { relay, gate, sweeper, wakeSaga };
+  const ownerRequests = createOwnerRequestPorts({
+    repo,
+    waiters,
+    promotionRulesOf: deps.promotionRulesOf,
+    ...(deps.spawnDeadlineOf ? { spawnDeadlineOf: deps.spawnDeadlineOf } : {}),
+    ...(deps.sessionCategoryOf
+      ? { sessionCategoryOf: deps.sessionCategoryOf }
+      : {}),
+  });
+  return { relay, gate, sweeper, wakeSaga, ownerRequests };
 }
 
 export function composeToolApprovalReports(

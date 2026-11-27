@@ -11,6 +11,17 @@ import {
   noToolCallLabels,
 } from "../helpers/approvals-fakes.js";
 
+const unlinkedReach = { reachOf: async () => "unlinked" as const };
+
+function withTurnKinds<T extends object>(attendance: T) {
+  return {
+    channelTurnKinds: async () => [],
+    hasAddressedTurn: async () => false,
+    hasReleasedTurn: async () => false,
+    ...attendance,
+  };
+}
+
 const allowEverything = {
   match: async () => ({
     verdict: "allow" as const,
@@ -60,10 +71,10 @@ interface WorldOptions {
 function world(options: WorldOptions = {}) {
   const repo = makeFakeApprovalsRepo();
   const bus = makeFakeApprovalsBus();
-  const attendance = {
+  const attendance = withTurnKinds({
     hasOpenChannelTurn: async () => options.channelTurn === true,
     hasInteractiveSession: async () => false,
-  };
+  });
   const controlReads: string[] = [];
   const ruleReads: string[] = [];
   const gate = createExtAuthzGate({
@@ -71,6 +82,7 @@ function world(options: WorldOptions = {}) {
     toolCallLabels: noToolCallLabels,
     repo: repo.repo,
     bus: bus.bus,
+    cardReach: unlinkedReach,
     attendance,
     identityResolver: {
       resolve: async () =>
@@ -86,6 +98,7 @@ function world(options: WorldOptions = {}) {
     webSearch: createWebSearchGate({
       repo: repo.repo,
       bus: bus.bus,
+      cardReach: unlinkedReach,
       attendance,
       holdSeconds: 30,
       control: {

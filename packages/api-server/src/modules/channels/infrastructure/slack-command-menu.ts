@@ -32,6 +32,8 @@ const CLOSE = "menu:close";
 
 const IGNORED_APPS = "menu:ignored-apps";
 
+const APPROVALS = "menu:approvals";
+
 const AGENT_SCREENS = [
   ["menu:whisper ", "whisper"],
   ["menu:disconnect ", "confirm-disconnect"],
@@ -73,6 +75,7 @@ export type CommandMenuAction =
   | { kind: "home" }
   | { kind: "close" }
   | { kind: "ignored-apps" }
+  | { kind: "approvals" }
   | { kind: "whisper"; agentName: string }
   | { kind: "confirm-disconnect"; agentName: string }
   | { kind: "delete-help"; agentName: string }
@@ -270,6 +273,9 @@ export function commandMenu(
       },
       { kind: "button", label: "Close", value: CLOSE },
       ...more([
+        ...(state.linked
+          ? [{ label: "Your approvals", value: APPROVALS }]
+          : []),
         ...(state.agents.length > 0
           ? [{ label: "Ignored apps", value: IGNORED_APPS }]
           : []),
@@ -394,6 +400,7 @@ export function parseCommandMenuAction(
   if (value === HOME) return { kind: "home" };
   if (value === CLOSE) return { kind: "close" };
   if (value === IGNORED_APPS) return { kind: "ignored-apps" };
+  if (value === APPROVALS) return { kind: "approvals" };
   for (const [prefix, kind] of AGENT_SCREENS) {
     const agentName = value.startsWith(prefix)
       ? value.slice(prefix.length).trim()

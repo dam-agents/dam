@@ -61,19 +61,30 @@ export function makeFakeApprovalsRepo(): FakeRepo {
           r.expiresAt > new Date(),
       ) ?? null,
     consumeAllowOnce: async (target) => {
+      const sameShape = (r: PendingApprovalRow) => {
+        if ("id" in target) return r.id === target.id;
+        const { shape } = target;
+        const shaped =
+          shape.type === "ext_authz"
+            ? r.payload.kind === "ext_authz" &&
+              r.payload.host === shape.host &&
+              r.payload.port === shape.port &&
+              r.payload.method === shape.method &&
+              r.payload.path === shape.path
+            : r.payload.kind === shape.type && r.payload.key === shape.key;
+        return (
+          shaped &&
+          r.agentId === target.agentId &&
+          (r.resolvedAt?.getTime() ?? 0) > target.answeredSince.getTime()
+        );
+      };
       const row = rows
         .filter(
           (r) =>
-            r.type === "mcp_tool_call" &&
             r.status === "resolved" &&
             r.verdict === "allow_once" &&
             r.deliveredAt === null &&
-            ("id" in target
-              ? r.id === target.id
-              : r.agentId === target.agentId &&
-                r.payload.kind === "mcp_tool_call" &&
-                r.payload.key === target.key &&
-                r.expiresAt > new Date()),
+            sameShape(r),
         )
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0];
       if (!row) return null;
@@ -108,6 +119,9 @@ export function makeFakeApprovalsRepo(): FakeRepo {
     markDelivered: async () => {},
     correctResolvedVerdict: async () => false,
     listResolvedUndelivered: async () => [],
+    listPendingRouted: async () => [],
+    countSince: async () => 0,
+    raiseRoute: async () => false,
     expirePending: async (id) => {
       expirePendingCalls.push(id);
       const row = rows.find((r) => r.id === id && r.status === "pending");

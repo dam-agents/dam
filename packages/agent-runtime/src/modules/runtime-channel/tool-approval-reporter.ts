@@ -85,8 +85,10 @@ function bounded(send: (signal: AbortSignal) => Promise<unknown>) {
  * where the recorded catalog dropped that option.
  * A waiting report is retried until the request ends: the api-server may be
  * restarting, and a request that stayed invisible for its whole window is the
- * defect this report exists to fix. End reports are retried briefly, since a
- * row left pending by a lost end is worse than a late one.
+ * defect this report exists to fix. Each attempt of a waiting report carries
+ * the time the request has left, so the platform's record expires when the
+ * runtime gives up, whatever the two clocks say. End reports are retried
+ * briefly, since a row left pending by a lost end is worse than a late one.
  * Each attempt is bounded and aborted at its deadline, and one request's
  * reports wait only on that request, so a stalled call cannot hold another
  * request's decision window.
@@ -159,7 +161,7 @@ export function createToolApprovalReporter(opts: {
       );
     },
 
-    waiting(id, sessionId, line) {
+    waiting(id, sessionId, line, deadline) {
       const frame = permissionRequestIn(line);
       if (!frame) return;
       const k = key(id, sessionId);
@@ -178,6 +180,9 @@ export function createToolApprovalReporter(opts: {
               args: frame.params?.toolCall?.rawInput,
               idsWhole: true,
               options: recordedOptionsOf(frame.params?.options),
+              ...(deadline !== undefined && {
+                waitMs: Math.max(0, deadline - Date.now()),
+              }),
             },
             { signal },
           ),

@@ -834,6 +834,7 @@ describe("delivering a viewer's prompt", () => {
           open.push(agentId);
           return () => open.splice(open.indexOf(agentId), 1);
         },
+        releaseAddressed: async () => {},
       },
       promptPair: () => Promise.resolve(opts.choice ?? { pair: null }),
     });

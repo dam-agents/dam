@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-11-25
+Last verified: 2026-11-27
 
 ## Session inside the machine
 
@@ -241,10 +241,12 @@ The UI then moves those prompts to a new chat, where they show as not delivered,
 
 When a session goes idle — no engaged channel, no prompt active or queued, no agent request pending — the runtime sends `session/close` to the harness; a queue nobody watches holds the release back until its prompts have run.
 The per-session subprocess is reaped; the next attach respawns it.
-Permission requests with no engaged channel time out after ten minutes, answered to the agent as an error so the tool call aborts cleanly.
-The runtime reports such a request to the api-server the moment no engaged channel can answer it — when the agent asks with nobody watching, or when the last viewer leaves before answering — so it is recorded with the time the agent asked.
+A permission request with no engaged channel times out after the hold window, which the api-server names in its answer to the runtime's `hello` (ten minutes when it names none), answered to the agent as an error so the tool call aborts cleanly.
+Any other request the agent sent times out after ten minutes, because that end also lets the machine's lease recycle.
+The runtime reports such a request to the api-server the moment no engaged channel can answer it — when the agent asks with nobody watching, or when the last viewer leaves before answering — so it is recorded with the time the agent asked, and with the time it has left, so the record expires when the runtime gives up.
+The owner can answer it from a Slack card too ([owner requests in Slack](slack-owner-requests.md#harness-prompts)).
 It reports how every permission request it held ended, watched or not: the answer it accepted, which settles the row whoever wrote it, or its end when the request is dropped.
-Dropping covers both the ten-minute wait and a session reset, so a row never outlives the question it describes.
+Dropping covers both the timeout and a session reset, so a row never outlives the question it describes.
 The api-server records it as a pending tool approval at once, so Home and the approvals bell show it with the time the agent asked, not first when someone opens the session; a verdict given there answers it, the session still unwatched ([home-feed](home-feed.md#what-home-reads)).
 A viewer's copy of a request follows the runtime's: while the viewer's own connection is gone it keeps the card on screen with its options disabled, and once the session is live again it drops every request whose channel is closed and takes the reissued one.
 A chat whose channel is not live stays on screen: its labels follow the connection state, so a dropped channel that is retrying reads reconnecting and every other non-live state reads connecting, and the notice offers Retry in each blocked state that is not loading; the composer keeps the draft and Stop waits, since a cancel cannot reach the Agent.

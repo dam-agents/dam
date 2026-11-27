@@ -1,4 +1,7 @@
-import { channelNetworkAccessGuidance } from "./network-access-copy.js";
+import {
+  channelNetworkAccessGuidance,
+  type OwnerRequestReach,
+} from "./network-access-copy.js";
 import { channelOwnerGuidance, type ChannelOwner } from "./owner-copy.js";
 import { channelPermissionCheckGuidance } from "./permission-check-copy.js";
 import { escapeFrameText } from "./frame-text.js";
@@ -132,6 +135,7 @@ export function slackTurnContract(ctx: {
   roster?: SlackTurnRoster;
   whisper?: SlackTurnWhisper;
   owner: ChannelOwner | null;
+  ownerRequests?: OwnerRequestReach | null;
 }): string {
   const batchCount = ctx.batch?.count ?? 1;
   const multi = batchCount > 1;
@@ -226,7 +230,15 @@ export function slackTurnContract(ctx: {
       "you're asked to.",
     "</how-to-respond>",
     channelOwnerGuidance(ctx.owner, ctx.identity.brand.name),
-    channelNetworkAccessGuidance(ctx.identity.brand.name),
+    channelNetworkAccessGuidance(
+      ctx.identity.brand.name,
+      ctx.ownerRequests
+        ? {
+            reach: ctx.ownerRequests,
+            loginCommand: `/${ctx.identity.brand.short} login`,
+          }
+        : undefined,
+    ),
     channelPermissionCheckGuidance,
   ].join("\n");
 }

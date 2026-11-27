@@ -44,6 +44,10 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `ContributionGapChanged` | _elsewhere_ | runtime-delivery |
 | `ApprovalRequested` | _elsewhere_ | approvals |
 | `ApprovalResolved` | _elsewhere_ | approvals |
+| `ApprovalRouteRaised` | _elsewhere_ | approvals |
+| `ApprovalWaitChanged` | _elsewhere_ | approvals |
+| `OwnerQuestionAsked` | _elsewhere_ | invocations |
+| `OwnerQuestionClosed` | _elsewhere_ | invocations |
 | `SpendLimitsChanged` | _elsewhere_ | spend |
 | `SpendWorkStopped` | _elsewhere_ | spend |
 | `GatewayCallEnded` | _elsewhere_ | spend |

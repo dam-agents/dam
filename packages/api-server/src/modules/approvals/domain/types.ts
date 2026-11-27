@@ -3,6 +3,7 @@ import type {
   ApprovalStatus,
   ApprovalType,
   ApprovalVerdict,
+  OwnerRoute,
 } from "api-server-api";
 
 export interface PendingApprovalRow {
@@ -19,4 +20,5 @@ export interface PendingApprovalRow {
   decidedBy: string | null;
   status: ApprovalStatus;
   deliveredAt: Date | null;
+  ownerRoute?: OwnerRoute | null;
 }

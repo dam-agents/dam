@@ -1489,6 +1489,12 @@ apiServer:
   # timeouts are an external ceiling.
   approvalHoldSeconds: 1800
 
+  # -- Owner requests in Slack: a held request of an addressed Slack turn
+  # waits for an owner who has linked Slack, instead of being refused at
+  # once. Off gives every owner the behavior before the feature.
+  slackOwnerRequests:
+    enabled: true
+
   # -- How long a provider outage lasts before owners whose unattended work
   # failed get a message (a Go duration). Detection already takes up to about
   # two minutes, and most overload bursts end within ten.

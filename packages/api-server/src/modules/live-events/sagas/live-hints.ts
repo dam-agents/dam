@@ -45,6 +45,12 @@ export function hintFor(event: DomainEvent): {
           agentId: event.forAgentId ?? event.agentId,
         },
       };
+    case EventType.ApprovalRouteRaised:
+    case EventType.ApprovalWaitChanged:
+      return {
+        ownerSub: event.ownerSub,
+        hint: { topic: "approvals", agentId: event.agentId },
+      };
     case EventType.ScheduleFired:
     case EventType.ScheduleCreated:
     case EventType.ScheduleUpdated:
@@ -144,6 +150,8 @@ export function hintFor(event: DomainEvent): {
     case EventType.ProviderStatusEvaluated:
     case EventType.CostReviewStarted:
     case EventType.CostReviewDismissed:
+    case EventType.OwnerQuestionAsked:
+    case EventType.OwnerQuestionClosed:
       return null;
     default: {
       const unhandled: never = event;

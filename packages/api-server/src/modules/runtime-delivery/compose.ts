@@ -136,6 +136,8 @@ export interface ComposeRuntimeDeliveryOpts {
   /* UNIT_BOUNDARY_DESCRIPTION: the `dam` skill the api-server image carries, so the skill the DAM Connection writes is the one this install ships now. */
   damSkill: readonly DamSkillFile[];
   mcpToolTimeoutSeconds: number;
+  /* UNIT_BOUNDARY_DESCRIPTION: how long a runtime keeps a permission prompt that nobody watches, told in its hello: the hold window, so the owner can answer from Slack or the app while the platform holds requests for them. */
+  permissionWaitMs: number;
 }
 
 export function composeRuntimeDelivery(
@@ -222,6 +224,7 @@ export function composeRuntimeDelivery(
     uow: createUnitOfWork(opts.db),
     resolveOwner: opts.resolveOwner,
     eventOutcomeHandler: eventOutcomes.dispatch,
+    permissionWaitMs: opts.permissionWaitMs,
     log,
   });
 

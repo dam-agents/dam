@@ -181,6 +181,10 @@ export interface InvocationsRepository {
   ): Promise<"answered" | "closed">;
   listAskingRuns(invocationId: string): Promise<InvocationRow[]>;
   listAskingDue(now: Date, limit: number): Promise<InvocationRow[]>;
+  // UNIT_BOUNDARY_DESCRIPTION: every run that waits for its owner's answer, oldest question first and at most `limit`, for the sweep that keeps the owner's Slack question cards true.
+  listAsking(limit: number): Promise<InvocationRow[]>;
+  // UNIT_BOUNDARY_DESCRIPTION: the answer that continued a run which asked its owner, kept on the run it started; null while the question waits, or when it closed without an answer.
+  answerTo(runId: string): Promise<RunAnswer | null>;
   // UNIT_BOUNDARY_DESCRIPTION: the runs that wait for their owner's answer in the targets under a root that still exist.
   listAskingByRoot(rootDriverId: string): Promise<InvocationRow[]>;
   listAskingByOwner(owner: string): Promise<InvocationRow[]>;
@@ -611,6 +615,26 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         and(eq(runsTable.status, "asking"), lte(runsTable.answerBy, now)),
         limit,
       );
+    },
+
+    listAsking(limit) {
+      return runRows(eq(runsTable.status, "asking"), limit);
+    },
+
+    async answerTo(runId) {
+      const asking = await db
+        .select({ continuedBy: runsTable.continuedBy })
+        .from(runsTable)
+        .where(eq(runsTable.id, runId))
+        .limit(1);
+      const next = asking[0]?.continuedBy;
+      if (!next) return null;
+      const rows = await db
+        .select({ answer: runsTable.answer })
+        .from(runsTable)
+        .where(eq(runsTable.id, next))
+        .limit(1);
+      return rows[0]?.answer ?? null;
     },
 
     listAskingByRoot(rootDriverId) {

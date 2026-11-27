@@ -85,6 +85,7 @@ An *open* child follows only the rules its Driver sets and is denied anything el
 **A child never reaches more than its Driver unless the owner agreed.** An allow rule the Driver sets on an open child, at launch or when it replaces the child's rules, waits for the owner's approval like a wildcard rule when it lets through a request (a host, port, method and path) that the Driver's own rules (as they are at that moment) do not allow, compared as the gate reads them: the most specific host pattern decides, and a Driver limited to one method or path of a host gives its child no more of that host.
 A launch and an update name the rules that wait, each with its request id, to the Driver: in the tool's answer, and in the SDK's answer and log.
 A one-off sub-agent does not start its work while a rule set at its launch waits: its task is held until the owner has answered every one, it shows as waiting for the owner, and a wait nobody answers ends at the spawn's deadline with that reason.
+Such a rule also reaches the owner as a row of the Driver's background card in Slack, under the same timing ([owner requests in Slack](slack-owner-requests.md#sub-agent-questions-and-launch-rules)); an Agent's own rule proposal does not, because it holds nothing.
 A kept sub-agent or an Environment keeps working, and a request that a waiting rule would allow is held at the gate until the owner answers, then passes or is refused with the reason.
 The owner's answers are kept on the sub-agent's invocation and returned with its result, so its Driver can tell a declined host from a network fault.
 What the owner approves is that rule, its method and path included: a Driver that later asks for another method or path on the same host asks again, unless the owner approved the whole host.
@@ -178,6 +179,7 @@ A stop, by the owner or by its Driver, and a deleted Driver still end it: the wa
 The owner and the Driver see no kept sub-agent in this: it is listed nowhere as kept, and it is removed after its result as before.
 
 **Only the owner answers.** The owner answers in the Driver's chat with an option or their own words, and the answer goes straight to the sub-agent: the Driver has no tool to answer or to pass an answer on.
+A question that still waits after a minute, while the owner is not active in the web UI, also reaches the owner as a card in Slack, which takes the same answer ([owner requests in Slack](slack-owner-requests.md#sub-agent-questions-and-launch-rules)); the one-day default is unchanged.
 With no answer by the deadline, a day by default or the time the question names, at most as long as an Environment may live, a periodic job answers with the sub-agent's own default, so no sub-agent waits forever.
 The answer is one write under the target's lock, so of the owner's answer and the deadline's only the first counts.
 

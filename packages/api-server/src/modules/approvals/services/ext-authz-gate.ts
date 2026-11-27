@@ -12,7 +12,16 @@ import { hasDotSegment } from "../domain/dot-segment.js";
 import { canonicalEgressHost, PLATFORM_REFUSAL_HEADER } from "api-server-api";
 import type { SpendCheck } from "../../spend/index.js";
 import type { SpendLimitQuestions } from "./spend-limit-questions.js";
-import { type SettledVerdict, waitForVerdict } from "./held-verdict.js";
+import {
+  type HoldWaiters,
+  type SettledVerdict,
+  waitForVerdict,
+} from "./held-verdict.js";
+import {
+  type EgressAttendance,
+  type OwnerCardReach,
+  routeHold,
+} from "./hold-route.js";
 import type { ModelCallBody, WebSearchGate } from "./web-search-gate.js";
 import type { ToolAccessGate } from "./tool-access-gate.js";
 import { createToolCallHold, type ToolCallLabels } from "./tool-call-hold.js";
@@ -29,7 +38,8 @@ export type ExtAuthzDecision =
   | ExtAuthzVerdict
   | {
       readonly verdict: "refuse";
-      readonly basis: "spend" | "rule" | "web-search" | "tool-access";
+      readonly basis:
+        "spend" | "rule" | "web-search" | "tool-access" | "hold-released";
       readonly response: DeniedResponse;
     };
 
@@ -108,10 +118,7 @@ export interface ProviderScopes {
   ): Promise<boolean>;
 }
 
-export interface EgressAttendance {
-  hasOpenChannelTurn(agentId: string): Promise<boolean>;
-  hasInteractiveSession(agentId: string): Promise<boolean>;
-}
+export type { EgressAttendance, OwnerCardReach } from "./hold-route.js";
 
 interface CreateExtAuthzGateDeps {
   repo: ApprovalsRepository;
@@ -120,6 +127,8 @@ interface CreateExtAuthzGateDeps {
   ruleMatcher: EgressRuleMatcher;
   providerScopes: ProviderScopes;
   attendance: EgressAttendance;
+  cardReach: OwnerCardReach;
+  waiters?: HoldWaiters;
   spend: Pick<SpendCheck, "checkCall">;
   questions: SpendLimitQuestions;
   webSearch?: WebSearchGate;
@@ -230,6 +239,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           path,
           body,
           sessionId: modelCall.sessionId,
+          signal,
         });
         if (!searched.pass)
           return {
@@ -418,11 +428,39 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       }
 
       const attendee = identity.own?.parentAgentId ?? identity.agentId;
-      const unattended =
-        (await deps.attendance.hasOpenChannelTurn(attendee)) &&
-        !(await deps.attendance.hasInteractiveSession(attendee));
-
       const nonDefaultPort = port === (tls ? 443 : 80) ? undefined : port;
+      const holdMs = deps.holdSeconds * 1000;
+      const usedOnce = await deps.repo.consumeAllowOnce({
+        agentId: identity.agentId,
+        shape: { type: "ext_authz", host, port: nonDefaultPort, method, path },
+        answeredSince: new Date(Date.now() - holdMs),
+      });
+      if (usedOnce) {
+        securityLog("info", "egress.decision", {
+          category: "egress",
+          actor: identity.ownerSub,
+          actorKind: "agent",
+          surface: "ext-authz",
+          agentId: identity.agentId,
+          target: host,
+          decision: "allow",
+          correlationId: usedOnce,
+          reason: "allow-once-used",
+          detail: { method, path, basis: "hold", via },
+        });
+        return "allow";
+      }
+
+      const routed = await routeHold(deps, {
+        attendee,
+        ownerSub: identity.ownerSub,
+      });
+      const routeDetail = {
+        route: routed.route,
+        decidedBy: routed.basis,
+        addressed: routed.addressedTurnOpen,
+      };
+
       const existing = await deps.repo.findActivePendingExtAuthz({
         agentId: identity.agentId,
         host,
@@ -431,6 +469,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
         path,
       });
       const pendingId = existing?.id ?? randomUUID();
+      let expiresAt = existing?.expiresAt ?? new Date(Date.now() + holdMs);
       if (!existing) {
         await deps.repo.insertPending({
           id: pendingId,
@@ -449,8 +488,10 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
               ? { viaEnvironment: identity.environment }
               : {}),
             ...(identity.own ? { forAgentId: identity.own.parentAgentId } : {}),
+            ...(routed.refusedIn ? { refusedIn: routed.refusedIn } : {}),
           },
-          expiresAt: new Date(Date.now() + deps.holdSeconds * 1000),
+          expiresAt,
+          ownerRoute: routed.route,
         });
         emit({
           type: EventType.ApprovalRequested,
@@ -458,32 +499,33 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           agentId: identity.agentId,
           ownerSub: identity.ownerSub,
           ...(identity.own ? { forAgentId: identity.own.parentAgentId } : {}),
+          ownerRoute: routed.route,
         });
+      } else if (routed.route === "turn" && existing.ownerRoute !== "turn") {
+        const raisedUntil = new Date(Date.now() + holdMs);
+        if (await deps.repo.raiseRoute(pendingId, raisedUntil)) {
+          expiresAt = raisedUntil;
+          emit({
+            type: EventType.ApprovalRouteRaised,
+            approvalId: pendingId,
+            agentId: identity.agentId,
+            ownerSub: identity.ownerSub,
+          });
+          securityLog("info", "egress.hold_raised", {
+            category: "egress",
+            actor: identity.ownerSub,
+            actorKind: "agent",
+            surface: "ext-authz",
+            agentId: identity.agentId,
+            target: host,
+            decision: "hold",
+            correlationId: pendingId,
+            detail: { method, path, via, expiresAt: raisedUntil.toISOString() },
+          });
+        }
       }
 
-      if (!unattended) {
-        const frame = buildExtAuthzSynthFrame({
-          approvalId: pendingId,
-          host,
-          port: nonDefaultPort,
-          method,
-          path,
-        });
-        void deps.bus.publish(injectChannelOf(identity.agentId), frame);
-        securityLog("warn", "egress.hold", {
-          category: "egress",
-          actor: identity.ownerSub,
-          actorKind: "agent",
-          surface: "ext-authz",
-          agentId: identity.agentId,
-          target: host,
-          decision: "hold",
-          correlationId: pendingId,
-          detail: { method, path, via, joined: existing !== null },
-        });
-      }
-
-      if (unattended) {
+      if (routed.verdict === "refuse") {
         securityLog("warn", "egress.decision", {
           category: "egress",
           actor: identity.ownerSub,
@@ -493,13 +535,48 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           target: host,
           decision: "deny",
           correlationId: pendingId,
-          reason: "unattended-channel-turn",
-          detail: { method, path, basis: "unattended", via },
+          reason: routed.basis,
+          detail: { method, path, basis: "unattended", via, ...routeDetail },
         });
         return "deny";
       }
 
-      const settledVerdict = await waitForVerdict(deps, pendingId);
+      const frame = buildExtAuthzSynthFrame({
+        approvalId: pendingId,
+        host,
+        port: nonDefaultPort,
+        method,
+        path,
+      });
+      void deps.bus.publish(injectChannelOf(identity.agentId), frame);
+      securityLog("warn", "egress.hold", {
+        category: "egress",
+        actor: identity.ownerSub,
+        actorKind: "agent",
+        surface: "ext-authz",
+        agentId: identity.agentId,
+        target: host,
+        decision: "hold",
+        correlationId: pendingId,
+        detail: {
+          method,
+          path,
+          via,
+          joined: existing !== null,
+          ...routeDetail,
+        },
+      });
+
+      const settledVerdict = await waitForVerdict(deps, pendingId, {
+        signal,
+        expiresAt,
+        ...(routed.route === "turn" ? { release: { agentId: attendee } } : {}),
+        tracked: {
+          agentId: identity.agentId,
+          ownerSub: identity.ownerSub,
+          route: routed.route,
+        },
+      });
       const { verdict, reason } = settledVerdict;
       if (settledVerdict.reason === "hold-expired" && settledVerdict.flipped) {
         emit({
@@ -508,8 +585,11 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           agentId: identity.agentId,
           ownerSub: identity.ownerSub,
           resolution: "expired",
+          ownerRoute: routed.route,
         });
       }
+      if (verdict === "allow")
+        await deps.repo.consumeAllowOnce({ id: pendingId }).catch(() => null);
       securityLog(verdict === "deny" ? "warn" : "info", "egress.decision", {
         category: "egress",
         actor: identity.ownerSub,
@@ -520,10 +600,27 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
         decision: reason === "hold-expired" ? "expired" : verdict,
         correlationId: pendingId,
         reason,
-        detail: { method, path, basis: "hold", via },
+        detail: { method, path, basis: "hold", via, ...routeDetail },
       });
+      if (reason === "hold-released")
+        return {
+          verdict: "refuse",
+          basis: "hold-released",
+          response: releasedRefusal(host),
+        };
       return verdict;
     },
+  };
+}
+
+function releasedRefusal(host: string): DeniedResponse {
+  return {
+    status: 403,
+    headers: {
+      "content-type": "text/plain",
+      [PLATFORM_REFUSAL_HEADER]: "egress",
+    },
+    body: `The wait for the owner's answer about ${host} was ended in Slack, so the egress gateway did not send this request. The request was not denied: it still waits for the agent's owner, and the person who asked can ask again once the owner allows it.`,
   };
 }
 
@@ -560,6 +657,7 @@ function waitingRefusal(
     )
     .with(
       "hold-abandoned",
+      "hold-released",
       () =>
         "the network rule that would allow it still waits for the owner's approval, and the request stopped waiting",
     )

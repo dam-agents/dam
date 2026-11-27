@@ -66,6 +66,7 @@ export function createDeliverySweeper(
           agentId: row.agentId,
           ownerSub: row.ownerSub,
           resolution: "expired",
+          ...(row.ownerRoute ? { ownerRoute: row.ownerRoute } : {}),
         });
       }
     } finally {

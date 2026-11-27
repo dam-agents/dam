@@ -81,7 +81,10 @@ export function createViewerPromptDelivery(deps: {
     const known = previous.then(
       () =>
         new Promise<string | null>((resolve) => {
-          const release = deps.attendance.openChannelTurn(turn.agentId);
+          const release = deps.attendance.openChannelTurn(turn.agentId, {
+            channel: "artifact",
+            addressed: false,
+          });
           runTurn(deps.makeAcpClient(turn.agentId), turn, resolve)
             .catch((err: unknown) => {
               getLogger().warn(

@@ -63,6 +63,12 @@ function fakeSlackWorker(): SlackWorker {
       conversationId: "C1",
     })),
     notifyPerson: vi.fn(async () => ({ sent: 1 })),
+    placeOwnerRequest: vi.fn(async () => ({ placed: 0 })),
+    ownerRequestWaitChanged: vi.fn(async () => {}),
+    settleOwnerRequest: vi.fn(async () => {}),
+    ownerRequestSweep: vi.fn(async () => {}),
+    placeOwnerQuestion: vi.fn(async () => ({ placed: 0 })),
+    settleOwnerQuestion: vi.fn(async () => {}),
   };
 }
 

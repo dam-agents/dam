@@ -31,6 +31,10 @@ function toolCallIdIn(params: Record<string, unknown>): string | null {
     : null;
 }
 
+export function isPermissionRequest(requestLine: string): boolean {
+  return permissionRequestParamsOf(requestLine) !== null;
+}
+
 export function approvalToolCallIdOf(requestLine: string): string | null {
   const params = permissionRequestParamsOf(requestLine);
   return params === null ? null : toolCallIdIn(params);

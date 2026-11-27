@@ -557,6 +557,8 @@ process.env.PLATFORM_RUNTIME_URL = `http://127.0.0.1:${config.PORT}`;
 
 const processes = prepareProcesses(stateBackend);
 
+let permissionWaitMs: number | undefined;
+
 const {
   runtime: acpRuntime,
   triggerDriver,
@@ -634,6 +636,7 @@ const {
   keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
   agentRequests: toolApprovalReporter,
+  permissionWaitMs: () => permissionWaitMs,
   onToolActivity: ({ sessionId }) =>
     void gitTraces.drain().then(() => changes.onToolCallSettled(sessionId)),
   onInvocationTurn: (sessionId, run) => {
@@ -1515,10 +1518,14 @@ server.listen(config.PORT, () => {
     process.stderr.write(`[import] ${msg}\n`),
   );
 
-  void runtimeChannel.helloOnBoot({
-    agentRuntimeVersion:
-      process.env.PLATFORM_AGENT_VERSION ?? "agent-runtime/unknown",
-  });
+  void runtimeChannel
+    .helloOnBoot({
+      agentRuntimeVersion:
+        process.env.PLATFORM_AGENT_VERSION ?? "agent-runtime/unknown",
+    })
+    .then((hello) => {
+      permissionWaitMs = hello.permissionWaitMs;
+    });
 
   if (envStore.ready()) scheduleRecovery();
 });

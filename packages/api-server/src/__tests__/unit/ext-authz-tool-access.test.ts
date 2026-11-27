@@ -16,6 +16,17 @@ import {
   noToolCallLabels,
 } from "../helpers/approvals-fakes.js";
 
+const unlinkedReach = { reachOf: async () => "unlinked" as const };
+
+function withTurnKinds<T extends object>(attendance: T) {
+  return {
+    channelTurnKinds: async () => [],
+    hasAddressedTurn: async () => false,
+    hasReleasedTurn: async () => false,
+    ...attendance,
+  };
+}
+
 const HOST = "mcp.example.com";
 
 const template = {
@@ -109,10 +120,11 @@ function world(
   const gate = createExtAuthzGate({
     repo: repo.repo,
     bus: bus.bus,
-    attendance: {
+    cardReach: unlinkedReach,
+    attendance: withTurnKinds({
       hasOpenChannelTurn: async () => opts.channelTurn === true,
       hasInteractiveSession: async () => false,
-    },
+    }),
     identityResolver: {
       resolve: async (agentId) => ({ ownerSub: "user-1", agentId }),
     },

@@ -1,4 +1,5 @@
 import { App, LogLevel, SocketModeReceiver } from "@slack/bolt";
+import { OWNER_REQUEST_METADATA } from "../domain/owner-request-cards.js";
 import { z } from "zod";
 import { formatError } from "../../../core/format-error.js";
 import { agentActionOf } from "../domain/channel-blocks.js";
@@ -160,6 +161,12 @@ function directMessageUserOf(
 ): string | null {
   if (!channel.is_im || !("user" in channel)) return null;
   return typeof channel.user === "string" ? channel.user : null;
+}
+
+function notOwnerRequestCard(message: {
+  metadata?: { event_type?: string };
+}): boolean {
+  return message.metadata?.event_type !== OWNER_REQUEST_METADATA;
 }
 
 function toSlackMessage(
@@ -592,6 +599,13 @@ export function createBoltSlackGateway(
                 : { delete_original: true }) as Parameters<typeof respond>[0],
             );
           },
+          async (text) => {
+            await respond({
+              response_type: "ephemeral",
+              replace_original: false,
+              text,
+            });
+          },
         );
       });
 
@@ -818,7 +832,9 @@ export function createBoltSlackGateway(
       });
       const self = await selfOf(args.teamId);
       return {
-        messages: (replies.messages ?? []).map((m) => toSlackMessage(self, m)),
+        messages: (replies.messages ?? [])
+          .filter(notOwnerRequestCard)
+          .map((m) => toSlackMessage(self, m)),
         hasMore: Boolean(
           replies.has_more || replies.response_metadata?.next_cursor,
         ),
@@ -871,7 +887,9 @@ export function createBoltSlackGateway(
           ...(cursor ? { cursor } : {}),
         });
         newestFirst.push(
-          ...(history.messages ?? []).map((m) => toSlackMessage(self, m)),
+          ...(history.messages ?? [])
+            .filter(notOwnerRequestCard)
+            .map((m) => toSlackMessage(self, m)),
         );
         cursor = history.response_metadata?.next_cursor || undefined;
         const olderRemain = Boolean(history.has_more || cursor);

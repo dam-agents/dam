@@ -1159,6 +1159,7 @@ describe("slack turn — contract framing and attendance", () => {
             open--;
           };
         },
+        releaseAddressed: async () => {},
       } satisfies ChannelTurnAttendance,
     };
   }

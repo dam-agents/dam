@@ -119,6 +119,7 @@ export interface ComposeAcpOptions {
   ) => void;
   onResultAccepted?: (sessionId: string) => void;
   agentRequests: AgentRequestObserver;
+  permissionWaitMs?: () => number | undefined;
   sessionRepositories?: (sessionId: string) => SessionRepository[];
   onPrompt: () => void;
   beforeFirstPrompt?: (sessionId: string) => Promise<unknown>;
@@ -546,6 +547,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
           onInvocationTurn: opts.onInvocationTurn,
         }),
         agentRequests: scoped.agentRequests,
+        ...(opts.permissionWaitMs && {
+          permissionTtlMs: opts.permissionWaitMs,
+        }),
         onPrompt: opts.onPrompt,
         ...(opts.beforeFirstPrompt && {
           beforeFirstPrompt: opts.beforeFirstPrompt,

@@ -159,6 +159,7 @@ The card does not take an answer; a dismissal hides it from the bell alone, whil
 Each question opens the chat of that Agent, in the Session that started the sub-agent, whose input takes the answer.
 That Session shows as waiting in the sidebar's Sessions, like one with an approval.
 A question asked or answered reaches open tabs through the attention hint.
+The bell still lists a question whose card also went to Slack, and an answer on that card clears it like an answer in the chat.
 
 ## Cost review offer
 

@@ -1,3 +1,4 @@
+import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
 import type { ScriptOutputs } from "./script-outputs.js";
@@ -26,9 +27,16 @@ export function createDriverCascade(deps: {
   ): Promise<number> {
     const open = await deps.repo.listOpenRunsOf([invocationId]);
     for (const run of open) {
-      if (run.status === "asking")
+      if (run.status === "asking") {
         await deps.repo.failStopped(run.runId!, reason, false);
-      else await deps.repo.fail(run.runId!, reason);
+        emit({
+          type: EventType.OwnerQuestionClosed,
+          runId: run.runId!,
+          invocationId: run.id,
+          ownerSub: run.owner,
+          closedBy: "stopped",
+        });
+      } else await deps.repo.fail(run.runId!, reason);
     }
     return open.length;
   }

@@ -13,6 +13,12 @@ export type ApprovalStatus = z.infer<typeof approvalStatusSchema>;
 
 export type ApprovalVerdict = "allow_once" | "allow" | "deny_once" | "deny";
 
+// UNIT_BOUNDARY_DESCRIPTION: how a held or refused request reaches its owner. `turn` is a request of an addressed Slack turn, whose owner gets a card at once while the person who asked waits; `background` is every other request a gate files, held or refused, which reaches the owner later. A route is set when the gate files the request and is never lowered.
+export type OwnerRoute = "turn" | "background";
+
+// UNIT_BOUNDARY_DESCRIPTION: the kind of conversation a channel turn ran in when a gate refused its request at once, because nobody could answer it there; `unknown` when the turn's attendance was written before it recorded its kind.
+export type RefusedIn = "slack" | "telegram" | "artifact" | "unknown";
+
 interface ExtAuthzPayload {
   kind: "ext_authz";
   host: string;
@@ -23,6 +29,7 @@ interface ExtAuthzPayload {
   viaEnvironment?: string;
   // UNIT_BOUNDARY_DESCRIPTION: the parent whose page shows this prompt, when it came from a child whose scoped egress only the user may widen; approving widens the child's rules, never the parent's.
   forAgentId?: string;
+  refusedIn?: RefusedIn;
 }
 
 export type AcpPermissionOptionKind =
@@ -80,6 +87,7 @@ export interface WebSearchPayload {
   viaAgentId?: string;
   viaEnvironment?: string;
   forAgentId?: string;
+  refusedIn?: RefusedIn;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a `tools/call` of a tool that does not read, on an MCP Connection in needs approval, which the gateway holds until someone answers approve once or deny once. `key` is the sha256 of the Connection id, the tool name and the arguments as canonical JSON, so the same call sent again joins this approval and a call with other arguments files its own. `arguments` is kept only while the approval waits: it holds the call's arguments when their JSON is at most `MCP_TOOL_CALL_ARGUMENTS_MAX_BYTES`, else the first part of that JSON text as a string. `argumentsBytes` is the size of the whole arguments' JSON, so a larger value than the limit says they were cut. `targetLabel` is a name for the call's target that the Connection's Template looked up when the approval was filed, such as the Slack conversation a post goes to, at most `MCP_TOOL_CALL_TARGET_LABEL_MAX` characters; it is absent when the Template labels no target or the lookup failed, and it is kept when the approval settles.
@@ -96,6 +104,7 @@ export interface McpToolCallPayload {
   viaAgentId?: string;
   viaEnvironment?: string;
   forAgentId?: string;
+  refusedIn?: RefusedIn;
 }
 
 export type ApprovalPayload =
@@ -117,6 +126,7 @@ export interface ApprovalView {
   resolvedAt: string | null;
   verdict: ApprovalVerdict | null;
   status: ApprovalStatus;
+  ownerRoute?: OwnerRoute | null;
 }
 
 export type ApprovalListOptions = z.infer<typeof approvalListOptionsSchema>;

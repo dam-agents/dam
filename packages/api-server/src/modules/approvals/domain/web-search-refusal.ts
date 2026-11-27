@@ -10,9 +10,9 @@ export interface WebSearchRefusal {
 const MESSAGE_ID = "msg_platform_web_search_refused";
 const TOOL_USE_ID = "srvtoolu_platform_web_search_refused";
 
-// UNIT_BOUNDARY_DESCRIPTION: why a web search was refused, in the words the agent reads in the failed search's text and its owner reads in the log. `denied` is the owner's answer to this one search, and its text says that search is not turned off, so the agent does not tell its owner to turn it on, `rule` the agent's remembered web search rule, `unattended` a scheduled or channel run nobody can answer from, `expired` a hold nobody answered in time, and `child` a sub-agent whose own network allows only what is listed for it.
+// UNIT_BOUNDARY_DESCRIPTION: why a web search was refused, in the words the agent reads in the failed search's text and its owner reads in the log. `denied` is the owner's answer to this one search, and its text says that search is not turned off, so the agent does not tell its owner to turn it on, `rule` the agent's remembered web search rule, `unattended` a scheduled or channel run nobody can answer from, `expired` a hold nobody answered in time, `child` a sub-agent whose own network allows only what is listed for it, and `released` a Slack turn whose person chose not to wait for the owner.
 export type WebSearchRefusalReason =
-  "denied" | "rule" | "unattended" | "expired" | "child";
+  "denied" | "rule" | "unattended" | "expired" | "child" | "released";
 
 const STILL_ON =
   "Web search is not turned off for this agent: a later search is asked about again.";
@@ -28,6 +28,8 @@ export function webSearchRefusalText(reason: WebSearchRefusalReason): string {
     expired: `Nobody answered the approval for this search in time. ${STILL_ON}`,
     child:
       "This sub-agent's network allows only what is listed for it, and web search is not. The agent's owner can change this under Web search in the agent's Network settings.",
+    released:
+      "The person who asked chose in Slack not to wait for the owner's answer. The search was not denied: it still waits for the agent's owner, and the person who asked can ask again once the owner allows it.",
   }[reason];
   const next =
     "Find the information another way, for example by fetching a page you know.";

@@ -1,6 +1,6 @@
 # Agent editors
 
-Last verified: 2026-11-12
+Last verified: 2026-11-26
 
 ## Overview
 
@@ -82,6 +82,7 @@ The relay opens the runtime's chat socket for an editor with a flag that makes i
 
 An editor answers a tool call in the chat as the owner does, Allow always included.
 The chat's network access and proposed rule cards are answered through the approvals procedures above.
+In Slack only the owner answers a request card; editors answer in the web ([owner requests in Slack](slack-owner-requests.md#answering-in-slack)).
 The record of an approval names the person who answered it, owner or editor, and so does the Egress Rule an answer writes, or a person writes by hand; the audit record of an editor's verdict also names the owner.
 
 ### Who did what

@@ -41,7 +41,10 @@ describe("turn attendance", () => {
     const { redis, keys } = makeFakeRedis();
     const attendance = createTurnAttendance(redis);
 
-    const release = attendance.openChannelTurn("agent-1");
+    const release = attendance.openChannelTurn("agent-1", {
+      channel: "slack",
+      addressed: false,
+    });
     await flush();
     expect(
       [...keys].some((k) => k.startsWith("channel-turn:agent:agent-1:")),
@@ -57,8 +60,14 @@ describe("turn attendance", () => {
     const { redis, keys } = makeFakeRedis();
     const attendance = createTurnAttendance(redis);
 
-    const first = attendance.openChannelTurn("agent-1");
-    const second = attendance.openChannelTurn("agent-1");
+    const first = attendance.openChannelTurn("agent-1", {
+      channel: "slack",
+      addressed: false,
+    });
+    const second = attendance.openChannelTurn("agent-1", {
+      channel: "slack",
+      addressed: false,
+    });
     await flush();
 
     first();
@@ -75,8 +84,14 @@ describe("turn attendance", () => {
     const { redis, keys } = makeFakeRedis();
     const attendance = createTurnAttendance(redis);
 
-    const first = attendance.openChannelTurn("agent-1");
-    const second = attendance.openChannelTurn("agent-1");
+    const first = attendance.openChannelTurn("agent-1", {
+      channel: "slack",
+      addressed: false,
+    });
+    const second = attendance.openChannelTurn("agent-1", {
+      channel: "slack",
+      addressed: false,
+    });
     await flush();
 
     first();
@@ -106,7 +121,10 @@ describe("turn attendance", () => {
     const { redis, spies } = makeFakeRedis();
     const attendance = createTurnAttendance(redis);
 
-    attendance.openChannelTurn("agent-1");
+    attendance.openChannelTurn("agent-1", {
+      channel: "slack",
+      addressed: false,
+    });
     expect(await attendance.hasOpenChannelTurn("agent-1")).toBe(true);
     expect(spies.scan).not.toHaveBeenCalled();
     attendance.close();

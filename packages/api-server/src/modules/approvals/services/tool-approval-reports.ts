@@ -2,6 +2,8 @@ import type { ToolApprovalReports } from "api-server-api";
 import { acpNativeRowId } from "api-server-api";
 import type { ApprovalsRelayService } from "./approvals-relay-service.js";
 
+const OLDER_RUNTIME_PROMPT_WAIT_MS = 10 * 60 * 1000;
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The agent-runtime reports a tool approval that
  * no client can answer, so the platform records it when the agent asks and
@@ -12,6 +14,9 @@ import type { ApprovalsRelayService } from "./approvals-relay-service.js";
  * its verdict settles the row even when another path recorded a different
  * one, so the record never claims a decision the tool did not act on. A
  * request it dropped unanswered expires the row.
+ * The row has the runtime's deadline as its expiry, or the 10 minutes an
+ * older runtime waits when the report names none, and the `background`
+ * route, so its owner can answer it from a Slack card while it waits.
  * The end may arrive before anything recorded the request: the ACP relay's
  * insert is queued behind the frame it already forwarded, and a report's own
  * attempt may commit after its deadline. Such an end leaves a settled row
@@ -34,6 +39,10 @@ export function createToolApprovalReports(deps: {
         args: input.args,
         idsWhole: input.idsWhole,
         options: input.options,
+        expiresAt: new Date(
+          Date.now() + (input.waitMs ?? OLDER_RUNTIME_PROMPT_WAIT_MS),
+        ),
+        ownerRoute: "background",
       });
     },
 

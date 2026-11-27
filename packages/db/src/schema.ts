@@ -244,6 +244,75 @@ export const slackOwnedThreads = pgTable(
   ],
 );
 
+export const ownerRequestCards = pgTable(
+  "owner_request_cards",
+  {
+    id: text("id").primaryKey(),
+    ownerSub: text("owner_sub").notNull(),
+    agentId: text("agent_id").notNull(),
+    teamId: text("team_id").notNull(),
+    kind: text("kind").notNull(),
+    dmChannel: text("dm_channel"),
+    messageTs: text("message_ts"),
+    postedAt: timestamp("posted_at", { withTimezone: true }),
+    threads: jsonb("threads").notNull().default([]),
+    lastChange: timestamp("last_change", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    sealedAt: timestamp("sealed_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("owner_request_cards_open_idx")
+      .on(table.ownerSub, table.agentId, table.teamId, table.kind)
+      .where(
+        sql`closed_at IS NULL AND sealed_at IS NULL AND kind IN ('turn', 'background')`,
+      ),
+    index("owner_request_cards_owner_idx").on(table.ownerSub, table.closedAt),
+  ],
+);
+
+export const ownerRequestCardItems = pgTable(
+  "owner_request_card_items",
+  {
+    cardId: text("card_id")
+      .notNull()
+      .references(() => ownerRequestCards.id, { onDelete: "cascade" }),
+    requestKind: text("request_kind").notNull(),
+    requestId: text("request_id").notNull(),
+    host: text("host"),
+    state: text("state").notNull().default("waiting"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.cardId, table.requestId] }),
+    index("owner_request_card_items_request_idx").on(table.requestId),
+  ],
+);
+
+export const ownerRequestDismissals = pgTable(
+  "owner_request_dismissals",
+  {
+    ownerSub: text("owner_sub").notNull(),
+    agentId: text("agent_id").notNull(),
+    host: text("host").notNull(),
+    until: timestamp("until", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.ownerSub, table.agentId, table.host] }),
+  ],
+);
+
+export const ownerRequestMutes = pgTable("owner_request_mutes", {
+  ownerSub: text("owner_sub").primaryKey(),
+  mutedAt: timestamp("muted_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const publicImageUrls = pgTable("public_image_urls", {
   sha256: text("sha256").primaryKey(),
   url: text("url").notNull(),
@@ -360,6 +429,7 @@ export const pendingApprovals = pgTable(
     decidedBy: text("decided_by"),
     status: text("status").notNull().default("pending"),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    ownerRoute: text("owner_route"),
   },
   (table) => [
     index("pending_approvals_owner_status_idx").on(
@@ -370,6 +440,11 @@ export const pendingApprovals = pgTable(
     index("pending_approvals_undelivered_idx")
       .on(table.resolvedAt)
       .where(sql`status = 'resolved' AND delivered_at IS NULL`),
+    index("pending_approvals_route_status_idx").on(
+      table.ownerRoute,
+      table.status,
+      table.createdAt,
+    ),
   ],
 );
 

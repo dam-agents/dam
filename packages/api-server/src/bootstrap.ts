@@ -31,6 +31,7 @@ import {
 import { createControlAgentStateCache } from "./modules/agent-store/cache.js";
 import { createControlAgentsRepository } from "./modules/agent-store/agents-repository.js";
 import { createL7HostsPortFor } from "./modules/agent-store/l7-hosts.js";
+import { match } from "ts-pattern";
 import {
   readAgentRows,
   readOneAgent,
@@ -192,6 +193,13 @@ import {
 } from "./modules/channels/infrastructure/slack-installs-repository.js";
 import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
+import { createOwnerCardReach } from "./modules/channels/services/owner-card-reach.js";
+import { createOwnerRequestCardsRepository } from "./modules/channels/infrastructure/owner-request-cards-repository.js";
+import type {
+  OwnerQuestionPortsForSlack,
+  OwnerRequestPortsForSlack,
+} from "./modules/channels/infrastructure/slack-owner-requests.js";
+import { startOwnerRequestCardsSaga } from "./modules/channels/sagas/owner-request-cards.js";
 import { createSlackAppTokenService } from "./modules/channels/services/slack-app-token-service.js";
 import { slackAppTokenSource } from "./modules/channels/services/slack-app-token-source.js";
 import { createRedisSpentRefreshTokens } from "./modules/channels/infrastructure/slack-spent-refresh-tokens.js";
@@ -339,6 +347,9 @@ import {
   composeInvocationLivenessSweep,
   composeSubAgentOutcomeDelivery,
   composeQuestionDeadlines,
+  composeOwnerQuestionPorts,
+  createInvocationsRepository,
+  type OwnerQuestionPorts,
   createDriverResolutionAdapter,
   createSpawnSessionsAdapter,
   createInvocationTasksAdapter,
@@ -353,6 +364,7 @@ import {
   HARNESS_CONFIG_STEP,
   composeInvocationPinReconciler,
   listInvocationAgentIds,
+  recordEgressAnswerAdapter,
 } from "./modules/invocations/index.js";
 import {
   composeEnvironmentGate,
@@ -374,6 +386,9 @@ import {
   createApprovalsCleanupHook,
   createSpendQuestionStore,
   listPendingApprovalAgentIds,
+  turnReleaseChannelOf,
+  type OwnerRequestPorts,
+  composeApprovalsService,
 } from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
 import { createChatFormPreferencesCleanup } from "./modules/chat-forms/index.js";
@@ -399,11 +414,14 @@ import {
   createChildEgressSeederAdapter,
   listEgressRuleAgentIds,
   markTrustedRowsTakenOverAdapter,
+  createEgressRuleWriterAdapter,
+  createPromotionRulesReader,
 } from "./modules/egress-rules/compose.js";
 import {
   createWebSearchCleanupHook,
   createWebSearchGatePorts,
   listWebSearchRuleAgentIds,
+  createWebSearchRuleWriter,
 } from "./modules/web-search/compose.js";
 import {
   composeConnectionsAtBoot,
@@ -443,6 +461,7 @@ import { createRedisBus } from "./core/redis-bus.js";
 import { createBusRpc } from "./core/bus-rpc.js";
 import { createRedisBlobHandoff } from "./core/blob-handoff.js";
 import { createLeaderLease, type LeaderRole } from "./core/leader-lease.js";
+import { createOwnerActivity } from "./core/owner-activity.js";
 import {
   startAgentStateCache,
   createLiveAgentStateCache,
@@ -708,6 +727,7 @@ export async function bootstrap() {
   ) as import("ioredis").Redis;
 
   const turnAttendance = createTurnAttendance(sharedRedis);
+  const ownerActivity = createOwnerActivity(sharedRedis);
   connectScanCacheBus(redisBus);
 
   const periodicJobs = createPeriodicJobs({
@@ -1045,6 +1065,7 @@ export async function bootstrap() {
     namespace: config.namespace,
     damSkill,
     mcpToolTimeoutSeconds: config.approvalHoldSeconds,
+    permissionWaitMs: config.approvalHoldSeconds * 1000,
     bullConnection,
     agentRunningPort: {
       isRunning: (agentId) => agentsRepo.isReady(agentId),
@@ -1738,6 +1759,15 @@ export async function bootstrap() {
     delete: deleteIdentityLink(db),
   });
 
+  const ownerRequestCards = createOwnerRequestCardsRepository(db);
+  const ownerCardReach = createOwnerCardReach({
+    enabled: config.slackOwnerRequests,
+    slackLinksOf: (ownerSub) =>
+      identityLinkService.externalLinksOf("slack", ownerSub),
+    installs: listSlackInstalls(db),
+    muted: (ownerSub) => ownerRequestCards.isMuted(ownerSub),
+  });
+
   const pendingSlackOAuthFlows = createRedisTtlStore<SlackOAuthPending>(
     sharedRedis,
     "oauth:slack",
@@ -2138,8 +2168,81 @@ export async function bootstrap() {
       slackDmBridges.closedFor(agentId, slackChannelId),
   };
 
+  let ownerRequestPorts: OwnerRequestPorts | null = null;
+  let ownerQuestionPorts: OwnerQuestionPorts | null = null;
+  const slackOwnerQuestionPorts: OwnerQuestionPortsForSlack = {
+    view: async (runId) =>
+      ownerQuestionPorts ? ownerQuestionPorts.view(runId) : null,
+    open: async (limit) =>
+      ownerQuestionPorts ? ownerQuestionPorts.open(limit) : [],
+    waitingFor: async (ownerSub) =>
+      ownerQuestionPorts ? ownerQuestionPorts.waitingFor(ownerSub) : [],
+    answer: async (input) =>
+      ownerQuestionPorts ? ownerQuestionPorts.answer(input) : "not-actionable",
+  };
+  const slackOwnerRequestPorts: OwnerRequestPortsForSlack = {
+    view: async (id) => (ownerRequestPorts ? ownerRequestPorts.view(id) : null),
+    refuseUnreachable: async (id) =>
+      ownerRequestPorts ? ownerRequestPorts.refuseUnreachable(id) : false,
+    anyoneWaits: async (id) =>
+      ownerRequestPorts ? ownerRequestPorts.anyoneWaits(id) : false,
+    waiting: async (input) =>
+      ownerRequestPorts ? ownerRequestPorts.waiting(input) : [],
+    waitingFor: async (ownerSub) =>
+      ownerRequestPorts ? ownerRequestPorts.waitingFor(ownerSub) : [],
+    releaseTurnWaits: (agentId, release) =>
+      redisBus.publish(turnReleaseChannelOf(agentId), JSON.stringify(release)),
+    decide: async ({ requestId, answer, ownerSub, slackUserId, teamId }) => {
+      const { service } = composeApprovalsService({
+        db,
+        ownerSub,
+        actor: ownerSub,
+        actorEmail: null,
+        agentBinding: "*",
+        via: { surface: "slack", slackUserId, teamId },
+        isAgentOwnedBy: (agentId, sub) => agentsRepo.isOwnedBy(agentId, sub),
+        egressRuleWriter: createEgressRuleWriterAdapter(
+          db,
+          createL7HostsPortFor({
+            authority: config.agentStore,
+            k8s: k8sClient,
+            db,
+          }),
+        ),
+        webSearchRuleWriter: createWebSearchRuleWriter(db),
+        wrapperFrameSender,
+        childEgressAnswered: recordEgressAnswerAdapter(db),
+      });
+      try {
+        const outcome = await match(answer)
+          .with("approve-once", () => service.approveOnce(requestId))
+          .with("deny-once", () => service.dismiss(requestId))
+          .with("approve-path", () => service.approvePermanent(requestId))
+          .with("approve-host", () => service.approveHost(requestId))
+          .with("deny-forever", () => service.denyForever(requestId))
+          .exhaustive();
+        return outcome.outcome === "not_actionable"
+          ? "not-actionable"
+          : "applied";
+      } catch (err) {
+        if (
+          err instanceof Error &&
+          "code" in err &&
+          (err as { code?: unknown }).code === "CONFLICT"
+        )
+          return "conflict";
+        throw err;
+      }
+    },
+    cards: ownerRequestCards,
+  };
+
   const slackWorker = slackGatewayFactory
     ? createSlackWorker({
+        ownerRequests: slackOwnerRequestPorts,
+        ownerRequestHoldMs: config.approvalHoldSeconds * 1000,
+        ownerActive: (ownerSub) => ownerActivity.isActive(ownerSub),
+        ownerQuestions: slackOwnerQuestionPorts,
         makeAcpClient,
         channelPair,
         createGateway: slackGatewayFactory,
@@ -2154,6 +2257,10 @@ export async function bootstrap() {
         },
         pendingOAuthFlows: pendingSlackOAuthFlows,
         getInstanceOwner: (agentId) => agentsRepo.getOwner(agentId),
+        ownerRequestReach: async (agentId) => {
+          const owner = await agentsRepo.getOwner(agentId);
+          return owner ? ownerCardReach.reachOf(owner) : "unlinked";
+        },
         ownerDisplayName: (sub) => userDirectory.resolveDisplayNameBySub(sub),
         templateDescription: async (id) =>
           (await templatesRepo.readSpec(id))?.spec.description ?? null,
@@ -2352,6 +2459,7 @@ export async function bootstrap() {
     gate: extAuthzGate,
     sweeper: deliverySweeper,
     wakeSaga: approvalsWakeSaga,
+    ownerRequests: approvalsOwnerRequests,
   } = composeApprovalsSystem({
     db,
     bus: redisBus,
@@ -2363,6 +2471,13 @@ export async function bootstrap() {
     })),
     ruleMatcher: createEgressRuleMatchAdapter(db),
     waitingRuleSpeaksFor: ruleSpeaksFor,
+    promotionRulesOf: createPromotionRulesReader(db),
+    spawnDeadlineOf: async (agentId) =>
+      (await createInvocationsRepository(db).get(agentId))?.expiresAt ?? null,
+    sessionCategoryOf: async (agentId, sessionId) =>
+      (await sessionDirectory.categorize([agentId], [sessionId])).get(
+        sessionId,
+      ) ?? null,
     providerScopes: createProviderEgressScopes(db),
     toolAccessConnections: createToolAccessConnections(
       db,
@@ -2370,6 +2485,8 @@ export async function bootstrap() {
     ),
     toolCallLabels: createToolCallLabels({ db, secretStore }),
     attendance: turnAttendance,
+    cardReach: ownerCardReach,
+    redis: sharedRedis,
     spend: spend.check,
     webSearch: {
       ...createWebSearchGatePorts(
@@ -2392,6 +2509,18 @@ export async function bootstrap() {
         ]
       : [],
   });
+  ownerRequestPorts = approvalsOwnerRequests;
+  const ownerRequestCardsSaga = startOwnerRequestCardsSaga({
+    place: (approvalId) => channelManager.placeOwnerRequest(approvalId),
+    waitChanged: (approvalId) =>
+      channelManager.ownerRequestWaitChanged(approvalId),
+    settle: (approvalId) => channelManager.settleOwnerRequest(approvalId),
+    placeQuestion: (runId) => channelManager.placeOwnerQuestion(runId),
+    settleQuestion: (runId) => channelManager.settleOwnerQuestion(runId),
+  });
+  await periodicJobs.register("owner-request-sweep", 30_000, () =>
+    channelManager.ownerRequestSweep(),
+  );
   if (slackAppTokens) {
     const renewAppToken = slackAppTokens.renew;
     await periodicJobs.register("slack-token-renew", 10 * 60_000, () =>
@@ -2948,6 +3077,13 @@ export async function bootstrap() {
   await periodicJobs.register("sub-agent-outcome-wake-retry", 3_600_000, () =>
     subAgentOutcomes.retry(),
   );
+  ownerQuestionPorts = composeOwnerQuestionPorts({
+    db,
+    agentsFor: harnessAgentsServiceFor,
+    frames: delegationFrames,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
+    wakeAgent: wakeAgentFor,
+  });
   const questionDeadlines = composeQuestionDeadlines({
     db,
     runtimeMutator: runtimeDelivery.runtimeMutator,
@@ -3114,6 +3250,7 @@ export async function bootstrap() {
     publicAgentPageService,
     gettingStarted,
     sidebarOrder,
+    ownerActivity,
     sessionPins,
     sessionPresence,
     wakeAgent: wakeAgentFor,
@@ -3230,6 +3367,7 @@ export async function bootstrap() {
     usageMetrics.stop();
     kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();
+    ownerRequestCardsSaga.unsubscribe();
     spend.extendSaga.unsubscribe();
     spend.lastKnownNameSaga.unsubscribe();
     spend.connectionLimitsSaga.unsubscribe();

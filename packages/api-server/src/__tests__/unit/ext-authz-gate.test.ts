@@ -14,6 +14,17 @@ import {
   type ApprovalResolved,
 } from "../../events.js";
 
+const unlinkedReach = { reachOf: async () => "unlinked" as const };
+
+function withTurnKinds<T extends object>(attendance: T) {
+  return {
+    channelTurnKinds: async () => [],
+    hasAddressedTurn: async () => false,
+    hasReleasedTurn: async () => false,
+    ...attendance,
+  };
+}
+
 const noSpend = {
   checkCall: async () => ({ verdict: "allow" as const, rule: anyRule }),
 };
@@ -56,7 +67,8 @@ describe("ext-authz gate", () => {
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
-      attendance: attended,
+      cardReach: unlinkedReach,
+      attendance: withTurnKinds(attended),
       identityResolver,
       ruleMatcher: { match: async () => ({ verdict: "allow", rule: anyRule }) },
       providerScopes: noProviderScopes,
@@ -90,7 +102,8 @@ describe("ext-authz gate", () => {
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
-      attendance: attended,
+      cardReach: unlinkedReach,
+      attendance: withTurnKinds(attended),
       identityResolver: {
         resolve: async () => ({
           ownerSub: "user-1",
@@ -166,7 +179,8 @@ describe("ext-authz gate", () => {
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
-      attendance: attended,
+      cardReach: unlinkedReach,
+      attendance: withTurnKinds(attended),
       identityResolver: {
         resolve: async () => ({
           ownerSub: "user-1",
@@ -222,13 +236,14 @@ describe("ext-authz gate", () => {
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
-      attendance: {
+      cardReach: unlinkedReach,
+      attendance: withTurnKinds({
         hasOpenChannelTurn: async (agentId: string) => {
           attendanceAsked.push(agentId);
           return false;
         },
         hasInteractiveSession: async () => false,
-      },
+      }),
       identityResolver: {
         resolve: async () => ({
           ownerSub: "user-1",
@@ -271,7 +286,8 @@ describe("ext-authz gate", () => {
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
-      attendance: attended,
+      cardReach: unlinkedReach,
+      attendance: withTurnKinds(attended),
       identityResolver: {
         resolve: async (agentId: string) =>
           agentId === "agent-env"
@@ -334,7 +350,8 @@ describe("ext-authz gate", () => {
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
-      attendance: attended,
+      cardReach: unlinkedReach,
+      attendance: withTurnKinds(attended),
       identityResolver,
       ruleMatcher: noMatchRules,
       providerScopes: noProviderScopes,
@@ -366,7 +383,8 @@ describe("ext-authz gate", () => {
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
-      attendance: attended,
+      cardReach: unlinkedReach,
+      attendance: withTurnKinds(attended),
       identityResolver,
       ruleMatcher: noMatchRules,
       providerScopes: noProviderScopes,
@@ -406,7 +424,8 @@ describe("ext-authz gate", () => {
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
-      attendance: attended,
+      cardReach: unlinkedReach,
+      attendance: withTurnKinds(attended),
       identityResolver,
       ruleMatcher: noMatchRules,
       providerScopes: noProviderScopes,
@@ -447,7 +466,8 @@ describe("ext-authz gate", () => {
         waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: makeFakeBus().bus,
-        attendance: attended,
+        cardReach: unlinkedReach,
+        attendance: withTurnKinds(attended),
         identityResolver,
         ruleMatcher: noMatchRules,
         providerScopes: noProviderScopes,
@@ -482,7 +502,8 @@ describe("ext-authz gate", () => {
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
-      attendance: attended,
+      cardReach: unlinkedReach,
+      attendance: withTurnKinds(attended),
       identityResolver,
       ruleMatcher: noMatchRules,
       providerScopes: noProviderScopes,
@@ -549,7 +570,8 @@ describe("ext-authz gate", () => {
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
-      attendance: attended,
+      cardReach: unlinkedReach,
+      attendance: withTurnKinds(attended),
       identityResolver,
       ruleMatcher: noMatchRules,
       providerScopes: noProviderScopes,
@@ -593,7 +615,8 @@ describe("ext-authz gate", () => {
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
-      attendance: attended,
+      cardReach: unlinkedReach,
+      attendance: withTurnKinds(attended),
       identityResolver,
       ruleMatcher: { match: ruleMatch },
       providerScopes: noProviderScopes,
@@ -629,7 +652,8 @@ describe("ext-authz gate", () => {
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
-      attendance: attended,
+      cardReach: unlinkedReach,
+      attendance: withTurnKinds(attended),
       identityResolver,
       ruleMatcher: noMatchRules,
       providerScopes: noProviderScopes,
@@ -665,7 +689,8 @@ describe("ext-authz gate", () => {
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
-      attendance: attended,
+      cardReach: unlinkedReach,
+      attendance: withTurnKinds(attended),
       identityResolver,
       ruleMatcher: { match: ruleMatch },
       providerScopes: noProviderScopes,
@@ -719,7 +744,8 @@ describe("ext-authz gate", () => {
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: makeFakeBus().bus,
-      attendance: attended,
+      cardReach: unlinkedReach,
+      attendance: withTurnKinds(attended),
       identityResolver,
       ruleMatcher: { match: ruleMatch },
       providerScopes: noProviderScopes,
@@ -763,7 +789,8 @@ describe("ext-authz gate", () => {
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
-      attendance: attended,
+      cardReach: unlinkedReach,
+      attendance: withTurnKinds(attended),
       identityResolver,
       ruleMatcher: { match: ruleMatch },
       providerScopes: noProviderScopes,
@@ -803,7 +830,8 @@ describe("ext-authz gate", () => {
       waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
-      attendance: attended,
+      cardReach: unlinkedReach,
+      attendance: withTurnKinds(attended),
       identityResolver,
       ruleMatcher: noMatchRules,
       providerScopes: noProviderScopes,
@@ -861,7 +889,8 @@ describe("ext-authz gate", () => {
         waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: makeFakeBus().bus,
-        attendance: attended,
+        cardReach: unlinkedReach,
+        attendance: withTurnKinds(attended),
         identityResolver,
         ruleMatcher: { match: ruleMatch },
         providerScopes: { covers },
@@ -963,7 +992,8 @@ describe("ext-authz gate", () => {
         waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: bus.bus,
-        attendance: unattended,
+        cardReach: unlinkedReach,
+        attendance: withTurnKinds(unattended),
         identityResolver,
         ruleMatcher: noMatchRules,
         providerScopes: noProviderScopes,
@@ -997,7 +1027,8 @@ describe("ext-authz gate", () => {
         waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: bus.bus,
-        attendance: unattended,
+        cardReach: unlinkedReach,
+        attendance: withTurnKinds(unattended),
         identityResolver,
         ruleMatcher: noMatchRules,
         providerScopes: noProviderScopes,
@@ -1028,7 +1059,8 @@ describe("ext-authz gate", () => {
         waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: bus.bus,
-        attendance: unattended,
+        cardReach: unlinkedReach,
+        attendance: withTurnKinds(unattended),
         identityResolver,
         ruleMatcher: noMatchRules,
         providerScopes: noProviderScopes,
@@ -1062,10 +1094,11 @@ describe("ext-authz gate", () => {
         waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: bus.bus,
-        attendance: {
+        cardReach: unlinkedReach,
+        attendance: withTurnKinds({
           hasOpenChannelTurn: async () => true,
           hasInteractiveSession: async () => true,
-        },
+        }),
         identityResolver,
         ruleMatcher: noMatchRules,
         providerScopes: noProviderScopes,
@@ -1104,10 +1137,11 @@ describe("ext-authz gate", () => {
         waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: bus.bus,
-        attendance: {
+        cardReach: unlinkedReach,
+        attendance: withTurnKinds({
           hasOpenChannelTurn,
           hasInteractiveSession: async () => false,
-        },
+        }),
         identityResolver,
         ruleMatcher: {
           match: async () => ({ verdict: "allow", rule: anyRule }),

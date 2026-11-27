@@ -222,6 +222,113 @@ export function composeInvocationsControlForOwner(opts: {
   });
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a sub-agent's question as the owner's Slack card shows it, read by the asking run's id: who asks under which Driver, the question, its options and default, when it was asked and until when it waits, and how it ended.
+export interface OwnerQuestionData {
+  runId: string;
+  invocationId: string;
+  label: string | null;
+  driverAgentId: string;
+  ownerSub: string;
+  question: string;
+  options: string[];
+  defaultOption: string;
+  askedAt: string;
+  answerBy: string;
+  status: "asking" | "answered" | "stopped";
+  answer: { text: string; by: "owner" | "default" } | null;
+}
+
+export interface OwnerQuestionPorts {
+  view(runId: string): Promise<OwnerQuestionData | null>;
+  open(limit: number): Promise<string[]>;
+  waitingFor(ownerSub: string): Promise<string[]>;
+  answer(input: {
+    runId: string;
+    text: string;
+    ownerSub: string;
+  }): Promise<"applied" | "not-actionable">;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what the owner's Slack cards need of sub-agent questions: a question by its run, the questions that still wait, those of one owner newest first, and the owner's answer, which goes through the same delegation control as an answer in the web, run as the owner, so the first answer counts wherever it comes from.
+export function composeOwnerQuestionPorts(opts: {
+  db: Db;
+  agentsFor: (owner: string) => AgentsService;
+  frames: DelegationFramesPort;
+  runtimeMutator: RuntimeMutator;
+  wakeAgent: (agentId: string) => Promise<void>;
+}): OwnerQuestionPorts {
+  const repo = createInvocationsRepository(opts.db);
+  return {
+    async view(runId) {
+      const row = await repo.getRun(runId);
+      if (!row?.question || !row.answerBy || !row.runId) return null;
+      const status =
+        row.status === "asking"
+          ? "asking"
+          : row.status === "answered"
+            ? "answered"
+            : "stopped";
+      const answer =
+        status === "answered" ? await repo.answerTo(row.runId) : null;
+      return {
+        runId: row.runId,
+        invocationId: row.id,
+        label: row.label,
+        driverAgentId: row.driverAgentId,
+        ownerSub: row.owner,
+        question: row.question.text,
+        options: row.question.options,
+        defaultOption: row.question.defaultOption,
+        askedAt: (row.completedAt ?? row.answerBy).toISOString(),
+        answerBy: row.answerBy.toISOString(),
+        status,
+        answer: answer ? { text: answer.text, by: answer.by } : null,
+      };
+    },
+
+    async open(limit) {
+      return (await repo.listAsking(limit)).flatMap((row) =>
+        row.runId ? [row.runId] : [],
+      );
+    },
+
+    async waitingFor(ownerSub) {
+      return (await repo.listAskingByOwner(ownerSub))
+        .flatMap((row) =>
+          row.runId
+            ? [{ runId: row.runId, at: row.completedAt?.getTime() ?? 0 }]
+            : [],
+        )
+        .sort((a, b) => b.at - a.at)
+        .map((row) => row.runId);
+    },
+
+    async answer({ runId, text, ownerSub }) {
+      const row = await repo.getRun(runId);
+      if (!row || row.owner !== ownerSub || row.status !== "asking")
+        return "not-actionable";
+      const control = composeInvocationsControlForOwner({
+        db: opts.db,
+        owner: ownerSub,
+        agents: opts.agentsFor(ownerSub),
+        frames: opts.frames,
+        runtimeMutator: opts.runtimeMutator,
+        wakeAgent: opts.wakeAgent,
+      });
+      try {
+        await control.answer({
+          driverAgentId: row.driverAgentId,
+          id: row.id,
+          answer: text,
+        });
+        return "applied";
+      } catch {
+        return "not-actionable";
+      }
+    },
+  };
+}
+
 export function composeInvocationLivenessSweep(opts: {
   db: Db;
   agentsFor: (owner: string) => AgentsService;
