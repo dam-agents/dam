@@ -163,14 +163,6 @@ export function operatorAppFor(
   };
 }
 
-/**
- * The client ID a connection signs in, exchanges and renews with. A
- * connection that brought no client secret of its own runs on the operator's
- * app, whose secret is read from the install at that moment; its client ID is
- * read there too, so a rotated app moves both together and the ID stored when
- * the connection was made is ignored. A connection with its own secret, or a
- * dynamically registered client, keeps the ID it was made with.
- */
 export function oauthClientIdFor(
   template: ConnectionTemplate | null | undefined,
   auth: Pick<

@@ -10,7 +10,6 @@ import { gitHubUserTokenApiBase } from "../domain/github-user-token-scope.js";
 
 type OAuthAuth = Extract<ConnectionAuthConfig, { kind: "oauth" }>;
 
-/** The app a GitHub user token was issued to: its client ID and secret. */
 export interface OAuthClient {
   clientId: string;
   clientSecret?: string;

@@ -18,10 +18,7 @@ import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
 import { earliestExpiry } from "../domain/github-user-token-scope.js";
 import type { SecretStore } from "../../secret-store/index.js";
-import {
-  scopeGitHubUserToken,
-  type OAuthClient,
-} from "./github-user-token.js";
+import { scopeGitHubUserToken, type OAuthClient } from "./github-user-token.js";
 import {
   rederiveGitHubChildren,
   type ChildTokenDeps,
@@ -55,11 +52,6 @@ export async function resolveOAuthClientSecret(opts: {
   return app.clientSecret;
 }
 
-/**
- * The app a connection signs in and renews with, its client ID and secret
- * read together, so a rotated operator app never pairs its new secret with
- * the ID stored before the rotation.
- */
 export async function resolveOAuthClient(opts: {
   conn: Connection;
   auth: OAuthAuth;
@@ -221,10 +213,7 @@ export async function refreshOAuthAccessToken(opts: {
   }
 
   await secretStore.putFields(auth.accessTokenRef, fields);
-  return injectScopedToken(
-    { ...opts, connectionRef, client, scope },
-    next,
-  );
+  return injectScopedToken({ ...opts, connectionRef, client, scope }, next);
 }
 
 async function injectScopedToken(

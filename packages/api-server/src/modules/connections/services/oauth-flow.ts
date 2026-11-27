@@ -26,10 +26,7 @@ import {
   oauthProviderForSignIn,
   resolveOAuthClientSecret,
 } from "./oauth-token.js";
-import {
-  scopeGitHubUserToken,
-  type OAuthClient,
-} from "./github-user-token.js";
+import { scopeGitHubUserToken, type OAuthClient } from "./github-user-token.js";
 import { rederiveGitHubChildren } from "./github-children.js";
 import { withoutParentScope } from "../domain/github-parent.js";
 import { recordAccountLabel } from "./account-label.js";

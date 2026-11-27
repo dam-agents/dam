@@ -18,10 +18,7 @@ import {
   tokenRejectionOf,
   withoutRefreshFailureMarker,
 } from "../domain/refresh-failure-marker.js";
-import {
-  scopeGitHubUserToken,
-  type OAuthClient,
-} from "./github-user-token.js";
+import { scopeGitHubUserToken, type OAuthClient } from "./github-user-token.js";
 import { securityLog } from "../../../core/security-log.js";
 
 // UNIT_BOUNDARY_DESCRIPTION: the connections made from a GitHub sign-in hold no token of their own to renew: each one injects the sign-in's user token for full access, or the token GitHub derives from it for its scope. After the sign-in's user token changes, under the sign-in's refresh lock, every one of them gets a token from the new one. A connection whose scope GitHub refuses reads expired and the others are still renewed, so one connection's narrowing never costs its siblings their access. A connection whose token GitHub fails to give without refusing it — a 5xx, no answer — is retried on a widening backoff held on it, and the sign-in's next renewal moves up to that retry, so one transient error costs minutes rather than the user token's lifetime.
@@ -136,13 +133,7 @@ export async function rederiveGitHubChildren(
     if (child.auth.kind !== "oauth") continue;
     const auth = child.auth;
     try {
-      const next = await childUserToken(
-        deps,
-        child,
-        auth,
-        userToken,
-        client,
-      );
+      const next = await childUserToken(deps, child, auth, userToken, client);
       await writeChildToken(deps.secretStore, child, auth, next.accessToken);
       const renewed: OAuthAuth = { ...withoutRefreshFailureMarker(auth) };
       delete renewed.expiresAt;
