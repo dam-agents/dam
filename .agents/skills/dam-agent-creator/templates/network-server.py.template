@@ -1,0 +1,407 @@
+#!/usr/bin/env python3
+"""network-server.py — the Artifact API behind the agent network page (docs/network.md).
+
+Usage:
+  network-server.py serve              listen on 127.0.0.1:5555 (foreground)
+  network-server.py ensure             start `serve` in the background unless it answers
+  network-server.py snapshot           print the network JSON the page shows
+  network-server.py render [out]       write docs/network.html with the snapshot inlined
+  network-server.py log --peer N --direction in|out --via ID --summary TEXT [--ref URL]
+
+The server only reads the agent's files and keeps one queue of its own,
+work/peer-requests.json. It never edits work/PEERS.md or work/peers/: only the
+operator pins a peer (docs/manifest.md → Pin a peer).
+"""
+import argparse
+import datetime
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import threading
+import urllib.parse
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+HOME = os.environ.get("HOME", os.path.expanduser("~"))
+WORK = os.environ.get("WORK_DIR", os.path.join(HOME, "work"))
+SCRIPTS = os.path.dirname(os.path.abspath(__file__))
+DEF_HOME = os.path.dirname(SCRIPTS)
+TEMPLATE = os.environ.get("NETWORK_TEMPLATE", os.path.join(DEF_HOME, "docs", "network.html"))
+CHECK = os.environ.get("NETWORK_MANIFEST_CHECK", os.path.join(SCRIPTS, "manifest-check.sh"))
+PORT = 5555
+PREFIX = "/network"
+LOG_LIMIT = 200
+MAX_REQUESTS = 20
+MAX_BODY = 64 * 1024
+RAW_PATH = re.compile(r"^/a/[A-Za-z0-9_-]{1,128}/raw$")
+ID = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+SNAPSHOT_MARK = "/*NETWORK_SNAPSHOT*/null"
+
+_lock = threading.Lock()
+
+
+def path(*parts):
+    return os.path.join(WORK, *parts)
+
+
+def now():
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def read_json(file, default=None):
+    try:
+        with open(file, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return default
+
+
+def write_json(file, data):
+    os.makedirs(os.path.dirname(file), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(file), prefix=".tmp-")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+    os.replace(tmp, file)
+
+
+def peer_rows():
+    """Rows of work/PEERS.md: name | role | manifest_url | pinned_version | uses."""
+    rows = []
+    try:
+        with open(path("PEERS.md"), encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return rows
+    for line in lines:
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 5 or cells[0] in ("name", "") or set(cells[0]) <= set("-: "):
+            continue
+        rows.append({
+            "name": cells[0],
+            "role": cells[1],
+            "url": cells[2],
+            "pinnedVersion": cells[3],
+            "uses": [u.strip() for u in cells[4].split(",") if u.strip()],
+        })
+    return rows
+
+
+def places(card):
+    """Every repo and conversation a card names, as `<surface>:<name>`."""
+    out = set()
+    for surface, entry in ((card or {}).get("surfaces") or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        for repo in entry.get("repos") or []:
+            out.add(f"{surface}:{repo}")
+        for ch in entry.get("channels") or []:
+            if isinstance(ch, dict) and ch.get("name"):
+                out.add(f"{surface}:{ch['name']}")
+    return out
+
+
+def channel_of(trigger):
+    where = trigger.get("surface", "?")
+    return f"{where} {trigger.get('type', '?')} “{trigger.get('value', '')}”"
+
+
+def resolve_uses(row, card):
+    uses = []
+    triggers = (card or {}).get("triggers") or {}
+    contracts = (card or {}).get("contracts") or {}
+    for uid in row["uses"]:
+        if uid in triggers:
+            t = triggers[uid]
+            uses.append({"id": uid, "kind": "trigger", "direction": "out",
+                         "surface": t.get("surface"), "channel": channel_of(t),
+                         "who": t.get("who"), "description": t.get("description")})
+        elif uid in contracts:
+            c = contracts[uid]
+            uses.append({"id": uid, "kind": "contract", "direction": "in",
+                         "surface": None, "channel": c.get("where"),
+                         "format": c.get("format"), "description": c.get("meaning")})
+        else:
+            uses.append({"id": uid, "kind": "unknown", "direction": None, "surface": None,
+                         "channel": None, "description": "not in the pinned card"})
+    return uses
+
+
+def summary(card):
+    agent = (card or {}).get("agent") or {}
+    src = (card or {}).get("source") or {}
+    return {
+        "name": agent.get("name"),
+        "description": agent.get("description"),
+        "version": agent.get("version"),
+        "roles": agent.get("roles") or [],
+        "autonomy": agent.get("autonomy"),
+        "manifestVersion": src.get("version"),
+        "url": src.get("url"),
+        "surfaces": sorted(((card or {}).get("surfaces") or {}).keys()),
+        "triggers": sorted(((card or {}).get("triggers") or {}).keys()),
+        "contracts": sorted(((card or {}).get("contracts") or {}).keys()),
+    }
+
+
+def read_log():
+    try:
+        with open(path("peer-log.jsonl"), encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines[-LOG_LIMIT:]:
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue
+    return out
+
+
+def network():
+    own = read_json(path("manifest.json"), {}) or {}
+    own_places = places(own)
+    own_roles = set(((own.get("agent") or {}).get("roles")) or [])
+    log = read_log()
+    peers = []
+    for row in peer_rows():
+        card = read_json(path("peers", f"{row['name']}.json"))
+        if card is None:
+            status = "unpinned" if not row["pinnedVersion"] else "copy-missing"
+        elif ((card.get("source") or {}).get("version")) != row["pinnedVersion"]:
+            status = "drift"
+        else:
+            status = "pinned"
+        roles = set(((card or {}).get("agent") or {}).get("roles") or [row["role"]])
+        entries = [e for e in log if e.get("peer") == row["name"]]
+        peers.append({
+            **row,
+            "status": status,
+            "card": summary(card) if card else None,
+            "usesResolved": resolve_uses(row, card),
+            "handoffs": [h for h in own.get("handoffs") or [] if h.get("role") in roles],
+            "theirHandoffs": [h for h in (card or {}).get("handoffs") or [] if h.get("role") in own_roles],
+            "shared": sorted(own_places & places(card)),
+            "contacts": len(entries),
+            "lastContact": entries[-1].get("at") if entries else None,
+        })
+    requests = (read_json(path("peer-requests.json"), {}) or {}).get("requests") or []
+    return {
+        "generatedAt": now(),
+        "self": summary(own),
+        "peers": peers,
+        "requests": requests,
+        "log": log,
+    }
+
+
+def share_host():
+    url = ((read_json(path("manifest.json"), {}) or {}).get("source") or {}).get("url") or ""
+    return urllib.parse.urlsplit(url).hostname
+
+
+def fetch_card(url):
+    """Fetch and check a peer card the way docs/manifest.md → Pin a peer does."""
+    fd, tmp = tempfile.mkstemp(prefix="peer-card-")
+    os.close(fd)
+    try:
+        got = subprocess.run(
+            ["curl", "-fsS", "--max-time", "10", "--max-filesize", "1048576", "-o", tmp, url],
+            capture_output=True, text=True, timeout=12)
+        if got.returncode != 0:
+            return None, "FAIL fetch — " + (got.stderr.strip()[:200] or f"curl exit {got.returncode}")
+        card = read_json(tmp)
+        if not isinstance(card, dict):
+            return None, "FAIL card — the link does not serve JSON"
+        check = subprocess.run(["bash", CHECK, "peer", tmp], capture_output=True, text=True, timeout=12)
+        lines = [l for l in check.stdout.splitlines() if l.startswith("FAIL")][:10]
+        return card, ("PASS" if check.returncode == 0 else "\n".join(lines) or "FAIL")
+    except subprocess.TimeoutExpired:
+        return None, "FAIL timeout — the fetch and check must fit the Artifact API's 30 s limit"
+    finally:
+        os.unlink(tmp)
+
+
+def add_request(body, role):
+    url = str(body.get("url") or "").strip()
+    note = str(body.get("note") or "").strip()[:300]
+    parts = urllib.parse.urlsplit(url)
+    host = share_host()
+    if not host:
+        return 409, {"error": "this agent has no published manifest yet, so it does not know its share host"}
+    if not RAW_PATH.match(parts.path) or url != f"https://{host}{parts.path}":
+        return 400, {"error": f"paste the raw link of a manifest on {host}: https://{host}/a/<slug>/raw"}
+    if any(r["url"] == url for r in peer_rows()):
+        return 409, {"error": "this manifest is already a peer"}
+    own_url = ((read_json(path("manifest.json"), {}) or {}).get("source") or {}).get("url")
+    if url == own_url:
+        return 409, {"error": "this is this agent's own manifest"}
+    card, check = fetch_card(url)
+    with _lock:
+        state = read_json(path("peer-requests.json"), {}) or {}
+        reqs = [r for r in state.get("requests") or [] if r.get("url") != url]
+        if len(reqs) >= MAX_REQUESTS:
+            return 429, {"error": f"{MAX_REQUESTS} requests are waiting; dismiss some first"}
+        req = {
+            "id": hashlib.sha256(url.encode()).hexdigest()[:12],
+            "url": url,
+            "note": note,
+            "at": now(),
+            "by": role,
+            "check": check,
+            "card": summary(card) if card else None,
+        }
+        reqs.append(req)
+        write_json(path("peer-requests.json"), {"requests": reqs})
+    return 201, req
+
+
+def drop_request(rid):
+    with _lock:
+        state = read_json(path("peer-requests.json"), {}) or {}
+        reqs = state.get("requests") or []
+        left = [r for r in reqs if r.get("id") != rid]
+        if len(left) == len(reqs):
+            return 404, {"error": "no such request"}
+        write_json(path("peer-requests.json"), {"requests": left})
+    return 200, {"ok": True}
+
+
+def route(method, url_path, headers, body):
+    """One Artifact API call → (status, content type, body). Importable by a server the agent already runs."""
+    role = headers.get("x-platform-caller-role") or "local"
+    p = urllib.parse.urlsplit(url_path).path
+    if not p.startswith(PREFIX):
+        return 404, "application/json", json.dumps({"error": "not found"})
+    p = p[len(PREFIX):] or "/"
+    status, out = 404, {"error": "not found"}
+    if method == "GET" and p == "/health":
+        status, out = 200, {"ok": True}
+    elif method == "GET" and p == "/":
+        status, out = 200, {**network(), "caller": role}
+    elif method == "POST" and p == "/requests":
+        try:
+            data = json.loads(body or "{}")
+        except ValueError:
+            data = None
+        status, out = (400, {"error": "send JSON {url, note}"}) if not isinstance(data, dict) else add_request(data, role)
+    elif method == "DELETE" and p.startswith("/requests/"):
+        status, out = (403, {"error": "only the owner dismisses a request"}) if role == "viewer" \
+            else drop_request(p[len("/requests/"):])
+    return status, "application/json", json.dumps(out, ensure_ascii=False)
+
+
+class Handler(BaseHTTPRequestHandler):
+    def _go(self):
+        size = int(self.headers.get("content-length") or 0)
+        if size > MAX_BODY:
+            status, ctype, out = 413, "application/json", json.dumps({"error": "body too large"})
+        else:
+            body = self.rfile.read(size).decode("utf-8", "replace") if size else ""
+            hdrs = {k.lower(): v for k, v in self.headers.items()}
+            try:
+                status, ctype, out = route(self.command, self.path, hdrs, body)
+            except Exception as exc:  # noqa: BLE001 — one bad call must not stop the server
+                status, ctype, out = 500, "application/json", json.dumps({"error": str(exc)[:300]})
+        data = out.encode("utf-8")
+        self.send_response(status)
+        self.send_header("content-type", ctype)
+        self.send_header("content-length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    do_GET = do_POST = do_DELETE = _go
+
+    def log_message(self, fmt, *args):
+        sys.stderr.write(f"{now()} {fmt % args}\n")
+
+
+def serve():
+    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+
+
+def ensure():
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{PORT}{PREFIX}/health", timeout=3) as res:
+            if res.status == 200:
+                print("network server: already running")
+                return 0
+    except OSError:
+        pass
+    os.makedirs(WORK, exist_ok=True)
+    log = open(path("network-server.log"), "a", encoding="utf-8")
+    subprocess.Popen([sys.executable, os.path.abspath(__file__), "serve"],
+                     stdout=log, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True)
+    print(f"network server: started on 127.0.0.1:{PORT}")
+    return 0
+
+
+def render(out):
+    with open(TEMPLATE, encoding="utf-8") as fh:
+        html = fh.read()
+    if SNAPSHOT_MARK not in html:
+        sys.exit(f"render: {TEMPLATE} has no {SNAPSHOT_MARK}")
+    snap = json.dumps(network(), ensure_ascii=False).replace("<", "\\u003c")
+    html = html.replace(SNAPSHOT_MARK, snap, 1)
+    if out == "-":
+        sys.stdout.write(html)
+    else:
+        with open(out, "w", encoding="utf-8") as fh:
+            fh.write(html)
+        print(out)
+
+
+def log_entry(a):
+    if a.direction not in ("in", "out"):
+        sys.exit("log: --direction is in or out")
+    if not ID.match(a.via):
+        sys.exit("log: --via is a trigger or contract id of the peer's card")
+    if a.peer not in {r["name"] for r in peer_rows()}:
+        sys.exit(f"log: {a.peer} is not a row of work/PEERS.md")
+    if a.ref and not a.ref.startswith("https://"):
+        sys.exit("log: --ref is an https link")
+    entry = {"at": now(), "peer": a.peer, "direction": a.direction, "via": a.via,
+             "summary": a.summary.strip()[:300]}
+    if a.ref:
+        entry["ref"] = a.ref
+    with _lock, open(path("peer-log.jsonl"), "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="network-server.py")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("serve")
+    sub.add_parser("ensure")
+    sub.add_parser("snapshot")
+    r = sub.add_parser("render")
+    r.add_argument("out", nargs="?", default=path("network.html"))
+    lg = sub.add_parser("log")
+    lg.add_argument("--peer", required=True)
+    lg.add_argument("--direction", required=True)
+    lg.add_argument("--via", required=True)
+    lg.add_argument("--summary", required=True)
+    lg.add_argument("--ref")
+    a = ap.parse_args()
+    if a.cmd == "serve":
+        serve()
+    elif a.cmd == "ensure":
+        sys.exit(ensure())
+    elif a.cmd == "snapshot":
+        json.dump(network(), sys.stdout, indent=2, ensure_ascii=False)
+        print()
+    elif a.cmd == "render":
+        render(a.out)
+    elif a.cmd == "log":
+        log_entry(a)
+
+
+if __name__ == "__main__":
+    main()

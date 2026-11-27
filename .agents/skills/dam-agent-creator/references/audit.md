@@ -6,7 +6,7 @@ The alerts that cannot wait a week (an outage, a silent heartbeat, a failing bac
 
 Default: weekly (e.g. Friday morning), gated by a config key (`audit_report: enabled` default).
 **Read-only toward external systems and repair-free**: it reports; routine findings heal on their pipeline's next run, everything else goes to the operator.
-Its only local write beyond its log line is memory consolidation (when the agent has memory); its only external writes are the tracking issue, the trend artifact and the agent manifest.
+Its only local write beyond its log line is memory consolidation (when the agent has memory); its only external writes are the tracking issue, the trend artifact, the agent manifest and the network page.
 
 ## Division of labor
 
@@ -76,6 +76,7 @@ Include what applies; add domain checks from the design's effects list.
 - Config validity: required keys present and parseable; roster integrity when one exists.
 - **Agent manifest** (`references/manifest.md`): rewrite the card from its sources, `manifest-check.sh stamp` then `publish`, and publish on change under `agent_manifest: dam`; a `FAIL` keeps the old card and is a `fail` here.
   Then each peer in `work/PEERS.md`: fetch, `manifest-check.sh peer`, compare with the pinned version; a changed id the definition `uses` is **Action needed** (the operator adopts the new version through **Pin a peer**); a config value that differs from the pinned copy is a `warn`, and the config wins.
+- **Network page** (`references/manifest.md` → The network page): start the server, republish the page under `agent_network: dam`; a connect request waiting over 14 days is **Action needed**, and handoffs in the week's outputs with no line in the handoff log are a `warn`.
 
 ## Trend history
 

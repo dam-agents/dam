@@ -102,6 +102,11 @@ if [ "$STRUCTURE" = 1 ]; then
   fi
   [ -f "$WORK/PEERS.md" ] && ok peers "work/PEERS.md present" \
     || fail peers "work/PEERS.md missing" "create it with the header from docs/manifest.md → Peers (an empty table is fine)"
+  if out="$(python3 "$SCRIPT_DIR/network-server.py" snapshot 2>&1 >/dev/null)"; then
+    ok network "network-server.py reads the manifest and the peers"
+  else
+    fail network "network-server.py snapshot: ${out:0:200}" "follow docs/network.md → Parts"
+  fi
 fi
 
 # ------------------------------------------------------------------- CONFIG
