@@ -213,16 +213,18 @@ def fetch_card(url):
     os.close(fd)
     try:
         got = subprocess.run(
-            ["curl", "-fsS", "--max-time", "30", "--max-filesize", "1048576", "-o", tmp, url],
-            capture_output=True, text=True, timeout=40)
+            ["curl", "-fsS", "--max-time", "10", "--max-filesize", "1048576", "-o", tmp, url],
+            capture_output=True, text=True, timeout=12)
         if got.returncode != 0:
             return None, "FAIL fetch — " + (got.stderr.strip()[:200] or f"curl exit {got.returncode}")
         card = read_json(tmp)
         if not isinstance(card, dict):
             return None, "FAIL card — the link does not serve JSON"
-        check = subprocess.run(["bash", CHECK, "peer", tmp], capture_output=True, text=True, timeout=60)
+        check = subprocess.run(["bash", CHECK, "peer", tmp], capture_output=True, text=True, timeout=12)
         lines = [l for l in check.stdout.splitlines() if l.startswith("FAIL")][:10]
         return card, ("PASS" if check.returncode == 0 else "\n".join(lines) or "FAIL")
+    except subprocess.TimeoutExpired:
+        return None, "FAIL timeout — the fetch and check must fit the Artifact API's 30 s limit"
     finally:
         os.unlink(tmp)
 
@@ -234,7 +236,7 @@ def add_request(body, role):
     host = share_host()
     if not host:
         return 409, {"error": "this agent has no published manifest yet, so it does not know its share host"}
-    if parts.scheme != "https" or parts.hostname != host or not RAW_PATH.match(parts.path) or parts.query:
+    if not RAW_PATH.match(parts.path) or url != f"https://{host}{parts.path}":
         return 400, {"error": f"paste the raw link of a manifest on {host}: https://{host}/a/<slug>/raw"}
     if any(r["url"] == url for r in peer_rows()):
         return 409, {"error": "this manifest is already a peer"}

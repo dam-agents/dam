@@ -332,10 +332,10 @@
           u.channel ? el("div", { class: "muted", style: "font-size:12px" }, document.createTextNode(u.kind === "trigger" ? "via " : "from "), el("code", { text: u.channel }), u.format ? document.createTextNode(" · " + u.format) : null) : null);
         list.append(el("li", {}, el("span", { class: "arrow " + (u.direction || ""), text: arrow }), what));
       }
-      for (const h of p.handoffs || []) {
-        list.append(el("li", {}, el("span", { class: "arrow " + (h.direction === "out" ? "out" : "in"), text: h.direction === "out" ? "→" : "←" }),
-          el("div", {}, el("div", { text: h.meaning }), el("div", { class: "muted", style: "font-size:12px" }, document.createTextNode("handoff to the " + h.role + " role via "), el("code", { text: h.via })))));
-      }
+      const hand = (dir, h, text) => list.append(el("li", {}, el("span", { class: "arrow " + dir, text: dir === "out" ? "→" : "←" }),
+        el("div", {}, el("div", { text: h.meaning }), el("div", { class: "muted", style: "font-size:12px" }, document.createTextNode(text), el("code", { text: h.via })))));
+      for (const h of p.handoffs || []) hand(h.direction === "out" ? "out" : "in", h, (h.direction === "out" ? "this agent's handoff to the " : "this agent's handoff from the ") + h.role + " role via ");
+      for (const h of p.theirHandoffs || []) hand(h.direction === "out" ? "in" : "out", h, (h.direction === "out" ? "the peer's handoff to the " : "the peer's handoff from the ") + h.role + " role via ");
       if (!list.children.length) list.append(el("li", {}, el("span", { text: "·" }), el("div", { class: "empty", text: "No uses recorded in PEERS.md yet." })));
       const shared = p.shared && p.shared.length ? el("div", { class: "muted", style: "font-size:12px;margin-top:4px" }, document.createTextNode("Shared places: "), ...p.shared.map((s) => el("code", { text: s }))) : null;
       box.append(el("div", { class: "peer", id: "peer-" + p.name }, head, meta, list, shared));
@@ -364,7 +364,7 @@
   function renderRequests() {
     const box = $("requests");
     box.replaceChildren();
-    const owner = data.caller !== "viewer";
+    const owner = (mode === "live" || mode === "paused") && (data.caller === "owner" || data.caller === "local");
     for (const r of data.requests || []) {
       const card = r.card || {};
       const pass = r.check === "PASS";
