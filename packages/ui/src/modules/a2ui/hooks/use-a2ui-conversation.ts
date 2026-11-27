@@ -14,7 +14,7 @@ import {
 } from "../lib/function-replies.js";
 import { openSurfaceIds } from "../lib/open-surfaces.js";
 import { withRendererMetadata as attachMetadata } from "../lib/outgoing.js";
-import { type SentBack, sentBackBlocks } from "../lib/sent-back.js";
+import { sentBackBlocks } from "../lib/sent-back.js";
 
 function lastReply(messages: readonly Message[]): Message | undefined {
   for (let index = messages.length - 1; index >= 0; index -= 1)
@@ -28,18 +28,11 @@ function lastReply(messages: readonly Message[]): Message | undefined {
 export function useA2uiConversation(
   messages: readonly Message[],
   sessionKey: string,
-  enabled: boolean,
   preferences?: ChatFormPreferences,
 ): A2uiConversationState {
-  const inputs = useMemo(
-    () => (enabled ? collectBlocks(messages) : []),
-    [enabled, messages],
-  );
+  const inputs = useMemo(() => collectBlocks(messages), [messages]);
   const conversation = useMemo(() => buildConversation(inputs), [inputs]);
-  const sentBack = useMemo(
-    () => (enabled ? sentBackBlocks(messages) : new Map<string, SentBack>()),
-    [enabled, messages],
-  );
+  const sentBack = useMemo(() => sentBackBlocks(messages), [messages]);
   const last = lastReply(messages);
   const liveMessageId =
     last && last.role === "assistant" && !last.streaming ? last.id : null;
@@ -47,34 +40,25 @@ export function useA2uiConversation(
     () => openSurfaceIds(conversation, messages, liveMessageId),
     [conversation, messages, liveMessageId],
   );
-  const answeredCalls = useMemo(
-    () => (enabled ? answeredCallIds(messages) : new Set<string>()),
-    [enabled, messages],
-  );
+  const answeredCalls = useMemo(() => answeredCallIds(messages), [messages]);
   const autoRepliesPaused = useMemo(
-    () =>
-      enabled && trailingAutomaticReplies(messages) >= MAX_AUTOMATIC_REPLIES,
-    [enabled, messages],
+    () => trailingAutomaticReplies(messages) >= MAX_AUTOMATIC_REPLIES,
+    [messages],
   );
   const pending = useMemo(
-    () =>
-      enabled
-        ? pendingResponses(conversation, liveMessageId, answeredCalls)
-        : [],
-    [enabled, conversation, liveMessageId, answeredCalls],
+    () => pendingResponses(conversation, liveMessageId, answeredCalls),
+    [conversation, liveMessageId, answeredCalls],
   );
   const withRendererMetadata = useCallback(
     (text: string) =>
-      enabled
-        ? attachMetadata(
-            text,
-            conversation,
-            sessionKey,
-            useStore.getState().a2uiEdits,
-            preferences,
-          )
-        : text,
-    [enabled, conversation, sessionKey, preferences],
+      attachMetadata(
+        text,
+        conversation,
+        sessionKey,
+        useStore.getState().a2uiEdits,
+        preferences,
+      ),
+    [conversation, sessionKey, preferences],
   );
   return useMemo(
     () => ({

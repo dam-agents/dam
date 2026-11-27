@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 
 import type { AgentView } from "../../../types.js";
 import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
-import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { holds, isLockedSection } from "../../agents/lib/agent-permissions.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
@@ -83,10 +82,8 @@ export function AgentConfiguration({
     enabled: environmentsEnabled,
     count: environments.data?.length,
   });
-  const chatFormsEnabled = useChatFormsEnabled();
   const sections = SECTIONS.filter(
     (e) =>
-      (chatFormsEnabled || e.section !== "chat-forms") &&
       (agentHasEnvironments || e.section !== "environments") &&
       (agent.requireConnectionAddress === true || e.section !== "browser"),
   );
