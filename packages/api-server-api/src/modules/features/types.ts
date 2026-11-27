@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type {
+  featureEntrySchema,
   featureIdSchema,
   featureLevelSchema,
   featureModeSchema,
@@ -12,6 +13,8 @@ export type FeatureFlags = Record<FeatureId, boolean>;
 export type FeatureLevel = z.infer<typeof featureLevelSchema>;
 
 export type FeatureMode = z.infer<typeof featureModeSchema>;
+
+export type FeatureEntry = z.infer<typeof featureEntrySchema>;
 
 export type FeatureModes = Partial<Record<FeatureId, FeatureMode>>;
 

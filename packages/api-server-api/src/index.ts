@@ -552,6 +552,7 @@ export {
 } from "./modules/artifact-library/types.js";
 export type {
   FeatureId,
+  FeatureEntry,
   FeatureFlags,
   FeatureLevel,
   FeatureMode,
@@ -564,7 +565,7 @@ export {
   featureModeSchema,
 } from "./modules/features/schemas.js";
 export {
-  FEATURE_LEVELS,
+  FEATURES,
   FEATURES_ON_BY_DEFAULT,
   featureOnForUser,
   featuresOfLevel,

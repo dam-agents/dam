@@ -2,7 +2,7 @@ import {
   type FeatureId,
   type FeatureMode,
   brandSchema,
-  FEATURE_LEVELS,
+  FEATURES,
   featureIdSchema,
   featureModeSchema,
   featuresOfLevel,
@@ -76,7 +76,7 @@ const featureModesSchema = z
     return Object.fromEntries(
       featureIdSchema.options.map((id) => [
         id,
-        FEATURE_LEVELS[id] === "internal" ? "user" : (named[id] ?? fallback),
+        FEATURES[id].level === "internal" ? "user" : (named[id] ?? fallback),
       ]),
     ) as Record<FeatureId, FeatureMode>;
   });

@@ -17,6 +17,17 @@ export const featureIdSchema = z.enum([
 
 export const featureLevelSchema = z.enum(["internal", "experimental"]);
 
+export const featureEntrySchema = z.object({
+  level: featureLevelSchema,
+  issue: z.number().int().positive(),
+  since: z.string().regex(/^v\d+\.\d+\.\d+$/),
+});
+
+export const featureRegistrySchema = z.record(
+  featureIdSchema,
+  featureEntrySchema,
+);
+
 export const featureModeSchema = z.enum(["off", "user", "on"]);
 
 export const featureSetFlagInputSchema = z.object({
