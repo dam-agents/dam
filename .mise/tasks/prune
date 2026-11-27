@@ -33,7 +33,7 @@ for d in packages/vm-runner/target/*/.fingerprint packages/vm-runner/target/*/*/
 done
 while IFS= read -r t; do victims+=("$t"); done < <(find packages/*/dist/oci -maxdepth 1 -name '*.tar' -mtime +3 2>/dev/null)
 for d in test-results playwright-report blob-report; do
-  [ -e "packages/e2e/playwright/$d" ] && victims+=("packages/e2e/playwright/$d")
+  [ -e "packages/e2e/integration/$d" ] && victims+=("packages/e2e/integration/$d")
 done
 
 kb=0

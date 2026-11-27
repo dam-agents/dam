@@ -350,7 +350,7 @@ env_e2e_forward_close() {
 # It runs until env_e2e_forward_close stops it.
 env_e2e_browser() {
   local core version revision dir remote local_port
-  core="$(cd "$MISE_CONFIG_ROOT/packages/e2e/playwright" && node -e '
+  core="$(cd "$MISE_CONFIG_ROOT/packages/e2e/integration" && node -e '
     const { createRequire } = require("node:module");
     const test = createRequire(require.resolve("@playwright/test/package.json"));
     const pw = createRequire(test.resolve("playwright/package.json"));
