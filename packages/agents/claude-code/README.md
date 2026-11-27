@@ -31,6 +31,7 @@ With the variable unset the hook prints nothing, and Claude Code asks about a se
 [`harness-history-lib.mjs`](rootfs/usr/local/lib/harness-history-lib.mjs) is the image's session-history provider: it turns a session's transcript into the frames the runtime replays, without starting the CLI.
 A cold open asks it for the newest window alone, which it reads from the end of `~/.claude/projects/<dir>/<session>.jsonl`, back along the conversation's `parentUuid` chain only as far as the window reaches, and turns into messages with the SDK's own reader over just those entries; older windows are read the same way when the viewer pages back.
 On a 146 MB transcript that is about 0.25 s for a window against about 2.8 s for the whole read, on an idle machine.
+A compaction that kept a segment of the conversation from before it relinks that segment, which can sit anywhere earlier in the file, so a window that reaches one is read whole: the newest window answers the whole read, and a page answers what the whole read shows before the page, with nothing older.
 
 Most of a long transcript is not conversation.
 Since 2.1.303 Claude Code appends a request record (`api-request`, with `api-request-blob` and `api-request-shape`) after each model call, so a session can be replayed request by request.

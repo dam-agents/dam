@@ -74,13 +74,13 @@ An image may declare a **session-history provider**: it fills the log with no ha
 A provider module runs in a worker thread that the runtime's entry point starts before the server loads, since its import takes most of a second on a machine.
 A provider may also read **windows** of the history: the newest part, or the part before a cursor it answered with.
 A cold load that opts into the tail then fills the log from the newest window alone, so opening a long Session costs the same however long its history grew, and its cut carries a cursor that pages the older part from the provider, window by window; a load without the opt-in first gets the part before the window, and a fill that keeps the conversation — a fork, a reset, the runtime's own — reads the history whole.
-Claude Code's provider reads its window from the end of the CLI's transcript, back along the conversation chain only as far as the window reaches, skipping the request records the CLI writes beside each model call; a window that reaches a compaction which kept an earlier segment is read whole, since the kept segment can sit anywhere earlier in the file: the newest window answers the whole read, and a page answers what the whole read shows before the page, with nothing older.
+How Claude Code's provider reads a window from its transcript is in [its README](../../packages/agents/claude-code/README.md#session-history).
 Resume is the better fit: the log already holds the history, so a harness that streams its replay only after answering the load would otherwise duplicate it.
 Otherwise, or on provider failure, the runtime's own `session/load` fills the log, reaching no client.
 Waiters are then served from the log; the UI also reads its newest tail as data, a window of the provider's when the log is cold, and renders it while the load engages the session.
 On a waking Agent the UI asks for that tail at the click, as it asks for the session list: the agent's tRPC relay holds the ask until the Agent answers, and an ask it refuses is asked again once the Agent is operable.
-While the open waits for an Agent that sleeps or is still starting, the chat says it is waking the Agent, as it does for a message sent then; "Reconnecting" stays for a running Agent whose connection dropped.
-A hold that ends without the Agent replaces the wait with a card: its cause and Retry, apart from a Session that would not load; a cause that says what to do, such as a full budget, carries no generic retry advice beside it.
+While the open waits for an Agent that sleeps or is still starting, the chat says it is waking the Agent.
+A hold that ends without the Agent replaces the wait with its cause and Retry, apart from a Session that would not load.
 When the socket that carries the load goes away, as when an api-server replica shuts down, the UI asks the load again on a new socket instead of reporting that the Session would not load.
 A load that fails while the session list shows the Session running, as when the chat opens a kit update Session during its first turn, is asked again for about ten seconds before the chat shows that the Session would not load.
 A live message of the shown Session — its text, thinking or a tool call, not a run start or another platform update — takes that error away.
