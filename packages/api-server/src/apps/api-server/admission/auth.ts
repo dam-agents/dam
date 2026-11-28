@@ -174,6 +174,7 @@ export function createAuth(config: AuthConfig, deps: AuthDeps = {}) {
         scopes: key.scopes,
         agentIds: key.agentIds,
         keyId: key.id,
+        ...(key.agentId === undefined ? {} : { actingAgent: key.agentId }),
       },
       azp: "",
       roles: [],
@@ -239,6 +240,7 @@ export function emitUserAuthenticated(
   principal: VerifiedPrincipal,
   attribution: SurfaceAttribution,
 ): void {
+  if (principal.user.actingAgent !== undefined) return;
   const surface = clientSurface(principal, attribution);
   const isCore = attribution.coreRole
     ? principal.roles.includes(attribution.coreRole)
@@ -392,15 +394,24 @@ export async function authenticatePrincipal(
   return { ok: true, principal };
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: who a security log record names for a call. A call made with a key that belongs to an Agent is that Agent's call, so the record names the Agent, not the owner whose things it reaches. */
+export function actorOf(user: Pick<UserIdentity, "sub" | "actingAgent">): {
+  actor: string;
+  actorKind: ActorKind;
+} {
+  return user.actingAgent === undefined
+    ? { actor: user.sub, actorKind: "user" }
+    : { actor: user.actingAgent, actorKind: "agent" };
+}
+
 export function logWsAttach(
-  sub: string,
+  user: Pick<UserIdentity, "sub" | "actingAgent">,
   site: WsAuthSite,
   sinceConnectMs?: number,
 ): void {
   securityLog("info", "relay.attach", {
     category: "privileged",
-    actor: sub,
-    actorKind: "user",
+    ...actorOf(user),
     surface: "ws",
     ...(site.agentId !== undefined ? { agentId: site.agentId } : {}),
     result: "success",

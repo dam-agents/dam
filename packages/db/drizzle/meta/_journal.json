@@ -1184,6 +1184,13 @@
       "when": 1795860695294,
       "tag": "0168_agent_connection_grants_derived_key",
       "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1795861421653,
+      "tag": "0169_api_key_belongs_to_agent",
+      "breakpoints": true
     }
   ]
 }

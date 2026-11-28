@@ -27,6 +27,7 @@ function rowToView(r: ApiKeyRow): ApiKeyView {
     name: r.name,
     scopes: r.scopes,
     agentIds: r.agentIds === null ? "*" : r.agentIds,
+    ...(r.agentId === null ? {} : { agentId: r.agentId }),
     expiresAt: r.expiresAt ? r.expiresAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
     lastUsedAt: r.lastUsedAt ? r.lastUsedAt.toISOString() : null,
@@ -97,6 +98,7 @@ export function createApiKeysService(deps: ApiKeysServiceDeps): ApiKeysService {
         hash,
         scopes: input.scopes,
         agentIds,
+        agentId: null,
         expiresAt,
       });
 

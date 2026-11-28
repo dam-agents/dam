@@ -1210,6 +1210,7 @@ export const apiKeys = pgTable(
     hash: text("hash").notNull(),
     scopes: text("scopes").array().notNull(),
     agentIds: text("agent_ids").array(),
+    agentId: text("agent_id"),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()

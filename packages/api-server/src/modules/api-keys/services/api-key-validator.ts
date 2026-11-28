@@ -7,6 +7,7 @@ export interface ValidatedApiKey {
   ownerSub: string;
   scopes: readonly Scope[];
   agentIds: readonly string[] | "*";
+  agentId?: string;
 }
 
 export type ApiKeyValidationFailure = "unknown" | "expired" | "revoked";
@@ -40,6 +41,7 @@ export function createApiKeyValidator(
       ownerSub: row.ownerSub,
       scopes: row.scopes,
       agentIds: row.agentIds === null ? "*" : row.agentIds,
+      ...(row.agentId === null ? {} : { agentId: row.agentId }),
     });
   };
 }

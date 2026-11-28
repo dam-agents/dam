@@ -75,6 +75,7 @@ export interface UserIdentity {
   emailVerified?: boolean;
   actingEditor?: string;
   actingEditorEmail?: string;
+  actingAgent?: string;
 }
 
 export type AgentActing =

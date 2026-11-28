@@ -10,6 +10,7 @@ import {
   clientSurface,
   hasAgentBinding,
   hasScope,
+  actorOf,
   logWsAttach,
   upgradeSourceIp,
   type Authenticate,
@@ -108,8 +109,7 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
     if (standing === null) {
       securityLog("warn", "ws.owner_mismatch", {
         category: "authz",
-        actor: user.sub,
-        actorKind: "user",
+        ...actorOf(user),
         surface: "ws",
         agentId,
         decision: "deny",
@@ -182,11 +182,7 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
           );
       },
       attached: () =>
-        logWsAttach(
-          user.sub,
-          site,
-          Math.round(performance.now() - connectedAt),
-        ),
+        logWsAttach(user, site, Math.round(performance.now() - connectedAt)),
       watchKey: (onDead) =>
         user.keyId === undefined
           ? () => {}

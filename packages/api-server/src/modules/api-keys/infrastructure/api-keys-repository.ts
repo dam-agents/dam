@@ -20,6 +20,7 @@ function toRow(r: typeof apiKeys.$inferSelect): ApiKeyRow {
     hash: r.hash,
     scopes: r.scopes as readonly Scope[],
     agentIds: r.agentIds as readonly string[] | null,
+    agentId: r.agentId,
     expiresAt: r.expiresAt,
     createdAt: r.createdAt,
     lastUsedAt: r.lastUsedAt,
@@ -49,6 +50,7 @@ export function insertApiKey(db: Db) {
         hash: row.hash,
         scopes: row.scopes as string[],
         agentIds: row.agentIds as string[] | null,
+        agentId: row.agentId,
         expiresAt: row.expiresAt,
       })
       .returning();
@@ -179,6 +181,16 @@ export function removeAgentIdFromScopes(db: Db) {
       .update(apiKeys)
       .set({ agentIds: sql`array_remove(${apiKeys.agentIds}, ${agentId})` })
       .where(sql`${agentId} = ANY(${apiKeys.agentIds})`);
+  };
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: revokes every live key that belongs to an Agent. Such a key is the Agent's own identity at the platform API, so it ends with the Agent: dropping the Agent from the key's binding alone would leave a live key that names an Agent that is gone. */
+export function revokeApiKeysOfAgent(db: Db) {
+  return async (agentId: string): Promise<void> => {
+    await db
+      .update(apiKeys)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(apiKeys.agentId, agentId), isNull(apiKeys.revokedAt)));
   };
 }
 
