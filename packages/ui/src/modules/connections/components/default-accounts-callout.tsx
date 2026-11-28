@@ -2,6 +2,7 @@ import type {
   ConnectionView,
   DefaultAccountGroup,
   DefaultAccountKindId,
+  GrantScope,
   GrantToolAccess,
 } from "api-server-api";
 import { contestedDefaultAccounts } from "api-server-api";
@@ -15,6 +16,7 @@ export interface GrantDetails {
   grantedAt: string;
   preferred: boolean;
   toolAccess?: GrantToolAccess;
+  scope?: GrantScope;
 }
 
 interface Wording {

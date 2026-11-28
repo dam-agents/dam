@@ -30,6 +30,21 @@ export function damActsAsYou(brand: string): string {
   return `Acts as you on ${brand}`;
 }
 
+export function damActsAsItself(brand: string): string {
+  return `Acts as itself on ${brand}`;
+}
+
+export function damActsAsItselfSentence(brand: string): string {
+  return `The agent reaches ${brand} with a key of its own: it can read itself and change nothing, and the security log names it.`;
+}
+
+export function damActsAsYouSentence(brand: string): string {
+  return `The agent reaches ${brand} with your key: it can do whatever you can, and so can anyone who can drive it.`;
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the platform Connection's own scope for one Agent, the only one there is so far: the Agent reaches the platform with an API key of its own that reads only itself. */
+export const ACTS_AS_ITSELF_SCOPE = { kind: "platform", reach: "own" } as const;
+
 export function damAudienceSentence(brand: string, audience: string): string {
   return `This agent holds the ${brand} connection, so ${audience} can act as you on ${brand}.`;
 }

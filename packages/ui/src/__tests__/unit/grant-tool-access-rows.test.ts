@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: Where an MCP connection's tool access shows, per Agent, with the `mcp-tool-approval` feature on. On an Agent's Connections the rows stay as they are, the line under the name says this Agent's access, Tool access opens the dialog for this Agent, and "Writes without asking" marks a grant that lets a tool write without asking. On the Connections page the row is the account only, with no mode and no connection-wide Tool access; "Used by N agents" opens a list inside the row with each Agent's access and its own Tool access, the Agents that write without asking first, six at first and the rest behind "Show N more", and the row counts the Agents that write without asking. With the feature off the Slack Account keeps its read only / "Can post as me" row and the names popover. Every tool rule counts, also one on a tool the tool list does not name.
+// TEST_OVERVIEW: Where an MCP connection's tool access shows, per Agent, with the `mcp-tool-approval` feature on. On an Agent's Connections the rows stay as they are, the line under the name says this Agent's access, Tool access opens the dialog for this Agent, and "Writes without asking" marks a grant that lets a tool write without asking. On the Connections page the row is the account only, with no mode and no connection-wide Tool access; "Used by N agents" opens a list inside the row with each Agent's access and its own Tool access, the Agents that write without asking first, six at first and the rest behind "Show N more", and the row counts the Agents that write without asking. With the feature off the Slack Account keeps its read only / "Can post as me" row and the names popover. Every tool rule counts, also one on a tool the tool list does not name. The platform connection's row instead says whether the Agent acts as the owner or as itself, and offers the owner Access to change it, with the feature on or off.
 import type { ConnectionView, GrantToolAccess, ToolRule } from "api-server-api";
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -35,6 +35,13 @@ vi.mock("../../modules/connections/api/mutations.js", () => ({
     error: null,
     data: undefined,
     mutate: () => {},
+  }),
+  useSetGrantScope: () => ({
+    isPending: false,
+    error: null,
+    mutateAsync: async (vars: unknown) => {
+      server.saved.push(vars);
+    },
   }),
 }));
 vi.mock(
@@ -367,5 +374,113 @@ describe("a connection's row on the Connections page", () => {
     expect(
       byTestId(`connection-used-by-${SLACK.id}-names`)!.textContent,
     ).toContain("Researcher");
+  });
+});
+
+describe("an Agent's platform connection", () => {
+  const DAM = {
+    ...SLACK,
+    id: "conn-dam",
+    name: "platform",
+    templateId: "dam",
+    authKind: "header",
+    accountLabel: undefined,
+    toolAccess: undefined,
+  } as unknown as ConnectionView;
+
+  const panel = (actsAsItself: boolean, owner = true) =>
+    createElement(GrantedConnectionsPanel, {
+      groups: [
+        {
+          provider: { id: "dam", title: "Platform", iconSlug: "dam" },
+          connections: [DAM],
+        },
+      ] as never,
+      granted: [DAM],
+      templateById: new Map(),
+      onToggleGrant: () => {},
+      onOpenCatalog: () => {},
+      grants: new Map<string, GrantDetails>([
+        [
+          DAM.id,
+          {
+            grantedAt: "2026-11-28T00:00:00Z",
+            preferred: false,
+            ...(actsAsItself && {
+              scope: { kind: "platform", reach: "own" } as const,
+            }),
+          },
+        ],
+      ]),
+      ...(owner && {
+        toolAccessFor: { id: "agent-standup", name: "Standup writer" },
+      }),
+    });
+
+  // TEST_SCENARIO: a grant with no scope of its own reaches the platform with the owner's key, so the row says it acts as the owner, in the warning colour, and the owner can change it.
+  it("says it acts as you, and offers Access to the owner", () => {
+    render(panel(false));
+    const line = byTestId(`catalog-connection-account-${DAM.id}`)!;
+    expect(line.textContent).toMatch(/^Acts as you on /);
+    expect(line.className).toContain("text-warning-fg");
+    expect(byTestId(`grant-scope-${DAM.id}`)!.textContent).toBe("Access");
+    expect(byTestId(`grant-tool-access-${DAM.id}`)).toBeNull();
+  });
+
+  // TEST_SCENARIO: with its own scope the Agent reaches the platform with its own key, so the row says it acts as itself and drops the warning colour.
+  it("says it acts as itself once it has its own scope", () => {
+    render(panel(true));
+    const line = byTestId(`catalog-connection-account-${DAM.id}`)!;
+    expect(line.textContent).toMatch(/^Acts as itself on /);
+    expect(line.className).not.toContain("text-warning-fg");
+  });
+
+  // TEST_SCENARIO: the mcp-tool-approval feature decides tool access, not this: with it off the row still says how the Agent reaches the platform and still offers Access.
+  it("offers Access with the tool access feature off", () => {
+    flags["mcp-tool-approval"] = false;
+    render(panel(false));
+    expect(byTestId(`grant-scope-${DAM.id}`)).not.toBeNull();
+  });
+
+  // TEST_SCENARIO: a viewer who is not the owner reads the line but gets no Access, since only the owner may change it.
+  it("shows the line without Access to anyone but the owner", () => {
+    render(panel(true, false));
+    expect(
+      byTestId(`catalog-connection-account-${DAM.id}`)!.textContent,
+    ).toMatch(/^Acts as itself on /);
+    expect(byTestId(`grant-scope-${DAM.id}`)).toBeNull();
+  });
+
+  // TEST_SCENARIO: Access opens the dialog for this Agent; choosing to act as itself and saving sends this Agent's scope on this connection only.
+  it("sets the Agent to act as itself", async () => {
+    render(panel(false));
+    act(() => byTestId(`grant-scope-${DAM.id}`)!.click());
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain("platform · for Standup writer");
+    expect(byTestId("grant-scope-submit")!.hasAttribute("disabled")).toBe(true);
+    act(() => byTestId("grant-scope-itself")!.click());
+    await act(async () => byTestId("grant-scope-submit")!.click());
+    expect(server.saved).toEqual([
+      {
+        agentId: "agent-standup",
+        connectionId: DAM.id,
+        scope: { kind: "platform", reach: "own" },
+      },
+    ]);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  // TEST_SCENARIO: choosing the owner again clears the scope; the dialog says the Agent's own key is revoked on save, since it is.
+  it("gives an Agent that acts as itself the owner's access again", async () => {
+    render(panel(true));
+    act(() => byTestId(`grant-scope-${DAM.id}`)!.click());
+    act(() => byTestId("grant-scope-owner")!.click());
+    expect(document.querySelector('[role="dialog"]')!.textContent).toContain(
+      "The agent's own key is revoked when you save.",
+    );
+    await act(async () => byTestId("grant-scope-submit")!.click());
+    expect(server.saved).toEqual([
+      { agentId: "agent-standup", connectionId: DAM.id, scope: null },
+    ]);
   });
 });

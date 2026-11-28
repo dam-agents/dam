@@ -109,9 +109,13 @@ export function ConnectionRowActions({
           size="sm"
           className={ROW_BUTTON}
           onClick={toolAccess.onEdit}
-          data-testid={`grant-tool-access-${connection.id}`}
+          data-testid={
+            toolAccess.editLabel
+              ? `grant-scope-${connection.id}`
+              : `grant-tool-access-${connection.id}`
+          }
         >
-          Tool access
+          {toolAccess.editLabel ?? "Tool access"}
         </Button>
       )}
       {narrow && (

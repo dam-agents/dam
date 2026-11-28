@@ -228,6 +228,17 @@ export function useSetConnectionToolMode() {
   });
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: sets or clears one Agent's own scope on its grant of a Connection. The server lets only the signed-in owner do it; the Agent's grants are read again before the mutation settles, so the row shows what was stored. */
+export function useSetGrantScope() {
+  return useMutation({
+    ...trpc.connections.setGrantScope.mutationOptions(),
+    meta: {
+      invalidates: [trpc.connections.getAgentConnections.queryKey()],
+      suppressErrorToast: true,
+    },
+  });
+}
+
 export function useSetGrantToolAccess() {
   return useMutation({
     ...trpc.connections.setGrantToolAccess.mutationOptions(),

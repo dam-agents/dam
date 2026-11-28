@@ -175,6 +175,25 @@ describe("the warning in the channel-bind flow", () => {
   });
 
   // TEST_SCENARIO: the viewer's own library says nothing about the Agent an editor is looking at, so the hold is read from the Agent's grants: the same Agent reads the same both ways, and a grant whose detail has not arrived is not called safe.
+  // TEST_SCENARIO: an Agent whose grant of the Connection has its own scope reaches the platform with a key of its own, not the owner's, so nobody who drives it acts as the owner and no warning says so.
+  it("does not count a grant with the Agent's own scope as holding it", () => {
+    library.data = [DAM];
+    held.data = {
+      agentId: "agent-1",
+      connections: [
+        {
+          connectionId: DAM.id,
+          grantedAt: "2026-01-01",
+          preferred: false,
+          connection: DAM,
+          scope: { kind: "platform", reach: "own" },
+        },
+      ],
+    } as unknown as AgentConnections;
+    render(createElement(HoldProbe, { agent: agentHolding(["conn-dam"]) }));
+    expect(host.textContent).toBe("not-held");
+  });
+
   it("reads the Agent's own grants, not the viewer's library", () => {
     library.data = [];
     held.data = grants(DAM);

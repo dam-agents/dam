@@ -89,6 +89,7 @@ export function useAgentConnectionGrants(
             grantedAt: c.grantedAt,
             preferred: c.preferred,
             ...(c.toolAccess && { toolAccess: c.toolAccess }),
+            ...(c.scope && { scope: c.scope }),
           },
         ]),
       ),
