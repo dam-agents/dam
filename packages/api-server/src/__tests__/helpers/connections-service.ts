@@ -1,4 +1,4 @@
-import type { Connection, GrantToolAccess } from "api-server-api";
+import type { Connection, GrantScope, GrantToolAccess } from "api-server-api";
 
 import type { ConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
@@ -63,6 +63,7 @@ export function fakeMcpToolLister(
 export interface StoredSecret {
   fields: Record<string, string>;
   annotations: Record<string, string>;
+  labels?: Record<string, string>;
   purpose: string;
 }
 
@@ -70,6 +71,7 @@ export interface ConnectionsStore {
   rows: Map<string, Connection>;
   grants: Set<string>;
   grantAccess: Map<string, GrantToolAccess | null>;
+  grantScopes: Map<string, { scope: GrantScope; derivedKey: string }>;
   secrets: Map<string, StoredSecret>;
 }
 
@@ -77,6 +79,7 @@ export const newConnectionsStore = (): ConnectionsStore => ({
   rows: new Map(),
   grants: new Set(),
   grantAccess: new Map(),
+  grantScopes: new Map(),
   secrets: new Map(),
 });
 
@@ -101,6 +104,7 @@ export function memorySecretStore(
       void secrets.set(ref.path, {
         fields,
         annotations: meta.extraAnnotations ?? {},
+        labels: meta.extraLabels ?? {},
         purpose: meta.purpose,
       }),
     get: async (ref) => {
@@ -143,7 +147,7 @@ export function serviceHarness(opts: {
   providerModelCatalog?: ProviderModelCatalog;
 }) {
   const store = opts.store ?? newConnectionsStore();
-  const { rows, grants, grantAccess, secrets } = store;
+  const { rows, grants, grantAccess, grantScopes, secrets } = store;
   const secretReads: SecretReads = { get: 0, getField: 0 };
   const fannedOut: string[] = [];
   const grantKey = (connectionId: string, agentId: string) =>
@@ -207,10 +211,18 @@ export function serviceHarness(opts: {
       revoke: async (c, a) => {
         grants.delete(grantKey(c, a));
         grantAccess.delete(grantKey(c, a));
+        grantScopes.delete(grantKey(c, a));
       },
       setGrantToolAccess: async (c, a, toolAccess) => {
         if (!grants.has(grantKey(c, a))) return false;
         grantAccess.set(grantKey(c, a), toolAccess);
+        return true;
+      },
+      setGrantScope: async (c, a, scope, derivedKey) => {
+        if (!grants.has(grantKey(c, a))) return false;
+        if (scope === null || derivedKey === null)
+          grantScopes.delete(grantKey(c, a));
+        else grantScopes.set(grantKey(c, a), { scope, derivedKey });
         return true;
       },
       clearGrantToolAccess: async (c) => {
@@ -234,6 +246,11 @@ export function serviceHarness(opts: {
             preferred: false,
             toolAccess:
               grantAccess.get(grantKey(connectionId, agentId)) ?? null,
+            scope:
+              grantScopes.get(grantKey(connectionId, agentId))?.scope ?? null,
+            derivedKey:
+              grantScopes.get(grantKey(connectionId, agentId))?.derivedKey ??
+              null,
           })),
       listAgentsForConnection: async (id) =>
         rows.has(id) ? ["agent-1", ...agentsOf(id)] : [],

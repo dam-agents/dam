@@ -1,6 +1,8 @@
 import type { Db } from "db";
 import {
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  damKeyName,
+  type ApiKeysService,
   type Connection,
   type ConnectionsService,
   type HarnessCatalog,
@@ -8,6 +10,8 @@ import {
 } from "api-server-api";
 import { createXactLock } from "../../core/xact-lock.js";
 import { connectionEnv } from "./domain/connection-env.js";
+import { damKeyPortFor, type DamKeyLedger } from "./domain/dam-connection.js";
+import type { AgentKeyIssuer } from "../api-keys/index.js";
 import { derivedCredentialsOf } from "./domain/derived-credentials.js";
 import { getLogger } from "../../core/logger.js";
 import { createKbShareResolver } from "../kb-shares/index.js";
@@ -491,3 +495,39 @@ export function composeAgentSecretRequests(opts: {
     repo: createConnectionsRepository(opts.db),
   });
 }
+
+/* UNIT_BOUNDARY_DESCRIPTION: the platform Connection's key port for one owner: the owner's own key it is minted with, and the keys it issues for that owner's Agents as the derived credentials of their scoped grants, each named after its Agent. Both are the owner's API keys, so the owner sees and can revoke them. */
+export function damKeyPortOf(
+  apiKeys: {
+    createService: (perRequest: {
+      ownerSub: string;
+      surface: string;
+    }) => ApiKeysService;
+    activeKeyIds: (ids: readonly string[]) => Promise<ReadonlySet<string>>;
+    keyLedger: (ownerSub: string) => DamKeyLedger;
+    agentKeys: AgentKeyIssuer;
+  },
+  ownerSub: string,
+  brandName: string,
+): DamKeyPort {
+  return damKeyPortFor(
+    apiKeys.createService({ ownerSub, surface: "platform" }),
+    { activeKeyIds: apiKeys.activeKeyIds, ledger: apiKeys.keyLedger(ownerSub) },
+    brandName,
+    {
+      issue: async (agentId) => {
+        const issued = await apiKeys.agentKeys.issue({
+          ownerSub,
+          agentId,
+          name: `${damKeyName(brandName)} · ${agentId}`,
+        });
+        return issued.ok ? issued.value : null;
+      },
+    },
+  );
+}
+
+export {
+  listAgentIdsWithDerivedCredentials,
+  listConnectionsDerivedForAgent,
+} from "./infrastructure/connections-repository.js";

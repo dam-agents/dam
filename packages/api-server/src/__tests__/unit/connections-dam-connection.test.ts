@@ -141,9 +141,21 @@ function fakeKeys() {
       },
     },
   };
+  const agentIssued: string[] = [];
+  const agentMint = {
+    issue: async (agentId: string) => {
+      if (agentId === "agent-not-owned") return null;
+      const id = `agent-key-${agentId}-${agentIssued.length + 1}`;
+      agentIssued.push(id);
+      live.add(id);
+      return { id, plaintext: `pk_agent_${id}` };
+    },
+  };
   return {
     keys,
     directory,
+    agentMint,
+    agentIssued,
     calls,
     revoked,
     live,
@@ -167,15 +179,19 @@ function harness(
       keyId: string;
       previousKeyId: string | null;
     }) => Promise<void>;
+    mirroredChildren?: (agentId: string) => Promise<string[]>;
   } = {},
 ) {
   const store = newConnectionsStore();
   const keys = fakeKeys();
-  const { svc } = serviceHarness({
+  const { svc, fannedOut } = serviceHarness({
+    ...(opts.mirroredChildren
+      ? { mirroredChildren: opts.mirroredChildren }
+      : {}),
     templates: templatesFor(baseUrl),
     store,
     brandName: BRAND,
-    damKey: damKeyPortFor(keys.keys, keys.directory, BRAND),
+    damKey: damKeyPortFor(keys.keys, keys.directory, BRAND, keys.agentMint),
     ...(opts.offered ? { damConnectionOffered: opts.offered } : {}),
     ...(opts.insert ? { insert: opts.insert } : {}),
     adoptDamKey:
@@ -190,7 +206,7 @@ function harness(
         if (previousKeyId !== null) keys.queued.set(previousKeyId, id);
       }),
   });
-  return { svc, store, keys };
+  return { svc, store, keys, fannedOut };
 }
 
 const damRows = (rows: Map<string, Connection>) =>
@@ -742,7 +758,12 @@ describe("granting the DAM connection", () => {
 describe("the minted key", () => {
   it("carries every scope a person's key has, and no satellite's", async () => {
     const keys = fakeKeys();
-    const port = damKeyPortFor(keys.keys, keys.directory, BRAND);
+    const port = damKeyPortFor(
+      keys.keys,
+      keys.directory,
+      BRAND,
+      keys.agentMint,
+    );
     expect(await port.mint()).toEqual({
       id: "key-1",
       plaintext: "pk_secret_key-1",
@@ -840,5 +861,204 @@ describe("the flag that offers the DAM connection", () => {
 
     await svc.deleteConnection(id);
     expect(damRows(store.rows)).toHaveLength(0);
+  });
+});
+
+describe("an agent's own scope on the platform connection", () => {
+  const SCOPE = { kind: "platform", reach: "own" } as const;
+
+  async function optedIn(
+    opts: Parameters<typeof harness>[1] = {},
+  ): Promise<ReturnType<typeof harness> & { id: string }> {
+    const h = harness(BASE_URL, opts);
+    const id = (await h.svc.ensureDamConnection())!;
+    await h.svc.setAgentConnections("agent-1", [id]);
+    return { ...h, id };
+  }
+
+  const derivedOf = (
+    store: ReturnType<typeof harness>["store"],
+    id: string,
+  ) => {
+    const auth = store.rows.get(id)!.auth;
+    return auth.kind === "header" ? (auth.derived ?? []) : [];
+  };
+
+  // TEST_SCENARIO: the owner gives an agent its own scope. The platform issues an API key that belongs to that agent, keeps it in a Secret of its own with the derived type and key labels and the connection's injection hosts, records it with the connection, and names it on the grant, so the agent's gateway sends that key and not the owner's.
+  it("issues the agent its own key as the derived credential of its grant", async () => {
+    const { svc, store, keys, id } = await optedIn();
+    await svc.setGrantScope({
+      agentId: "agent-1",
+      connectionId: id,
+      scope: SCOPE,
+    });
+
+    expect(keys.agentIssued).toHaveLength(1);
+    const [entry] = derivedOf(store, id);
+    expect(entry).toMatchObject({
+      key: "agent-agent-1",
+      inputs: { apiKeyId: keys.agentIssued[0], agentId: "agent-1" },
+    });
+    const secret = store.secrets.get(entry!.valueRef.path)!;
+    expect(secret.labels).toMatchObject({
+      "agent-platform.ai/secret-type": "connection-derived",
+      "agent-platform.ai/connection": id,
+      "agent-platform.ai/derived-key": "agent-agent-1",
+    });
+    expect(secret.fields.value).toBe(`pk_agent_${keys.agentIssued[0]}`);
+    expect(secret.annotations["agent-platform.ai/injection-hosts"]).toContain(
+      HOST,
+    );
+    expect(store.grantScopes.get(`${id}|agent-1`)).toEqual({
+      scope: SCOPE,
+      derivedKey: "agent-agent-1",
+    });
+    const owner = secretOf(store.secrets, store.rows.get(id)!);
+    expect(owner?.fields.value).not.toBe(secret.fields.value);
+  });
+
+  // TEST_SCENARIO: the grant listing is where the CLI and the app read the scope back, so it reports it, and only on the agent's grant.
+  it("reports the scope with the agent's grants", async () => {
+    const { svc, id } = await optedIn();
+    await svc.setGrantScope({
+      agentId: "agent-1",
+      connectionId: id,
+      scope: SCOPE,
+    });
+    const grants = await svc.getAgentConnections("agent-1");
+    expect(
+      grants.connections.find((c) => c.connectionId === id)?.scope,
+    ).toEqual(SCOPE);
+  });
+
+  // TEST_SCENARIO: setting the same scope again, as a retried command does, issues no second key.
+  it("issues one key however often the scope is set", async () => {
+    const { svc, keys, id } = await optedIn();
+    await svc.setGrantScope({
+      agentId: "agent-1",
+      connectionId: id,
+      scope: SCOPE,
+    });
+    await svc.setGrantScope({
+      agentId: "agent-1",
+      connectionId: id,
+      scope: SCOPE,
+    });
+    expect(keys.agentIssued).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: clearing the scope gives the agent its owner's access again. The grant is cleared before the key goes, so the gateway never names a credential that is already revoked, and the key, its Secret and its record are all removed.
+  it("clears the scope first, then removes the agent's key and Secret", async () => {
+    const { svc, store, keys, id } = await optedIn();
+    await svc.setGrantScope({
+      agentId: "agent-1",
+      connectionId: id,
+      scope: SCOPE,
+    });
+    const [entry] = derivedOf(store, id);
+    await svc.setGrantScope({
+      agentId: "agent-1",
+      connectionId: id,
+      scope: null,
+    });
+
+    expect(store.grantScopes.has(`${id}|agent-1`)).toBe(false);
+    expect(derivedOf(store, id)).toEqual([]);
+    expect(store.secrets.has(entry!.valueRef.path)).toBe(false);
+    expect(keys.revoked).toContain(keys.agentIssued[0]);
+  });
+
+  // TEST_SCENARIO: taking the connection away from an agent with its own scope removes its key with the grant, so no key outlives the reason it was issued for.
+  it("removes the agent's key when the grant is revoked", async () => {
+    const { svc, store, keys, id } = await optedIn();
+    await svc.setGrantScope({
+      agentId: "agent-1",
+      connectionId: id,
+      scope: SCOPE,
+    });
+    await svc.setAgentConnections("agent-1", []);
+    expect(derivedOf(store, id)).toEqual([]);
+    expect(keys.revoked).toContain(keys.agentIssued[0]);
+  });
+
+  // TEST_SCENARIO: deleting the platform connection revokes every agent's key it holds, not only the owner's, and leaves no Secret behind.
+  it("revokes every agent key when the connection is deleted", async () => {
+    const { svc, store, keys, id } = await optedIn();
+    await svc.setGrantScope({
+      agentId: "agent-1",
+      connectionId: id,
+      scope: SCOPE,
+    });
+    const [entry] = derivedOf(store, id);
+    await svc.deleteConnection(id);
+    expect(keys.revoked).toContain(keys.agentIssued[0]);
+    expect(store.secrets.has(entry!.valueRef.path)).toBe(false);
+  });
+
+  // TEST_SCENARIO: an agent deleted after its grants keeps no credential: the cleanup finds it on the connection and removes its key and Secret.
+  it("forgets a deleted agent's key", async () => {
+    const { svc, store, keys, id } = await optedIn();
+    await svc.setGrantScope({
+      agentId: "agent-1",
+      connectionId: id,
+      scope: SCOPE,
+    });
+    await svc.forgetAgentDerived("agent-1", [id]);
+    expect(derivedOf(store, id)).toEqual([]);
+    expect(keys.revoked).toContain(keys.agentIssued[0]);
+  });
+
+  // TEST_SCENARIO: a child that mirrors its parent's connections would get the connection's own key in place of the parent's own scope, which is the owner's full access. So a scoped grant is not passed on: the child loses the platform connection while its parent has a scope, and gets it back when the parent's scope is cleared.
+  it("does not pass a scoped grant on to a mirroring child", async () => {
+    const children: Record<string, string[]> = { "agent-1": ["child-1"] };
+    const { svc, store, id } = await optedIn({
+      mirroredChildren: async (agentId) => children[agentId] ?? [],
+    });
+    await svc.setAgentConnections("child-1", [id]);
+    await svc.setGrantScope({
+      agentId: "agent-1",
+      connectionId: id,
+      scope: SCOPE,
+    });
+    expect(store.grants.has(`${id}|child-1`)).toBe(false);
+
+    await svc.setGrantScope({
+      agentId: "agent-1",
+      connectionId: id,
+      scope: null,
+    });
+    expect(store.grants.has(`${id}|child-1`)).toBe(true);
+    expect(store.grantScopes.has(`${id}|child-1`)).toBe(false);
+  });
+
+  // TEST_SCENARIO: the scope exists for the platform's own connection only so far; any other connection, and an agent that does not hold the connection, are refused with nothing issued.
+  it("refuses another connection and an agent that does not hold it", async () => {
+    const { svc, keys, id } = await optedIn();
+    await expect(
+      svc.setGrantScope({ agentId: "agent-2", connectionId: id, scope: SCOPE }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(
+      svc.setGrantScope({
+        agentId: "agent-1",
+        connectionId: "conn-none",
+        scope: SCOPE,
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(keys.agentIssued).toEqual([]);
+  });
+
+  // TEST_SCENARIO: an agent that is not the owner's gets no key: the issuer refuses, nothing is recorded and the grant keeps no scope.
+  it("records nothing when the key cannot be issued", async () => {
+    const { svc, store, id } = await optedIn();
+    await svc.setAgentConnections("agent-not-owned", [id]);
+    await expect(
+      svc.setGrantScope({
+        agentId: "agent-not-owned",
+        connectionId: id,
+        scope: SCOPE,
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(derivedOf(store, id)).toEqual([]);
+    expect(store.grantScopes.has(`${id}|agent-not-owned`)).toBe(false);
   });
 });

@@ -65,6 +65,8 @@ export const DAM_KEY_SCOPES: readonly Scope[] = [
 /* UNIT_BOUNDARY_DESCRIPTION: the owner's API keys, as the Connection that drives this install mints, revokes and reads one. `revoke` treats a key that is already revoked as done and throws only when the key store cannot be reached. `ledger` is the record a key is written to before anything uses it: an entry means the key is not a Connection's yet and must be revoked, so a crash anywhere between minting and the Connection naming it costs a key rather than leaving one live and untracked. */
 export interface DamKeyPort {
   mint(): Promise<{ id: string; plaintext: string }>;
+  /* UNIT_BOUNDARY_DESCRIPTION: issues an API key that belongs to one Agent of the owner: the derived credential of that Agent's scoped grant of this Connection. Refused for an Agent the owner does not own. */
+  mintForAgent(agentId: string): Promise<{ id: string; plaintext: string }>;
   revoke(id: string): Promise<void>;
   active(ids: readonly string[]): Promise<ReadonlySet<string>>;
   ledger: DamKeyLedger;
@@ -82,12 +84,23 @@ export interface ApiKeyDirectory {
   ledger: DamKeyLedger;
 }
 
+export interface AgentKeyMint {
+  issue(agentId: string): Promise<{ id: string; plaintext: string } | null>;
+}
+
 export function damKeyPortFor(
   keys: ApiKeysService,
   directory: ApiKeyDirectory,
   brandName: string,
+  agentKeys: AgentKeyMint,
 ): DamKeyPort {
   return {
+    async mintForAgent(agentId) {
+      const issued = await agentKeys.issue(agentId);
+      if (issued === null)
+        throw new Error(`agent ${agentId} is not one of the owner's agents`);
+      return issued;
+    },
     async mint() {
       const created = await keys.create({
         name: damKeyName(brandName),

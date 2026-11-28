@@ -64,6 +64,8 @@ function setup(mirrors: Record<string, string[]>) {
           grantedAt: new Date(0),
           preferred: false,
           toolAccess: null,
+          scope: null,
+          derivedKey: null,
         })),
       grant: async (connectionId, agentId) => {
         held(agentId).add(connectionId);

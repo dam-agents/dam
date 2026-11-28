@@ -253,6 +253,8 @@ function makeRepo(initial: Connection[]) {
                 grantedAt: new Date(0),
                 preferred: false,
                 toolAccess: null,
+                scope: null,
+                derivedKey: null,
               },
             ]
           : [];
@@ -260,6 +262,7 @@ function makeRepo(initial: Connection[]) {
     listConnectionsForAgent: async (agentId) =>
       [...rows.values()].filter((c) => grants.has(`${c.id}|${agentId}`)),
     setGrantToolAccess: async () => false,
+    setGrantScope: async () => false,
     clearGrantToolAccess: async () => {},
     listGrantedConnections: async () => [],
     listAgentsForConnection: async (id) => agentsOf(id),

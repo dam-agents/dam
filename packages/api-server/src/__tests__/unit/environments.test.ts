@@ -244,6 +244,27 @@ describe("creating an Environment", () => {
     ).rejects.toThrow(/egress "open" holds no connections/);
   });
 
+  // TEST_SCENARIO: the owning agent holds the platform connection with a scope of its own, so its gateway sends the agent's own key. An Environment that took that grant would get the connection's own key, the owner's full access, so neither "parent" nor a named list passes it on; the other grants pass as before.
+  it("does not take a grant the owning agent holds with a scope of its own", async () => {
+    const owning = {
+      ...vmOwning,
+      spec: {
+        backend: { type: "vm" },
+        grantedConnectionIds: ["conn-a", "conn-dam"],
+        derivedCredentials: [{ connectionId: "conn-dam", key: "agent-dev" }],
+      },
+    } as unknown as Partial<Agent>;
+    const { service, agents } = setup({ agents: [owning] });
+    const envs = service.forOwningAgent(vmOwning.id!);
+    const endpoints = [{ name: "app", port: 4444 }];
+
+    await envs.create({ name: "all", endpoints, connections: "parent" });
+    expect(agents.created[0]).toMatchObject({ connectionIds: ["conn-a"] });
+    await expect(
+      envs.create({ name: "named", endpoints, connections: ["conn-dam"] }),
+    ).rejects.toThrow(/not granted to the owning agent: conn-dam/);
+  });
+
   // TEST_SCENARIO: the Environment is a vm Agent record naming its owning Agent, with nothing that lets it act as that Agent: no default model provider and no egress preset. Its endpoints get addresses under the install's URL, its start command becomes a Startup Item, and it expires a week from now by default.
   it("creates a vm Agent naming its owner, with addresses, a start command and a default expiry", async () => {
     const { service, agents, starts, repo } = setup();

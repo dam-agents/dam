@@ -281,6 +281,11 @@ export const REMOVED_PROVIDER_TEMPLATE_IDS: readonly string[] = [
 
 export interface ManagedProviderConnections {
   reconcileManagedConnections(): Promise<void>;
+  /* UNIT_BOUNDARY_DESCRIPTION: removes every derived credential the owner's Connections hold for one Agent, its Secret and its key, for an Agent that is gone. Server-side only: an Agent's cleanup calls it after the Agent and its grants are deleted. */
+  forgetAgentDerived(
+    agentId: string,
+    connectionIds: readonly string[],
+  ): Promise<void>;
 }
 
 export function createConnectionsService(deps: {
@@ -767,6 +772,7 @@ export function createConnectionsService(deps: {
     path: string,
     fields: Record<string, string>,
     contributions: Contribution[],
+    derivedKey?: string,
   ): Promise<void> {
     await deps.secretStore.put(
       { storeId: deps.secretStore.storeId, path, field: "" },
@@ -775,8 +781,12 @@ export function createConnectionsService(deps: {
         owner: deps.ownerId,
         purpose: `connection:${conn.templateId}`,
         extraLabels: {
-          "agent-platform.ai/secret-type": "connection",
+          "agent-platform.ai/secret-type":
+            derivedKey === undefined ? "connection" : "connection-derived",
           "agent-platform.ai/connection": conn.id,
+          ...(derivedKey === undefined
+            ? {}
+            : { "agent-platform.ai/derived-key": derivedKey }),
         },
         extraAnnotations: connectionSecretAnnotations(
           contributions,
@@ -1728,10 +1738,14 @@ export function createConnectionsService(deps: {
       restamped.add(id);
     }
     let grantedNew: string[] = [];
+    const scopedRevoked: string[] = [];
 
     let applied: string[] = [];
     await deps.connectionLock(`agent:connections:${agentId}`, async () => {
       const current = await deps.repo.listAgentGrants(agentId);
+      const scopedGrants = new Set(
+        current.filter((g) => g.derivedKey !== null).map((g) => g.connectionId),
+      );
       const deduped = Array.from(
         new Set(desiredFrom(current.map((c) => c.connectionId))),
       );
@@ -1778,7 +1792,10 @@ export function createConnectionsService(deps: {
       for (const id of toGrant)
         await deps.repo.grant(id, agentId, starting.get(id) ?? null);
       grantedNew = toGrant;
-      for (const id of toRevoke) await deps.repo.revoke(id, agentId);
+      for (const id of toRevoke) {
+        if (scopedGrants.has(id)) scopedRevoked.push(id);
+        await deps.repo.revoke(id, agentId);
+      }
 
       if (toGrant.length > 0 || toRevoke.length > 0) {
         securityLog("info", "connection.grants_set", {
@@ -1803,18 +1820,25 @@ export function createConnectionsService(deps: {
       if (!restamped.has(id) && access && limitsToolCalls(access))
         await restampBeforeLimiting(id);
     }
+    for (const id of scopedRevoked) await removeAgentDerived(id, agentId);
     await mirrorToChildren(agentId, applied);
   }
 
-  /* UNIT_BOUNDARY_DESCRIPTION: a parent's new grant set reaches every child that mirrors it, and through each child its own mirroring children, once the parent's change is committed, each under its own lock. A new grant of a child copies the tool access of its parent's grant. A child that refuses the set is logged and keeps what it had, and never undoes the parent's change. */
+  /* UNIT_BOUNDARY_DESCRIPTION: a parent's new grant set reaches every child that mirrors it, and through each child its own mirroring children, once the parent's change is committed, each under its own lock. A new grant of a child copies the tool access of its parent's grant. A grant the parent holds with a scope of its own is the parent's alone and is not passed on: the child would get the Connection's own, wider credential in its place. A child that refuses the set is logged and keeps what it had, and never undoes the parent's change. */
   async function mirrorToChildren(
     agentId: string,
     set: readonly string[],
   ): Promise<void> {
     if (!deps.mirroredChildren) return;
+    const own = new Set(
+      (await deps.repo.listAgentGrants(agentId))
+        .filter((g) => g.derivedKey !== null)
+        .map((g) => g.connectionId),
+    );
+    const passed = set.filter((id) => !own.has(id));
     for (const child of await deps.mirroredChildren(agentId)) {
       try {
-        await applyGrants(child, () => [...set]);
+        await applyGrants(child, () => [...passed]);
       } catch (err) {
         getLogger().warn(
           { err, agentId: child, parentAgentId: agentId },
@@ -2197,9 +2221,148 @@ export function createConnectionsService(deps: {
   }
 
   /* UNIT_BOUNDARY_DESCRIPTION: removes the Connection that drives this install, once every key it names and every key still queued under it is revoked — the delete and a rotation of one Connection take the same lock, so neither acts on a key the other replaced. A revocation that fails removes nothing, so no live key is left behind a row that is gone. */
+  /* UNIT_BOUNDARY_DESCRIPTION: the derived credential of the platform Connection made for one Agent: an API key that belongs to the Agent, in a Secret of its own, recorded with the Connection. Made once and found again on the next call, under the lock the Connection's key rotation takes, so a rotation and an opt-in never write the record over each other. The key is queued in the ledger before anything else, so a failure between issuing it and recording it costs a key the sweep revokes, never a live key nobody names. */
+  async function ensureAgentDerived(
+    connectionId: string,
+    agentId: string,
+  ): Promise<string> {
+    const damKey = deps.damKey;
+    if (!damKey) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: `This install cannot issue keys for ${deps.brandName}'s own connection.`,
+      });
+    }
+    const key = agentDerivedKey(agentId);
+    return deps.connectionLock(`dam-key:${connectionId}`, async () => {
+      const conn = await deps.repo.get(connectionId, deps.ownerId);
+      if (!conn || conn.auth.kind !== "header")
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "connection not found",
+        });
+      if ((conn.auth.derived ?? []).some((d) => d.key === key)) return key;
+      let issued: { id: string; plaintext: string };
+      try {
+        issued = await damKey.mintForAgent(agentId);
+      } catch {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "That agent is not one of yours, so it cannot have a key of its own.",
+        });
+      }
+      const ref = deps.secretStore.mintRef({
+        owner: deps.ownerId,
+        purpose: `connection:${conn.templateId}`,
+      });
+      try {
+        await damKey.ledger.queue(issued.id, conn.id);
+        await putConnectionSecret(
+          conn,
+          ref.path,
+          {
+            value: issued.plaintext,
+            ...buildConnectionSdsFields(conn.contributions, issued.plaintext),
+          },
+          conn.contributions,
+          key,
+        );
+        await deps.repo.updateAuth(conn.id, {
+          ...conn.auth,
+          derived: [
+            ...(conn.auth.derived ?? []),
+            {
+              key,
+              valueRef: { ...ref, field: "value" },
+              inputs: { apiKeyId: issued.id, agentId },
+            },
+          ],
+        });
+        await damKey.ledger.settle(issued.id).catch(() => {});
+      } catch (err) {
+        await deps.secretStore.delete({ path: ref.path }).catch(() => {});
+        await damKey.revoke(issued.id).catch(() => {});
+        await damKey.ledger.settle(issued.id).catch(() => {});
+        throw err;
+      }
+      securityLog("info", "connection.derived_issue", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        agentId,
+        target: conn.id,
+        result: "success",
+        detail: { key, apiKeyId: issued.id },
+      });
+      return key;
+    });
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: removes the derived credential of the platform Connection made for one Agent: the record first, so no grant can find it again, then its Secret and its key. A failure to revoke the key is logged and leaves it to the owner's list of keys, since the record and the Secret that could send it are gone. */
+  async function removeAgentDerived(
+    connectionId: string,
+    agentId: string,
+  ): Promise<void> {
+    const key = agentDerivedKey(agentId);
+    await deps.connectionLock(`dam-key:${connectionId}`, async () => {
+      const conn = await deps.repo.get(connectionId, deps.ownerId);
+      if (!conn || conn.auth.kind !== "header") return;
+      const entry = (conn.auth.derived ?? []).find((d) => d.key === key);
+      if (!entry) return;
+      await deps.repo.updateAuth(conn.id, {
+        ...conn.auth,
+        derived: (conn.auth.derived ?? []).filter((d) => d.key !== key),
+      });
+      await removeDerivedMaterial(conn.id, agentId, entry);
+    });
+  }
+
+  async function removeDerivedMaterial(
+    connectionId: string,
+    agentId: string,
+    entry: {
+      key: string;
+      valueRef: { path: string };
+      inputs: Record<string, string>;
+    },
+  ): Promise<void> {
+    await deps.secretStore
+      .delete({ path: entry.valueRef.path })
+      .catch(() => {});
+    const apiKeyId = entry.inputs.apiKeyId;
+    if (apiKeyId && deps.damKey) {
+      try {
+        await deps.damKey.revoke(apiKeyId);
+      } catch (err) {
+        securityLog("warn", "connection.derived_revoke_failed", {
+          category: "credential",
+          actor: deps.ownerId,
+          actorKind: "user",
+          agentId,
+          target: connectionId,
+          result: "failure",
+          reason: err instanceof Error ? err.message : "unknown",
+        });
+      }
+    }
+    securityLog("info", "connection.derived_remove", {
+      category: "credential",
+      actor: deps.ownerId,
+      actorKind: "user",
+      agentId,
+      target: connectionId,
+      result: "success",
+      detail: { key: entry.key },
+    });
+  }
+
   async function deleteDamConnection(id: string): Promise<void> {
     const conn = await deps.repo.get(id, deps.ownerId);
     if (!conn) return;
+    if (conn.auth.kind === "header")
+      for (const entry of conn.auth.derived ?? [])
+        await removeDerivedMaterial(conn.id, entry.inputs.agentId ?? "", entry);
     const damKey = deps.damKey;
     if (damKey) {
       const keys = new Set(
@@ -2619,6 +2782,7 @@ export function createConnectionsService(deps: {
             grantedAt: g.grantedAt.toISOString(),
             preferred: g.preferred,
             ...(toolAccess ? { toolAccess } : {}),
+            ...(g.scope ? { scope: g.scope } : {}),
             ...(view ? { connection: view } : {}),
           };
         }),
@@ -3548,6 +3712,71 @@ export function createConnectionsService(deps: {
       await mirrorAccessToChildren(input.agentId, conn.id, access);
     },
 
+    async setGrantScope(input) {
+      const conn = await deps.repo.get(input.connectionId, deps.ownerId);
+      if (!conn) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "connection not found",
+        });
+      }
+      if (!isDamConnection(conn.templateId) || conn.parentId !== undefined) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `The connection "${conn.name}" has no scope to set for one agent: only ${deps.brandName}'s own connection has one so far.`,
+        });
+      }
+      const held = (await deps.repo.listAgentGrants(input.agentId)).find(
+        (g) => g.connectionId === conn.id,
+      );
+      if (!held) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "connection is not granted to this agent",
+        });
+      }
+      const owned = new Set(
+        (await deps.repo.listByOwner(deps.ownerId)).map((c) => c.id),
+      );
+      if (input.scope !== null) {
+        const key = await ensureAgentDerived(conn.id, input.agentId);
+        await deps.repo.setGrantScope(conn.id, input.agentId, input.scope, key);
+        await fanOutToAgents(
+          conn.id,
+          [input.agentId],
+          owned,
+          "connection.grant_scope_fanout_failed",
+        );
+      } else {
+        await assertDamConnectionOffered(
+          "give an agent its owner's access again",
+        );
+        await deps.repo.setGrantScope(conn.id, input.agentId, null, null);
+        await fanOutToAgents(
+          conn.id,
+          [input.agentId],
+          owned,
+          "connection.grant_scope_fanout_failed",
+        );
+        await removeAgentDerived(conn.id, input.agentId);
+      }
+      await mirrorToChildren(
+        input.agentId,
+        (await deps.repo.listAgentGrants(input.agentId)).map(
+          (g) => g.connectionId,
+        ),
+      );
+      securityLog("info", "connection.grant_scope_update", {
+        category: "authz-list",
+        actor: deps.ownerId,
+        actorKind: "user",
+        agentId: input.agentId,
+        target: conn.id,
+        result: "success",
+        detail: { from: held.scope, to: input.scope },
+      });
+    },
+
     async refreshTools(input) {
       const conn = await deps.repo.get(input.id, deps.ownerId);
       if (!conn) {
@@ -3788,6 +4017,9 @@ export function createConnectionsService(deps: {
       return service.update(id, credential, policy);
     },
     reconcileManagedConnections,
+    async forgetAgentDerived(agentId, connectionIds) {
+      for (const id of connectionIds) await removeAgentDerived(id, agentId);
+    },
   };
 }
 
@@ -3996,4 +4228,11 @@ function s3ProbeFailureMessage(
     case "failed":
       return `The endpoint did not accept the check request (${detail}).`;
   }
+}
+
+const AGENT_DERIVED_PREFIX = "agent-";
+
+/* UNIT_BOUNDARY_DESCRIPTION: the key of the derived credential the platform Connection holds for one Agent. One per Agent, because the API key in it names its Agent. */
+export function agentDerivedKey(agentId: string): string {
+  return `${AGENT_DERIVED_PREFIX}${agentId}`;
 }

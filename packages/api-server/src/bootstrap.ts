@@ -413,6 +413,9 @@ import {
   createConnectionNames,
   createGrantedConnectionTemplates,
   createPricedConnections,
+  damKeyPortOf,
+  listAgentIdsWithDerivedCredentials,
+  listConnectionsDerivedForAgent,
   createProviderEgressScopes,
   createToolAccessConnections,
   createToolCallLabels,
@@ -421,7 +424,6 @@ import {
   listManagedConnectionOwners,
 } from "./modules/connections/compose.js";
 import { oauthCallbackUrl } from "./modules/connections/domain/oauth-callback-url.js";
-import { damKeyPortFor } from "./modules/connections/domain/dam-connection.js";
 import { SECRET_REQUEST_TTL_MS } from "./modules/connections/services/secret-requests.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
 import { sweepManagedConnections } from "./modules/connections/sagas/managed-connections.js";
@@ -1328,14 +1330,7 @@ export async function bootstrap() {
     return stored["mcp-tool-approval"] === true;
   };
   const damKeyFor = (ownerId: string) =>
-    damKeyPortFor(
-      apiKeysModule.createService({ ownerSub: ownerId, surface: "platform" }),
-      {
-        activeKeyIds: apiKeysModule.activeKeyIds,
-        ledger: apiKeysModule.keyLedger(ownerId),
-      },
-      config.brand.name,
-    );
+    damKeyPortOf(apiKeysModule, ownerId, config.brand.name);
   const connectionsServiceFor = (ownerId: string) =>
     composeConnectionsForOwner({
       ownerId,
@@ -2581,6 +2576,18 @@ export async function bootstrap() {
       name: "connection-grants",
       listAgentIds: () => listConnectionGrantAgentIds(db),
       cleanup: createConnectionGrantsCleanupHook(db),
+    },
+    {
+      name: "connection-derived-credentials",
+      listAgentIds: listAgentIdsWithDerivedCredentials(db),
+      cleanup: async (agentId) => {
+        const held = await listConnectionsDerivedForAgent(db)(agentId);
+        const byOwner = new Map<string, string[]>();
+        for (const { owner, connectionId } of held)
+          byOwner.set(owner, [...(byOwner.get(owner) ?? []), connectionId]);
+        for (const [owner, ids] of byOwner)
+          await connectionsServiceFor(owner).forgetAgentDerived(agentId, ids);
+      },
     },
     {
       name: "satellite-grants",

@@ -132,7 +132,12 @@ A grant with no scope uses the Connection's own credential, as every grant did b
 For a scoped grant the Connection holds a **Derived Credential** that matches the scope, made from its own credential and recorded with it; its value is in a Secret of its own.
 The grant names it by its key, and its agent's gateway sends exactly that one ([credential gateway](credential-gateway.md#envoy-credential-injection)); a change of key re-renders that agent's gateway, as a change of its grants does.
 MCP tool access is the scope of an MCP grant and keeps its own field, below.
-Nothing sets a scope yet.
+
+**The platform Connection's scope.** Its scope gives an Agent an API key of its own as the derived credential: one per Agent, since the key names its Agent, bound to it and reading it alone in this step.
+Only a person signed in as the owner sets or clears it (`dam connection scope <connection> --agent <agent> --as-itself` or `--as-owner`); a key, and so an Agent holding the Connection's own key, is refused.
+Setting it issues the key, writes its Secret and records it with the Connection under the lock the Connection's key rotation takes, then names it on the grant; the key is queued in the key ledger until it is recorded, so a failure in between costs a key the sweep revokes.
+Clearing it, revoking the grant, deleting the Agent or deleting the Connection removes the record first, then the Secret, then the key.
+A grant with a scope is its Agent's alone: a child that mirrors its parent's connections, a spawn given `parent` or a named list, and an Environment do not take it, since in its place they would get the Connection's own key.
 
 **Tool access** is what one Agent may do with the tools of one MCP Connection, and it lives on the grant, so a change for one Agent never reaches another.
 Each tool has one **tool rule**: allow sends the call, ask holds it as a tool-call approval (below), and block refuses it at once.
