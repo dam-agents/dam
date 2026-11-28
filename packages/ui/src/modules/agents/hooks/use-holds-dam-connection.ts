@@ -1,7 +1,7 @@
 import type { AgentView } from "../../../types.js";
 import {
   type DamHold,
-  isDamConnection,
+  grantActsAsOwner,
 } from "../../connections/lib/dam-connection.js";
 import { useAgentConnections } from "../api/queries.js";
 
@@ -20,8 +20,7 @@ export function useHoldsDamConnection(agent: AgentView | null): DamHold {
   const known = data.connections.filter((c) => c.connection !== undefined);
   if (known.length < data.connections.length) return "unknown";
   return known.some(
-    (c) =>
-      c.connection && isDamConnection(c.connection) && c.scope === undefined,
+    (c) => c.connection && grantActsAsOwner(c.connection, c.scope),
   )
     ? "held"
     : "not-held";

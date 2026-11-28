@@ -9,6 +9,12 @@ import { DAM_TEMPLATE_ID } from "api-server-api";
 export const isDamConnection = (connection: { templateId: string }): boolean =>
   connection.templateId === DAM_TEMPLATE_ID;
 
+/* UNIT_BOUNDARY_DESCRIPTION: whether a grant lets the Agent act as its owner on this install: a grant of that Connection with no scope of its own. A grant with the Agent's own scope reaches the platform with the Agent's own key. */
+export const grantActsAsOwner = (
+  connection: { templateId: string },
+  scope: unknown,
+): boolean => isDamConnection(connection) && scope === undefined;
+
 /* UNIT_BOUNDARY_DESCRIPTION: the Connection that drives this install is on offer only while the person's own flag says so: with it off the catalog offers neither the template nor a grant of the Connection an owner already holds, while that Connection, its grants, its rotation and its deletion keep working. */
 export const damConnectionOffered = (
   flags: { damConnection?: boolean } | undefined,
