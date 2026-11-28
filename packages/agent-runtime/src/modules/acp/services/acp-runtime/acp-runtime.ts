@@ -132,7 +132,10 @@ import {
   createSessionBootstrap,
   type SessionCapabilities,
 } from "./session-bootstrap.js";
-import { createSessionTranscript } from "./session-transcript.js";
+import {
+  createSessionTranscript,
+  type SessionFrames,
+} from "./session-transcript.js";
 import { MAX_RESUME_ATTEMPTS } from "../interrupted-turn-recovery.js";
 import { platformOf, withPlatform } from "../../domain/platform-meta.js";
 import { verdictOf, withoutAnsweredBy } from "../../domain/attribution.js";
@@ -146,7 +149,7 @@ const CALL_DRAIN_MS = 10 * 1000;
 const DEFAULT_WARM_START_TIMEOUT_MS = 15 * 1000;
 const DEFAULT_SPAWN_WORK_TIMEOUT_MS = 5 * 1000;
 
-const DEFAULT_LOG_BYTES_CAP = 2 * 1024 * 1024;
+const DEFAULT_LOG_BYTES_CAP = 10 * 1024 * 1024;
 
 const DEFAULT_REPLAY_TAIL_EVENTS = 200;
 
@@ -183,7 +186,10 @@ export interface AcpRuntime {
   hasSessionWork(sessionId: string): boolean;
   toolCallsOpen(sessionId: string): boolean;
   harnessBusy(sessionId: string): boolean;
-  sessionFrames(sessionId: string): { frames: string[]; truncated: boolean };
+  sessionFrames(
+    sessionId: string,
+    opts?: { tail?: number; history?: readonly string[] },
+  ): SessionFrames;
   resetSession(sessionId: string): void;
   markSessionCold(sessionId: string): void;
   releaseSession(sessionId: string): void;
@@ -690,6 +696,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     logBytesCap,
     replayTailEvents: deps.replayTailEvents ?? DEFAULT_REPLAY_TAIL_EVENTS,
     engagedChannelsFor,
+    olderInHistory: deps.historyProvider !== undefined,
   });
 
   const pendingRequests = createPendingAgentRequests({
@@ -3110,8 +3117,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       return harnessActivity.isBusy(sessionId);
     },
 
-    sessionFrames(sessionId) {
-      return transcript.lines(sessionId);
+    sessionFrames(sessionId, opts) {
+      return transcript.linesWithMedia(sessionId, opts);
     },
 
     resetSession(sessionId) {

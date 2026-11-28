@@ -1238,11 +1238,12 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     defaults: () => deps.sessionDefaults?.get() ?? null,
 
-    sessionFrames(sessionId) {
+    sessionFrames(sessionId, opts) {
       return (
-        leaseOfSession(sessionId)?.runtime.sessionFrames(sessionId) ?? {
+        leaseOfSession(sessionId)?.runtime.sessionFrames(sessionId, opts) ?? {
           frames: [],
           truncated: false,
+          needsHistory: false,
         }
       );
     },

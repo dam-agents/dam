@@ -600,7 +600,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessionMetadata,
     isRunning: (sessionId) => runtime.isSessionRunning(sessionId),
     changes: sessionChanges,
-    sessionFrames: (sessionId) => runtime.sessionFrames(sessionId),
+    sessionFrames: (sessionId, opts) => runtime.sessionFrames(sessionId, opts),
     delegations: createDelegationFramesStore(opts.agentHome),
     ...(opts.sessionRepositories && {
       sessionRepositories: opts.sessionRepositories,

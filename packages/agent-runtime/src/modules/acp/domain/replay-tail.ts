@@ -88,7 +88,12 @@ export function tailStart(
     : walkBack(first.unopened).start;
 }
 
-function opensUserTurn(
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Whether frame `i` opens a prompt: it is a user
+ * message chunk and the frame before it is not, so a cut there parts no
+ * prompt from its own blocks.
+ */
+export function opensUserTurn(
   frames: readonly { line: string }[],
   i: number,
 ): boolean {
