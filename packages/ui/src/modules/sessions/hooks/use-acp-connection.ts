@@ -150,6 +150,7 @@ export function useAcpConnection(
   const reconnectAttemptRef = useRef(0);
   const isMountedRef = useRef(true);
   const reconnectFnRef = useRef<(() => void) | null>(null);
+  const reconnectNowRef = useRef<(() => Promise<void>) | null>(null);
   const pendingReloadRef = useRef<PendingReload | null>(null);
   const generationRef = useRef(0);
   const agentForksRef = useRef(false);
@@ -677,21 +678,41 @@ export function useAcpConnection(
       reconnectAttemptRef.current = attempt + 1;
       setState("reconnecting");
 
-      reconnectTimerRef.current = setTimeout(async () => {
-        reconnectTimerRef.current = null;
-        if (!isMountedRef.current || !operableRef.current) return;
-        const currentSid = useStore.getState().sessionId;
-        const currentInst = useStore.getState().selectedAgent;
-        if (!currentSid || currentInst !== selectedAgent) return;
-        try {
-          await ensureLive();
-          reconnectAttemptRef.current = 0;
-        } catch {
-          reconnectFnRef.current?.();
-        }
-      }, delay);
+      reconnectTimerRef.current = setTimeout(reconnect, delay);
     };
+    const reconnect = async () => {
+      reconnectTimerRef.current = null;
+      if (!isMountedRef.current || !operableRef.current) return;
+      const currentSid = useStore.getState().sessionId;
+      const currentInst = useStore.getState().selectedAgent;
+      if (!currentSid || currentInst !== selectedAgent) return;
+      try {
+        await ensureLive();
+        reconnectAttemptRef.current = 0;
+      } catch {
+        reconnectFnRef.current?.();
+      }
+    };
+    reconnectNowRef.current = reconnect;
   }, [selectedAgent, ensureLive]);
+
+  /* UNIT_BOUNDARY_DESCRIPTION: a reconnect waiting out its backoff runs at once
+   * when the tab comes back to the front. A background tab throttles its timers
+   * and its failed attempts push the backoff up, while the person who looks at
+   * the chat again is the one waiting for it. */
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      if (!reconnectTimerRef.current) return;
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+      reconnectAttemptRef.current = 0;
+      void reconnectNowRef.current?.();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, []);
 
   useEffect(() => {
     reconnectAttemptRef.current = 0;

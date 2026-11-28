@@ -53,3 +53,13 @@ export function composerBlock(input: {
     };
   return null;
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a block that waits for the agent's channel holds
+ * the send alone: the person keeps typing, and the draft goes out with Send once
+ * the channel is live. Every other block is one the person has to clear first,
+ * so it holds the composer.
+ */
+export function holdsSendOnly(block: ComposerBlock): boolean {
+  return block.kind === "connecting" || block.kind === "reconnect";
+}

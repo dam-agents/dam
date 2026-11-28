@@ -788,6 +788,25 @@ it("refuses a send while the Agent reconnects", () => {
   expect(useStore.getState().drafts["a-1:s-1"]?.text).toBe("hello");
 });
 
+// TEST_SCENARIO: a tab brought back to the front finds its channel reconnecting; the composer stays editable, so the person types the message while only Send waits for the channel.
+it("lets the person type while the Agent reconnects", () => {
+  const el = openChat("running", true);
+  const textarea = el.querySelector("textarea")!;
+  expect(textarea.disabled).toBe(false);
+  expect(textarea.readOnly).toBe(false);
+  act(() => {
+    Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )!.set!.call(textarea, "typed while reconnecting");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(useStore.getState().drafts["a-1:s-1"]?.text).toBe(
+    "typed while reconnecting",
+  );
+  expect(button(el, "Send").disabled).toBe(true);
+});
+
 // TEST_SCENARIO: the control case, the same chat while the Agent answers, sends the message.
 it("sends when the Agent answers", () => {
   fake.connectionState = "live";

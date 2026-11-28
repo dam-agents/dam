@@ -191,7 +191,7 @@ import {
   classicDockToggle,
   classicPanel,
 } from "../lib/classic-chat-layout.js";
-import { composerBlock } from "../lib/composer-block.js";
+import { composerBlock, holdsSendOnly } from "../lib/composer-block.js";
 import { curveBenderNotice, sharedCurveBender } from "../lib/curve-bender.js";
 import { defaultKindOf } from "../lib/default-kind.js";
 import { dockKey } from "../lib/dock.js";
@@ -1242,7 +1242,10 @@ export function ChatView() {
             onSend={sendPrepared}
             onStop={stopAgent}
             onTakeBack={takeBack}
-            blockedReason={block?.reason ?? null}
+            blockedReason={block && !holdsSendOnly(block) ? block.reason : null}
+            sendBlockedReason={
+              block && holdsSendOnly(block) ? block.reason : null
+            }
             stopBlockedReason={
               channelBlocked
                 ? "Waiting for the agent's connection — Stop works once it is up."
