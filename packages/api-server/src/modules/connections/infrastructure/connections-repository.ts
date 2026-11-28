@@ -510,7 +510,9 @@ export function listDerivedKeys(db: Db) {
       .from(connectionGrantsTable)
       .where(eq(connectionGrantsTable.agentId, agentId));
     return rows.flatMap((row) =>
-      row.key === null ? [] : [{ connectionId: row.connectionId, key: row.key }],
+      row.key === null
+        ? []
+        : [{ connectionId: row.connectionId, key: row.key }],
     );
   };
 }
