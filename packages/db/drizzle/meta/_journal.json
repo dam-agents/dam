@@ -1170,6 +1170,20 @@
       "when": 1795712850529,
       "tag": "0166_graduate_chat_forms",
       "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1795856477218,
+      "tag": "0167_grant_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1795856481388,
+      "tag": "0168_agent_connection_grants_credential",
+      "breakpoints": true
     }
   ]
 }

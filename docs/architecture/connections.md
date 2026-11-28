@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-11-27
+Last verified: 2026-11-28
 
 ## Overview
 
@@ -126,6 +126,12 @@ The same background loop that refreshes OAuth tokens re-mints it before expiry u
 One per-Connection Secret holds the client secret, the current access token, and the SDS files baked from it; only the minted access token is ever injected on the wire.
 
 A **GitHub App** installation and a **GitHub sign-in** made through a GitHub App are *parents*: they hold the credential and no Agent holds them; an Agent holds a Connection made from one, with its own scope, or full access named on purpose, and its own token ([github-connections](github-connections.md)).
+
+A grant can name a **Grant Credential**: a credential the platform made for one or more grants of the Connection, used in place of the Connection's own.
+A grant that names none uses the Connection's own credential, as every grant did before.
+A credential's value is in a Secret of its own, and its row says which Connection it serves and what it holds; a credential that a grant still names cannot be removed, so a grant never goes back to the wider credential by a deletion.
+The agent's gateway sends exactly the credential its grant names ([credential gateway](credential-gateway.md#envoy-credential-injection)), and a change of it re-renders that agent's gateway, as a change of its grants does.
+Nothing makes a credential yet.
 
 **Tool access** is what one Agent may do with the tools of one MCP Connection, and it lives on the grant, so a change for one Agent never reaches another.
 Each tool has one **tool rule**: allow sends the call, ask holds it as a tool-call approval (below), and block refuses it at once.

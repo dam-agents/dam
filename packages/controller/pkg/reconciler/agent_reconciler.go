@@ -324,8 +324,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 	agentSpec := &agent.Spec
 
-	credentialSecrets, err := listAgentCredentialSecrets(ctx, r.client, r.config.Namespace, name, owner,
-		agentSpec.GrantedSecretIDs, agentSpec.GrantedConnectionIDs)
+	credentialSecrets, err := listAgentCredentialSecrets(ctx, r.client, r.config.Namespace, name, owner, agentSpec)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("listing credential secrets: %v", err))
 	}

@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "22"
+    agent-platform.ai/crd-schema-generation: "23"
     controller-gen.kubebuilder.io/version: v0.23.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -147,6 +147,28 @@ spec:
                   this agent.
                 items:
                   type: string
+                type: array
+              grantedCredentials:
+                description: |-
+                  GrantedCredentials name, for a granted connection, the credential this
+                  agent's grant uses in place of the connection's own. The gateway sends
+                  exactly that credential's Secret for the connection, and never the
+                  connection's own, even while the credential's Secret is missing.
+                items:
+                  description: GrantedCredential is the credential one grant of a
+                    connection uses.
+                  properties:
+                    connectionId:
+                      description: ConnectionID is the granted connection.
+                      type: string
+                    credentialId:
+                      description: CredentialID is the credential the grant uses for
+                        it.
+                      type: string
+                  required:
+                  - connectionId
+                  - credentialId
+                  type: object
                 type: array
               grantedSecretIds:
                 description: |-

@@ -496,3 +496,23 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
     },
   };
 }
+
+/* UNIT_BOUNDARY_DESCRIPTION: the credential each of an Agent's grants names, for the grants that name one. A grant with none uses its Connection's own credential and is not listed. */
+export function listGrantCredentials(db: Db) {
+  return async (
+    agentId: string,
+  ): Promise<{ connectionId: string; credentialId: string }[]> => {
+    const rows = await db
+      .select({
+        connectionId: connectionGrantsTable.connectionId,
+        credentialId: connectionGrantsTable.credentialId,
+      })
+      .from(connectionGrantsTable)
+      .where(eq(connectionGrantsTable.agentId, agentId));
+    return rows.flatMap((row) =>
+      row.credentialId === null
+        ? []
+        : [{ connectionId: row.connectionId, credentialId: row.credentialId }],
+    );
+  };
+}

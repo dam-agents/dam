@@ -336,17 +336,22 @@ const envoySecretTypeAllowOnly = "allow-only"
 // UNIT_BOUNDARY_DESCRIPTION: the Secret that holds one Agent's Agent Key, written by the api-server while the Agent carries the platform's Environments egress rule. It names its Agent in the agent label, so only that Agent's gateway mounts it, and its host-pattern annotation names the environments domain the key is sent to.
 const envoySecretTypeAgentKey = "agent-key"
 
+// UNIT_BOUNDARY_DESCRIPTION: the Secret of a credential the api-server made for one or more grants of a connection, such as an API key that belongs to one agent. It carries the connection's injection hosts like the connection's own Secret, and a gateway sends it only for an agent whose grant names it. A controller that does not know the type leaves it out, so a credential never reaches an agent through an older controller.
+const envoySecretTypeConnectionCredential = "connection-credential"
+
+const envoyCredentialLabel = "agent-platform.ai/credential"
+
 // UNIT_BOUNDARY_DESCRIPTION: the header the gateway carries an Agent's key in, to the Environment gate alone; the gate strips it before anything reaches an Environment's app.
 const agentKeyHeader = "x-platform-agent-key"
 
 const CredentialSecretSelector = envoyManagedByLabel + "=api-server"
 
-func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface, namespace, agent, owner string, grantedSecretIDs, grantedConnectionIDs []string) ([]corev1.Secret, error) {
+func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface, namespace, agent, owner string, spec *apiv1.AgentSpec) ([]corev1.Secret, error) {
 	all, err := listOwnerCredentialSecrets(ctx, client, namespace, owner)
 	if err != nil {
 		return nil, err
 	}
-	return filterByGrants(agent, all, grantedSecretIDs, grantedConnectionIDs), nil
+	return filterByGrants(agent, all, spec.GrantedSecretIDs, spec.GrantedConnectionIDs, spec.GrantedCredentials), nil
 }
 
 type grantKind string
@@ -402,9 +407,16 @@ func (u *unresolvedGrantReporter) warnOnChange(agent string, kind grantKind, mes
 	slog.Warn(message, "agent", agent, "unresolvedIds", unresolved)
 }
 
-func filterByGrants(agent string, secrets []corev1.Secret, grantedSecretIDs, grantedConnectionIDs []string) []corev1.Secret {
+// UNIT_BOUNDARY_DESCRIPTION: the Secrets one agent's gateway mounts, out of every credential Secret of its owner. A granted connection contributes exactly one Secret: the credential its grant names, or, when the grant names none, the connection's own. A grant that names a credential never falls back to the connection's own Secret, so an agent given a narrower credential never carries the wider one, also while the narrower one is not written yet.
+func filterByGrants(agent string, secrets []corev1.Secret, grantedSecretIDs, grantedConnectionIDs []string, grantedCredentials []apiv1.GrantedCredential) []corev1.Secret {
 	grantedSecretIds := toGrantSet(grantedSecretIDs)
 	grantedConnIds := toGrantSet(grantedConnectionIDs)
+	credentialOf := map[string]string{}
+	for _, g := range grantedCredentials {
+		if g.ConnectionID != "" && g.CredentialID != "" {
+			credentialOf[g.ConnectionID] = g.CredentialID
+		}
+	}
 
 	resolvedSecrets := map[string]bool{}
 	resolvedConns := map[string]bool{}
@@ -420,7 +432,14 @@ func filterByGrants(agent string, secrets []corev1.Secret, grantedSecretIDs, gra
 			}
 		case "connection":
 			connKey := s.Labels[envoyConnectionLabel]
-			if grantedConnIds[connKey] {
+			if grantedConnIds[connKey] && credentialOf[connKey] == "" {
+				resolvedConns[connKey] = true
+				out = append(out, s)
+			}
+		case envoySecretTypeConnectionCredential:
+			connKey := s.Labels[envoyConnectionLabel]
+			credential := s.Labels[envoyCredentialLabel]
+			if grantedConnIds[connKey] && credential != "" && credentialOf[connKey] == credential {
 				resolvedConns[connKey] = true
 				out = append(out, s)
 			}
@@ -829,7 +848,7 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 
 	for _, s := range secrets {
 		switch s.Labels[envoySecretTypeLabel] {
-		case "connection":
+		case "connection", envoySecretTypeConnectionCredential:
 			for _, hc := range expandConnectionSecret(s) {
 				switch {
 				case hc.signer != nil:

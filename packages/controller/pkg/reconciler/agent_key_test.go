@@ -54,8 +54,8 @@ func agentKeyChainConfig(t *testing.T, doc map[string]any) map[string]any {
 // TEST_SCENARIO: one owner holds two agents, and the api-server wrote an Agent Key Secret for each. A gateway mounts only its own Agent's key: another agent's key in its gateway would let it open what was shared with that agent.
 func TestFilterByGrants_AnAgentKeyReachesOnlyItsOwnAgent(t *testing.T) {
 	secrets := []corev1.Secret{agentKeySecret("agent-key-a", "agent-a"), agentKeySecret("agent-key-b", "agent-b")}
-	assert.Equal(t, []string{"agent-key-a"}, names(filterByGrants("agent-a", secrets, nil, nil)))
-	assert.Equal(t, []string{"agent-key-b"}, names(filterByGrants("agent-b", secrets, nil, nil)))
+	assert.Equal(t, []string{"agent-key-a"}, names(filterByGrants("agent-a", secrets, nil, nil, nil)))
+	assert.Equal(t, []string{"agent-key-b"}, names(filterByGrants("agent-b", secrets, nil, nil, nil)))
 }
 
 // TEST_SCENARIO: an agent fetches an Environment address. Its gateway terminates the environments domain, injects the key in its own header over whatever the agent sent, and sends the request with its Host to the api-server's public port inside the cluster, never to an address the name resolves to.

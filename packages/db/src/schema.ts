@@ -996,6 +996,26 @@ export const agentInheritance = pgTable(
   (table) => [index("agent_inheritance_parent_idx").on(table.parentAgentId)],
 );
 
+/* UNIT_BOUNDARY_DESCRIPTION: a credential the platform made for one or more grants of a Connection, used in place of the Connection's own: an API key that belongs to one Agent, for the platform Connection. Its value is in its own Secret; the row says which Connection it serves, where its Secret is, and the inputs that name what it holds, such as the API key's id. A grant names it in `credential_id`. */
+export const connectionCredentials = pgTable(
+  "connection_credentials",
+  {
+    id: text("id").primaryKey(),
+    connectionId: text("connection_id")
+      .notNull()
+      .references(() => connections.id, { onDelete: "cascade" }),
+    owner: text("owner").notNull(),
+    secretRef: jsonb("secret_ref").notNull(),
+    inputs: jsonb("inputs").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("connection_credentials_connection_idx").on(table.connectionId),
+  ],
+);
+
 export const connectionGrants = pgTable(
   "connection_grants",
   {
@@ -1008,6 +1028,9 @@ export const connectionGrants = pgTable(
       .notNull(),
     preferred: boolean("preferred").notNull().default(false),
     toolAccess: jsonb("tool_access"),
+    credentialId: text("credential_id").references(
+      () => connectionCredentials.id,
+    ),
   },
   (table) => [
     primaryKey({ columns: [table.connectionId, table.agentId] }),
