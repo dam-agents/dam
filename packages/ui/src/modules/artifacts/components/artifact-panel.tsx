@@ -1,9 +1,8 @@
-import { ArrowLeft, Close, Save } from "@carbon/icons-react";
+import { Close, Save } from "@carbon/icons-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LoadFailed, PanelMessage } from "@/components/ui/empty-state";
-import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import {
@@ -44,22 +43,20 @@ type ArtifactDialog = "share" | "rename" | "move" | "retention";
  * version switcher, Share with the current visibility, Download, Open in new
  * tab and a ⋮ menu for the rest. The side panel docks it beside a page or a
  * chat, and the artifact page shows it alone in its own browser tab, so both
- * places offer the same actions. `onBack` and `close` are the side panel's;
- * the artifact page has neither, and as it already fills its tab it offers no
- * Open in new tab.
+ * places offer the same actions. `close` is the side panel's X, the bar's last
+ * control; the artifact page has none, and as it already fills its tab it
+ * offers no Open in new tab.
  */
 export function ArtifactPanel({
   artifactId,
   agentId,
   onSendPrompt,
-  onBack,
   close,
   standalone = false,
 }: {
   artifactId: string;
   agentId: string | null;
   onSendPrompt?: (prompt: string) => Promise<void>;
-  onBack?: () => void;
   close?: ReactNode;
   standalone?: boolean;
 }) {
@@ -142,24 +139,7 @@ export function ArtifactPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div
-        className={cn(
-          "flex h-12 shrink-0 items-center gap-2 border-b border-border pr-4",
-          onBack ? "pl-2" : "pl-4",
-        )}
-      >
-        {onBack && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="shrink-0"
-            aria-label="Back to artifacts"
-            tooltip="Back to artifacts"
-            onClick={onBack}
-          >
-            <ArrowLeft size={16} />
-          </Button>
-        )}
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
         <span
           className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
           title={artifact?.title}

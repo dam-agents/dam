@@ -1,6 +1,6 @@
 # Browser panel
 
-Last verified: 2026-11-16
+Last verified: 2026-11-24
 
 ## Overview
 
@@ -50,6 +50,7 @@ The one browser has tabs, and once it has two or more the panel shows them all i
 As in Safari, a browser with one tab shows no tab bar — a second tab is typically one the agent opens, and the bar hides again when one tab is left — and the button for a new tab is in the toolbar, so the user can open a second tab while the bar is hidden.
 As in Safari too, the tabs share the bar's width evenly with their titles centered; when an even share is too narrow to read a title, the active tab keeps a readable width and the others shrink to share the rest, down to a minimum, past which the bar scrolls and its list button reaches every tab.
 The user selects and closes tabs there, and a tab opened, selected, renamed or closed by the agent or by a page — a link that opens a new tab, a popup — shows in the bar as Chromium reports it.
+The toolbar's last control, after the browser menu, is the panel's close X; closing the panel leaves the browser and its tabs running.
 The kiosk window shows only one tab, so **the tab on screen is the active tab**: the panel's address, title, loading and Back and Forward are always that tab's.
 
 Every tab is known by its **target id**, Chromium's own id for it, which agent-browser accepts as a tab reference too; positions in the list are never used.

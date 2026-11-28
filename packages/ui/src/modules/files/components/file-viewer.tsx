@@ -1,10 +1,4 @@
-import {
-  ArrowLeft,
-  Close,
-  Download,
-  RequestQuote,
-  Save,
-} from "@carbon/icons-react";
+import { Close, Download, RequestQuote, Save } from "@carbon/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { RenderToggle } from "@/components/render-toggle";
@@ -147,17 +141,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="@container/file-toolbar flex items-center gap-2 pl-2 pr-4 h-12 border-b border-border shrink-0">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0"
-          onClick={onClose}
-          aria-label="Back to files"
-          tooltip="Back to files"
-        >
-          <ArrowLeft size={16} />
-        </Button>
+      <div className="@container/file-toolbar flex items-center gap-2 px-4 h-12 border-b border-border shrink-0">
         <TruncateStart
           className="text-sm font-medium text-foreground flex-1 min-w-0"
           title={path}
@@ -267,7 +251,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             )}
           </>
         )}
-        <SidePanelCloseButton />
+        <SidePanelCloseButton onClose={onClose} />
       </div>
       {platformInstructions && (
         <p className="px-4 py-2 border-b border-border text-xs text-muted-foreground">

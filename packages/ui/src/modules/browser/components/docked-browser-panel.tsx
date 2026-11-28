@@ -39,6 +39,7 @@ interface Props {
 
 export function DockedBrowserPanel({ agentId, agentName }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
+  const closeBrowser = useStore((s) => s.setOpenBrowser);
   const openRequestId = useStore((s) => s.browserOpenRequest?.id);
   const takeOpenRequest = useStore((s) => s.takeBrowserOpenRequest);
   const screenRef = useRef<HTMLIFrameElement>(null);
@@ -190,7 +191,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             Clear browser data
           </DropdownMenuItem>
         </RowActionsMenu>
-        <SidePanelCloseButton />
+        <SidePanelCloseButton onClose={() => closeBrowser(null)} />
         {stream.page.loading && (
           <span
             aria-hidden
