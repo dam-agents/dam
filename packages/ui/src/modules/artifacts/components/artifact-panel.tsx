@@ -18,6 +18,7 @@ import { useConfirmDeleteArtifact } from "../hooks/use-confirm-delete-artifact.j
 import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js";
 import {
   canStartArtifactSession,
+  canUseArtifactAgentApi,
   canUseArtifactBridge,
 } from "../lib/artifact-bridge.js";
 import { isEditableArtifact } from "../lib/editable.js";
@@ -117,7 +118,8 @@ export function ArtifactPanel({
   const startSession = useStartArtifactSession(artifact);
   const confirmDelete = useConfirmDeleteArtifact();
 
-  const bridgeOpen = canUseArtifactBridge(artifact, agentId, shownVersion);
+  const chatPromptOpen = canUseArtifactBridge(artifact, agentId, shownVersion);
+  const agentApiOpen = canUseArtifactAgentApi(artifact, shownVersion);
   const sessionPrompt = useArtifactSessionPrompt(
     canStartArtifactSession(artifact, shownVersion) ? artifact?.id : undefined,
   );
@@ -129,9 +131,9 @@ export function ArtifactPanel({
         title={artifact.title}
         className="h-full w-full bg-white"
         deferMs={0}
-        onSendPrompt={bridgeOpen ? onSendPrompt : undefined}
+        onSendPrompt={chatPromptOpen ? onSendPrompt : undefined}
         onNewSessionPrompt={sessionPrompt}
-        agentApiArtifactId={bridgeOpen ? artifact.id : undefined}
+        agentApiArtifactId={agentApiOpen ? artifact.id : undefined}
       />
     ) : null;
   const frameFallback = (

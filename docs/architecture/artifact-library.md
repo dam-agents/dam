@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-11-16
+Last verified: 2026-11-19
 
 ## Overview
 
@@ -57,7 +57,8 @@ Publishing an updated artifact uses the normal version flow.
 The same page can also **share state with its Agent** through the **Artifact API**, an HTTP server the publishing Agent runs inside its own sandbox on the fixed Artifact API Port, bound to loopback.
 The state lives with the Agent, so both the page and the Agent read and change it, unlike the page's own browser storage, which the Agent never sees.
 Unlike a prompt, this is request and response.
-One request travels four hops: the page posts it to the host app; the app checks the frame and the same gate as for prompts, then calls the api-server with the owner's own session; the api-server checks the artifact and wakes its Agent through the reachability primitive ([agent-lifecycle](agent-lifecycle.md#wake)); agent-runtime relays it over loopback to the Agent's server, and the answer comes back the same way.
+One request travels four hops: the page posts it to the host app; the app checks the frame and the page's latest version, then calls the api-server with the owner's own session; the api-server checks the artifact and wakes its Agent through the reachability primitive ([agent-lifecycle](agent-lifecycle.md#wake)); agent-runtime relays it over loopback to the Agent's server, and the answer comes back the same way.
+Unlike a prompt into the chat, it needs no open chat with the publishing Agent: the page calls its Agent the same way docked beside a chat, in the Artifacts library, and on its own page opened with Open in new tab.
 The call names an artifact, never an Agent: the api-server reads the publishing Agent from the artifact, so a page can only reach the Agent that published it, and uploaded artifacts (no publishing Agent) get no access.
 It serves only artifacts that are owned by the caller, HTML, interactive and not public.
 Any HTTP status the server returns is a normal answer; a typed failure reason reports only what the platform could not deliver, such as nothing listening on the port, a timeout, a body over the size cap or too many requests in flight from one frame.
