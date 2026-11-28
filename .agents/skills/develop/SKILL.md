@@ -1,7 +1,7 @@
 ---
 name: develop
 description: >
-  Take a change from request to merged pull request through one fixed process: a GitHub issue, or a free-text description of a feature or bug fix, goes through research of the area it touches (duplicate issues, who built and last changed the code, open and closed pull requests, whether today's behavior was a deliberate decision), a grilling of the plan, the implementation with the repository's own engineering skills, a documentation check and a code review, a descriptive report of what was built, and a pull request taken through CI and review to merge.
+  Take a change from request to merged pull request through one fixed process: a GitHub issue, or a free-text description of a feature or bug fix, goes through research of the area it touches (duplicate issues, who built and last changed the code, open and closed pull requests, whether today's behavior was a deliberate decision, the concepts the system already has for it), a grilling of the plan, the implementation with the repository's own engineering skills, a documentation check and a code review, a descriptive report of what was built, and a pull request taken through CI and review to merge.
   Use when the user wants to develop, implement or fix something and hands over an issue link or number or describes the change in words — "develop", "/develop", "implementuj", "oprav", "chci přidat", "work on issue #123".
 argument-hint: "<issue URL or number | description of the feature or bug>"
 ---
@@ -73,7 +73,14 @@ Decide whether the current behavior was intended.
 Signs of a deliberate decision: a pull request body or review that names the behavior and argues for it, a test that asserts it, a code comment that explains it, a design or architecture doc that describes it, an issue closed as `not planned`.
 Signs of an accident: no discussion anywhere, a later change that broke an earlier intent, a test that does not cover it.
 
-### 1f. Report
+### 1f. Existing concepts
+
+Find what the system already has for the thing the request asks for: a resource, a permission, a setting, a flow or a term in the glossary that does the same job, or most of it.
+Read the architecture and design docs and the glossary of domain terms, if the repository has them, then the code from 1b.
+For each one, note whether it covers the request as it is, would cover it if extended, or does not, and why.
+A guard that refuses what the request needs — a validation, an authorization check, a test that asserts the refusal — is a decision someone made: find its reason in 1c, and count it under 1e.
+
+### 1g. Report
 
 Present the research in this shape, short, with links:
 
@@ -81,6 +88,7 @@ Present the research in this shape, short, with links:
 **Existing issues**: duplicates and close relatives, with state; or "none found" and the keywords searched.
 **Where it lives**: the files that matter.
 **History**: added in <PR> by @<author> (<date>) — <why, one line>; last changed in <PR> by @<author> (<date>) — <what>; other changes that shaped the behavior.
+**Existing concepts**: what the system already has for this, and for each whether it covers the request, covers it if extended, or does not, with the gap; or "none found" and where you looked.
 **In flight**: open pull requests and issues that touch the same area.
 **Deliberate or bug**: verdict, with the evidence (one short quote or link each).
 **Who to ask**: the people who own the decision, when the change reverses it.
@@ -90,6 +98,7 @@ Then let the user decide how to go on:
 
 - **Exact duplicate**: work on the existing issue (continue from step 0 with it), comment on it, or stop.
 - **Deliberate decision**: confirm that the user wants to reverse it, and suggest talking to its author first.
+- **An existing concept covers it**, as it is or extended: state the change as a use or an extension of that concept, and confirm that reading with the user.
 - **Collision with an open pull request**: wait for it, build on it, or coordinate with its author.
 - **Clear to go**: continue to step 2.
 
@@ -105,9 +114,12 @@ Without it, run this short version:
   If the code or the docs can answer a question, look it up instead of asking.
 - Check the plan against the repository's architecture and design docs and its glossary of domain terms, if it has them.
   Call out a term used against its defined meaning, and propose a precise term for a vague one.
+- Before the first question, show the existing concepts from step 1.
+  In every question, offer the existing concept first, and recommend a new one only with a gap you checked in the existing ones.
 - Test the boundaries with concrete edge-case scenarios.
 - When the user states how something works, check the code and point out any contradiction.
 - After each answer, append the question, your recommendation and the decision to a decision log in a temporary file outside the repository, and build the wrap-up from that file.
+- Before the wrap-up, ask what the change lets the repository remove or merge.
 - Wrap up with the decision log and a list of open questions.
 
 ### 2a. Record the outcome
@@ -153,6 +165,7 @@ Without a fitting skill, follow the conventions of the surrounding code and the 
 
 Implement what the decision log from step 2 settled.
 When the code shows that a decision does not hold, stop and bring it back to the user instead of deciding it yourself.
+So does a guard that refuses what you build, and code that starts to copy a concept the system already has: never route around the one or build the other.
 Append every decision the user makes from here on, in steps 3 to 5, to the same decision log file, so step 6 finds them all.
 An architectural decision made here gets a decision record, as in step 2a.
 
