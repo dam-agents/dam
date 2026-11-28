@@ -9,6 +9,12 @@ import { DAM_TEMPLATE_ID } from "api-server-api";
 export const isDamConnection = (connection: { templateId: string }): boolean =>
   connection.templateId === DAM_TEMPLATE_ID;
 
+/* UNIT_BOUNDARY_DESCRIPTION: whether a grant lets the Agent act as its owner on this install: a grant of that Connection with no scope of its own. A grant with the Agent's own scope reaches the platform with the Agent's own key. */
+export const grantActsAsOwner = (
+  connection: { templateId: string },
+  scope: unknown,
+): boolean => isDamConnection(connection) && scope === undefined;
+
 /* UNIT_BOUNDARY_DESCRIPTION: the Connection that drives this install is on offer only while the person's own flag says so: with it off the catalog offers neither the template nor a grant of the Connection an owner already holds, while that Connection, its grants, its rotation and its deletion keep working. */
 export const damConnectionOffered = (
   flags: { damConnection?: boolean } | undefined,
@@ -29,6 +35,21 @@ export const damHoldWarns = (hold: DamHold): boolean => hold !== "not-held";
 export function damActsAsYou(brand: string): string {
   return `Acts as you on ${brand}`;
 }
+
+export function damActsAsItself(brand: string): string {
+  return `Acts as itself on ${brand}`;
+}
+
+export function damActsAsItselfSentence(brand: string): string {
+  return `The agent reaches ${brand} with a key of its own: it can read itself and change nothing, and the security log names it.`;
+}
+
+export function damActsAsYouSentence(brand: string): string {
+  return `The agent reaches ${brand} with your key: it can do whatever you can, and so can anyone who can drive it.`;
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the platform Connection's own scope for one Agent, the only one there is so far: the Agent reaches the platform with an API key of its own that reads only itself. */
+export const ACTS_AS_ITSELF_SCOPE = { kind: "platform", reach: "own" } as const;
 
 export function damAudienceSentence(brand: string, audience: string): string {
   return `This agent holds the ${brand} connection, so ${audience} can act as you on ${brand}.`;

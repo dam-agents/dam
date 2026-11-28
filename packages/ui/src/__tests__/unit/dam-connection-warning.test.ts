@@ -5,7 +5,9 @@
 // TEST_OVERVIEW: arrived or its read failed, because a warning that is wrong costs
 // TEST_OVERVIEW: a sentence and one that is missing costs an account; it says
 // TEST_OVERVIEW: nothing once the library is there and the Agent holds no such
-// TEST_OVERVIEW: Connection.
+// TEST_OVERVIEW: Connection. The notice on an Agent's Connections says the same
+// TEST_OVERVIEW: for a grant with no scope of its own, and nothing for one with
+// TEST_OVERVIEW: the Agent's own scope.
 import type { AgentConnections, ConnectionView } from "api-server-api";
 import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
@@ -31,6 +33,8 @@ vi.mock("../../modules/features/api/queries.js", () => ({
   useFeatures: () => ({ data: {} }),
 }));
 
+const { grantActsAsOwner } =
+  await import("../../modules/connections/lib/dam-connection.js");
 const { useHoldsDamConnection } =
   await import("../../modules/agents/hooks/use-holds-dam-connection.js");
 const { useBindSharingConfirm } =
@@ -174,6 +178,25 @@ describe("the warning in the channel-bind flow", () => {
     expect(host.textContent).not.toContain(`${getBrand().name} connection`);
   });
 
+  // TEST_SCENARIO: an Agent whose grant of the Connection has its own scope reaches the platform with a key of its own, not the owner's, so nobody who drives it acts as the owner and no warning says so.
+  it("does not count a grant with the Agent's own scope as holding it", () => {
+    library.data = [DAM];
+    held.data = {
+      agentId: "agent-1",
+      connections: [
+        {
+          connectionId: DAM.id,
+          grantedAt: "2026-01-01",
+          preferred: false,
+          connection: DAM,
+          scope: { kind: "platform", reach: "own" },
+        },
+      ],
+    } as unknown as AgentConnections;
+    render(createElement(HoldProbe, { agent: agentHolding(["conn-dam"]) }));
+    expect(host.textContent).toBe("not-held");
+  });
+
   // TEST_SCENARIO: the viewer's own library says nothing about the Agent an editor is looking at, so the hold is read from the Agent's grants: the same Agent reads the same both ways, and a grant whose detail has not arrived is not called safe.
   it("reads the Agent's own grants, not the viewer's library", () => {
     library.data = [];
@@ -225,5 +248,16 @@ describe("the confirmation before the grant", () => {
   it("asks nothing for another Connection with no audience", () => {
     render(createElement(GrantProbe, { connection: GITHUB }));
     expect(dialogText()).toBeNull();
+  });
+});
+
+describe("the notice on an Agent's Connections", () => {
+  // TEST_SCENARIO: the notice that whoever drives the Agent acts as the owner shows for a grant of the Connection with no scope of its own, and not for one with the Agent's own scope or for another Connection.
+  it("says the Agent acts as the owner only for an unscoped grant", () => {
+    expect(grantActsAsOwner(DAM, undefined)).toBe(true);
+    expect(grantActsAsOwner(DAM, { kind: "platform", reach: "own" })).toBe(
+      false,
+    );
+    expect(grantActsAsOwner(GITHUB, undefined)).toBe(false);
   });
 });

@@ -66,6 +66,9 @@ Builds published before these accounts were added have only `qa-owner`; there an
   *Internal features* is a page with no menu entry, opened only by its address, `/settings/internal`; it holds every other switch and the onboarding reset, and the install cannot pin what is on it.
 - **DAM connection** — the connection that lets an agent act as its owner on the install; an account's own, made from an agent's Connections page once the internal feature `damConnection` is on for it.
   Turning that switch off leaves every connection and grant working and only stops new ones being offered.
+  On an agent's **Connections** its row reads *Acts as you on <brand>* in the warning colour, or *Acts as itself on <brand>* once the agent has its own scope; the owner changes it in the **Access** dialog (subtitle *<connection> · for <agent>*), opened from the *Access* button on that row, whatever `mcp-tool-approval` says.
+  The dialog has two cards, *Acts as itself on <brand>* (a key of the agent's own that reads only itself, named in the security log) and *Acts as you on <brand>* in the danger tone; choosing the owner again on an agent that acts as itself says its own key is revoked on save; *Save* stays disabled until the choice changes.
+  An agent that acts as itself does not raise the "can act as you" warnings on its Connections, People or channel binding.
 - **Home** — what changed since the user last looked; agents, usage, spend.
 - **Tool-call approval** — an agent's call of an MCP connection's tool whose rule for that agent is *Ask* (internal feature `mcp-tool-approval`; the rules are set per agent in the *Tool access* dialog, see the Slack Account below).
   A tool set to *Allow* passes at once, with no card; a tool set to *Block* is refused at once, and the agent's reply says the tool is blocked for this agent on that connection.

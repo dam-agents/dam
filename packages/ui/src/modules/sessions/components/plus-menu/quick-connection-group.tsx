@@ -78,7 +78,7 @@ export function QuickConnectionGroup({
                     {c.name}
                   </p>
                   <StatusBadges connection={c} />
-                  {toolAccess?.(c)?.summary.tone === "writes" && (
+                  {toolAccess?.(c)?.summary?.tone === "writes" && (
                     <WritesWithoutAskingMark
                       label="Writes without asking"
                       testId={`grant-writes-mark-${c.id}`}

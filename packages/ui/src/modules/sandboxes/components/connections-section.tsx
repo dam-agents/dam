@@ -14,7 +14,7 @@ import { ConnectionCatalogModal } from "../../connections/components/connection-
 import { useCatalogGroups } from "../../connections/hooks/use-catalog-groups.js";
 import {
   damAudienceSentence,
-  isDamConnection,
+  grantActsAsOwner,
 } from "../../connections/lib/dam-connection.js";
 import { SatellitesGroup } from "../../satellites/components/satellites-group.js";
 import { useAgentSatellites } from "../../satellites/hooks/use-agent-satellites.js";
@@ -74,7 +74,7 @@ export function ConnectionsSection({
           one, remove one, or re-authenticate an expired one.
         </OwnerOnlyNotice>
       )}
-      {listed.some(isDamConnection) && (
+      {listed.some((c) => grantActsAsOwner(c, grants.get(c.id)?.scope)) && (
         <ConnectionAudienceNotice
           className="mb-6"
           testId="connections-dam-notice"

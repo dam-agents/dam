@@ -30,8 +30,10 @@ export interface RowGrantControls {
 }
 
 export interface RowToolAccess {
-  summary: AccessSummary;
+  summary?: AccessSummary;
   onEdit?: () => void;
+  editLabel?: string;
+  actsAsItself?: boolean;
 }
 
 export interface RowMaintenanceActions {
@@ -182,7 +184,8 @@ export function CatalogConnectionRow({
           <>
             <ConnectionRowDetail
               connection={connection}
-              grantAccess={toolAccess?.summary.text}
+              grantAccess={toolAccess?.summary?.text}
+              actsAsItself={toolAccess?.actsAsItself}
             />
             {note && (
               <p

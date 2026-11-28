@@ -11,11 +11,13 @@ import {
   type GrantDetails,
 } from "../../connections/components/default-accounts-callout.js";
 import { GrantRivalryCallout } from "../../connections/components/grant-rivalry-callout.js";
+import { GrantScopeDialog } from "../../connections/components/grant-scope-dialog.js";
 import {
   type GrantAgent,
   GrantToolAccessDialog,
 } from "../../connections/components/grant-tool-access-dialog.js";
 import { useConnectionMaintenance } from "../../connections/hooks/use-connection-maintenance.js";
+import { useGrantRowScope } from "../../connections/hooks/use-grant-row-scope.js";
 import { useGrantRowToolAccess } from "../../connections/hooks/use-grant-row-tool-access.js";
 import type { CatalogProviderGroup } from "../../connections/lib/catalog-providers.js";
 
@@ -60,10 +62,16 @@ export function GrantedConnectionsPanel({
   const [editingAccess, setEditingAccess] = useState<ConnectionView | null>(
     null,
   );
+  const [editingScope, setEditingScope] = useState<ConnectionView | null>(null);
   const toolAccess = useGrantRowToolAccess(
     grants,
     toolAccessFor && setEditingAccess,
   );
+  const scope = useGrantRowScope(grants, toolAccessFor && setEditingScope);
+  const rowAccess =
+    toolAccess || scope
+      ? (c: ConnectionView) => scope?.(c) ?? toolAccess?.(c)
+      : undefined;
   const editedAccess =
     editingAccess && grants?.get(editingAccess.id)?.toolAccess;
 
@@ -124,7 +132,7 @@ export function GrantedConnectionsPanel({
             }
             onManage={readOnly ? undefined : onOpenCatalog}
             maintenance={readOnly ? undefined : maintenance.rowActions}
-            toolAccess={toolAccess}
+            toolAccess={rowAccess}
           />
         ))}
       </ListSection>
@@ -135,6 +143,14 @@ export function GrantedConnectionsPanel({
           connection={editingAccess}
           access={editedAccess}
           onClose={() => setEditingAccess(null)}
+        />
+      )}
+      {toolAccessFor && editingScope && (
+        <GrantScopeDialog
+          agent={toolAccessFor}
+          connection={editingScope}
+          actsAsItself={grants?.get(editingScope.id)?.scope !== undefined}
+          onClose={() => setEditingScope(null)}
         />
       )}
     </>
