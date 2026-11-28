@@ -186,6 +186,7 @@ function makeRepoFake(initial: Connection) {
     listAgentGrants: async () => [],
     listConnectionsForAgent: async () => [],
     setGrantToolAccess: async () => false,
+    setGrantScope: async () => false,
     clearGrantToolAccess: async () => {},
     listGrantedConnections: async () => [],
     listAgentsForConnection: async () => [],

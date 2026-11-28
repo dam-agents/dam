@@ -170,6 +170,8 @@ export function isApiKeyNamedByAConnection(db: Db) {
     const rows = await db.execute<{ exists: number }>(sql`
       SELECT 1 AS exists FROM connections
       WHERE inputs->>'apiKeyId' = ${keyId}
+         OR auth->'derived' @> jsonb_build_array(
+              jsonb_build_object('inputs', jsonb_build_object('apiKeyId', ${keyId}::text)))
       LIMIT 1`);
     return (rows as unknown as unknown[]).length > 0;
   };

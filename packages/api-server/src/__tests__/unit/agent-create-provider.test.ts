@@ -116,6 +116,7 @@ function setup(
     ),
     damKey: {
       mint: async () => ({ id: "key-1", plaintext: "pk_secret" }),
+      mintForAgent: async () => ({ id: "key-2", plaintext: "pk_agent" }),
       revoke: async () => {},
       active: async (ids: readonly string[]) => new Set(ids),
       ledger: {

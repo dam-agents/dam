@@ -85,11 +85,20 @@ export const githubAppAuth = z.object({
   fullAccess: z.literal(true).optional(),
 });
 
+// UNIT_BOUNDARY_DESCRIPTION: a credential a Connection made from its own for one Agent's scope, recorded with the Connection. `key` is what a scoped grant names, `valueRef` the Secret holding the value, `inputs` what it holds, such as the API key's id and the Agent it belongs to. It belongs to its Connection and is never a Connection of its own.
+export const derivedCredential = z.object({
+  key: z.string().min(1),
+  valueRef: secretRef,
+  inputs: z.record(z.string(), z.string()),
+});
+export type DerivedCredential = z.infer<typeof derivedCredential>;
+
 export const headerAuth = z.object({
   kind: z.literal("header"),
   valueRef: secretRef,
   headerName: z.string().min(1),
   valueFormat: z.string().min(1),
+  derived: z.array(derivedCredential).optional(),
 });
 
 export const sigv4Auth = z.object({
@@ -138,6 +147,16 @@ export const grantToolAccess = z.object({
   overrides: z.record(z.string(), toolRule),
 });
 export type GrantToolAccess = z.infer<typeof grantToolAccess>;
+
+// UNIT_BOUNDARY_DESCRIPTION: an Agent's own scope on the platform Connection, kept on its grant. Its derived credential is an API key that belongs to the Agent. Reach `own` is the Agent itself, and in this step the key reads the Agent and nothing else; more reach and helper Agents come with #6882.
+export const platformGrantScope = z.strictObject({
+  kind: z.literal("platform"),
+  reach: z.literal("own"),
+});
+
+// UNIT_BOUNDARY_DESCRIPTION: an Agent's own scope on a Connection, kept on its grant, in the shape of the Connection's kind. A grant with none uses the Connection's own credential. MCP tool access is the scope of an MCP grant and keeps its own field.
+export const grantScope = z.discriminatedUnion("kind", [platformGrantScope]);
+export type GrantScope = z.infer<typeof grantScope>;
 
 // UNIT_BOUNDARY_DESCRIPTION: the tool mode an MCP Connection stores, with the tools the api-server last read from its server. `tools` is null until the first read succeeded, and `listError` says why the last read failed.
 export const connectionToolAccessRecord = z.object({
@@ -323,6 +342,7 @@ export const agentConnections = z.object({
       grantedAt: z.string(),
       preferred: z.boolean(),
       toolAccess: grantToolAccess.optional(),
+      scope: grantScope.optional(),
       connection: connectionView.optional(),
     }),
   ),
@@ -477,6 +497,13 @@ export interface ConnectionsService {
     agentId: string;
     connectionId: string;
     access: GrantToolAccess;
+  }): Promise<void>;
+
+  /** UNIT_BOUNDARY_DESCRIPTION: sets an Agent's own scope on its grant of a Connection, or clears it with null so the grant uses the Connection's own credential again. Only a signed-in owner sets it, never a key, so an Agent cannot change its own scope. For the platform Connection a scope gives the Agent an API key of its own, and clearing it revokes that key. */
+  setGrantScope(input: {
+    agentId: string;
+    connectionId: string;
+    scope: GrantScope | null;
   }): Promise<void>;
 
   /** UNIT_BOUNDARY_DESCRIPTION: reads the tool list of an MCP Connection's server again, with the Connection's own credential, and returns its tool access. A list that came back replaces the stored tools and `listedAt`; a failure keeps the old tools and says why in `listError`. Only an MCP Connection with a credential has a list to read. */

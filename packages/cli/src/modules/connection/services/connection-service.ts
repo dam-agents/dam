@@ -10,6 +10,7 @@ import type {
   GitHubAppInstallationProbe,
   GrantToolAccess,
   GitHubUserTokenProbe,
+  GrantScope,
   SecretRequestState,
   SecretRequestTicket,
   ToolMode,
@@ -76,6 +77,11 @@ export interface ConnectionService {
     agentId: string;
     connectionId: string;
     access: GrantToolAccess;
+  }): Promise<ConnResult<void>>;
+  setGrantScope(input: {
+    agentId: string;
+    connectionId: string;
+    scope: GrantScope | null;
   }): Promise<ConnResult<void>>;
   refreshTools(id: string): Promise<ConnResult<ConnectionToolAccess>>;
   createFromParent(input: {
@@ -151,11 +157,12 @@ export function createConnectionService(deps: {
         (
           await deps.trpc.connections.getAgentConnections.query({ agentId })
         ).connections.map(
-          ({ connectionId, grantedAt, preferred, toolAccess }) => ({
+          ({ connectionId, grantedAt, preferred, toolAccess, scope }) => ({
             connectionId,
             grantedAt,
             preferred,
             ...(toolAccess && { toolAccess }),
+            ...(scope && { scope }),
           }),
         ),
       );
@@ -223,6 +230,11 @@ export function createConnectionService(deps: {
     async setGrantToolAccess(input) {
       return trpcCall(async () => {
         await deps.trpc.connections.setGrantToolAccess.mutate(input);
+      });
+    },
+    async setGrantScope(input) {
+      return trpcCall(async () => {
+        await deps.trpc.connections.setGrantScope.mutate(input);
       });
     },
     async refreshTools(id) {

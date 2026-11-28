@@ -121,6 +121,17 @@ export interface EnvironmentsServiceImpl {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the connections an Environment is created with, as its inheritance records them. A named connection the owning agent does not hold is refused, and so is any connection on an Environment whose egress is open, which holds none.
+/* UNIT_BOUNDARY_DESCRIPTION: the grants of the owning Agent an Environment may take. A grant with a scope of its own is the Agent's alone: the Environment would get the Connection's own, wider credential in its place, so it is left out. */
+function passedOnGrants(spec: {
+  grantedConnectionIds?: string[];
+  derivedCredentials?: { connectionId: string }[];
+}): string[] {
+  const own = new Set(
+    (spec.derivedCredentials ?? []).map((d) => d.connectionId),
+  );
+  return (spec.grantedConnectionIds ?? []).filter((id) => !own.has(id));
+}
+
 function environmentConnections(
   input: Pick<CreateEnvironmentInput, "connections" | "egress">,
   owningGrants: readonly string[],
@@ -416,10 +427,7 @@ export function createEnvironmentsService(
       const agent = await deps.agents.create(
         environmentCreateInput({
           parentAgentId: owningAgentId,
-          ...environmentConnections(
-            input,
-            owning.spec.grantedConnectionIds ?? [],
-          ),
+          ...environmentConnections(input, passedOnGrants(owning.spec)),
           ...(input.egress ? { egress: input.egress } : {}),
           name: environmentAgentName(owning.name, input.name),
           description: `Environment ${input.name} of ${owning.name}`,

@@ -233,7 +233,9 @@ function driverOps(
       conns.getAgentConnections(driverId),
       conns.listConnections(),
     ]);
-    const driverGrantIds = granted.connections.map((g) => g.connectionId);
+    const driverGrantIds = granted.connections
+      .filter((g) => g.scope === undefined)
+      .map((g) => g.connectionId);
     const grantSet = new Set(driverGrantIds);
 
     return {

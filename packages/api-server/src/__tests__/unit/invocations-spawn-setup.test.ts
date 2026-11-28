@@ -606,6 +606,10 @@ function makeApp(templates: Array<{ id: string; spec: object }>) {
           connections: [
             { connectionId: "conn-litellm" },
             { connectionId: "conn-ghe" },
+            {
+              connectionId: "conn-dam",
+              scope: { kind: "platform", reach: "own" },
+            },
           ],
         }),
       }) as never,
@@ -634,6 +638,29 @@ describe("the spawn endpoint", () => {
     },
     { id: "codex", spec: { harness: "codex", providers: ["openai"] } },
   ];
+
+  // TEST_SCENARIO: the driver holds the platform connection with a scope of its own, so its gateway sends its own key. A target that took that grant would get the connection's own key, the owner's full access, so it is not among the grants the driver may pass on: "parent" leaves it out, and a named list that asks for it names a grant the spawn's attenuation check finds the driver does not pass, and refuses.
+  test("a grant the driver holds with a scope of its own is not passed on", async () => {
+    const { app, spawned } = makeApp(catalog);
+
+    const all = await app.request(
+      "/api/agents/driver-1/invocations",
+      post({ harness: "claude-code", connections: "parent" }),
+    );
+    expect(all.status).toBe(201);
+    expect(spawned[0]).toMatchObject({
+      driverGrantIds: ["conn-litellm", "conn-ghe"],
+    });
+
+    await app.request(
+      "/api/agents/driver-1/invocations",
+      post({ harness: "claude-code", connections: ["conn-dam"] }),
+    );
+    expect(spawned[1]).toMatchObject({
+      connections: ["conn-dam"],
+      driverGrantIds: ["conn-litellm", "conn-ghe"],
+    });
+  });
 
   test("a harness runs on its Template, with the providers it can run on", async () => {
     const { app, spawned } = makeApp(catalog);

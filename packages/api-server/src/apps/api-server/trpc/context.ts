@@ -88,11 +88,11 @@ import {
 import { composeSkillsModule } from "../../../modules/skills/compose.js";
 import { composeFilesModule } from "../../../modules/files/files-service.js";
 import {
+  damKeyPortOf,
   composeConnectionsForOwner,
   composeSecretRequestsForOwner,
 } from "../../../modules/connections/compose.js";
 import { oauthCallbackUrl } from "../../../modules/connections/domain/oauth-callback-url.js";
-import { damKeyPortFor } from "../../../modules/connections/domain/dam-connection.js";
 import {
   composeApprovalsService,
   composeChildEgressRelease,
@@ -280,17 +280,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses,
       providerModelCatalog: connectionsBoot.providerModelCatalog,
-      damKey: damKeyPortFor(
-        apiKeysModule.createService({
-          ownerSub: user.sub,
-          surface: "platform",
-        }),
-        {
-          activeKeyIds: apiKeysModule.activeKeyIds,
-          ledger: apiKeysModule.keyLedger(user.sub),
-        },
-        config.brand.name,
-      ),
+      damKey: damKeyPortOf(apiKeysModule, user.sub, config.brand.name),
       damConnectionOffered,
       toolApprovalOffered: featureOn("mcp-tool-approval"),
       mcpToolLister: connectionsBoot.mcpToolLister,

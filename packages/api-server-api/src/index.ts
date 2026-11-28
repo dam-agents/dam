@@ -810,6 +810,8 @@ export type {
   ToolMode,
   ToolRule,
   GrantToolAccess,
+  GrantScope,
+  DerivedCredential,
   ConnectionTemplateView,
   ProviderBalance,
   ProviderKeyCheck,
@@ -838,6 +840,8 @@ export {
   toolMode as toolModeSchema,
   toolRule as toolRuleSchema,
   grantToolAccess as grantToolAccessSchema,
+  grantScope as grantScopeSchema,
+  derivedCredential as derivedCredentialSchema,
   providerKeyCheck as providerKeyCheckSchema,
   credentialCheck as credentialCheckSchema,
 } from "./modules/connections/types.js";

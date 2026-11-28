@@ -17,11 +17,13 @@ import {
   connectionToolAccessRecordSchema as toolAccessRecordSchema,
   contribution as contributionSchema,
   grantToolAccessSchema,
+  grantScopeSchema,
   type Connection,
   type ConnectionAuthConfig,
   type ConnectionToolAccessRecord,
   type Contribution,
   type GrantToolAccess,
+  type GrantScope,
 } from "api-server-api";
 
 export interface ConnectionsRepository {
@@ -82,8 +84,17 @@ export interface ConnectionsRepository {
       grantedAt: Date;
       preferred: boolean;
       toolAccess: GrantToolAccess | null;
+      scope: GrantScope | null;
+      derivedKey: string | null;
     }[]
   >;
+  /* UNIT_BOUNDARY_DESCRIPTION: sets or clears an Agent's own scope on its grant, with the key of the derived credential that matches it, in one write, and answers false when the Agent does not hold the Connection. */
+  setGrantScope(
+    connectionId: string,
+    agentId: string,
+    scope: GrantScope | null,
+    derivedKey: string | null,
+  ): Promise<boolean>;
   /* UNIT_BOUNDARY_DESCRIPTION: sets the tool access of one grant, and answers false when the Agent does not hold the Connection. */
   setGrantToolAccess(
     connectionId: string,
@@ -157,6 +168,12 @@ function grantToolAccessOf(raw: unknown): GrantToolAccess | null {
   if (raw === null || raw === undefined) return null;
   const parsed = grantToolAccessSchema.safeParse(raw);
   return parsed.success ? parsed.data : BLOCK_ALL;
+}
+
+function grantScopeOf(raw: unknown): GrantScope | null {
+  if (raw === null || raw === undefined) return null;
+  const parsed = grantScopeSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
 }
 
 function connectionsOf(rows: readonly ConnectionRow[]): Connection[] {
@@ -358,13 +375,31 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
         grantedAt: Date;
         preferred: boolean;
         toolAccess: unknown;
+        scope: unknown;
+        derivedKey: string | null;
       }[];
       return rows.map((row) => ({
         connectionId: row.connectionId,
         grantedAt: row.grantedAt,
         preferred: row.preferred,
         toolAccess: grantToolAccessOf(row.toolAccess),
+        scope: grantScopeOf(row.scope),
+        derivedKey: row.derivedKey,
       }));
+    },
+
+    async setGrantScope(connectionId, agentId, scope, derivedKey) {
+      const updated = await db
+        .update(connectionGrantsTable)
+        .set({ scope, derivedKey })
+        .where(
+          and(
+            eq(connectionGrantsTable.connectionId, connectionId),
+            eq(connectionGrantsTable.agentId, agentId),
+          ),
+        )
+        .returning({ agentId: connectionGrantsTable.agentId });
+      return updated.length > 0;
     },
 
     async setGrantToolAccess(
@@ -514,5 +549,34 @@ export function listDerivedKeys(db: Db) {
         ? []
         : [{ connectionId: row.connectionId, key: row.key }],
     );
+  };
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the Connections that hold a derived credential made for one Agent, with their owners, found from the Connections themselves, so an Agent deleted after its grants still has its credentials found and removed. */
+export function listConnectionsDerivedForAgent(db: Db) {
+  return async (
+    agentId: string,
+  ): Promise<{ connectionId: string; owner: string }[]> => {
+    const rows = await db
+      .select({
+        connectionId: connectionsTable.id,
+        owner: connectionsTable.owner,
+      })
+      .from(connectionsTable)
+      .where(
+        sql`${connectionsTable.auth}->'derived' @> jsonb_build_array(jsonb_build_object('inputs', jsonb_build_object('agentId', ${agentId}::text)))`,
+      );
+    return rows;
+  };
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: every Agent a derived credential of any Connection was made for, for the orphan sweep of Agent cleanup. */
+export function listAgentIdsWithDerivedCredentials(db: Db) {
+  return async (): Promise<string[]> => {
+    const rows = await db.execute<{ agent_id: string }>(sql`
+      SELECT DISTINCT d->'inputs'->>'agentId' AS agent_id
+      FROM connections, jsonb_array_elements(COALESCE(auth->'derived', '[]'::jsonb)) AS d
+      WHERE d->'inputs'->>'agentId' IS NOT NULL`);
+    return (rows as unknown as { agent_id: string }[]).map((r) => r.agent_id);
   };
 }
