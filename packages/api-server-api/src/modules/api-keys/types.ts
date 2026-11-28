@@ -17,6 +17,7 @@ export interface ApiKeyView {
   name: string;
   scopes: readonly Scope[];
   agentIds: AgentBinding;
+  agentId?: string;
   expiresAt: string | null;
   createdAt: string;
   lastUsedAt: string | null;

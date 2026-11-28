@@ -7,6 +7,7 @@ export interface ApiKeyRow {
   hash: string;
   scopes: readonly Scope[];
   agentIds: readonly string[] | null;
+  agentId: string | null;
   expiresAt: Date | null;
   createdAt: Date;
   lastUsedAt: Date | null;
@@ -15,5 +16,12 @@ export interface ApiKeyRow {
 
 export type NewApiKey = Pick<
   ApiKeyRow,
-  "id" | "ownerSub" | "name" | "hash" | "scopes" | "agentIds" | "expiresAt"
+  | "id"
+  | "ownerSub"
+  | "name"
+  | "hash"
+  | "scopes"
+  | "agentIds"
+  | "agentId"
+  | "expiresAt"
 >;

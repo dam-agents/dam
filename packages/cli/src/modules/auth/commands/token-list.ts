@@ -42,8 +42,9 @@ export function buildTokenListCommand(deps: TokenListCommandDeps): Command {
           const binding = k.agentIds === "*" ? "*" : k.agentIds.join(",");
           const exp = k.expiresAt ? `exp=${k.expiresAt}` : "exp=never";
           const last = k.lastUsedAt ? `last=${k.lastUsedAt}` : "last=never";
+          const owner = k.agentId ? `\tbelongs-to=${k.agentId}` : "";
           process.stdout.write(
-            `${k.id}\t${k.name}\t[${k.scopes.join(",")}]\tagents=${binding}\t${exp}\t${last}\n`,
+            `${k.id}\t${k.name}\t[${k.scopes.join(",")}]\tagents=${binding}${owner}\t${exp}\t${last}\n`,
           );
         }
       } catch (err) {

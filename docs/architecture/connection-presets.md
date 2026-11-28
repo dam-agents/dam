@@ -1,6 +1,6 @@
 # Connection presets
 
-Last verified: 2026-11-19
+Last verified: 2026-11-28
 
 What each shipped Connection Template gives an Agent: the template's shape, the hosts it reaches, the credential the gateway injects and the Contributions a grant materializes.
 The model they all share — a template, a grant, and which rail each Contribution kind takes — is on [connections](connections.md).
@@ -105,6 +105,10 @@ That name belongs to this Connection alone: any other Connection naming it is re
 Nothing mints a replacement by itself, so a key revoked on purpose stays revoked until someone asks for a new one.
 
 **Who acts as the owner.** Granting it lets the Agent act as its owner, and the owner may still share that Agent or bind it to a chat: whoever can drive it then acts as the owner too, and each surface that decides it says so.
+
+**An API key that belongs to an Agent.** An API key can name the Agent it belongs to; a call made with it is that Agent's call, and the security log names the Agent as the actor, not its owner.
+Only the platform issues one, as the derived credential of a scoped grant of this Connection ([connections](connections.md#connection)): bound to its Agent alone, with the read scope only, so it reads that Agent and nothing else; no person and no key can create one.
+It shows in the owner's list of API keys with its Agent's name, and the owner can revoke it there; deleting the Agent revokes it.
 
 **The client's limits.** `dam` has the whole surface a person has, and every command acts as the owner.
 The doors that open a live conversation or a shell — `dam chat`, `dam run`, `dam ssh`, a session's stream — open a WebSocket and send their credential in the header this Connection injects as well as in its query string, so they work from inside an Agent too: `dam run` there prompts the Agent itself or another of the owner's Agents ([CLI](cli.md)).

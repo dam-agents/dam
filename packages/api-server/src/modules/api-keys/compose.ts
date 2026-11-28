@@ -14,6 +14,7 @@ import {
   listScopedAgentIds,
   removeAgentIdFromScopes,
   revokeApiKey,
+  revokeApiKeysOfAgent,
   touchApiKeyLastUsed,
 } from "./infrastructure/api-keys-repository.js";
 import {
@@ -21,6 +22,10 @@ import {
   type ApiKeyValidator,
 } from "./services/api-key-validator.js";
 import { createApiKeysService } from "./services/api-keys-service.js";
+import { createAgentKeysCleanup } from "./services/agent-keys-cleanup.js";
+import { createAgentKeyIssuer } from "./services/agent-key-issuer.js";
+
+export type AgentKeyIssuer = ReturnType<typeof createAgentKeyIssuer>;
 import {
   createOwnerActiveProbe,
   type OwnerActiveState,
@@ -52,6 +57,7 @@ export function composeApiKeysModule(deps: {
   activeKeyIds: (ids: readonly string[]) => Promise<ReadonlySet<string>>;
   keyLedger: (ownerSub: string) => ApiKeyLedger;
   sweepRevocations: () => Promise<number>;
+  agentKeys: AgentKeyIssuer;
 } {
   const { db, hmacKey, isAgentOwnedBy } = deps;
   const codec = createApiKeyTokenCodec(hmacKey);
@@ -93,6 +99,12 @@ export function composeApiKeysModule(deps: {
         namedByAConnection,
         drop: deleteRevocation,
       }).run(),
+    agentKeys: createAgentKeyIssuer({
+      insert,
+      revoke,
+      mintToken: codec.mint,
+      isAgentOwnedBy,
+    }),
     createService: ({ ownerSub, surface }) =>
       createApiKeysService({
         ownerSub,
@@ -109,7 +121,10 @@ export function composeApiKeysModule(deps: {
 export function createApiKeysCleanupHook(
   db: Db,
 ): (agentId: string) => Promise<void> {
-  return removeAgentIdFromScopes(db);
+  return createAgentKeysCleanup({
+    revokeOwn: revokeApiKeysOfAgent(db),
+    unbind: removeAgentIdFromScopes(db),
+  });
 }
 
 export function listApiKeyAgentIds(db: Db): Promise<string[]> {
