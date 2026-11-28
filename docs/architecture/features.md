@@ -1,6 +1,6 @@
 # Features
 
-Last verified: 2026-11-25
+Last verified: 2026-11-27
 
 ## Overview
 
@@ -19,8 +19,15 @@ The install has no say over an internal feature, which is what lets the team try
 The page also carries a button that resets the user's [onboarding progress](getting-started.md#in-the-browser).
 The internal features are advanced connection types, the processes panel (a chat-view section listing what runs in the agent, what keeps it awake and what finished, with each process's output, a Stop per process and a keep switch per background process, the agent's Login items with their controls, and a header indicator that replaces the background-task one; see [agent-processes](agent-processes.md)), Environments and kept sub-agents (sandboxes an agent creates for others to open, and sub-agents it keeps after their result to enter, run more work in and continue; see [environments](environments.md) and [invocations](invocations.md#outcomes)), the Hermes harness (Nous Research's Hermes Agent offered beside the other harnesses an agent's image carries), the install's own Connection ([connection presets](connection-presets.md#platform-preset-this-install-itself)), which lets an Agent act as its owner, GitHub Enterprise hosts (a host picker in the connect form, of the offered hosts or one with the user's own app, and a move between offered hosts; see [github-connections](github-connections.md#github-enterprise-hosts)), network approvals in the chat (an Agent's waiting network approvals above the message box of its open conversation, which otherwise wait in the approvals list and the notifications; see [security-and-credentials](security-and-credentials.md#hitl-ext_authz)), one-time tasks in the schedule form (its Repeat / Once choice and the one-time task editor; agents, the CLI and the API create one-time tasks whatever the flag says, and without it the schedules list shows one as a row that can only be deleted; see [schedules](schedules.md#one-time-schedules)), tool approval for MCP connections (each Agent's own tool access on an MCP Connection, allow, ask or block per tool, which the owner sets only with the flag on and which a new grant starts safe in; the gate reads a stored access whatever the flag says, though with the flag off nothing shows it; see [connections](connections.md#connection)), and the assistant's security check (a weekly scheduled run that reports what in the person's setup goes against the security advisory; see [assistant](assistant.md#the-security-check)).
 
+Every feature has a **tracking issue** and a **since** release, set in the contract beside its level.
+The issue names the owner, why the feature exists and what the team wants to learn from it, and, once made, the decision.
+The since release is the one the feature first shipped in at its current level.
+The issue carries the label of the feature's level, `feature:internal` or `feature:experimental`, and the label changes when the level does.
+The open issues with either label are the list of features and their reasons.
+
 Every feature defaults **off**, except the assistant, which every person has on and can turn off.
 A feature moves from internal to experimental by changing its level, and each user's stored choice stays.
+The change also sets the feature's since release to the release that ships it, and changes the label of its issue.
 Graduating a feature to always-on is deletion: drop its id from the enum and its gates from the UI — stored rows for a dropped id are simply never read again (Knowledge Bases, the [starter kit](starter-kits.md) catalog, session costs, [agent avatars](agent-avatars.md), addressed credential injection, [interactive artifacts](artifact-library.md#interactive-pages), [agent telemetry](agent-telemetry.md) and [chat forms](chat-forms.md) graduated this way).
 A graduation may also add a migration that deletes the dropped id's rows, so no stored choice outlives the feature; interactive artifacts, agent telemetry and chat forms did.
 
@@ -79,5 +86,8 @@ Anything else that must actually be denied is enforced by auth and owner scoping
 ## Where the code lives
 
 - Contract (feature ids, levels, modes, tRPC router): [`packages/api-server-api/src/modules/features/`](../../packages/api-server-api/src/modules/features/)
+  `FEATURES` in `modes.ts` is the registry: one entry per feature id, with its level, its issue and its since release.
+  A new feature needs an id in `featureIdSchema`, an entry in `FEATURES` with its issue, and, when it is internal, its id in the chart's `platform.internalFeatures` list ([`helm/templates/_validators.tpl`](../../helm/templates/_validators.tpl)).
+  The compiler refuses an id without an entry, and the registry's schema, read when the contract loads, refuses an entry without an issue or a since release.
 - Implementation (service, repository): [`packages/api-server/src/modules/features/`](../../packages/api-server/src/modules/features/)
 - The two settings pages: [`packages/ui/src/modules/features/`](../../packages/ui/src/modules/features/)

@@ -1,35 +1,52 @@
-import type { FeatureId, FeatureLevel, FeatureMode } from "./types.js";
+import type {
+  FeatureEntry,
+  FeatureId,
+  FeatureLevel,
+  FeatureMode,
+} from "./types.js";
+import { featureRegistrySchema } from "./schemas.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the level of every feature. An experimental
- * feature is one any person may try: Settings shows it, and the install gives
- * it a mode. An internal feature is one the team is still trying out: it has
- * no place in the navigation, each person's own switch decides, and the
- * install cannot set it. A feature is experimental only when it is fine for
- * any person to turn it on today.
+ * UNIT_BOUNDARY_DESCRIPTION: every feature, with its level, its tracking issue
+ * and the release it first shipped in at that level. An experimental feature
+ * is one any person may try: Settings shows it, and the install gives it a
+ * mode. An internal feature is one the team is still trying out: it has no
+ * place in the navigation, each person's own switch decides, and the install
+ * cannot set it. A feature is experimental only when it is fine for any person
+ * to turn it on today. The issue, in dam-agents/dam, names the owner and why
+ * the feature exists. A new feature needs an id
+ * in `featureIdSchema`, an entry here with its issue, and, when it is
+ * internal, its id in the chart's `platform.internalFeatures` list. A feature
+ * that changes level takes the release of the change as its `since`. The
+ * registry is parsed when the module loads, so an entry without an issue or
+ * a release stops every program and test that reads the contract.
  */
-export const FEATURE_LEVELS: Record<FeatureId, FeatureLevel> = {
-  "advanced-connections": "internal",
-  processes: "internal",
-  "custom-avatars": "experimental",
-  environments: "internal",
-  hermes: "internal",
-  "github-enterprise-hosts": "internal",
-  dambledore: "experimental",
-  damConnection: "internal",
-  "chat-network-approvals": "internal",
-  "one-time-tasks": "internal",
-  "security-check": "internal",
-  "mcp-tool-approval": "internal",
-};
+export const FEATURES = featureRegistrySchema.parse({
+  "advanced-connections": { level: "internal", issue: 6909, since: "v0.3.3" },
+  processes: { level: "internal", issue: 6910, since: "v0.3.3" },
+  "custom-avatars": { level: "experimental", issue: 6907, since: "v0.3.3" },
+  environments: { level: "internal", issue: 6911, since: "v0.3.3" },
+  hermes: { level: "internal", issue: 6912, since: "v0.3.3" },
+  "github-enterprise-hosts": {
+    level: "internal",
+    issue: 6913,
+    since: "v0.3.3",
+  },
+  dambledore: { level: "experimental", issue: 6908, since: "v0.3.3" },
+  damConnection: { level: "internal", issue: 6914, since: "v0.3.3" },
+  "chat-network-approvals": { level: "internal", issue: 6915, since: "v0.3.3" },
+  "one-time-tasks": { level: "internal", issue: 6916, since: "v0.3.3" },
+  "security-check": { level: "internal", issue: 6917, since: "v0.3.3" },
+  "mcp-tool-approval": { level: "internal", issue: 6918, since: "v0.3.3" },
+} satisfies Record<FeatureId, FeatureEntry>);
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the features of one level, in the order the
  * contract names them.
  */
 export function featuresOfLevel(level: FeatureLevel): FeatureId[] {
-  return (Object.keys(FEATURE_LEVELS) as FeatureId[]).filter(
-    (id) => FEATURE_LEVELS[id] === level,
+  return (Object.keys(FEATURES) as FeatureId[]).filter(
+    (id) => FEATURES[id].level === level,
   );
 }
 
