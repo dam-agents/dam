@@ -72,6 +72,24 @@ export interface AgentSpecCR {
    */
   grantedConnectionIds?: string[];
   /**
+   * GrantedCredentials name, for a granted connection, the credential this
+   * agent's grant uses in place of the connection's own. The gateway sends
+   * exactly that credential's Secret for the connection, and never the
+   * connection's own, even while the credential's Secret is missing.
+   *
+   * Items: GrantedCredential is the credential one grant of a connection uses.
+   */
+  grantedCredentials?: {
+    /**
+     * ConnectionID is the granted connection.
+     */
+    connectionId: string;
+    /**
+     * CredentialID is the credential the grant uses for it.
+     */
+    credentialId: string;
+  }[];
+  /**
    * GrantedSecretIDs are the credential Secret IDs granted to this agent's
    * egress — intent written by the api-server. These live in spec rather
    * than a ConfigMap annotation, because they are reconciled by the
