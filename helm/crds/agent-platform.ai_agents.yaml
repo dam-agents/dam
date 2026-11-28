@@ -114,6 +114,30 @@ spec:
                 x-kubernetes-validations:
                 - message: 'vm block requires type: vm'
                   rule: self.type == 'vm' || !has(self.vm)
+              derivedCredentials:
+                description: |-
+                  DerivedCredentials name, for a granted connection whose grant has a
+                  scope of its own, the derived credential of that connection that
+                  matches the scope. The gateway sends exactly that credential's Secret
+                  for the connection, and never the connection's own, even while the
+                  derived Secret is missing.
+                items:
+                  description: |-
+                    DerivedCredential is the derived credential of a connection that one
+                    agent's scoped grant uses.
+                  properties:
+                    connectionId:
+                      description: ConnectionID is the granted connection.
+                      type: string
+                    key:
+                      description: Key names the connection's derived credential that
+                        matches the grant's scope.
+                      type: string
+                  required:
+                  - connectionId
+                  - key
+                  type: object
+                type: array
               description:
                 description: Description is an optional human-readable description.
                 type: string
@@ -147,28 +171,6 @@ spec:
                   this agent.
                 items:
                   type: string
-                type: array
-              grantedCredentials:
-                description: |-
-                  GrantedCredentials name, for a granted connection, the credential this
-                  agent's grant uses in place of the connection's own. The gateway sends
-                  exactly that credential's Secret for the connection, and never the
-                  connection's own, even while the credential's Secret is missing.
-                items:
-                  description: GrantedCredential is the credential one grant of a
-                    connection uses.
-                  properties:
-                    connectionId:
-                      description: ConnectionID is the granted connection.
-                      type: string
-                    credentialId:
-                      description: CredentialID is the credential the grant uses for
-                        it.
-                      type: string
-                  required:
-                  - connectionId
-                  - credentialId
-                  type: object
                 type: array
               grantedSecretIds:
                 description: |-

@@ -8,12 +8,12 @@ import {
 } from "api-server-api";
 import { createXactLock } from "../../core/xact-lock.js";
 import { connectionEnv } from "./domain/connection-env.js";
-import { grantedCredentialsOf } from "./domain/granted-credentials.js";
+import { derivedCredentialsOf } from "./domain/derived-credentials.js";
 import { getLogger } from "../../core/logger.js";
 import { createKbShareResolver } from "../kb-shares/index.js";
 import {
   createConnectionsRepository,
-  listGrantCredentials,
+  listDerivedKeys,
   listConnectionsByTemplate,
 } from "./infrastructure/connections-repository.js";
 import { readConnectionTemplateIds } from "./infrastructure/connection-template-ids.js";
@@ -377,16 +377,16 @@ export function composeConnectionsForOwner(opts: {
   parentOf: (agentId: string) => Promise<string | null>;
 }): ConnectionsService & ManagedProviderConnections {
   const repo = createConnectionsRepository(opts.db);
-  const grantCredentials = listGrantCredentials(opts.db);
+  const derivedKeys = listDerivedKeys(opts.db);
   const connectionLock = createXactLock(opts.db);
 
   const port: FanOutPort = {
     async setConnectionGrants(agentId, connectionIds): Promise<void> {
       await opts.agentsRepo.patchSpec(agentId, {
         grantedConnectionIds: connectionIds,
-        grantedCredentials: grantedCredentialsOf(
+        derivedCredentials: derivedCredentialsOf(
           connectionIds,
-          await grantCredentials(agentId),
+          await derivedKeys(agentId),
         ),
       });
     },

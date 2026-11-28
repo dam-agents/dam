@@ -385,7 +385,7 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 			svc.Annotations = map[string]string{annOwnerGatewaySlot: strconv.Itoa(slot), annOwnerGatewayOwner: owner}
 			services = append(services, svc)
 		}
-		secrets := filterByGrants(agent.Name, ownerSecrets, agent.Spec.GrantedSecretIDs, agent.Spec.GrantedConnectionIDs, agent.Spec.GrantedCredentials)
+		secrets := filterByGrants(agent.Name, ownerSecrets, agent.Spec.GrantedSecretIDs, agent.Spec.GrantedConnectionIDs, agent.Spec.DerivedCredentials)
 		members[agent.Name] = ownerGatewayMember{agent: agent, secrets: secrets, slot: slot, clusterIP: svc.Spec.ClusterIP, served: served}
 		names = append(names, agent.Name)
 		if served {

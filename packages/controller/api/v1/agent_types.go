@@ -4,12 +4,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// GrantedCredential is the credential one grant of a connection uses.
-type GrantedCredential struct {
+// DerivedCredential is the derived credential of a connection that one
+// agent's scoped grant uses.
+type DerivedCredential struct {
 	// ConnectionID is the granted connection.
 	ConnectionID string `json:"connectionId"`
-	// CredentialID is the credential the grant uses for it.
-	CredentialID string `json:"credentialId"`
+	// Key names the connection's derived credential that matches the grant's scope.
+	Key string `json:"key"`
 }
 
 // AgentSpec is the desired state of an Agent — the sole durable per-agent
@@ -144,12 +145,13 @@ type AgentSpec struct {
 	// GrantedConnectionIDs are the connection IDs granted to this agent.
 	// +optional
 	GrantedConnectionIDs []string `json:"grantedConnectionIds,omitempty"`
-	// GrantedCredentials name, for a granted connection, the credential this
-	// agent's grant uses in place of the connection's own. The gateway sends
-	// exactly that credential's Secret for the connection, and never the
-	// connection's own, even while the credential's Secret is missing.
+	// DerivedCredentials name, for a granted connection whose grant has a
+	// scope of its own, the derived credential of that connection that
+	// matches the scope. The gateway sends exactly that credential's Secret
+	// for the connection, and never the connection's own, even while the
+	// derived Secret is missing.
 	// +optional
-	GrantedCredentials []GrantedCredential `json:"grantedCredentials,omitempty"`
+	DerivedCredentials []DerivedCredential `json:"derivedCredentials,omitempty"`
 
 	// L7Hosts are hosts promoted onto the gateway's TLS-terminating (L7)
 	// interception chain without a credential, so path/method/port egress

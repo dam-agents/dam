@@ -85,10 +85,10 @@ type agentRow struct {
 }
 
 type agentChildren struct {
-	conditions  []metav1.Condition
-	hosts       []string
-	grants      []string
-	credentials []map[string]any
+	conditions []metav1.Condition
+	hosts      []string
+	grants     []string
+	derived    []map[string]any
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: hydrate turns one definition and its children into the object the controller
@@ -161,12 +161,12 @@ func hydrate(namespace string, row agentRow, children agentChildren) *unstructur
 	if len(children.grants) > 0 {
 		spec["grantedConnectionIds"] = anyList(children.grants)
 	}
-	if len(children.credentials) > 0 {
-		credentials := make([]any, len(children.credentials))
-		for i, c := range children.credentials {
-			credentials[i] = c
+	if len(children.derived) > 0 {
+		derived := make([]any, len(children.derived))
+		for i, d := range children.derived {
+			derived[i] = d
 		}
-		spec["grantedCredentials"] = credentials
+		spec["derivedCredentials"] = derived
 	}
 
 	status := map[string]any{}

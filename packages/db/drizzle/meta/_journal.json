@@ -1174,15 +1174,15 @@
     {
       "idx": 167,
       "version": "7",
-      "when": 1795856477218,
-      "tag": "0167_grant_credentials",
+      "when": 1795860691750,
+      "tag": "0167_grant_scope",
       "breakpoints": true
     },
     {
       "idx": 168,
       "version": "7",
-      "when": 1795856481388,
-      "tag": "0168_agent_connection_grants_credential",
+      "when": 1795860695294,
+      "tag": "0168_agent_connection_grants_derived_key",
       "breakpoints": true
     }
   ]

@@ -48,6 +48,26 @@ export interface AgentSpecCR {
     };
   };
   /**
+   * DerivedCredentials name, for a granted connection whose grant has a
+   * scope of its own, the derived credential of that connection that
+   * matches the scope. The gateway sends exactly that credential's Secret
+   * for the connection, and never the connection's own, even while the
+   * derived Secret is missing.
+   *
+   * Items: DerivedCredential is the derived credential of a connection that one
+   * agent's scoped grant uses.
+   */
+  derivedCredentials?: {
+    /**
+     * ConnectionID is the granted connection.
+     */
+    connectionId: string;
+    /**
+     * Key names the connection's derived credential that matches the grant's scope.
+     */
+    key: string;
+  }[];
+  /**
    * Description is an optional human-readable description.
    */
   description?: string;
@@ -71,24 +91,6 @@ export interface AgentSpecCR {
    * GrantedConnectionIDs are the connection IDs granted to this agent.
    */
   grantedConnectionIds?: string[];
-  /**
-   * GrantedCredentials name, for a granted connection, the credential this
-   * agent's grant uses in place of the connection's own. The gateway sends
-   * exactly that credential's Secret for the connection, and never the
-   * connection's own, even while the credential's Secret is missing.
-   *
-   * Items: GrantedCredential is the credential one grant of a connection uses.
-   */
-  grantedCredentials?: {
-    /**
-     * ConnectionID is the granted connection.
-     */
-    connectionId: string;
-    /**
-     * CredentialID is the credential the grant uses for it.
-     */
-    credentialId: string;
-  }[];
   /**
    * GrantedSecretIDs are the credential Secret IDs granted to this agent's
    * egress — intent written by the api-server. These live in spec rather

@@ -58,9 +58,9 @@ const (
 	// Agent gen 22: webSearchControl added to AgentSpec — the agent's gateway
 	// reads model-provider request bodies so a web search can be held for
 	// approval (#4311); an older CRD would prune it.
-	// Agent gen 23: grantedCredentials added to AgentSpec — the credential a
-	// grant of a connection uses in place of the connection's own (#6892); an
-	// older CRD would prune it.
+	// Agent gen 23: derivedCredentials added to AgentSpec — the derived
+	// credential of a connection that a scoped grant uses in place of the
+	// connection's own (#6892); an older CRD would prune it.
 	AgentSchemaGeneration = 23
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
