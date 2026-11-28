@@ -1008,6 +1008,10 @@ export const connectionGrants = pgTable(
       .notNull(),
     preferred: boolean("preferred").notNull().default(false),
     toolAccess: jsonb("tool_access"),
+    /* UNIT_BOUNDARY_DESCRIPTION: the Agent's own scope on a GitHub or platform Connection: the repositories and permissions, or the platform's reach. Null: the grant uses the Connection's own credential, as before. */
+    scope: jsonb("scope"),
+    /* UNIT_BOUNDARY_DESCRIPTION: which derived credential of the Connection matches `scope`, so its gateway sends that one and never the Connection's own. Written with `scope`; null with it. */
+    derivedKey: text("derived_key"),
   },
   (table) => [
     primaryKey({ columns: [table.connectionId, table.agentId] }),

@@ -31,8 +31,8 @@ func TestOwnerCredentialSecret_HoldsOnlyWhatTheOwnersAgentsAreGranted(t *testing
 		grantedConnection("owner-1", "platform-conn-ungranted", "un", "api.example.com"),
 	}
 	foreign := grantedConnection("owner-2", "platform-conn-foreign", "foreign", "api.foreign.com")
-	agentA := filterByGrants("agent-a", all, nil, []string{"gh"})
-	agentB := append(filterByGrants("agent-b", all, nil, []string{"foreign"}), foreign)
+	agentA := filterByGrants("agent-a", all, nil, []string{"gh"}, nil)
+	agentB := append(filterByGrants("agent-b", all, nil, []string{"foreign"}, nil), foreign)
 
 	got, _ := buildOwnerGatewaySecret("owner-1", cfg, ownerGatewayConfig{}, "", [][]corev1.Secret{agentA, agentB}, nil)
 	var keys []string

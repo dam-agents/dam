@@ -4,6 +4,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// DerivedCredential is the derived credential of a connection that one
+// agent's scoped grant uses.
+type DerivedCredential struct {
+	// ConnectionID is the granted connection.
+	ConnectionID string `json:"connectionId"`
+	// Key names the connection's derived credential that matches the grant's scope.
+	Key string `json:"key"`
+}
+
 // AgentSpec is the desired state of an Agent — the sole durable per-agent
 // resource after Instance was collapsed into Agent. The api-server is the
 // sole writer.
@@ -136,6 +145,13 @@ type AgentSpec struct {
 	// GrantedConnectionIDs are the connection IDs granted to this agent.
 	// +optional
 	GrantedConnectionIDs []string `json:"grantedConnectionIds,omitempty"`
+	// DerivedCredentials name, for a granted connection whose grant has a
+	// scope of its own, the derived credential of that connection that
+	// matches the scope. The gateway sends exactly that credential's Secret
+	// for the connection, and never the connection's own, even while the
+	// derived Secret is missing.
+	// +optional
+	DerivedCredentials []DerivedCredential `json:"derivedCredentials,omitempty"`
 
 	// L7Hosts are hosts promoted onto the gateway's TLS-terminating (L7)
 	// interception chain without a credential, so path/method/port egress
@@ -480,7 +496,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=22
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=23
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

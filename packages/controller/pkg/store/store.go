@@ -286,18 +286,23 @@ func (s *Store) fill(ctx context.Context, tx pgx.Tx, loaded []loadedAgent, ids [
 	hosts.Close()
 
 	grants, err := tx.Query(ctx,
-		`SELECT agent_id, connection_id FROM control.agent_connection_grants WHERE agent_id = ANY($1) ORDER BY agent_id, connection_id`, ids)
+		`SELECT agent_id, connection_id, derived_key FROM control.agent_connection_grants WHERE agent_id = ANY($1) ORDER BY agent_id, connection_id`, ids)
 	if err != nil {
 		return fmt.Errorf("reading Agent connection grants: %w", err)
 	}
 	for grants.Next() {
 		var agentID, connectionID string
-		if err := grants.Scan(&agentID, &connectionID); err != nil {
+		var derivedKey *string
+		if err := grants.Scan(&agentID, &connectionID, &derivedKey); err != nil {
 			grants.Close()
 			return fmt.Errorf("reading Agent connection grants: %w", err)
 		}
 		if i, ok := byID[agentID]; ok {
 			loaded[i].children.grants = append(loaded[i].children.grants, connectionID)
+			if derivedKey != nil && *derivedKey != "" {
+				loaded[i].children.derived = append(loaded[i].children.derived,
+					map[string]any{"connectionId": connectionID, "key": *derivedKey})
+			}
 		}
 	}
 	if err := grants.Err(); err != nil {

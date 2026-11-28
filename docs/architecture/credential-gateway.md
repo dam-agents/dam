@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-11-24
+Last verified: 2026-11-28
 
 ## Overview
 
@@ -26,6 +26,12 @@ On the wire:
    The agent's inner `Host` header has no influence on the upstream destination — the route-confusion exfiltration path is structurally closed.
    Allow-only chains (path-rule promoted, no credential) keep using the dynamic forward proxy — they have no credential to misroute.
 4. The default chain (SNI miss) does TCP passthrough — the request reaches the upstream unchanged.
+
+**Which Secret a grant sends.** A granted Connection contributes exactly one Secret to an agent's gateway: for a grant with a scope of its own, the derived credential of the Connection that matches it; otherwise the Connection's own ([connections](connections.md#connection)).
+The Agent resource names each scoped grant's derived credential in `derivedCredentials`, by Connection and key, beside `grantedConnectionIds`; with the agent store in Postgres the controller reads both from the grants view.
+A derived credential's Secret has its own type, `connection-derived`, and labels naming its Connection and its key; it carries the Connection's injection hosts and renders as the Connection's own does.
+A scoped grant never falls back to the Connection's own Secret, also while the derived Secret is not written yet, so an agent given a narrower credential never carries the wider one.
+A controller that does not know the type leaves such a Secret out, so no derived credential reaches an agent through an older controller.
 
 Whatever chain forwards it, the gateway pod's own egress NetworkPolicy bounds where the dial may land — public addresses plus the platform pods and private ranges it names — so no approved name can resolve into the cluster or the metadata endpoint ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)).
 

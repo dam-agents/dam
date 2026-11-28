@@ -1170,6 +1170,20 @@
       "when": 1795712850529,
       "tag": "0166_graduate_chat_forms",
       "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1795860691750,
+      "tag": "0167_grant_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1795860695294,
+      "tag": "0168_agent_connection_grants_derived_key",
+      "breakpoints": true
     }
   ]
 }

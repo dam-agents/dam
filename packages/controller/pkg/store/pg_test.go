@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"slices"
 	"testing"
@@ -657,5 +658,72 @@ func TestPostgresUnchangedStatusWritesNothing(t *testing.T) {
 	}
 	if after := version(); after != before {
 		t.Fatalf("an unchanged status was written: the status version moved from %d to %d", before, after)
+	}
+}
+
+// TEST_SCENARIO: A scoped grant reaches the controller with the key of its derived credential, and a grant
+// TEST_SCENARIO: with no scope reaches it as before. Changing the key advances the Agent's generation, so its
+// TEST_SCENARIO: gateway renders again; changing the scope alone, which the gateway never sees, does not.
+func TestPostgresStoreDerivedCredentials(t *testing.T) {
+	ownerURL, controllerURL := postgresURLs(t)
+	owner, err := pgxpool.New(context.Background(), ownerURL)
+	if err != nil {
+		t.Fatalf("connecting as the owner: %v", err)
+	}
+	t.Cleanup(func() { owner.Close() })
+	seedAgent(t, owner)
+	removeConnections := func() {
+		mustExec(t, owner, "DELETE FROM public.connections WHERE id IN ('conn-dam', 'conn-github')")
+	}
+	removeConnections()
+	t.Cleanup(func() { removeConnections(); cleanup(t, owner) })
+	for _, id := range []string{"conn-dam", "conn-github"} {
+		mustExec(t, owner, `INSERT INTO public.connections (id, owner, template_id, name, inputs, auth, contributions)
+			VALUES ($1, $2, 'dam', $1, '{}', '{}', '[]')`, id, testOwner)
+	}
+	mustExec(t, owner, `INSERT INTO public.connection_grants (connection_id, agent_id) VALUES ('conn-github', $1)`, testAgent)
+	mustExec(t, owner, `INSERT INTO public.connection_grants (connection_id, agent_id, scope, derived_key)
+		VALUES ('conn-dam', $1, '{"reach":"own"}', 'agent-key-1')`, testAgent)
+
+	s, _ := openAs(t, controllerURL)
+	ctx := context.Background()
+	read := func() (*unstructured.Unstructured, []any) {
+		t.Helper()
+		if _, _, err := s.relist(ctx); err != nil {
+			t.Fatalf("relisting: %v", err)
+		}
+		agent, err := s.Get(ctx, testAgent)
+		if err != nil {
+			t.Fatalf("reading the Agent: %v", err)
+		}
+		derived, _, _ := unstructured.NestedSlice(agent.Object, "spec", "derivedCredentials")
+		return agent, derived
+	}
+
+	agent, derived := read()
+	granted, _, _ := unstructured.NestedStringSlice(agent.Object, "spec", "grantedConnectionIds")
+	if len(granted) != 2 {
+		t.Fatalf("grantedConnectionIds = %v, want both grants", granted)
+	}
+	want := []any{map[string]any{"connectionId": "conn-dam", "key": "agent-key-1"}}
+	if fmt.Sprint(derived) != fmt.Sprint(want) {
+		t.Fatalf("derivedCredentials = %v, want only the scoped grant: %v", derived, want)
+	}
+	generation := agent.GetGeneration()
+
+	mustExec(t, owner, `UPDATE public.connection_grants SET scope = '{"reach":"own","note":"same key"}'
+		WHERE connection_id = 'conn-dam' AND agent_id = $1`, testAgent)
+	if agent, _ = read(); agent.GetGeneration() != generation {
+		t.Fatalf("a scope change with the same key moved the generation from %d to %d", generation, agent.GetGeneration())
+	}
+
+	mustExec(t, owner, `UPDATE public.connection_grants SET derived_key = 'agent-key-2'
+		WHERE connection_id = 'conn-dam' AND agent_id = $1`, testAgent)
+	agent, derived = read()
+	if agent.GetGeneration() <= generation {
+		t.Fatalf("a new key left the generation at %d", agent.GetGeneration())
+	}
+	if fmt.Sprint(derived) != fmt.Sprint([]any{map[string]any{"connectionId": "conn-dam", "key": "agent-key-2"}}) {
+		t.Fatalf("derivedCredentials = %v after the key changed", derived)
 	}
 }

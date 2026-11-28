@@ -48,6 +48,26 @@ export interface AgentSpecCR {
     };
   };
   /**
+   * DerivedCredentials name, for a granted connection whose grant has a
+   * scope of its own, the derived credential of that connection that
+   * matches the scope. The gateway sends exactly that credential's Secret
+   * for the connection, and never the connection's own, even while the
+   * derived Secret is missing.
+   *
+   * Items: DerivedCredential is the derived credential of a connection that one
+   * agent's scoped grant uses.
+   */
+  derivedCredentials?: {
+    /**
+     * ConnectionID is the granted connection.
+     */
+    connectionId: string;
+    /**
+     * Key names the connection's derived credential that matches the grant's scope.
+     */
+    key: string;
+  }[];
+  /**
    * Description is an optional human-readable description.
    */
   description?: string;

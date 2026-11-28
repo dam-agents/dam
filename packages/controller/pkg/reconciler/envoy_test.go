@@ -56,7 +56,7 @@ func TestFilterByGrants_AbsentAnnotationsGrantNothing(t *testing.T) {
 		ownerSecret("platform-cred-bbb", "generic", ""),
 		ownerSecret("platform-conn-github", "connection", "github"),
 	}
-	got := filterByGrants("agent-absent-annotations", secrets, nil, nil)
+	got := filterByGrants("agent-absent-annotations", secrets, nil, nil, nil)
 	assert.Empty(t, got)
 }
 
@@ -65,7 +65,7 @@ func TestFilterByGrants_SelectiveSecretsDropUngranted(t *testing.T) {
 		ownerSecret("platform-cred-aaa", "anthropic", ""),
 		ownerSecret("platform-cred-bbb", "generic", ""),
 	}
-	got := filterByGrants("agent-selective-secrets", secrets, []string{"aaa"}, nil)
+	got := filterByGrants("agent-selective-secrets", secrets, []string{"aaa"}, nil, nil)
 	assert.Equal(t, []string{"platform-cred-aaa"}, names(got))
 }
 
@@ -74,7 +74,7 @@ func TestFilterByGrants_EmptySecretListGrantsNothing(t *testing.T) {
 		ownerSecret("platform-cred-aaa", "anthropic", ""),
 		ownerSecret("platform-cred-bbb", "generic", ""),
 	}
-	got := filterByGrants("agent-empty-secret-list", secrets, []string{}, nil)
+	got := filterByGrants("agent-empty-secret-list", secrets, []string{}, nil, nil)
 	assert.Empty(t, got)
 }
 
@@ -83,10 +83,10 @@ func TestFilterByGrants_ConnectionGrantsByList(t *testing.T) {
 		ownerSecret("platform-conn-github", "connection", "github"),
 		ownerSecret("platform-conn-slack", "connection", "slack"),
 	}
-	got := filterByGrants("agent-connection-grants", secrets, nil, []string{"github"})
+	got := filterByGrants("agent-connection-grants", secrets, nil, []string{"github"}, nil)
 	assert.Equal(t, []string{"platform-conn-github"}, names(got))
 
-	got = filterByGrants("agent-connection-grants", secrets, nil, []string{})
+	got = filterByGrants("agent-connection-grants", secrets, nil, []string{}, nil)
 	assert.Empty(t, got)
 }
 
@@ -97,10 +97,10 @@ func TestFilterByGrants_AllowOnlyPassesThroughUngranted(t *testing.T) {
 		ownerSecret("platform-conn-github", "connection", "github"),
 	}
 
-	got := filterByGrants("agent-allow-only", secrets, nil, nil)
+	got := filterByGrants("agent-allow-only", secrets, nil, nil, nil)
 	assert.Equal(t, []string{"platform-allow-abc12345-api-example-com"}, names(got))
 
-	got = filterByGrants("agent-allow-only", secrets, []string{"aaa"}, []string{"github"})
+	got = filterByGrants("agent-allow-only", secrets, []string{"aaa"}, []string{"github"}, nil)
 	assert.ElementsMatch(t,
 		[]string{"platform-allow-abc12345-api-example-com", "platform-cred-aaa", "platform-conn-github"},
 		names(got))
@@ -113,7 +113,7 @@ func TestFilterByGrants_SecretAndConnectionAxesAreIndependent(t *testing.T) {
 		ownerSecret("platform-conn-github", "connection", "github"),
 		ownerSecret("platform-conn-slack", "connection", "slack"),
 	}
-	got := filterByGrants("agent-independent-axes", secrets, []string{"aaa"}, []string{"slack"})
+	got := filterByGrants("agent-independent-axes", secrets, []string{"aaa"}, []string{"slack"}, nil)
 	assert.ElementsMatch(t, []string{"platform-cred-aaa", "platform-conn-slack"}, names(got))
 }
 
@@ -127,7 +127,7 @@ func TestFilterByGrants_UnresolvedGrantWarnsOnceWhileUnchanged(t *testing.T) {
 	secrets := []corev1.Secret{ownerSecret("platform-conn-github", "connection", "github")}
 
 	for range 5 {
-		got := filterByGrants("agent-steady", secrets, nil, []string{"github", "conn-gone"})
+		got := filterByGrants("agent-steady", secrets, nil, []string{"github", "conn-gone"}, nil)
 		assert.Equal(t, []string{"platform-conn-github"}, names(got))
 	}
 
@@ -141,9 +141,9 @@ func TestFilterByGrants_UnresolvedGrantWarnsOnceWhileUnchanged(t *testing.T) {
 func TestFilterByGrants_ChangedUnresolvedSetWarnsAgain(t *testing.T) {
 	captured := captureLog(t)
 
-	filterByGrants("agent-growing", nil, nil, []string{"conn-gone"})
-	filterByGrants("agent-growing", nil, nil, []string{"conn-gone"})
-	filterByGrants("agent-growing", nil, nil, []string{"conn-gone", "conn-also-gone"})
+	filterByGrants("agent-growing", nil, nil, []string{"conn-gone"}, nil)
+	filterByGrants("agent-growing", nil, nil, []string{"conn-gone"}, nil)
+	filterByGrants("agent-growing", nil, nil, []string{"conn-gone", "conn-also-gone"}, nil)
 
 	require.Len(t, captured.all(), 2)
 	assert.Equal(t, []string{"conn-gone"}, logAttr(captured.all()[0], "unresolvedIds").Any().([]string))
@@ -155,9 +155,9 @@ func TestFilterByGrants_ResolvedThenRecurringGrantWarnsAgain(t *testing.T) {
 	captured := captureLog(t)
 	restored := []corev1.Secret{ownerSecret("platform-conn-restored", "connection", "conn-flapping")}
 
-	filterByGrants("agent-flapping", nil, nil, []string{"conn-flapping"})
-	filterByGrants("agent-flapping", restored, nil, []string{"conn-flapping"})
-	filterByGrants("agent-flapping", nil, nil, []string{"conn-flapping"})
+	filterByGrants("agent-flapping", nil, nil, []string{"conn-flapping"}, nil)
+	filterByGrants("agent-flapping", restored, nil, []string{"conn-flapping"}, nil)
+	filterByGrants("agent-flapping", nil, nil, []string{"conn-flapping"}, nil)
 
 	require.Len(t, captured.all(), 2)
 	assert.Equal(t, []string{"conn-flapping"}, logAttr(captured.all()[0], "unresolvedIds").Any().([]string))
@@ -168,10 +168,10 @@ func TestFilterByGrants_ResolvedThenRecurringGrantWarnsAgain(t *testing.T) {
 func TestFilterByGrants_EachAgentGetsItsOwnFirstReport(t *testing.T) {
 	captured := captureLog(t)
 
-	filterByGrants("agent-one", nil, nil, []string{"conn-gone"})
-	filterByGrants("agent-one", nil, nil, []string{"conn-gone"})
-	filterByGrants("agent-two", nil, nil, []string{"conn-gone"})
-	filterByGrants("agent-two", nil, nil, []string{"conn-gone"})
+	filterByGrants("agent-one", nil, nil, []string{"conn-gone"}, nil)
+	filterByGrants("agent-one", nil, nil, []string{"conn-gone"}, nil)
+	filterByGrants("agent-two", nil, nil, []string{"conn-gone"}, nil)
+	filterByGrants("agent-two", nil, nil, []string{"conn-gone"}, nil)
 
 	require.Len(t, captured.all(), 2)
 	assert.Equal(t, "agent-one", logAttr(captured.all()[0], "agent").String())
@@ -182,8 +182,8 @@ func TestFilterByGrants_EachAgentGetsItsOwnFirstReport(t *testing.T) {
 func TestFilterByGrants_BothGrantKindsReportIndependently(t *testing.T) {
 	captured := captureLog(t)
 
-	filterByGrants("agent-both-kinds", nil, []string{"sec-gone"}, []string{"conn-gone"})
-	filterByGrants("agent-both-kinds", nil, []string{"sec-gone"}, []string{"conn-gone"})
+	filterByGrants("agent-both-kinds", nil, []string{"sec-gone"}, []string{"conn-gone"}, nil)
+	filterByGrants("agent-both-kinds", nil, []string{"sec-gone"}, []string{"conn-gone"}, nil)
 
 	require.Len(t, captured.all(), 2)
 	assert.ElementsMatch(t,
@@ -195,9 +195,9 @@ func TestFilterByGrants_BothGrantKindsReportIndependently(t *testing.T) {
 func TestFilterByGrants_DeletingAgentForgetsWhatWasReported(t *testing.T) {
 	captured := captureLog(t)
 
-	filterByGrants("agent-deleted", nil, nil, []string{"conn-gone"})
+	filterByGrants("agent-deleted", nil, nil, []string{"conn-gone"}, nil)
 	unresolvedGrants.forget("agent-deleted")
-	filterByGrants("agent-deleted", nil, nil, []string{"conn-gone"})
+	filterByGrants("agent-deleted", nil, nil, []string{"conn-gone"}, nil)
 
 	require.Len(t, captured.all(), 2)
 }
