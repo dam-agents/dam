@@ -87,8 +87,7 @@ export function createAssistantSchedulesRepository(
         .set({
           items: [...items],
           reportedAt: when.keepTime
-            ? // Raw sql binds no column mapping: postgres.js takes a time as text only.
-              sql`coalesce(${assistantSchedules.reportedAt}, ${when.at.toISOString()}::timestamptz)`
+            ? sql`coalesce(${assistantSchedules.reportedAt}, ${when.at.toISOString()}::timestamptz)`
             : when.at,
         })
         .where(rowOf(owner, kind))
