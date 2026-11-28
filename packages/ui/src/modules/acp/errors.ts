@@ -204,7 +204,7 @@ export function unstoredSessionPrompts(
 }
 
 export type SessionFailureKind =
-  "unavailable" | "orphaned" | "connection" | "other";
+  "unavailable" | "orphaned" | "connection" | "agent" | "other";
 
 export type SessionListing = "listed" | "absent" | "unknown";
 

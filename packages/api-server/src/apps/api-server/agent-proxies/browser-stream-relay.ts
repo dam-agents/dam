@@ -40,6 +40,7 @@ export function createBrowserStreamRelay(
     `ws://${agentServiceAddress(agentId, namespace)}`,
 ): BrowserStreamRelay {
   return createWakeGatedRelay({
+    name: "browser",
     repo,
     upstreamBase,
     upstreamPath: () => upstreamPath,

@@ -26,6 +26,20 @@ An agent with [web search control](../../../docs/architecture/web-search-control
 `managed-settings.json` holds a `PreToolUse` hook on `WebSearch` that allows the tool when `PLATFORM_WEB_SEARCH_CONTROL` is set, which the platform sets only for such an agent.
 With the variable unset the hook prints nothing, and Claude Code asks about a search as its permission mode says.
 
+## Session history
+
+[`harness-history-lib.mjs`](rootfs/usr/local/lib/harness-history-lib.mjs) is the image's session-history provider: it turns a session's transcript into the frames the runtime replays, without starting the CLI.
+A cold open asks it for the newest window alone, which it reads from the end of `~/.claude/projects/<dir>/<session>.jsonl`, back along the conversation's `parentUuid` chain only as far as the window reaches, and turns into messages with the SDK's own reader over just those entries; older windows are read the same way when the viewer pages back.
+On a 146 MB transcript that is about 0.25 s for a window against about 2.8 s for the whole read, on an idle machine.
+A compaction that kept a segment of the conversation from before it relinks that segment, which can sit anywhere earlier in the file, so a window that reaches one is read whole: the newest window answers the whole read, and a page answers what the whole read shows before the page, with nothing older.
+
+Most of a long transcript is not conversation.
+Since 2.1.303 Claude Code appends a request record (`api-request`, with `api-request-blob` and `api-request-shape`) after each model call, so a session can be replayed request by request.
+In 2.1.303, in auto mode, each record also kept the call's `safeguards` parameter, whose classifier context is a copy of the last ~170 turns: 140–280 kB per call, 88 % of one 146 MB transcript.
+From 2.1.310 the CLI leaves `safeguards` out of the record (the pinned 2.1.321 too): a record is then about 1.4 kB, plus the message blobs it has not written before, so a transcript grows by the new messages, not by a copy of the conversation per call.
+The records are on by default; `CLAUDE_CODE_ELEGANT_MEADOW=0` turns them off, which the image does not set, since the platform reads none of them and they no longer cost a copy per call.
+The windowed read skips them unread, and transcripts written by 2.1.303 keep their copies until the session is deleted.
+
 ## User settings
 
 [`sync-claude-settings.mjs`](rootfs/usr/local/lib/sync-claude-settings.mjs) writes the platform's own keys into `~/.claude/settings.json`: the `OTEL_*` telemetry variables of the rail the agent was given, and the `report-background-work.mjs` entry it owns in `hooks.Stop` and `hooks.SubagentStop`.

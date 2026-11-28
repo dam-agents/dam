@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-11-18
+Last verified: 2026-11-27
 
 The pods every Agent runs on: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -212,4 +212,5 @@ What an agent waits for is on its status: a certificate cert-manager has not iss
 A reconcile that could not ensure the machine takes the Agent's readiness down with it.
 Hibernation does not wait for an unreachable runner: the gateway goes down anyway, readiness goes down, and the machine is stopped by the Agent's next reconcile.
 The Agent is published hibernated only once the runner reports the machine stopped, because a wake from hibernation trusts the first health check answer ([agent-lifecycle](agent-lifecycle.md#wake)).
+A machine the runner restarts reads `MachineRestarting` on `AgentPodReady` for the whole restart, and keeps it while the runner cannot be reached, because a relay holding a running agent trusts its health answer too, and the old guest answers until the restart stops it.
 The runner answers a stop before the guest is signalled, quiesced and powered off, so until the machine reads stopped the Agent is not ready and reads as pausing, and its reconcile watches the machine and publishes hibernation once it stops.

@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-11-20
+Last verified: 2026-11-27
 
 ## Overview
 
@@ -260,7 +260,7 @@ The controller-reconciled domain resources are CRDs under the `agent-platform.ai
 
 - `status` — observed state.
   Owned exclusively by the controller, written through the status subresource.
-  Conditions (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`) are the source of truth; the api-server routes on `Ready` and **never inspects pods itself**; the one shortcut is an agent relay waiting out a wake from hibernation, which also opens once the agent answers its health check through its Service while `GatewayPodReady` holds ([agent-lifecycle](agent-lifecycle.md#wake)).
+  Conditions (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`) are the source of truth; the api-server routes on `Ready` and **never inspects pods itself**; the one shortcut is an agent relay waiting out a wake from hibernation, or holding a running Agent that is not `Ready` while no restart, stop or spec change is under way, which also opens once the agent answers its health check through its Service while `GatewayPodReady` holds ([agent-lifecycle](agent-lifecycle.md#wake)).
   The user-facing state projection additionally reads the machine and gateway conditions so a gateway-only roll (a credential or L7-chain change) is not presented as an agent restart.
 
   That invariant is load-bearing rather than incidental — the api-server holds no pod read permission at all — so anything a consumer needs to know about an Agent's machine and gateway is the controller's job to observe and publish.
