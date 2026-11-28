@@ -87,7 +87,7 @@ export function createAssistantSchedulesRepository(
         .set({
           items: [...items],
           reportedAt: when.keepTime
-            ? sql`coalesce(${assistantSchedules.reportedAt}, ${when.at})`
+            ? sql`coalesce(${assistantSchedules.reportedAt}, ${when.at.toISOString()}::timestamptz)`
             : when.at,
         })
         .where(rowOf(owner, kind))
