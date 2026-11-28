@@ -1,6 +1,6 @@
 # Chat view
 
-Last verified: 2026-11-18
+Last verified: 2026-11-20
 
 ## Overview
 
@@ -16,6 +16,7 @@ The Agent's avatar and name, with a down chevron that says it opens a menu, are 
 The design has no other way to open the browser or the processes, so *Browser* and *Processes* are items of the same menu, checked the same way, for an Agent that has them.
 The Agent's processes dock beside the conversation, as its running count opens them too; a phone keeps them in its sections screen, with Files and Artifacts.
 The header flanks the messages' column, as the design review drew it: where the chat is wide enough, the agent menu ends just outside the column's left edge and *New chat*, as the design draws it, starts just outside its right edge; a narrower chat has no room beside the column, so both sit inside it, at the messages' edges.
+The Agent's status, the running count and its badges, comes and goes as the Agent runs and idles, so it never decides that layout: flanking, it opens the messages' column beside the agent menu, and neither the menu nor the layout moves when it changes.
 *New chat* is always there, so the header keeps its balance; on a new, empty chat it starts nothing and puts the cursor in the composer.
 The strip across the top shows its border while anything is open beside the conversation.
 A new chat's empty composer has focus and shows example prompts in place of its placeholder, one at a time, to show what an Agent can be asked; Tab puts the one showing in.

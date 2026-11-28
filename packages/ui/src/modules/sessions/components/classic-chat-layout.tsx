@@ -280,7 +280,7 @@ export function ClassicChatLayout({
             panelFills && "md:!hidden",
           )}
         >
-          {/* UNIT_BOUNDARY_DESCRIPTION: the header flanks the content well, as the design review drew it: where the chat is wide enough, the agent menu's chevron ends 16 px outside the messages' left edge (the menu's hover padding reaches past it) and New chat starts 16 px outside their right edge (the well is the 813 px column less its 32 px padding, 749 px). A narrower chat has no room beside the well, nor has a wide one whose margin is narrower than the agent menu (a long name, the Shared badge, the running count), so there both sit inside it, at the messages' edges. */}
+          {/* UNIT_BOUNDARY_DESCRIPTION: the header flanks the content well, as the design review drew it: where the chat is wide enough, the agent menu's chevron ends 16 px outside the messages' left edge (the menu's hover padding reaches past it) and New chat starts 16 px outside their right edge (the well is the 813 px column less its 32 px padding, 749 px). A narrower chat has no room beside the well, nor has a wide one whose margin is narrower than the agent menu (a long name, the Shared badge), so there both sit inside it, at the messages' edges. The Agent's status is not part of that measure, so the layout stays as it is while the Agent runs and while it idles. */}
           <header
             ref={header.headerRef}
             data-flanks={header.flanks}
@@ -304,9 +304,17 @@ export function ClassicChatLayout({
               >
                 <MobileMenuButton />
                 {identity}
-                <div className="flex min-w-0 items-center gap-2 empty:hidden">
-                  {status}
-                </div>
+              </div>
+              {/* UNIT_BOUNDARY_DESCRIPTION: the Agent's status — the running count and the badges — comes and goes as processes start and turns end, so it stays out of what the header measures: flanking, it opens the messages' column, beside the agent menu, and neither the menu nor the layout moves when it changes. */}
+              <div
+                data-testid="chat-header-status"
+                className={cn(
+                  "flex min-w-0 items-center gap-2 empty:hidden",
+                  header.flanks &&
+                    "@5xl/chat:col-start-2 @5xl/chat:justify-self-start",
+                )}
+              >
+                {status}
               </div>
               <div
                 ref={header.endRef}
